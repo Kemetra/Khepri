@@ -309,9 +309,24 @@ def _basis_id(package: FactPackage, metric: str) -> str:
 
 
 def _find_basis(package: FactPackage, metric: str) -> RetainedBasis | None:
-    basis_name = _BASIS_BY_METRIC.get(metric)
+    """The package's own basis for a metric: right name, and bound to this package.
+
+    A basis binds to the input it reconciled (`input_digest`) and the mapping it was
+    built under; `retain_bases` stamps both from the package, so a basis carrying
+    another digest or mapping is not this package's, whatever its name, and a pair
+    citing one refuses at admission rather than publishing a foreign identity.
+    """
+    expected = (
+        _BASIS_BY_METRIC.get(metric),
+        package.source_sha256_hex,
+        package.mapping_version,
+    )
     return next(
-        (basis for basis in package.retained_bases if basis.name == basis_name),
+        (
+            basis
+            for basis in package.retained_bases
+            if (basis.name, basis.input_digest, basis.mapping_version) == expected
+        ),
         None,
     )
 

@@ -1,15 +1,12 @@
 """Verify RRA-006 §Two-population bundle without retaining it.
 
 Real RRA-004 packages exercise RRA-008 §Composite provenance and §Operand
-order, plus RCA-005 §Comparison retention by name.
-"""
+order, plus RCA-005 §Comparison retention by name."""
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import replace
-from datetime import date, timedelta
 from decimal import Decimal
 from types import ModuleType
 
@@ -17,31 +14,11 @@ import pytest
 
 from khepri.rra import crossversion_assembly as assembly_module
 from khepri.rra import crossversion_bundle as crossversion_module
-from khepri.rra.admissibility import assess_admissibility
-from khepri.rra.analysis.comparison_narrative import CROSSVERSION_REFUSALS
 from khepri.rra.analysis.comparison_package import (
     COMPARISON_CROSSVERSION_VERSION,
     OPERAND_ORDER,
     MeasuredPair,
     build_cross_version_fact,
-)
-from khepri.rra.analysis.compatibility import (
-    CAUSE_CURRENCY,
-    CAUSE_FILTERS,
-    CAUSE_FORMULA_DRIFT,
-    CAUSE_MAPPING_DRIFT,
-    CAUSE_PACKAGE_DRIFT,
-    CAUSE_SCOPE,
-    CAUSE_STORE_SET,
-)
-from khepri.rra.analysis.dataset_period import (
-    CAUSE_GRANULARITY,
-    CAUSE_INCOMPLETE,
-    CAUSE_RETAIL_DAY,
-    CAUSE_UNORDERED_PAIR,
-    GRANULARITY_DAY,
-    GRANULARITY_MONTH,
-    DatasetPeriod,
 )
 from khepri.rra.bundle import (
     KIND_VALUE,
@@ -59,106 +36,28 @@ from khepri.rra.crossversion_bundle import (
     LABEL_PERCENTAGE_DIFFERENCE,
     LABEL_SUBJECT,
     SECTION_CROSSVERSION,
-    CrossVersionBundle,
-    CrossVersionRefusal,
     CrossVersionRequest,
-    build_crossversion_bundle,
 )
-from khepri.rra.facts import AdmittedInput, FactPackage, build_fact_package
-from khepri.rra.intake import CSV_MEDIA_TYPE
-from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from khepri.rra.profiling import build_profile, canonical_json
+from khepri.rra.profiling import canonical_json
 from khepri.rra.rendering import (
     ExcelSurfaceRenderer,
     HtmlReportRenderer,
     PdfReportRenderer,
-    PrintablePage,
     wording,
 )
-from tests.rra003_contract_fixtures import (
-    TEST_CONTRACT,
-    attesting_manifest,
-    published_mapping_identity,
+from tests.c105_support import (
+    PROVENANCE_KEYS,
+    _bundle,
+    _labels,
+    _Printer,
+    build_comparison_request,
 )
-
-HEADER = b"date,revenue,units,invoice_no,category,branch\n"
-START = date(2026, 3, 1)
-SCOPE = "org_a"
-PROVENANCE_KEYS = {
-    "subject_version_id",
-    "subject_basis_id",
-    "subject_manifest_id",
-    "baseline_version_id",
-    "baseline_basis_id",
-    "baseline_manifest_id",
-    "operand_order",
-}
-
-
-def _content(revenue: str) -> tuple[bytes, tuple[date, ...]]:
-    days = tuple(START + timedelta(days=offset) for offset in range(3))
-    rows = b"".join(
-        f"{day.isoformat()},{revenue},2,INV-{index},Drinks,Cairo\n".encode()
-        for index, day in enumerate(days, start=1)
-    )
-    return HEADER + rows, days
-
-
-def _package(revenue: str) -> FactPackage:
-    content, days = _content(revenue)
-    profile = build_profile(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        source_sha256_hex=hashlib.sha256(content).hexdigest(),
-    )
-    manifest = attesting_manifest(content=content, contract=TEST_CONTRACT, days=days)
-    with published_mapping_identity():
-        mapping = build_mapping(profile, contract=TEST_CONTRACT)
-        return build_fact_package(
-            AdmittedInput(
-                content=content,
-                media_type=CSV_MEDIA_TYPE,
-                profile=profile,
-                mapping=mapping,
-                decision=assess_admissibility(profile, mapping),
-                contract=TEST_CONTRACT,
-                manifest=manifest,
-            )
-        )
-
-
-def _period(version_id: str) -> DatasetPeriod:
-    return DatasetPeriod(
-        dataset_version_id=version_id,
-        start=START,
-        end=START + timedelta(days=2),
-        granularity=GRANULARITY_DAY,
-        retail_day_start_hour=0,
-        complete=True,
-    )
 
 
 @pytest.fixture(scope="module")
 def comparison_request() -> CrossVersionRequest:
-    return CrossVersionRequest(
-        subject=_package("120.00"),
-        baseline=_package("100.00"),
-        subject_organization_scope=SCOPE,
-        baseline_organization_scope=SCOPE,
-        subject_period=_period("dsv_subject"),
-        baseline_period=_period("dsv_baseline"),
-    )
-
-
-def _bundle(request: CrossVersionRequest) -> CrossVersionBundle:
-    result = build_crossversion_bundle(request)
-    assert isinstance(result, CrossVersionBundle)
-    return result
-
-
-def _labels(bundle: CrossVersionBundle, metric: str) -> set[str | None]:
-    return {figure.label for figure in bundle.figures if figure.metric == metric}
+    return build_comparison_request()
 
 
 def test_reversed_pair_changes_bundle_and_figure_identities(
@@ -227,105 +126,6 @@ def test_non_positive_baseline_omits_only_percentage(
     assert LABEL_PERCENTAGE_DIFFERENCE not in labels
 
 
-def _refusal(result: CrossVersionBundle | CrossVersionRefusal) -> CrossVersionRefusal:
-    assert isinstance(result, CrossVersionRefusal)
-    assert result.bundle is None
-    assert result.figures == ()
-    assert set(result.wording) == {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}
-    return result
-
-
-def _store_request(request: CrossVersionRequest, *, other: str) -> CrossVersionRequest:
-    def signatures(package: FactPackage, scope: str):
-        return tuple(replace(entry, scope=scope) for entry in package.coverage_signatures)
-
-    subject = replace(
-        request.subject,
-        daily_bases=(),
-        coverage_signatures=signatures(request.subject, "store_a"),
-    )
-    baseline = replace(
-        request.baseline,
-        daily_bases=(),
-        coverage_signatures=signatures(request.baseline, other),
-    )
-    return replace(request, subject=subject, baseline=baseline)
-
-
-def _compatibility_cases(request: CrossVersionRequest):
-    baseline = request.baseline
-    return (
-        (CAUSE_SCOPE, replace(request, baseline_organization_scope="org_b")),
-        (
-            CAUSE_MAPPING_DRIFT,
-            replace(request, baseline=replace(baseline, mapping_version="map.v0")),
-        ),
-        (
-            CAUSE_FORMULA_DRIFT,
-            replace(request, baseline=replace(baseline, formula_version="formula.v0")),
-        ),
-        (
-            CAUSE_PACKAGE_DRIFT,
-            replace(request, baseline=replace(baseline, package_version="package.v0")),
-        ),
-        (CAUSE_CURRENCY, replace(request, baseline=replace(baseline, currency="USD"))),
-        (CAUSE_STORE_SET, _store_request(request, other="store_b")),
-        (
-            CAUSE_FILTERS,
-            replace(
-                request,
-                baseline=replace(baseline, event_kind_filters=("return",)),
-            ),
-        ),
-    )
-
-
-def _period_cases(request: CrossVersionRequest):
-    baseline = request.baseline_period
-    return (
-        (
-            CAUSE_GRANULARITY,
-            replace(
-                request,
-                baseline_period=replace(baseline, granularity=GRANULARITY_MONTH),
-            ),
-        ),
-        (
-            CAUSE_RETAIL_DAY,
-            replace(
-                request,
-                baseline_period=replace(baseline, retail_day_start_hour=4),
-            ),
-        ),
-        (
-            CAUSE_INCOMPLETE,
-            replace(request, baseline_period=replace(baseline, complete=False)),
-        ),
-        (
-            CAUSE_UNORDERED_PAIR,
-            replace(
-                request,
-                baseline_period=replace(
-                    baseline,
-                    dataset_version_id=request.subject_period.dataset_version_id,
-                ),
-            ),
-        ),
-    )
-
-
-def test_every_refusal_cause_returns_wording_and_no_bundle(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    request = comparison_request
-    cases = (*_compatibility_cases(request), *_period_cases(request))
-    assert {cause for cause, _ in cases} == set(CROSSVERSION_REFUSALS)
-    for expected, changed in cases:
-        refused = _refusal(build_crossversion_bundle(changed))
-        assert refused.cause == expected
-        assert refused.wording == CROSSVERSION_REFUSALS[expected]
-
-
 def test_identity_discloses_composite_provenance(
     comparison_request: CrossVersionRequest,
 ) -> None:
@@ -383,28 +183,6 @@ def test_percentage_ratio_survives_the_governed_magnitude_extremes(
     assert ratio > Decimal("1e21")
 
 
-def test_pair_sharing_no_metric_refuses_rather_than_raising(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """Admission reads provenance, not columns; the empty comparison is a refusal.
-
-    Review of #408 (debate-review): two admitted packages gapped in each other's
-    columns passed every predicate, produced no facts, and the bundle's own rules
-    then raised -- neither a bundle nor governed wording. It is now a refusal under
-    `incomplete coverage`, with wording in both languages and no figure.
-    """
-    request = comparison_request
-    disjoint = replace(request, baseline=replace(request.baseline, facts=()))
-
-    result = build_crossversion_bundle(disjoint)
-
-    assert isinstance(result, CrossVersionRefusal)
-    assert result.cause == CAUSE_INCOMPLETE
-    assert set(result.wording) == {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}
-    assert result.figures == ()
-    assert result.bundle is None
-
-
 def test_workbook_writes_the_sibling_cells_to_their_own_sheet(
     comparison_request: CrossVersionRequest,
     tmp_path,
@@ -432,75 +210,6 @@ def test_workbook_writes_the_sibling_cells_to_their_own_sheet(
     assert "Revenue — Subject dataset" in texts
     assert "Revenue — Baseline dataset" in texts
     assert "Revenue — Difference" in texts
-
-
-def test_matched_metric_without_a_retained_basis_refuses(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """A basis the cited metric needs but the package does not retain is a refusal.
-
-    Review of #408: admission checked only that each package retained *some* basis,
-    so a package missing the one a matched metric cites raised from the basis
-    lookup after the pair was admitted. Admission now checks every shared metric on
-    both sides and refuses under `incomplete coverage`.
-    """
-    request = comparison_request
-    without_revenue_basis = tuple(
-        basis
-        for basis in request.baseline.retained_bases
-        if basis.name != "financial_revenue_basis"
-    )
-    assert len(without_revenue_basis) == len(request.baseline.retained_bases) - 1
-    thinned = replace(
-        request, baseline=replace(request.baseline, retained_bases=without_revenue_basis)
-    )
-
-    result = build_crossversion_bundle(thinned)
-
-    assert isinstance(result, CrossVersionRefusal)
-    assert result.cause == CAUSE_INCOMPLETE
-    assert result.bundle is None
-
-
-def test_basis_map_covers_every_governed_metric_and_nothing_else(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """The import-time guard, asserted against the emitted set and exercised.
-
-    Review of #408 (debate-review): without this a metric added to GOVERNED_METRICS
-    later would refuse every pair under `incomplete coverage` instead of failing
-    once at import. The guard is called with a broken table so the test proves it
-    can fail, not only that the shipped table passes it.
-    """
-    from khepri.rra.facts import GOVERNED_METRICS
-
-    table = assembly_module._BASIS_BY_METRIC
-    assert set(table) == GOVERNED_METRICS
-    assert {figure.metric for figure in _bundle(comparison_request).figures} <= set(table)
-
-    missing_one = {metric: basis for metric, basis in table.items() if metric != "revenue"}
-    with pytest.raises(ValueError, match="missing \\['revenue'\\]"):
-        assembly_module._assert_basis_map_complete(missing_one)
-    with pytest.raises(ValueError, match="unknown \\['invented'\\]"):
-        assembly_module._assert_basis_map_complete({**table, "invented": "some_basis"})
-
-
-def test_package_stating_a_metric_twice_fails_named_not_as_a_repeated_figure(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """A malformed population fails closed at the door, with its own name.
-
-    Review of #408 (debate-review): a hand-built subject package with a duplicated
-    metric produced two facts under one identity and surfaced as "section repeats
-    a figure". It is not a governed refusal -- RRA-008 §Frozen contracts puts an
-    input RRA-004 would not admit upstream of this family, and every frozen cause
-    would misdescribe it -- so it is an explicit invariant instead.
-    """
-    request = comparison_request
-    doubled = replace(request.subject, facts=(*request.subject.facts, request.subject.facts[0]))
-
-    with pytest.raises(ValueError, match="states a metric twice"):
-        build_crossversion_bundle(replace(request, subject=doubled))
 
 
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
@@ -621,17 +330,6 @@ def test_crossversion_wording_has_one_script_per_language() -> None:
     assert all(not re.search(r"[\u0600-\u06ff]", text) for text in english)
 
 
-class _Printer:
-    def print_to_pdf(self, page: PrintablePage) -> bytes:
-        del page
-        return (
-            b"%PDF-1.4\n1 0 obj<</Type/Catalog/MarkInfo<</Marked true>>"
-            b"/StructTreeRoot 9 0 R/Lang(ar)>>endobj\n"
-            b"2 0 obj<</Type/FontDescriptor/FontName/AAAAAA+NotoSansArabic-Regular"
-            b"/FontFile2 3 0 R>>endobj\n%%EOF\n"
-        )
-
-
 def test_all_surfaces_assemble_and_reconcile(
     comparison_request: CrossVersionRequest,
     tmp_path,
@@ -713,91 +411,6 @@ def test_same_pair_serializes_byte_identically(
     first = canonical_json(_bundle(comparison_request).as_document()).encode()
     second = canonical_json(_bundle(comparison_request).as_document()).encode()
     assert first == second
-
-
-# --- Review round 1 (#408): the invariants a directly constructed bundle must hold ----
-
-
-def test_citation_naming_a_different_pair_than_its_identity_refuses(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """Every identity citation is bound to the identity's own ordered pair."""
-    identity = _bundle(comparison_request).identity
-    first, *rest = identity.citations
-    swapped_pair = replace(
-        first.pair,
-        subject_version_id=first.pair.baseline_version_id,
-        baseline_version_id=first.pair.subject_version_id,
-    )
-
-    with pytest.raises(ValueError, match="different pair"):
-        replace(identity, citations=(replace(first, pair=swapped_pair), *rest))
-
-
-def test_identity_repeating_a_citation_refuses(comparison_request: CrossVersionRequest) -> None:
-    """Keyed by identifier downstream, a repeated citation would silently collapse."""
-    identity = _bundle(comparison_request).identity
-    first, *rest = identity.citations
-
-    with pytest.raises(ValueError, match="repeats a citation"):
-        replace(identity, citations=(first, first, *rest))
-
-
-def test_group_with_a_repeated_operand_refuses(comparison_request: CrossVersionRequest) -> None:
-    """Two subject cells are not one subject; a set of labels would not notice."""
-    bundle = _bundle(comparison_request)
-    subject = next(figure for figure in bundle.figures if figure.label == LABEL_SUBJECT)
-    duplicate = replace(subject, figure_id=f"{subject.figure_id}-again")
-    figures = (*bundle.figures, duplicate)
-    section = replace(bundle.sections[0], figure_ids=tuple(figure.figure_id for figure in figures))
-
-    with pytest.raises(ValueError, match="repeats"):
-        replace(bundle, figures=figures, sections=(section,))
-
-
-def test_group_without_an_absolute_difference_refuses(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """Subject and baseline alone are two numbers, not a comparison."""
-    bundle = _bundle(comparison_request)
-    kept = tuple(figure for figure in bundle.figures if figure.label != LABEL_DIFFERENCE)
-    section = replace(bundle.sections[0], figure_ids=tuple(figure.figure_id for figure in kept))
-
-    with pytest.raises(ValueError, match="difference"):
-        replace(bundle, figures=kept, sections=(section,))
-
-
-def test_duplicate_evidence_record_refuses(comparison_request: CrossVersionRequest) -> None:
-    bundle = _bundle(comparison_request)
-
-    with pytest.raises(ValueError, match="repeats"):
-        replace(bundle, evidence=(*bundle.evidence, bundle.evidence[0]))
-
-
-def test_evidence_with_a_different_metric_than_its_figure_refuses(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    bundle = _bundle(comparison_request)
-    first, *rest = bundle.evidence
-
-    with pytest.raises(ValueError, match="disagrees"):
-        replace(bundle, evidence=(replace(first, metric="another_metric"), *rest))
-
-
-def test_forged_provenance_under_a_real_citation_refuses(
-    comparison_request: CrossVersionRequest,
-) -> None:
-    """A real citation identifier does not launder a different pair."""
-    bundle = _bundle(comparison_request)
-    first, *rest = bundle.evidence
-    assert first.provenance is not None
-    forged = tuple(
-        (key, {"subject_version_id": "dsv_forged"}.get(key, value))
-        for key, value in first.provenance
-    )
-
-    with pytest.raises(ValueError, match="different pair"):
-        replace(bundle, evidence=(replace(first, provenance=forged), *rest))
 
 
 def test_percentage_cell_is_a_ratio_presented_as_a_percentage(
