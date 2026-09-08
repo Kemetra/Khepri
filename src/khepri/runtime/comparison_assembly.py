@@ -145,17 +145,27 @@ class CrossVersionAssembly:
     def _render(
         self, bundle: Any, subject_run_id: str, baseline_run_id: str
     ) -> ComparisonSurfaces | None:
+        # The workbook renderer writes a file to reach its bytes. `RRA-006` §Not stored:
+        # a two-population bundle is rendered on request and retained nowhere, so the
+        # file goes as soon as its bytes are in hand -- and just the same when the bundle
+        # comes back incomplete or a later renderer faults, since the assembler has
+        # already written it by then. The directory holds nothing between requests, and
+        # a process that ran for a year has kept no comparison on disk, admitted or not.
+        workbook = self._excel.path_for(bundle)
+        try:
+            return self._surfaces(bundle, subject_run_id, baseline_run_id)
+        finally:
+            workbook.unlink(missing_ok=True)
+
+    def _surfaces(
+        self, bundle: Any, subject_run_id: str, baseline_run_id: str
+    ) -> ComparisonSurfaces | None:
         result = BundleAssembler(renderers=(self._html, self._pdf, self._excel)).assemble(bundle)
         if result.incomplete or result.surfaces is None:
             return None
         html = self._html.render_html(bundle)
         pdf = self._pdf.render_pdf(bundle)
         excel = self._excel.render_materialized(bundle)
-        # The workbook renderer writes a file to reach its bytes. `RRA-006` §Not stored:
-        # a two-population bundle is rendered on request and retained nowhere, so the
-        # file goes as soon as its bytes are in hand; the directory holds nothing between
-        # requests, and a process that ran for a year has kept no comparison on disk.
-        self._excel.path_for(bundle).unlink(missing_ok=True)
         return ComparisonSurfaces(
             claims={content.surface: content for content in result.surfaces},
             html=html.documents,

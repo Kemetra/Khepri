@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
@@ -23,6 +24,7 @@ from khepri.rca.workspace.audit import (
 from khepri.rca.workspace.comparisons import ComparisonActor, ComparisonRequest
 from khepri.rra.analysis.dataset_period import CAUSE_UNORDERED_PAIR
 from khepri.rra.bundle import REQUIRED_SURFACES, reconcile
+from khepri.rra.rendering.excel import ExcelSurfaceRenderer, WorkbookUnavailable
 from khepri.runtime.shell_copy import SHELL_COPY
 from tests.c106_support import (
     compare_address,
@@ -102,6 +104,30 @@ def test_cross_organization_pair_matches_a_nonexistent_id(tmp_path) -> None:
     assert cross.unavailable
     assert cross.surfaces is None
     assert cross.bundle is None
+
+
+def test_a_failed_render_leaves_no_workbook_on_disk(tmp_path) -> None:
+    """`RRA-006` §Not stored holds for a request that fails, not only one that succeeds.
+
+    The assembler writes the workbook before the page renderers run, so a fault after
+    that point -- here the workbook bytes cannot be read back -- would leave a finished
+    comparison on disk if cleanup lived only on the success path.
+    """
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    actions = comparison_actions(j, tmp_path)
+    fault = WorkbookUnavailable("The Excel surface could not be read.")
+
+    with (
+        patch.object(ExcelSurfaceRenderer, "render_materialized", side_effect=fault),
+        pytest.raises(WorkbookUnavailable),
+    ):
+        actions.request(
+            _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
+        )
+
+    assert not any(tmp_path.iterdir())
 
 
 class _CountingAssembly:
@@ -331,6 +357,10 @@ def test_the_arabic_page_is_rtl(tmp_path) -> None:
     assert 'dir="rtl"' in page.text
     assert AR["compare_subject"] in page.text
     assert AR["compare_baseline"] in page.text
+    # The surface travels escaped inside `srcdoc`, so its own `lang` attribute is the
+    # evidence that the Arabic rendering, not the English one, was embedded.
+    assert "lang=&#34;ar&#34;" in page.text
+    assert "lang=&#34;en&#34;" not in page.text
 
 
 def test_http_cross_organization_matches_nonexistent_byte_for_byte(tmp_path) -> None:
@@ -364,6 +394,7 @@ def test_post_form_renders_the_same_admitted_pair(tmp_path) -> None:
     assert posted.status_code == 200
     assert EN["compare_subject"] in posted.text
     assert f"/analyses/{pair.subject_run.run_id}" in posted.text
+    assert f"/analyses/{pair.baseline_run.run_id}" in posted.text
 
 
 def test_a_version_with_no_completed_run_is_uniformly_unavailable(tmp_path) -> None:
