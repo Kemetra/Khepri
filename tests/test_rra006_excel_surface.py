@@ -41,8 +41,8 @@ from khepri.rra.rendering.excel import (
     GOVERNED_LABELS,
     ExcelSurfaceRenderer,
     WorkbookUnavailable,
-    _business_name,
 )
+from khepri.rra.rendering.excel_rows import business_name as _business_name
 from khepri.rra.rendering.wording import caveat_prose
 from tests import rra_workbooks
 from tests.rra003_contract_fixtures import (
