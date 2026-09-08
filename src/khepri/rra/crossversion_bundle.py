@@ -63,7 +63,16 @@ CAVEAT_CROSSVERSION_ADMITTED_PAIR = "crossversion_admitted_pair"
 
 @dataclass(frozen=True, slots=True)
 class CrossVersionRequest:
-    """The caller-stated ordered pair and the two asserted organization scopes."""
+    """The caller-stated ordered pair and the two asserted organization scopes.
+
+    `subject_aggregate_scope` and `baseline_aggregate_scope` are the governed aggregate
+    scope labels each package's coverage manifest declares, or `None` for a per-store
+    manifest. A package does not carry its manifest, so only the caller -- which holds
+    the retained manifest (`KHEPRI-DEC-033` §2) -- can say which shape a package has;
+    with them stated, `D-5`'s "same governed aggregate scope" is compared as such, and
+    a mismatch is reported as a scope mismatch rather than as a store-set difference.
+    Left `None`, the attested scope set is compared directly (review of `#408`).
+    """
 
     subject: FactPackage
     baseline: FactPackage
@@ -71,6 +80,8 @@ class CrossVersionRequest:
     baseline_organization_scope: str
     subject_period: DatasetPeriod
     baseline_period: DatasetPeriod
+    subject_aggregate_scope: str | None = None
+    baseline_aggregate_scope: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

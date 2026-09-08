@@ -186,8 +186,12 @@ def _admission_cause(request: CrossVersionRequest) -> str | None:
     if request.subject_organization_scope != request.baseline_organization_scope:
         return CAUSE_SCOPE
     cause = packages_compatible(
-        _candidate(request.subject, request.subject_organization_scope),
-        _candidate(request.baseline, request.baseline_organization_scope),
+        _candidate(
+            request.subject, request.subject_organization_scope, request.subject_aggregate_scope
+        ),
+        _candidate(
+            request.baseline, request.baseline_organization_scope, request.baseline_aggregate_scope
+        ),
     )
     if cause is not None:
         return cause
@@ -200,8 +204,12 @@ def _admission_cause(request: CrossVersionRequest) -> str | None:
     return periods_comparable(pair)
 
 
-def _candidate(package: FactPackage, organization_scope: str) -> ComparisonCandidate:
-    aggregate_scope, stores = _population_scope(package)
+def _candidate(
+    package: FactPackage,
+    organization_scope: str,
+    aggregate_scope: str | None,
+) -> ComparisonCandidate:
+    aggregate_scope, stores = _population_scope(package, aggregate_scope)
     return ComparisonCandidate(
         organization_scope=organization_scope,
         mapping_version=package.mapping_version,
@@ -215,18 +223,24 @@ def _candidate(package: FactPackage, organization_scope: str) -> ComparisonCandi
     )
 
 
-def _population_scope(package: FactPackage) -> tuple[str, tuple[str, ...]]:
-    """The attested scopes, compared as a set whatever the manifest's shape.
+def _population_scope(
+    package: FactPackage,
+    aggregate_scope: str | None,
+) -> tuple[str, tuple[str, ...]]:
+    """`D-5`'s two shapes: a governed aggregate scope, or the attested store set.
 
-    `D-5` admits the same governed aggregate scope *or* the identical complete
-    admitted store set. A package does not carry its manifest, so nothing here can
-    tell an aggregate label from a single store identifier -- and an earlier
-    version inferred the shape from `daily_bases`, which `facts` also empties for a
-    repeated row signature, so two datasets of one organization refused as a scope
-    mismatch (review of `#408`). Comparing the attested scope sets directly is
-    `D-5`'s rule in both cases: an aggregate label is a one-element set, and two
-    labels that differ are two populations, exactly as two store sets that differ.
+    The shape comes from the caller, who holds the manifest; a package does not
+    carry it, so nothing here can tell an aggregate label from a single store
+    identifier. An earlier version inferred the shape from `daily_bases`, which
+    `facts` also empties for a repeated row signature, so two datasets of one
+    organization refused as a scope mismatch (review of `#408`). When the caller
+    states no aggregate scope, the attested scope set is compared directly -- still
+    `D-5`'s rule, since two labels that differ are two populations exactly as two
+    store sets that differ -- at the cost of a mismatch being reported as a
+    store-set difference rather than a scope one.
     """
+    if aggregate_scope is not None:
+        return (aggregate_scope, ())
     return ("", tuple(sorted({entry.scope for entry in package.coverage_signatures})))
 
 

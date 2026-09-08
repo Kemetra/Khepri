@@ -12,6 +12,7 @@ import pytest
 
 from khepri.rra import crossversion_assembly as assembly_module
 from khepri.rra.analysis.comparison_narrative import CROSSVERSION_REFUSALS
+from khepri.rra.analysis.compatibility import CAUSE_SCOPE
 from khepri.rra.analysis.dataset_period import (
     CAUSE_INCOMPLETE,
 )
@@ -66,6 +67,33 @@ def test_scope_projection_does_not_read_retained_evidence(
     result = build_crossversion_bundle(stripped)
 
     assert isinstance(result, CrossVersionBundle)
+
+
+def test_stated_aggregate_scopes_are_compared_as_scopes(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """With the manifest's shape stated, `D-5`'s aggregate rule reports as a scope rule.
+
+    Review of #408 (debate-review): comparing attested sets alone left the aggregate
+    predicate in C1-02 unreachable and reported a label mismatch as a store-set
+    difference. The caller holds the manifest, so the request may state each side's
+    aggregate label; equal labels admit, different ones refuse as a scope mismatch.
+    """
+    request = comparison_request
+    same = replace(
+        request, subject_aggregate_scope="all-stores", baseline_aggregate_scope="all-stores"
+    )
+    assert isinstance(build_crossversion_bundle(same), CrossVersionBundle)
+
+    different = replace(
+        request, subject_aggregate_scope="all-stores", baseline_aggregate_scope="region-a"
+    )
+    refused = build_crossversion_bundle(different)
+    assert isinstance(refused, CrossVersionRefusal)
+    assert refused.cause == CAUSE_SCOPE
+
+    mixed = replace(request, subject_aggregate_scope="all-stores", baseline_aggregate_scope=None)
+    assert isinstance(build_crossversion_bundle(mixed), CrossVersionRefusal)
 
 
 def test_pair_sharing_no_metric_refuses_rather_than_raising(
