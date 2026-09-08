@@ -7,6 +7,7 @@ stub store would answer any key and hide the uniform refusal `FR-130` requires.
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 from unittest.mock import patch
 
 from sqlalchemy import inspect as sa_inspect
@@ -101,6 +102,48 @@ def test_cross_organization_pair_matches_a_nonexistent_id(tmp_path) -> None:
     assert cross.unavailable
     assert cross.surfaces is None
     assert cross.bundle is None
+
+
+class _CountingAssembly:
+    """The real assembly port behind a call counter."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.calls = 0
+
+    def unordered_refusal(self) -> Any:
+        return self._inner.unordered_refusal()
+
+    def assemble_pair(self, owner_id: str, pair: Any, *, now: Any) -> Any:
+        self.calls += 1
+        return self._inner.assemble_pair(owner_id, pair, now=now)
+
+
+def test_a_foreign_baseline_never_reaches_the_package_loader(tmp_path) -> None:
+    """Both versions are read under the caller's scope before any package is loaded.
+
+    Mutation testing found that checking only the subject for absence survived every
+    test: a foreign baseline still ended unavailable, because the assembly failed to
+    find its run. Same outcome, wrong mechanism -- the isolation door is the version
+    store read, and an out-of-scope baseline must never reach the package loader.
+    """
+    from khepri.rca.workspace.comparisons import ComparisonActions
+
+    j = journey()
+    owner = member(j.w)
+    stranger = member(j.w, email="other@example.test", name="Other")
+    pair = completed_pair(j, owner)
+    foreign = completed_pair(j, stranger)
+    real = comparison_actions(j, tmp_path)
+    spy = _CountingAssembly(real._assembly)
+    actions = ComparisonActions(real._isolation, real._stores, spy)
+
+    outcome = actions.request(
+        _request(owner, pair.subject.version_id, foreign.baseline.version_id), now=j.clock()
+    )
+
+    assert outcome.unavailable
+    assert spy.calls == 0
 
 
 def test_three_ids_and_self_pair_refuse_before_any_store_read(tmp_path) -> None:
