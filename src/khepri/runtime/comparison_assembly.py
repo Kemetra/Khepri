@@ -9,8 +9,11 @@ surfaces in-request. `R7-01` §3 forbids `khepri.rca` from importing
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import shutil
+import tempfile
+from dataclasses import dataclass, replace
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from khepri.rca.workspace.comparisons import (
@@ -145,32 +148,39 @@ class CrossVersionAssembly:
     def _render(
         self, bundle: Any, subject_run_id: str, baseline_run_id: str
     ) -> ComparisonSurfaces | None:
-        # The workbook renderer writes a file to reach its bytes. `RRA-006` §Not stored:
-        # a two-population bundle is rendered on request and retained nowhere, so the
-        # file goes as soon as its bytes are in hand -- and just the same when the bundle
-        # comes back incomplete or a later renderer faults, since the assembler has
-        # already written it by then. The directory holds nothing between requests, and
-        # a process that ran for a year has kept no comparison on disk, admitted or not.
-        workbook = self._excel.path_for(bundle)
+        # The workbook renderer writes a file to reach its bytes, named by `bundle_id`
+        # alone -- so two requests for one pair would share a path, and one request's
+        # cleanup or replace would fail the other's read. Each request therefore renders
+        # into a directory of its own. `RRA-006` §Not stored: a two-population bundle is
+        # rendered on request and retained nowhere, so that directory goes as soon as the
+        # bytes are in hand -- and just the same when the bundle comes back incomplete or
+        # a later renderer faults, since the assembler has already written the file by
+        # then. A process that ran for a year has kept no comparison on disk.
+        scratch = Path(tempfile.mkdtemp(dir=self._excel.directory))
+        excel = replace(self._excel, directory=scratch)
         try:
-            return self._surfaces(bundle, subject_run_id, baseline_run_id)
+            return self._surfaces(bundle, excel, subject_run_id, baseline_run_id)
         finally:
-            workbook.unlink(missing_ok=True)
+            shutil.rmtree(scratch, ignore_errors=True)
 
     def _surfaces(
-        self, bundle: Any, subject_run_id: str, baseline_run_id: str
+        self,
+        bundle: Any,
+        excel: ExcelSurfaceRenderer,
+        subject_run_id: str,
+        baseline_run_id: str,
     ) -> ComparisonSurfaces | None:
-        result = BundleAssembler(renderers=(self._html, self._pdf, self._excel)).assemble(bundle)
+        result = BundleAssembler(renderers=(self._html, self._pdf, excel)).assemble(bundle)
         if result.incomplete or result.surfaces is None:
             return None
         html = self._html.render_html(bundle)
         pdf = self._pdf.render_pdf(bundle)
-        excel = self._excel.render_materialized(bundle)
+        excel_surface = excel.render_materialized(bundle)
         return ComparisonSurfaces(
             claims={content.surface: content for content in result.surfaces},
             html=html.documents,
             pdf=pdf.documents,
-            excel=excel.artifacts[0].content,
+            excel=excel_surface.artifacts[0].content,
             subject_run_id=subject_run_id,
             baseline_run_id=baseline_run_id,
         )

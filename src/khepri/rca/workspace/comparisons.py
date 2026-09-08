@@ -11,7 +11,7 @@ is written (`FR-133`).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Protocol
 
@@ -25,6 +25,7 @@ from khepri.rca.workspace.audit import (
     WorkspaceAuditEvent,
 )
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
+from khepri.rca.workspace.contracts import DatasetVersion
 from khepri.rca.workspace.store import SqlWorkspaceRecordStore
 from khepri.rca.workspace.unit_of_work import unit_of_work
 
@@ -100,6 +101,19 @@ class ComparisonSurfaces:
 
 
 @dataclass(frozen=True, slots=True)
+class ComparisonOperands:
+    """The two versions as read under the caller's scope (`FR-132` names both).
+
+    Present once both store reads succeeded, so a refusal that follows them can
+    still say which pair it refused; absent when the shape was refused before
+    any read, or when either read missed.
+    """
+
+    subject: DatasetVersion
+    baseline: DatasetVersion
+
+
+@dataclass(frozen=True, slots=True)
 class ComparisonOutcome:
     """Admitted surfaces, an `RRA-008` refusal, or the uniform isolation miss."""
 
@@ -107,6 +121,7 @@ class ComparisonOutcome:
     refusal: ComparisonRefusal | None = None
     surfaces: ComparisonSurfaces | None = None
     bundle: object | None = None
+    operands: ComparisonOperands | None = None
 
     @property
     def admitted(self) -> bool:
@@ -213,7 +228,7 @@ class ComparisonActions:
             self._audit(actor, outcome, now)
             return outcome
         assembled = self._assembly.assemble_pair(actor.owner_id, pair, now=now)
-        outcome = _unavailable() if assembled is None else assembled
+        outcome = _unavailable() if assembled is None else _naming(assembled, subject, baseline)
         self._audit(actor, outcome, now)
         return outcome
 
@@ -221,6 +236,12 @@ class ComparisonActions:
         event = _audit_event(actor, outcome, now)
         with unit_of_work(self._stores.factory):
             self._stores.audit.record(event)
+
+
+def _naming(
+    outcome: ComparisonOutcome, subject: DatasetVersion, baseline: DatasetVersion
+) -> ComparisonOutcome:
+    return replace(outcome, operands=ComparisonOperands(subject=subject, baseline=baseline))
 
 
 def _audit_event(

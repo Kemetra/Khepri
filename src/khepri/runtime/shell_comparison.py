@@ -26,6 +26,7 @@ from khepri.rca.workspace.comparisons import (
 )
 from khepri.rra.report_artifacts import PDF_MEDIA_TYPE, XLSX_MEDIA_TYPE
 from khepri.runtime.shell_invitations import ShellRendering, _form
+from khepri.runtime.shell_workspace import Moment, moment
 
 __all__ = ["add_comparison_routes", "offers_comparisons"]
 
@@ -35,9 +36,20 @@ def offers_comparisons(services: Any) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
+class _OperandView:
+    """One source version, named as the Data surface and the Passport name it (`FR-119`):
+    the submission instant linking to its Data entry, with the identifier in the anchor
+    rather than leading. The Passport link needs a run, which a refusal never bound."""
+
+    version_id: str
+    submitted: Moment
+    run_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class _CompareView:
-    subject_run_id: str
-    baseline_run_id: str
+    subject: _OperandView | None
+    baseline: _OperandView | None
     html: str
     pdf_href: str
     excel_href: str
@@ -187,17 +199,36 @@ def _page(page: _PageCall) -> Response:
 
 
 def _view(outcome: ComparisonOutcome, language: str) -> _CompareView:
-    if outcome.refused and outcome.refusal is not None:
-        return _CompareView("", "", "", "", "", outcome.refusal.wording[language])
     surfaces = outcome.surfaces
+    subject = _operand_view(outcome, "subject", surfaces)
+    baseline = _operand_view(outcome, "baseline", surfaces)
+    if outcome.refused and outcome.refusal is not None:
+        return _CompareView(subject, baseline, "", "", "", outcome.refusal.wording[language])
     assert surfaces is not None
-    return _filled_view(surfaces, language)
+    return _filled_view(subject, baseline, surfaces, language)
 
 
-def _filled_view(surfaces: ComparisonSurfaces, language: str) -> _CompareView:
+def _operand_view(
+    outcome: ComparisonOutcome, side: str, surfaces: ComparisonSurfaces | None
+) -> _OperandView | None:
+    if outcome.operands is None:
+        return None
+    version = getattr(outcome.operands, side)
+    run_id = None if surfaces is None else getattr(surfaces, f"{side}_run_id")
+    return _OperandView(
+        version_id=version.version_id, submitted=moment(version.created_at), run_id=run_id
+    )
+
+
+def _filled_view(
+    subject: _OperandView | None,
+    baseline: _OperandView | None,
+    surfaces: ComparisonSurfaces,
+    language: str,
+) -> _CompareView:
     return _CompareView(
-        subject_run_id=surfaces.subject_run_id,
-        baseline_run_id=surfaces.baseline_run_id,
+        subject=subject,
+        baseline=baseline,
         html=surfaces.html[language],
         pdf_href=_data_href(PDF_MEDIA_TYPE, surfaces.pdf[language]),
         excel_href=_data_href(XLSX_MEDIA_TYPE, surfaces.excel),

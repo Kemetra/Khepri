@@ -7,6 +7,7 @@ stub store would answer any key and hide the uniform refusal `FR-130` requires.
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -26,6 +27,7 @@ from khepri.rra.analysis.dataset_period import CAUSE_UNORDERED_PAIR
 from khepri.rra.bundle import REQUIRED_SURFACES, reconcile
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer, WorkbookUnavailable
 from khepri.runtime.shell_copy import SHELL_COPY
+from khepri.runtime.shell_workspace import moment
 from tests.c106_support import (
     compare_address,
     compare_form_address,
@@ -127,6 +129,32 @@ def test_a_failed_render_leaves_no_workbook_on_disk(tmp_path) -> None:
             _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
         )
 
+    assert not any(tmp_path.iterdir())
+
+
+def test_two_requests_for_one_pair_never_share_a_workbook_path(tmp_path) -> None:
+    """The workbook is named by `bundle_id`, so one pair is one name; two requests for
+    that pair in one process would race on it -- one request's cleanup or replace failing
+    the other's read. Each request renders into a directory of its own instead."""
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    actions = comparison_actions(j, tmp_path)
+    request = _request(who, pair.subject.version_id, pair.baseline.version_id)
+    seen: list[Path] = []
+    original = ExcelSurfaceRenderer.render
+
+    def recording(self: ExcelSurfaceRenderer, bundle: Any) -> Any:
+        seen.append(self.path_for(bundle))
+        return original(self, bundle)
+
+    with patch.object(ExcelSurfaceRenderer, "render", recording):
+        first = actions.request(request, now=j.clock())
+        second = actions.request(request, now=j.clock())
+
+    assert first.admitted and second.admitted
+    assert seen, "the workbook was never written"
+    assert len({path.parent for path in seen}) == 2
     assert not any(tmp_path.iterdir())
 
 
@@ -339,6 +367,11 @@ def test_the_result_page_names_both_versions_and_links_both_passports(tmp_path) 
     body = page.text
     assert EN["compare_subject"] in body
     assert EN["compare_baseline"] in body
+    # `FR-132` names both versions the way the Passport names its data (`FR-119`): the
+    # submission instant, linking to the Data entry, with the identifier in the anchor.
+    for version in (pair.subject, pair.baseline):
+        assert f"/data#data-{version.version_id}" in body
+        assert moment(version.created_at).text in body
     assert f"/analyses/{pair.subject_run.run_id}" in body
     assert f"/analyses/{pair.baseline_run.run_id}" in body
     assert EN["compare_passport"] in body
