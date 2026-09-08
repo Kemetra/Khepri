@@ -59,6 +59,7 @@ from khepri.runtime.shell_analysis import (
 )
 from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_change_notice import methodology_change, previous_completed
+from khepri.runtime.shell_comparison import add_comparison_routes
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_deletion import add_deletion_route
 from khepri.runtime.shell_frame import (
@@ -261,6 +262,10 @@ class ShellServices:
     #: a deployment without it declares no pin routes, so the address is unknown rather than
     #: refused differently (`FR-046`). See `shell_pins.offers_pins`.
     pins: Any | None = None
+    #: `C1-06`. The comparison action (`RCA-005` `FR-130`--`FR-133`). Optional like the rest --
+    #: a deployment without it declares no comparison routes, so the address is unknown rather
+    #: than refused differently (`FR-046`).
+    comparisons: Any | None = None
 
 
 def _offers_workspace(services: ShellServices) -> bool:
@@ -793,6 +798,7 @@ _ROUTE_DECLARATIONS = (
     add_artifact_handoff_route,
     add_deletion_route,
     add_pin_routes,
+    add_comparison_routes,
 )
 
 

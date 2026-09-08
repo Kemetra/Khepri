@@ -1,0 +1,36 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.compare_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  RCA-005 FR-132: a completed comparison is reachable from Analyses, naming both
+  source dataset versions, each linking to the Analysis Passport FR-119 already
+  requires. Derived at read time; nothing here is a stored artifact.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.compare_title }}</h1>
+  <p class="lede">{{ copy.compare_intro }}</p>
+  {% if view.refusal %}
+  <p class="compare-refusal">{{ view.refusal }}</p>
+  {% else %}
+  <ul class="compare-operands">
+    <li>
+      <span class="row-label">{{ copy.compare_subject }}</span>
+      <a class="compare-passport"
+         href="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/{{ view.subject_run_id }}">{{ copy.compare_passport }}</a>
+    </li>
+    <li>
+      <span class="row-label">{{ copy.compare_baseline }}</span>
+      <a class="compare-passport"
+         href="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/{{ view.baseline_run_id }}">{{ copy.compare_passport }}</a>
+    </li>
+  </ul>
+  <p class="compare-downloads">
+    <a class="compare-pdf" href="{{ view.pdf_href }}" download="khepri-comparison.pdf">{{ copy.artifact_pdf }}</a>
+    <a class="compare-excel" href="{{ view.excel_href }}" download="khepri-comparison.xlsx">{{ copy.artifact_excel }}</a>
+  </p>
+  <iframe class="compare-report"
+          title="{{ copy.compare_report }}"
+          srcdoc="{{ view.html }}"></iframe>
+  {% endif %}
+</section>
+{% endblock %}

@@ -178,6 +178,13 @@ _EN = {
         "Figures from this analysis and the previous one are not numerically comparable."
     ),
     "notice_previous": "Open the previous analysis",
+    # C1-06. A comparison is derived at read time (`RCA-005` FR-132).
+    "compare_title": "Comparison",
+    "compare_intro": "This comparison is derived from two analyses and is not stored.",
+    "compare_subject": "Subject",
+    "compare_baseline": "Baseline",
+    "compare_passport": "Open analysis passport",
+    "compare_report": "Comparison report",
 }
 
 _AR = {
@@ -310,6 +317,12 @@ _AR = {
     "notice_availability": "تغيّر التوافر",
     "notice_not_comparable": "أرقام هذا التحليل والتحليل السابق غير قابلة للمقارنة عدديًا.",
     "notice_previous": "افتح التحليل السابق",
+    "compare_title": "مقارنة",
+    "compare_intro": "تُشتق هذه المقارنة من تحليلين ولا تُحفظ.",
+    "compare_subject": "الموضوع",
+    "compare_baseline": "الأساس",
+    "compare_passport": "افتح بطاقة التحليل",
+    "compare_report": "تقرير المقارنة",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

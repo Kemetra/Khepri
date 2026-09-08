@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,7 @@ from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
 from khepri.rca.workspace.audit_retention import WorkspaceAuditSweeper
+from khepri.rca.workspace.comparisons import ComparisonActions, ComparisonStores
 from khepri.rca.workspace.persistence import (
     SqlRunProvenanceStore,
     SqlRunReportStore,
@@ -66,7 +68,7 @@ from khepri.rra.persistence import (
 from khepri.rra.pipeline import ReportPipeline, ReportPipelinePorts
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
-from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer
+from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer, PrintablePage
 from khepri.rra.report_artifacts import MaterializedRenderer
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import (
@@ -81,6 +83,7 @@ from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.bridge import CommercialBridge
 from khepri.runtime.clerk_identity import ClerkIdentityProvider
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
+from khepri.runtime.comparison_assembly import ComparisonAssemblyPorts, CrossVersionAssembly
 from khepri.runtime.config import RuntimeSettings
 from khepri.runtime.external_auth_api import (
     KHEPRI_SESSION_LIFETIME,
@@ -322,6 +325,43 @@ def _record_stores(stack: RuntimeStack) -> RecordStores:
         audit=SqlWorkspaceAuditStore(stack.factory),
         factory=stack.factory,
         provenance=SqlRunProvenanceStore(stack.factory),
+    )
+
+
+class _OnDemandPrinter:
+    """A `PagePrinter` that launches Chromium for one comparison request."""
+
+    def print_to_pdf(self, page: PrintablePage) -> bytes:
+        from khepri.rra.rendering.chromium import launch_chromium
+
+        with launch_chromium() as printer:
+            return printer.print_to_pdf(page)
+
+
+def build_comparison_actions(stack: RuntimeStack) -> ComparisonActions:
+    """The comparison door (`C1-06`): a pair, resolved through `IsolationService`."""
+    factory = stack.factory
+    workbooks = Path(tempfile.mkdtemp(prefix="khepri-compare-"))
+    return ComparisonActions(
+        isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
+        stores=ComparisonStores(
+            workspace=SqlWorkspaceRecordStore(factory),
+            audit=SqlWorkspaceAuditStore(factory),
+            factory=factory,
+        ),
+        assembly=CrossVersionAssembly(
+            ports=ComparisonAssemblyPorts(
+                packages=stack.services.packages,
+                profiling=stack.services.profiling,
+                jobs=SqlJobSessions(factory),
+                reports=SqlRunReportStore(factory),
+                provenance=SqlRunProvenanceStore(factory),
+                workspace=SqlWorkspaceRecordStore(factory),
+            ),
+            html=HtmlReportRenderer(),
+            pdf=PdfReportRenderer(printer=_OnDemandPrinter()),
+            excel=ExcelSurfaceRenderer(directory=workbooks),
+        ),
     )
 
 
@@ -619,6 +659,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         # same tables the Overview and Data surfaces read, and the cascade that ends a pin lives
         # inside `set_retention_state` on this very class. A second `SqlWorkspaceRecordStore` over
         # the same factory would work and would be a second object holding one definition.
+        comparisons=build_comparison_actions(stack),
     )
 
 
