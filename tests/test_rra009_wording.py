@@ -26,7 +26,10 @@ from khepri.rra.bundle import (
     CAVEAT_CURVE_SAMPLED,
     GOVERNED_SECTION_REASONS,
 )
-from khepri.rra.crossversion_bundle import CROSSVERSION_ADMITTED_CAVEAT, CROSSVERSION_FIGURE_LABELS
+from khepri.rra.crossversion_bundle import (
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
+    CROSSVERSION_FIGURE_LABELS,
+)
 from khepri.rra.facts import (
     CAVEAT_BUCKETS_TRUNCATED,
     CAVEAT_CURRENCY_NOT_DECLARED,
@@ -107,7 +110,7 @@ _GOVERNED_CAVEAT_CODES = frozenset(
         CAVEAT_PARTIAL_WINDOW,
         CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
         CAVEAT_ROUNDING_RESIDUAL,
-        CROSSVERSION_ADMITTED_CAVEAT,
+        CAVEAT_CROSSVERSION_ADMITTED_PAIR,
     }
 )
 
@@ -241,7 +244,7 @@ _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
     ),
     # Pinned as a literal rather than read from `CROSSVERSION_CAVEATS`: an oracle that
     # reads the production string passes whatever that string becomes.
-    CROSSVERSION_ADMITTED_CAVEAT: (
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR: (
         "تقارن هذه النتيجة مجموعتي بيانات أدخلتهما بشكل منفصل، لا فترتين داخل "
         "مجموعة واحدة. قد يعني الفرق هنا أن التداول تغيّر أو أن المجموعة الثانية "
         "استُخرجت بطريقة مختلفة."
@@ -620,7 +623,7 @@ def test_every_caveat_constant_defined_in_production_is_a_governed_caveat() -> N
         *(_constants_named(name, "CAVEAT_") for name in modules)
     )
     assert defined, "no CAVEAT_* constants found; the scan is looking in the wrong place"
-    assert defined | {CROSSVERSION_ADMITTED_CAVEAT} == frozenset(
+    assert defined == frozenset(
         wording._GOVERNED_CAVEAT_CODES
     ), sorted(defined.symmetric_difference(wording._GOVERNED_CAVEAT_CODES))
 

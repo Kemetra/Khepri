@@ -22,7 +22,7 @@ from khepri.rra.bundle import (
     StatedCaveat,
 )
 from khepri.rra.crossversion_bundle import (
-    CROSSVERSION_ADMITTED_CAVEAT,
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
     CROSSVERSION_BUNDLE_VERSION,
     CROSSVERSION_FIGURE_LABELS,
     LABEL_BASELINE,
@@ -283,7 +283,7 @@ def require_known_label(figure: CitedFigure) -> None:
 
 
 def require_admitted_caveat(caveats: tuple[StatedCaveat, ...]) -> None:
-    expected = (StatedCaveat(CROSSVERSION_ADMITTED_CAVEAT, SECTION_CROSSVERSION),)
+    expected = (StatedCaveat(CAVEAT_CROSSVERSION_ADMITTED_PAIR, SECTION_CROSSVERSION),)
     if caveats == expected:
         return
     raise ValueError("cross-version bundle must state its admitted-pair caveat")

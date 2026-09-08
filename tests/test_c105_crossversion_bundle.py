@@ -29,7 +29,7 @@ from khepri.rra.bundle import (
     reconcile,
 )
 from khepri.rra.crossversion_bundle import (
-    CROSSVERSION_ADMITTED_CAVEAT,
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
     CROSSVERSION_FIGURE_LABELS,
     LABEL_BASELINE,
     LABEL_DIFFERENCE,
@@ -317,13 +317,13 @@ def test_crossversion_wording_has_one_script_per_language() -> None:
         *(wording.LABEL_WORDING[LANGUAGE_ARABIC][key] for key in label_keys),
         wording.SECTION_HEADINGS[LANGUAGE_ARABIC][SECTION_CROSSVERSION],
         wording.COMPONENT_CHROME[LANGUAGE_ARABIC]["sources_compared"],
-        wording.CAVEAT_WORDING[LANGUAGE_ARABIC][CROSSVERSION_ADMITTED_CAVEAT],
+        wording.CAVEAT_WORDING[LANGUAGE_ARABIC][CAVEAT_CROSSVERSION_ADMITTED_PAIR],
     )
     english = (
         *(wording.LABEL_WORDING[LANGUAGE_ENGLISH][key] for key in label_keys),
         wording.SECTION_HEADINGS[LANGUAGE_ENGLISH][SECTION_CROSSVERSION],
         wording.COMPONENT_CHROME[LANGUAGE_ENGLISH]["sources_compared"],
-        wording.CAVEAT_WORDING[LANGUAGE_ENGLISH][CROSSVERSION_ADMITTED_CAVEAT],
+        wording.CAVEAT_WORDING[LANGUAGE_ENGLISH][CAVEAT_CROSSVERSION_ADMITTED_PAIR],
     )
 
     assert all(not re.search(r"[a-zA-Z0-9]", text) for text in arabic)
@@ -367,7 +367,9 @@ def test_every_surface_states_the_admitted_pair_caveat(
     assert result.surfaces is not None
     for surface in result.surfaces:
         for language in surface.languages:
-            assert {caveat.code for caveat in language.caveats} == {CROSSVERSION_ADMITTED_CAVEAT}
+            assert {caveat.code for caveat in language.caveats} == {
+                CAVEAT_CROSSVERSION_ADMITTED_PAIR
+            }
 
 
 def test_html_evidence_renders_each_composite_provenance_field(

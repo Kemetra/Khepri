@@ -45,7 +45,7 @@ from khepri.rra.bundle import (
     CitedFigure,
 )
 from khepri.rra.crossversion_bundle import (
-    CROSSVERSION_ADMITTED_CAVEAT,
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
     CROSSVERSION_FIGURE_LABELS,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
@@ -211,7 +211,7 @@ _GOVERNED_CAVEAT_CODES = {
     comparison.CAVEAT_PARTIAL_WINDOW,
     growth.CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
     growth.CAVEAT_ROUNDING_RESIDUAL,
-    CROSSVERSION_ADMITTED_CAVEAT,
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
 }
 
 
@@ -896,7 +896,7 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "from the price effect calculated on its own. No figure is "
             "missing and nothing was adjusted."
         ),
-        CROSSVERSION_ADMITTED_CAVEAT: CROSSVERSION_CAVEATS[LANGUAGE_ENGLISH],
+        CAVEAT_CROSSVERSION_ADMITTED_PAIR: CROSSVERSION_CAVEATS[LANGUAGE_ENGLISH],
     },
     LANGUAGE_ARABIC: {
         "currency_not_declared": (
@@ -961,7 +961,7 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "بمقدار وحدة واحدة من آخر خانة عشرية معروضة عن أثر السعر "
             "محسوباً بمفرده. لم يسقط أي رقم ولم يُعدَّل شيء."
         ),
-        CROSSVERSION_ADMITTED_CAVEAT: CROSSVERSION_CAVEATS[LANGUAGE_ARABIC],
+        CAVEAT_CROSSVERSION_ADMITTED_PAIR: CROSSVERSION_CAVEATS[LANGUAGE_ARABIC],
     },
 }
 

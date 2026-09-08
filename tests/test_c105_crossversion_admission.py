@@ -18,6 +18,7 @@ from khepri.rra.analysis.dataset_period import (
 from khepri.rra.crossversion_bundle import (
     LABEL_DIFFERENCE,
     LABEL_SUBJECT,
+    CrossVersionBundle,
     CrossVersionRefusal,
     CrossVersionRequest,
     build_crossversion_bundle,
@@ -47,6 +48,24 @@ def test_every_refusal_cause_returns_wording_and_no_bundle(
         refused = _refusal(build_crossversion_bundle(changed))
         assert refused.cause == expected
         assert refused.wording == CROSSVERSION_REFUSALS[expected]
+
+
+def test_scope_projection_does_not_read_retained_evidence(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """Emptying one package's daily bases must not turn its scope into a mismatch.
+
+    Review of #408 (debate-review): the projection inferred manifest shape from
+    `daily_bases`, which `facts` also empties for a repeated row signature, so two
+    datasets of one organization refused as `cross-organization or scope mismatch`.
+    The projection now compares the attested scope sets directly.
+    """
+    request = comparison_request
+    stripped = replace(request, subject=replace(request.subject, daily_bases=()))
+
+    result = build_crossversion_bundle(stripped)
+
+    assert isinstance(result, CrossVersionBundle)
 
 
 def test_pair_sharing_no_metric_refuses_rather_than_raising(

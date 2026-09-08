@@ -52,7 +52,7 @@ from khepri.rra.bundle import (
     _renderings,
 )
 from khepri.rra.crossversion_bundle import (
-    CROSSVERSION_ADMITTED_CAVEAT,
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
     LABEL_BASELINE,
     LABEL_DIFFERENCE,
     LABEL_PERCENTAGE_DIFFERENCE,
@@ -168,7 +168,7 @@ def assemble_crossversion(
     return CrossVersionBundle(
         identity=_identity(request, facts),
         figures=figures,
-        caveats=(StatedCaveat(CROSSVERSION_ADMITTED_CAVEAT, SECTION_CROSSVERSION),),
+        caveats=(StatedCaveat(CAVEAT_CROSSVERSION_ADMITTED_PAIR, SECTION_CROSSVERSION),),
         sections=(section,),
         evidence=tuple(_evidence(fact) for fact in facts),
     )
@@ -216,10 +216,18 @@ def _candidate(package: FactPackage, organization_scope: str) -> ComparisonCandi
 
 
 def _population_scope(package: FactPackage) -> tuple[str, tuple[str, ...]]:
-    scopes = tuple(sorted({entry.scope for entry in package.coverage_signatures}))
-    if package.daily_bases:
-        return ("|".join(scopes), ())
-    return ("", scopes)
+    """The attested scopes, compared as a set whatever the manifest's shape.
+
+    `D-5` admits the same governed aggregate scope *or* the identical complete
+    admitted store set. A package does not carry its manifest, so nothing here can
+    tell an aggregate label from a single store identifier -- and an earlier
+    version inferred the shape from `daily_bases`, which `facts` also empties for a
+    repeated row signature, so two datasets of one organization refused as a scope
+    mismatch (review of `#408`). Comparing the attested scope sets directly is
+    `D-5`'s rule in both cases: an aggregate label is a one-element set, and two
+    labels that differ are two populations, exactly as two store sets that differ.
+    """
+    return ("", tuple(sorted({entry.scope for entry in package.coverage_signatures})))
 
 
 def _has_composite_provenance(request: CrossVersionRequest) -> bool:

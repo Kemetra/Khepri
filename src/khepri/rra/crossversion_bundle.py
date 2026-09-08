@@ -27,7 +27,7 @@ from khepri.rra.narrative import REQUIRED_LANGUAGES
 from khepri.rra.profiling import canonical_json
 
 __all__ = [
-    "CROSSVERSION_ADMITTED_CAVEAT",
+    "CAVEAT_CROSSVERSION_ADMITTED_PAIR",
     "CROSSVERSION_BUNDLE_VERSION",
     "CROSSVERSION_FIGURE_LABELS",
     "LABEL_BASELINE",
@@ -58,7 +58,7 @@ CROSSVERSION_FIGURE_LABELS = frozenset(
         LABEL_PERCENTAGE_DIFFERENCE,
     }
 )
-CROSSVERSION_ADMITTED_CAVEAT = "crossversion_admitted_pair"
+CAVEAT_CROSSVERSION_ADMITTED_PAIR = "crossversion_admitted_pair"
 
 
 @dataclass(frozen=True, slots=True)
