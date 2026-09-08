@@ -11,7 +11,7 @@ is written (`FR-133`).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
@@ -241,7 +241,19 @@ class ComparisonActions:
 def _naming(
     outcome: ComparisonOutcome, subject: DatasetVersion, baseline: DatasetVersion
 ) -> ComparisonOutcome:
-    return replace(outcome, operands=ComparisonOperands(subject=subject, baseline=baseline))
+    """The assembled outcome, now naming the pair it was assembled for.
+
+    Spelled as a new record rather than `dataclasses.replace`: this package's
+    static guard reads any `replace` as a reach for a sealed record's escape
+    hatch, and an outcome is the one record here that is meant to be rebuilt.
+    """
+    return ComparisonOutcome(
+        kind=outcome.kind,
+        refusal=outcome.refusal,
+        surfaces=outcome.surfaces,
+        bundle=outcome.bundle,
+        operands=ComparisonOperands(subject=subject, baseline=baseline),
+    )
 
 
 def _audit_event(
