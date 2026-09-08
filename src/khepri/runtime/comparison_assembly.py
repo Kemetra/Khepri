@@ -303,7 +303,7 @@ def _operand_from(ask: _OperandAsk) -> _Load:
     profile = _profile_record(ask.ports.profiling, bound.session.session_id, ask.now)
     if profile is None:
         return _Load(None, True)
-    manifest = stored_manifest(profile)
+    manifest = _manifest_of(profile)
     if manifest is None:
         return _Load(None, True)
     period = _dataset_period(ask.version_id, provenance, manifest)
@@ -315,6 +315,20 @@ def _operand_from(ask: _OperandAsk) -> _Load:
         timezone=manifest.timezone,
     )
     return _Load(operand, False)
+
+
+def _manifest_of(profile: DatasetProfileRecord) -> CoverageManifest | None:
+    """The stored manifest, or None when the profile carries none or it no longer reads.
+
+    `stored_manifest` is a read that is not re-admitted: bare subscripts and date parsing
+    raise on a document whose manifest section has drifted, and `ManifestRefused` is a
+    `ValueError`. A corrupted package already loads as `None` here; a corrupted manifest
+    gets the same treatment, so the pair refuses as incomplete with its one audit event.
+    """
+    try:
+        return stored_manifest(profile)
+    except (KeyError, ValueError):
+        return None
 
 
 def _latest_completed(
