@@ -522,7 +522,13 @@ class TestBothLayersRefuseIndependently:
     successfully; `resolve` then yields `organization_id=None` because `FR-028` denies the action
     rather than the authentication. Revocation is therefore caught inside `resolve_scope` by either
     the membership refusal or the scope refusal, which is why dropping just one of those two leaves
-    this file green while dropping both fails four tests.
+    `TestARevokedMemberCannotResume` green while dropping both fails four tests.
+
+    **That masking is exactly what the direct call below defeats.** Going through the resolver, the
+    two guards cover for each other, so the composed journey cannot tell them apart. Handing the
+    bridge a real `organization_id` reaches the membership refusal with a live scope behind it, so
+    removing that refusal alone fails the test -- which is why this class is where the membership
+    guard gets evidence of its own and the journey class is not.
     """
 
     def test_the_resolver_refuses_a_disabled_account_before_the_bridge(
