@@ -135,8 +135,8 @@ def test_a_business_sheet_lists_only_the_figures_it_presents() -> None:
     layout table's metric list rather than a section identifier, because a business
     sheet is defined by the figures it presents.
     """
-    from khepri.rra.rendering.excel_rows import business_name as _business_name
     from khepri.rra.rendering.excel_layout import BUSINESS_SHEETS
+    from khepri.rra.rendering.excel_rows import business_name as _business_name
     from khepri.rra.rendering.wording import BUSINESS_SHEET_NAMES
 
     workbook = workbook_of()
