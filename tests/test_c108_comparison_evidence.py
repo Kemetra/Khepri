@@ -70,9 +70,17 @@ def _refusal(request) -> CrossVersionRefusal:
 
 
 def _figures_for(bundle: CrossVersionBundle, metric: str) -> dict[str | None, object]:
-    """The metric's cells by label: `subject`, `baseline`, `difference`, and the ratio."""
-    found = {figure.label: figure for figure in bundle.figures if figure.metric == metric}
-    assert found, sorted({figure.metric for figure in bundle.figures})
+    """The metric's cells by label: `subject`, `baseline`, `difference`, and the ratio.
+
+    The duplicate check is the point of building a list first. Review of `#412` found
+    that collapsing straight into a dictionary hides a bundle emitting two cells under
+    one label -- the second silently replaces the first, and every caller of this
+    helper then measures a bundle that is not the one assembled.
+    """
+    cells = [figure for figure in bundle.figures if figure.metric == metric]
+    assert cells, sorted({figure.metric for figure in bundle.figures})
+    found = {figure.label: figure for figure in cells}
+    assert len(found) == len(cells), (metric, sorted(str(cell.label) for cell in cells))
     return found
 
 
