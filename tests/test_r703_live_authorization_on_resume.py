@@ -41,6 +41,51 @@ which one held:
 Both are asserted, because a slice that removed either would still pass a test that only checked the
 actor was refused. `TestBothLayersRefuseIndependently` is where that is pinned down.
 
+## Mutation evidence
+
+`#231` recorded that this file cited no mutant, so nothing showed its guards *can* fail -- the
+"tests that cannot fail" shape this repo has hit before. Each mutant below was applied to `main`,
+confirmed to parse, and run against the **whole repository**, because a kill set measured in one
+module is not the kill set: these guards sit on chokepoints with several callers each, and a
+per-module figure reads as a repo-wide one unless it says otherwise.
+
+Two numbers matter for each, and they answer different questions. **Inside this class** the count
+must be one, or the layers are not isolated -- `#231`'s actual criterion is whether a single mutant
+kills tests from *both* layers. **Repo-wide** the count shows how much authority the guard carries.
+
+- Dropping `not account.can_act` from the chokepoint (`rca/lifecycle.py:167`) kills
+  `test_the_resolver_refuses_a_disabled_account_before_the_bridge` -- the only one here -- and
+  **12 repo-wide** across 6 modules. The breadth is the chokepoint working as designed:
+  `assert_account_active` has four callers and `can_act` is compound (`accounts.py`: enabled and
+  not purged), so one dropped clause removes the disabled *and* purged refusals for all of them.
+- Dropping the disabled-account refusal (`rca/isolation.py:32-33`) kills
+  `test_the_bridge_refuses_a_disabled_account_even_when_handed_a_context` -- the only one here --
+  and **5 repo-wide** across 4 modules.
+- Dropping the revoked-member refusal (`rca/isolation.py:35-36`) kills
+  `test_the_bridge_refuses_a_revoked_member_even_when_handed_a_context` -- the only one here --
+  and **14 repo-wide** across 7 modules, the widest of the three.
+
+**The isolation is real.** Each mutant kills exactly one test *in this class* and leaves the other
+layer's test green, so neither passes on the other's behalf. The repo-wide kills do not weaken that:
+they land in other modules, never in the other layer's test here, and `#231`'s criterion is
+cross-*layer* not cross-*module*. The first mutant is deliberately *not* a deletion of
+the `assert_account_active` call: that would leave `account` unbound and fail on construction, and a
+test dying of a `NameError` proves nothing about a guard. Dropping the `can_act` clause inside the
+chokepoint keeps resolution succeeding and admits a disabled account, which is the actual defect.
+
+**Two guards mask each other on the revocation journey, and no single mutant can show it.** Dropping
+`isolation.py`'s scope refusal (`if scope is None`) kills **nothing**, and dropping its membership
+refusal leaves `TestARevokedMemberCannotResume` green -- so read separately each looks either dead
+or redundant. Dropping **both** fails four tests. The cause is that `AuthorizationResolver.resolve`
+returns `organization_id=None` for a revoked member rather than refusing (`FR-028`: an absent
+membership denies the action, not the authentication), so the path reaches `resolve_scope` with
+`None` and either guard alone stops it. Both are load-bearing; neither is provable alone.
+
+**The fixture was mutated too, because these tests read authority changes through it.** Making
+`revoke_membership_row` a no-op fails 5 tests and making `disable` a no-op fails 5, so the helpers
+that create the condition under test are themselves live. A suite whose fixture quietly did nothing
+would assert nothing, and mutating only production code cannot detect that.
+
 ## What makes these tests non-vacuous
 
 **The analysis row must still exist at the moment of refusal.** Otherwise "cannot resume" is
@@ -469,13 +514,33 @@ class TestBothLayersRefuseIndependently:
 
     `ActorResolver` refuses a disabled account at step 3 of resolution (`R3-05`); `resolve_scope`
     refuses one inside the bridge. An outcome-only test passes with either gate alone, which is the
-    "redundant guards need separate evidence" shape this repo has recorded. Each is isolated here.
+    "redundant guards need separate evidence" shape this repo has recorded. Each is isolated here,
+    and this module's §Mutation evidence records each mutant killing exactly one of these tests.
+
+    **The two gates are disablement's. Revocation's are different, and the asymmetry is real.**
+    `ActorResolver` does not consult membership at all, so a revoked member authenticates
+    successfully; `resolve` then yields `organization_id=None` because `FR-028` denies the action
+    rather than the authentication. Revocation is therefore caught inside `resolve_scope` by either
+    the membership refusal or the scope refusal, which is why dropping just one of those two leaves
+    `TestARevokedMemberCannotResume` green while dropping both fails four tests.
+
+    **That masking is exactly what the direct call below defeats.** Going through the resolver, the
+    two guards cover for each other, so the composed journey cannot tell them apart. Handing the
+    bridge a real `organization_id` reaches the membership refusal with a live scope behind it, so
+    removing that refusal alone fails the test -- which is why this class is where the membership
+    guard gets evidence of its own and the journey class is not.
     """
 
     def test_the_resolver_refuses_a_disabled_account_before_the_bridge(
         self, journey: Journey
     ) -> None:
-        """Layer 1 alone: resolution fails, so the bridge is never reached."""
+        """Layer 1 alone: resolution fails, so the bridge is never reached.
+
+        Fails if the chokepoint stops checking `can_act` -- the mutant that lets a disabled
+        account resolve. It is the only test *in this class* that mutant kills, which is what makes
+        this layer's evidence its own rather than the bridge's. It kills 12 repo-wide, all in
+        authentication-path suites, because the chokepoint serves four callers.
+        """
         journey.disable(journey.member)
 
         with pytest.raises(AuthenticationFailed):
@@ -489,6 +554,10 @@ class TestBothLayersRefuseIndependently:
         This is what would still hold if `ActorResolver` stopped checking activity. Calling the
         bridge with identifiers rather than a token is precisely the bypass a caller could attempt,
         so asserting it is asserting the gate rather than the composition.
+
+        Fails if `resolve_scope` drops its disabled-account refusal, and is the only test *in this
+        class* that mutant kills -- so this gate is evidenced independently of the chokepoint's.
+        Repo-wide it kills 5, in scope-resolution suites rather than authentication ones.
         """
         journey.disable(journey.member)
 
@@ -503,7 +572,15 @@ class TestBothLayersRefuseIndependently:
     def test_the_bridge_refuses_a_revoked_member_even_when_handed_a_context(
         self, journey: Journey
     ) -> None:
-        """The same isolation for revocation: the bridge's own gate, not the resolver's."""
+        """The same isolation for revocation: the bridge's own gate, not the resolver's.
+
+        Fails if `resolve_scope` drops its membership refusal. **This is the only test in this
+        class that mutant kills** (14 repo-wide, the widest of the three), and the reason the
+        count here is one rather than two matters: on the composed path a revoked member arrives
+        with `organization_id=None`, so the scope refusal below stops it and
+        `TestARevokedMemberCannotResume` stays green. Handing the bridge a real organization is
+        what isolates the membership guard from the scope guard.
+        """
         journey.revoke_membership_row(journey.member)
 
         with pytest.raises(ScopeAccessDenied):
