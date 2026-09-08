@@ -76,6 +76,9 @@ START = date(2026, 3, 1)
 
 
 SCOPE = "org_a"
+#: `attesting_manifest`'s default aggregate scope, restated so the request states what
+#: the manifest states rather than leaving the shape to be inferred.
+AGGREGATE_SCOPE = "all-stores"
 
 
 PROVENANCE_KEYS = {
@@ -142,6 +145,10 @@ def build_comparison_request() -> CrossVersionRequest:
         baseline_organization_scope=SCOPE,
         subject_period=_period("dsv_subject"),
         baseline_period=_period("dsv_baseline"),
+        # The test manifest (`attesting_manifest`) names the aggregate scope
+        # "all-stores"; the request mirrors `CoverageManifest.aggregate_scope` exactly.
+        subject_aggregate_scope=AGGREGATE_SCOPE,
+        baseline_aggregate_scope=AGGREGATE_SCOPE,
     )
 
 
@@ -169,15 +176,21 @@ def _store_request(request: CrossVersionRequest, *, other: str) -> CrossVersionR
 
     subject = replace(
         request.subject,
-        daily_bases=(),
         coverage_signatures=signatures(request.subject, "store_a"),
     )
     baseline = replace(
         request.baseline,
-        daily_bases=(),
         coverage_signatures=signatures(request.baseline, other),
     )
-    return replace(request, subject=subject, baseline=baseline)
+    # Both manifests name a store roster, so the shape is stated as such and the
+    # attested store sets are what `D-5` compares.
+    return replace(
+        request,
+        subject=subject,
+        baseline=baseline,
+        subject_aggregate_scope=None,
+        baseline_aggregate_scope=None,
+    )
 
 
 def _compatibility_cases(request: CrossVersionRequest):

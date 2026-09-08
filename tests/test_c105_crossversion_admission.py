@@ -92,8 +92,13 @@ def test_stated_aggregate_scopes_are_compared_as_scopes(
     assert isinstance(refused, CrossVersionRefusal)
     assert refused.cause == CAUSE_SCOPE
 
+    # The P1 from review of #408: an aggregate label and a single-store roster carrying
+    # the same identifier attest the same scope set. With the shape stated they occupy
+    # different slots, so the pair refuses as a scope mismatch instead of deriving deltas.
     mixed = replace(request, subject_aggregate_scope="all-stores", baseline_aggregate_scope=None)
-    assert isinstance(build_crossversion_bundle(mixed), CrossVersionRefusal)
+    crossed = build_crossversion_bundle(mixed)
+    assert isinstance(crossed, CrossVersionRefusal)
+    assert crossed.cause == CAUSE_SCOPE
 
 
 def test_pair_sharing_no_metric_refuses_rather_than_raising(

@@ -227,17 +227,17 @@ def _population_scope(
     package: FactPackage,
     aggregate_scope: str | None,
 ) -> tuple[str, tuple[str, ...]]:
-    """`D-5`'s two shapes: a governed aggregate scope, or the attested store set.
+    """`D-5`'s two shapes, exactly one slot filled: aggregate scope, or store roster.
 
-    The shape comes from the caller, who holds the manifest; a package does not
-    carry it, so nothing here can tell an aggregate label from a single store
-    identifier. An earlier version inferred the shape from `daily_bases`, which
-    `facts` also empties for a repeated row signature, so two datasets of one
-    organization refused as a scope mismatch (review of `#408`). When the caller
-    states no aggregate scope, the attested scope set is compared directly -- still
-    `D-5`'s rule, since two labels that differ are two populations exactly as two
-    store sets that differ -- at the cost of a mismatch being reported as a
-    store-set difference rather than a scope one.
+    The shape is the caller's statement of `CoverageManifest.aggregate_scope`; a
+    package does not carry its manifest, so nothing here can tell an aggregate label
+    from a single store identifier. An earlier version inferred the shape from
+    `daily_bases`, which `facts` also empties for a repeated row signature, so two
+    datasets of one organization refused as a scope mismatch; a later one compared
+    the attested sets alone, which let an aggregate label and an identically named
+    single-store roster pass as one population (review of `#408`). A stated label
+    fills the aggregate slot; `None` -- a roster -- fills the store slot with the
+    attested set, and the compatibility table's own causes then apply.
     """
     if aggregate_scope is not None:
         return (aggregate_scope, ())

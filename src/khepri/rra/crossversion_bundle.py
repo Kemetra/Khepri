@@ -65,13 +65,14 @@ CAVEAT_CROSSVERSION_ADMITTED_PAIR = "crossversion_admitted_pair"
 class CrossVersionRequest:
     """The caller-stated ordered pair and the two asserted organization scopes.
 
-    `subject_aggregate_scope` and `baseline_aggregate_scope` are the governed aggregate
-    scope labels each package's coverage manifest declares, or `None` for a per-store
-    manifest. A package does not carry its manifest, so only the caller -- which holds
-    the retained manifest (`KHEPRI-DEC-033` §2) -- can say which shape a package has;
-    with them stated, `D-5`'s "same governed aggregate scope" is compared as such, and
-    a mismatch is reported as a scope mismatch rather than as a store-set difference.
-    Left `None`, the attested scope set is compared directly (review of `#408`).
+    `subject_aggregate_scope` and `baseline_aggregate_scope` mirror each manifest's
+    `CoverageManifest.aggregate_scope` exactly: the governed aggregate label, or `None`
+    meaning the manifest names a store roster. There is no "unknown": a package does not
+    carry its manifest, so only the caller -- which holds the retained manifest
+    (`KHEPRI-DEC-033` §2) -- can state its shape, and it must. Review of `#408` showed
+    why the shape cannot be inferred from the package: an aggregate label and a
+    single-store roster carrying the same identifier attest the same scope set, and
+    only the stated shape keeps them from being admitted as one population.
     """
 
     subject: FactPackage
