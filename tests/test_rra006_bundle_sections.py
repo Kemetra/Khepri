@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -19,9 +21,11 @@ from khepri.rra.bundle import (
     SECTION_CHART_KINDS,
     SECTION_COMPARISON,
     SECTION_CONCENTRATION,
+    SECTION_CROSSVERSION,
     SECTION_GROWTH,
     SECTION_OVERVIEW,
     SECTION_PRESENT,
+    SECTION_REASON_PRIOR_WINDOW_ABSENT,
     SECTION_REASONS,
     SECTION_REFUSED,
     BundleIdentity,
@@ -683,3 +687,38 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # it does not know, so the version moves.
     assert BUNDLE_VERSION == "rra006.bundle.v8"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION
+
+
+def test_bundle_version_is_not_a_constructor_argument() -> None:
+    """A caller-supplied version would give one bundle two versions.
+
+    `BundleIdentity.as_document()` always serializes `BUNDLE_VERSION`, and the
+    assembler's attempt record copies `bundle_version`; were the field settable the
+    two could disagree. `init=False` makes that unrepresentable (review of #408).
+    """
+    assert "bundle_version" not in inspect.signature(ReportBundle).parameters
+    report = _bundle((_present(SECTION_OVERVIEW),))
+    # CPython 3.13 raises TypeError here; earlier interpreters raised ValueError. The
+    # guarantee under test is the refusal, not the class the standard library chose.
+    with pytest.raises((TypeError, ValueError), match="init=False"):
+        replace(report, bundle_version="rra006.bundle.v0")
+
+
+def test_section_cannot_name_the_sibling_bundle_section() -> None:
+    """`Section` stays on the closed order: its two tables know five sections.
+
+    The two-population sibling bundle (`RRA-006` §Two-population bundle) admits its
+    own `crossversion` section for figures and caveats through
+    `PRESENTATION_SECTIONS`. `Section` indexes `SECTION_REASONS` and
+    `SECTION_CHART_KINDS`, which the sibling never reaches, so it keeps checking
+    `ORDERED_SECTIONS` itself -- review of #408 found the widened predicate let this
+    construction pass membership and raise `KeyError` from the table instead.
+    """
+    with pytest.raises(ValueError, match="unknown section"):
+        Section(
+            section_id=SECTION_CROSSVERSION,
+            state=SECTION_REFUSED,
+            reason=SECTION_REASON_PRIOR_WINDOW_ABSENT,
+            figure_ids=(),
+            chart=None,
+        )

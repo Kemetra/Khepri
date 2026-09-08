@@ -185,18 +185,26 @@ class CrossVersionIdentity:
     def coverage_signatures(self) -> tuple[str, ...]:
         return (*self.subject.coverage_signatures, *self.baseline.coverage_signatures)
 
+    @property
+    def citations_digest(self) -> str:
+        """sha256 over every citation's document, in citation order."""
+        serialized = canonical_json([entry.as_document() for entry in self.citations])
+        return hashlib.sha256(serialized.encode()).hexdigest()
+
     def as_document(self) -> dict[str, object]:
         """Flat: one governed version, digest or identifier per key.
 
-        `citations` is deliberately absent, on the precedent that keeps `evidence`
-        out of `ReportBundle.as_document()`: every citation is a function of the
-        facts and the two package identities this document already digests, so
-        including it would rename the bundle for no change in what it presents.
-        The rules still cross-check every evidence record against the citations.
+        The citations enter as one digest rather than as rows. Review of `#408`
+        showed why they must enter at all: a cited retained basis is not a function
+        of anything else this document carries, so a bundle whose basis provenance
+        was swapped in lockstep with its evidence kept its content address. With the
+        digest, any change to any citation renames the bundle, while the provenance
+        table still shows one governed value per row.
         """
         return {
             "bundle_version": self.bundle_version,
             "operand_order": ",".join(OPERAND_ORDER),
+            "citations_digest": self.citations_digest,
             **self.subject.flat_document(OPERAND_ORDER[0]),
             **self.baseline.flat_document(OPERAND_ORDER[1]),
             "package_version": self.package_version,

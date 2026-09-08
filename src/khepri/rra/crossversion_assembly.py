@@ -301,7 +301,7 @@ def _percentage_ratio(fact: CrossVersionFact) -> Decimal:
     family compute every ratio, so this module holds no arithmetic assumption of
     its own. Review of `#408` asked whether the governed extremes -- a sixteen-digit
     subject over a six-decimal baseline -- overflow Python's default 28-digit
-    context; they do not (27 digits), and the governed context makes the question
+    context; they do not (26 digits), and the governed context makes the question
     moot for any magnitude the package contract could later admit.
     """
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):

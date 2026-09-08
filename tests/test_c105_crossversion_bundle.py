@@ -7,7 +7,6 @@ order, plus RCA-005 §Comparison retention by name.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import re
 from dataclasses import replace
 from datetime import date, timedelta
@@ -24,7 +23,6 @@ from khepri.rra.analysis.comparison_package import (
     COMPARISON_CROSSVERSION_VERSION,
     OPERAND_ORDER,
     MeasuredPair,
-    PairProvenance,
     build_cross_version_fact,
 )
 from khepri.rra.analysis.compatibility import (
@@ -50,11 +48,7 @@ from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
     OUTCOME_DELIVERED,
     REQUIRED_SURFACES,
-    SECTION_REFUSED,
     BundleAssembler,
-    CitedEvidence,
-    ReportBundle,
-    Section,
     reconcile,
 )
 from khepri.rra.crossversion_bundle import (
@@ -361,11 +355,13 @@ def test_identity_discloses_composite_provenance(
         assert {provenance.subject_basis_id, provenance.baseline_basis_id} <= basis_ids
 
 
-def test_percentage_ratio_survives_the_governed_magnitude_extremes() -> None:
+def test_percentage_ratio_survives_the_governed_magnitude_extremes(
+    comparison_request: CrossVersionRequest,
+) -> None:
     """The governed maximum subject over the governed minimum baseline derives.
 
     Review of #408 (debate-review) suspected this pair overflowed Python's default
-    28-digit context. Checked: the quotient is 27 digits and fits, so there was no
+    28-digit context. Checked: the quotient is 26 digits and fits, so there was no
     live defect. The ratio is nonetheless computed under `ARITHMETIC_PRECISION` as
     every other ratio in the repository is, and this pins that the extreme pair
     derives to a four-place fraction rather than raising out of assembly.
@@ -378,14 +374,7 @@ def test_percentage_ratio_survives_the_governed_magnitude_extremes() -> None:
             precision=2,
             unit_kind="monetary",
         ),
-        PairProvenance(
-            subject_version_id="dsv_big",
-            subject_basis_id="basis_big",
-            subject_manifest_id="manifest_big",
-            baseline_version_id="dsv_tiny",
-            baseline_basis_id="basis_tiny",
-            baseline_manifest_id="manifest_tiny",
-        ),
+        _bundle(comparison_request).identity.pair_provenance[0],
     )
 
     ratio = assembly_module._percentage_ratio(fact)
@@ -408,28 +397,41 @@ def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> N
     assert not any("{" in value or "[" in value for value in document.values())
 
 
+def test_changing_a_cited_basis_changes_the_bundle_id(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """One content address authenticates one audit record.
+
+    The reproducer from review of #408 (debate-review): swap one citation's
+    subject basis and update its evidence record in lockstep. The bundle still
+    constructs -- the rules cannot see the source packages to check a basis -- but
+    its identity now digests every citation, so the address changes.
+    """
+    bundle = _bundle(comparison_request)
+    first, *rest = bundle.identity.citations
+    forged = replace(first, pair=replace(first.pair, subject_basis_id="basis_forged"))
+    identity = replace(bundle.identity, citations=(forged, *rest))
+    evidence = tuple(
+        replace(record, provenance=forged.provenance_pairs())
+        if record.citation_id == first.citation_id
+        else record
+        for record in bundle.evidence
+    )
+
+    tampered = replace(bundle, identity=identity, evidence=evidence)
+
+    assert tampered.bundle_id != bundle.bundle_id
+    assert (
+        identity.as_document()["citations_digest"]
+        != bundle.identity.as_document()["citations_digest"]
+    )
+
+
 def test_pair_coverage_identity_is_a_digest(comparison_request: CrossVersionRequest) -> None:
     """The Protocol's one manifest slot carries a digest, not a JSON blob."""
     identity = _bundle(comparison_request).identity
 
     assert re.fullmatch(r"[0-9a-f]{64}", identity.coverage_manifest_identity)
-
-
-def test_report_section_cannot_name_the_sibling_section() -> None:
-    """`Section` stays on the closed order: its tables know five sections.
-
-    Review of #408 found that widening the shared membership predicate let a
-    `Section("crossversion", refused, ...)` pass membership and then raise KeyError
-    from `SECTION_REASONS`. It is a ValueError again, before any table is indexed.
-    """
-    with pytest.raises(ValueError, match="unknown section"):
-        Section(
-            section_id=SECTION_CROSSVERSION,
-            state=SECTION_REFUSED,
-            reason="prior_window_absent",
-            figure_ids=(),
-            chart=None,
-        )
 
 
 def test_every_evidence_record_uses_crossversion_formula(
@@ -467,15 +469,15 @@ def test_every_evidence_record_carries_ordered_pair_provenance(
             assert reversed_provenance[f"baseline_{name}"] == provenance[f"subject_{name}"]
 
 
-def test_evidence_without_composite_provenance_keeps_legacy_shape() -> None:
-    record = CitedEvidence(
-        citation_id="citation",
-        metric="revenue",
-        unit_kind="monetary",
-        formula_version="formula",
-        precision=None,
-        inputs=None,
-    )
+def test_evidence_without_composite_provenance_keeps_legacy_shape(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """A record with no composite provenance serializes exactly as it did before.
+
+    That is what keeps every report-bundle evidence document byte-identical: the
+    `provenance` key appears only when there is provenance to carry.
+    """
+    record = replace(_bundle(comparison_request).evidence[0], provenance=None)
 
     assert "provenance" not in record.as_entry("d")
 
@@ -594,21 +596,6 @@ def test_same_pair_serializes_byte_identically(
 
 
 # --- Review round 1 (#408): the invariants a directly constructed bundle must hold ----
-
-
-def test_report_bundle_version_is_not_a_constructor_argument() -> None:
-    """A caller-supplied version would give one bundle two versions.
-
-    `BundleIdentity.as_document()` always serializes `BUNDLE_VERSION`, and
-    `BundleAttempt` copies `bundle_version`; if the field were settable the two could
-    disagree. `init=False` makes that unrepresentable.
-    """
-    assert "bundle_version" not in inspect.signature(ReportBundle).parameters
-    report = ReportBundle.of(_package("100.00"))
-    # CPython 3.13 raises TypeError here; earlier interpreters raised ValueError. The
-    # guarantee under test is the refusal, not the class the standard library chose.
-    with pytest.raises((TypeError, ValueError), match="init=False"):
-        replace(report, bundle_version="rra006.bundle.v0")
 
 
 def test_citation_naming_a_different_pair_than_its_identity_refuses(
