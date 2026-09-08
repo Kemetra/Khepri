@@ -485,6 +485,24 @@ def test_basis_map_covers_every_governed_metric_and_nothing_else(
         assembly_module._assert_basis_map_complete({**table, "invented": "some_basis"})
 
 
+def test_package_stating_a_metric_twice_fails_named_not_as_a_repeated_figure(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """A malformed population fails closed at the door, with its own name.
+
+    Review of #408 (debate-review): a hand-built subject package with a duplicated
+    metric produced two facts under one identity and surfaced as "section repeats
+    a figure". It is not a governed refusal -- RRA-008 §Frozen contracts puts an
+    input RRA-004 would not admit upstream of this family, and every frozen cause
+    would misdescribe it -- so it is an explicit invariant instead.
+    """
+    request = comparison_request
+    doubled = replace(request.subject, facts=(*request.subject.facts, request.subject.facts[0]))
+
+    with pytest.raises(ValueError, match="states a metric twice"):
+        build_crossversion_bundle(replace(request, subject=doubled))
+
+
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
     """Every value is one governed string, so no surface can print a Python repr.
 

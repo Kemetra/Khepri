@@ -248,6 +248,8 @@ def _shared_metrics(request: CrossVersionRequest) -> set[str]:
 
 
 def _crossversion_facts(request: CrossVersionRequest) -> tuple[CrossVersionFact, ...]:
+    _require_one_fact_per_metric(request.subject)
+    _require_one_fact_per_metric(request.baseline)
     baseline = {fact.metric: fact for fact in request.baseline.facts}
     return tuple(
         _crossversion_fact(subject, counterpart, request)
@@ -255,6 +257,21 @@ def _crossversion_facts(request: CrossVersionRequest) -> tuple[CrossVersionFact,
         if (counterpart := baseline.get(subject.metric)) is not None
         and counterpart.unit_kind == subject.unit_kind
     )
+
+
+def _require_one_fact_per_metric(package: FactPackage) -> None:
+    """An `RRA-004` population states each metric once; anything else is not one.
+
+    Not a refusal: `RRA-008` §Frozen contracts places an input `RRA-004` does not
+    admit upstream of this family ("this family emits nothing"), and every frozen
+    cause would misdescribe it. `build_fact_package` cannot produce a duplicate, so
+    this is reachable only by direct construction, and it fails here, named, rather
+    than downstream as a repeated figure identifier (review of `#408`).
+    """
+    metrics = [fact.metric for fact in package.facts]
+    if len(metrics) == len(set(metrics)):
+        return
+    raise ValueError("fact package states a metric twice and is not an RRA-004 population")
 
 
 def _crossversion_fact(
