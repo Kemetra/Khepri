@@ -178,7 +178,9 @@ class CrossVersionAssembly:
         # bytes are in hand -- and just the same when the bundle comes back incomplete or
         # a later renderer faults, since the assembler has already written the file by
         # then. A process that ran for a year has kept no comparison on disk.
-        scratch = Path(tempfile.mkdtemp(dir=self._excel.directory))
+        scratch = _scratch_under(self._excel.directory)
+        if scratch is None:
+            return None
         excel = replace(self._excel, directory=scratch)
         try:
             return self._surfaces(bundle, excel, subject_run_id, baseline_run_id)
@@ -206,6 +208,20 @@ class CrossVersionAssembly:
             subject_run_id=subject_run_id,
             baseline_run_id=baseline_run_id,
         )
+
+
+def _scratch_under(directory: Path) -> Path | None:
+    """A request's own render directory, or None when none can be made.
+
+    The configured directory can be gone or unwritable by the time a request
+    arrives. That is a failure to render, and it owes the caller the same
+    `None` a renderer fault does, so the action still returns the uniform
+    unavailable outcome and writes its one audit event.
+    """
+    try:
+        return Path(tempfile.mkdtemp(dir=directory))
+    except OSError:
+        return None
 
 
 def _incomplete_outcome() -> ComparisonOutcome:

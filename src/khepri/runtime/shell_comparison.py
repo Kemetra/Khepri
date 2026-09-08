@@ -229,9 +229,12 @@ def _filled_view(
     return _CompareView(
         subject=subject,
         baseline=baseline,
-        # Offered as handoffs, the way every Analyses artifact is reached. The shell's
-        # policy is `default-src 'none'` with no frame directive, so a framed surface
-        # cannot render here; the rest of the shell never displays report HTML inline.
+        # The three surfaces travel in this response as `data:` downloads. The redirect
+        # handoff other Analyses artifacts use points at a stored run's artifact, and a
+        # comparison has none: `RRA-006` §Two-population bundle renders it on request and
+        # stores it nowhere. Nothing is framed or inlined, since the shell's policy is
+        # `default-src 'none'` with no frame directive. The response is therefore the sum
+        # of the three payloads plus base64 overhead, assembled in memory per request.
         html_href=_data_href(HTML_MEDIA_TYPE, surfaces.html[language].encode("utf-8")),
         pdf_href=_data_href(PDF_MEDIA_TYPE, surfaces.pdf[language]),
         excel_href=_data_href(XLSX_MEDIA_TYPE, surfaces.excel),

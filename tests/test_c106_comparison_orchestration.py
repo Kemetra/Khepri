@@ -138,6 +138,29 @@ def test_a_renderer_fault_is_governed_audited_once_and_leaves_no_workbook(tmp_pa
     assert not any(tmp_path.iterdir())
 
 
+def test_a_scratch_directory_failure_is_governed_and_audited_once(tmp_path) -> None:
+    """The per-request render directory can fail to allocate (the configured directory
+    gone or unwritable); that is a failure to render and owes the same governed shape."""
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    actions = comparison_actions(j, tmp_path)
+    j.clock.advance(timedelta(minutes=1))
+    before = len(j.w.audit.events_for_scope(who.owner_id))
+
+    with patch(
+        "khepri.runtime.comparison_assembly.tempfile.mkdtemp",
+        side_effect=OSError("no scratch directory"),
+    ):
+        outcome = actions.request(
+            _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
+        )
+
+    added = j.w.audit.events_for_scope(who.owner_id)[before:]
+    assert outcome.unavailable
+    assert [event.action for event in added] == [ACTION_RUN_FAILED]
+
+
 def test_each_surface_is_rendered_once_and_its_claim_describes_the_delivered_bytes(
     tmp_path,
 ) -> None:
