@@ -101,6 +101,19 @@ def test_stated_aggregate_scopes_are_compared_as_scopes(
     assert crossed.cause == CAUSE_SCOPE
 
 
+def test_blank_aggregate_scope_fails_at_construction(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """`""` is neither a governed label nor a roster and cannot stand in for either.
+
+    Review of #408 (debate-review): a blank label filled the aggregate slot on both
+    sides and left both store slots empty, so two packages with different rosters
+    compared as one population. `None` is the only spelling of "a roster".
+    """
+    with pytest.raises(ValueError, match="governed label or None"):
+        replace(comparison_request, subject_aggregate_scope="")
+
+
 def test_pair_sharing_no_metric_refuses_rather_than_raising(
     comparison_request: CrossVersionRequest,
 ) -> None:

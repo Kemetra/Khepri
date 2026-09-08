@@ -84,6 +84,16 @@ class CrossVersionRequest:
     subject_aggregate_scope: str | None = None
     baseline_aggregate_scope: str | None = None
 
+    def __post_init__(self) -> None:
+        """A blank label is neither a scope nor a roster; refuse it at the door.
+
+        `""` would fill the aggregate slot and leave the store slot empty on both
+        sides, so two packages with different rosters would compare as one
+        population (review of `#408`). `None` is the only spelling of "a roster".
+        """
+        if "" in (self.subject_aggregate_scope, self.baseline_aggregate_scope):
+            raise ValueError("aggregate scope must be a governed label or None for a store roster")
+
 
 @dataclass(frozen=True, slots=True)
 class CrossVersionPackageIdentity:

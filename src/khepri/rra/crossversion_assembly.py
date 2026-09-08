@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Context, Decimal, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
 
 from khepri.rra.analysis.comparison import METRIC_DELTA_PERCENT
 from khepri.rra.analysis.comparison_narrative import refusal_wording
@@ -414,8 +414,16 @@ def _percentage_ratio(fact: CrossVersionFact) -> Decimal:
     context; they do not (26 digits), and the governed context makes the question
     moot for any magnitude the package contract could later admit.
     """
+    # Rounded, and deliberately so: a quotient is not exact in general (one third
+    # has no four-place form), which is why this is a fact-boundary quantization on
+    # the period-comparison family's precedent and not `bundle._EXACT`, whose
+    # `Inexact` trap guards the exact scale-by-one-hundred of a value already
+    # quantized here. The mode is the standard library's default, stated so it is
+    # read as chosen.
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
-        return (fact.absolute_delta / fact.baseline_value).quantize(_RATIO_QUANTUM)
+        return (fact.absolute_delta / fact.baseline_value).quantize(
+            _RATIO_QUANTUM, rounding=ROUND_HALF_EVEN
+        )
 
 
 def _figure(fact: CrossVersionFact, cell: _FigureCell, position: int) -> CitedFigure:
