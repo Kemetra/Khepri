@@ -92,6 +92,7 @@ from khepri.rra.bundle import (
     DIRECTION_RTL,
     GOVERNED_SECTION_STATES,
     LANGUAGE_DIRECTION,
+    SECTION_CROSSVERSION,
     SURFACE_EXCEL,
     ChartSpec,
     CitedFigure,
@@ -104,9 +105,31 @@ from khepri.rra.bundle import (
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.renderable import PresentationSection, RenderableBundle
+from khepri.rra.rendering.excel_crossversion import write_crossversion_sheet
 from khepri.rra.rendering.excel_layout import (
     BUSINESS_SHEETS,
     BusinessSheet,
+)
+from khepri.rra.rendering.excel_rows import (
+    BUSINESS_COLUMNS as _BUSINESS_COLUMNS,
+)
+from khepri.rra.rendering.excel_rows import (
+    DISCLOSURE_HEADING as _DISCLOSURE_HEADING,
+)
+from khepri.rra.rendering.excel_rows import (
+    LABEL_WIDTH as _LABEL_WIDTH,
+)
+from khepri.rra.rendering.excel_rows import (
+    VALUE_WIDTH as _VALUE_WIDTH,
+)
+from khepri.rra.rendering.excel_rows import (
+    business_cells as _business_cells,
+)
+from khepri.rra.rendering.excel_rows import (
+    sheet as _sheet,
+)
+from khepri.rra.rendering.excel_rows import (
+    write_row as _write_row,
 )
 from khepri.rra.rendering.wording import (
     BUSINESS_SHEET_NAMES,
@@ -118,10 +141,8 @@ from khepri.rra.rendering.wording import (
     METRIC_WORDING,
     REFUSAL_WORDING,
     SECTION_HEADINGS,
-    business_metric_name,
     category_of,
     caveat_prose,
-    kind_qualifier,
     section_refusal_message,
     worded,
 )
@@ -197,10 +218,6 @@ _CHARTDATA_SECTION = "chartdata"
 def _chartdata_sheet(language: str) -> str:
     return _section_sheet(_CHARTDATA_SECTION, language)
 
-_DISCLOSURE_HEADING = {
-    LANGUAGE_ENGLISH: "About this report",
-    LANGUAGE_ARABIC: "عن هذا التقرير",
-}
 _FIGURES_HEADING = {LANGUAGE_ENGLISH: "Figures", LANGUAGE_ARABIC: "الأرقام"}
 _CAVEATS_HEADING = {LANGUAGE_ENGLISH: "Caveats", LANGUAGE_ARABIC: "التحذيرات"}
 
@@ -235,10 +252,6 @@ _FIGURE_COLUMNS = {
 }
 # The business figure table: what the row is called, and what it is. Two columns,
 # because every other column on the old section sheet was an identifier.
-_BUSINESS_COLUMNS = {
-    LANGUAGE_ENGLISH: ("Figure", "Value"),
-    LANGUAGE_ARABIC: ("البيان", "القيمة"),
-}
 
 # The audit sheets, ordered after every business sheet. Their names are addresses
 # rather than translations for the reason a section sheet's was: a reader following
@@ -381,8 +394,6 @@ GOVERNED_LABELS = frozenset(
     | {text for wording in LABEL_WORDING.values() for text in wording.values()}
 )
 
-_LABEL_WIDTH = 34
-_VALUE_WIDTH = 22
 
 
 class WorkbookUnavailable(SurfaceUnavailable, RuntimeError):
@@ -501,6 +512,7 @@ def _write_workbook(workbook: Workbook, bundle: RenderableBundle) -> None:
             worksheet = _write_business_sheet(workbook, bundle, language, sheet)
             if worksheet is not None:
                 written.append((sheet, worksheet))
+        write_crossversion_sheet(workbook, bundle, language)
         _write_limitations(workbook, bundle, language)
         _write_audit_trail(workbook, bundle, language)
         _write_citations(workbook, bundle, language)
@@ -525,7 +537,14 @@ def _write_business_sheet(
     The consequence, stated because it surprises a reader of the file: the business
     tab count varies by dataset. The audit sheets do not.
     """
-    figures = [figure for figure in bundle.figures if figure.metric in sheet.metrics]
+    # Keyed by metric, so without the section test a two-population bundle's cells
+    # would land here beside no sign that each is one operand of a comparison; they
+    # have their own sheet (`_write_crossversion_sheet`).
+    figures = [
+        figure
+        for figure in bundle.figures
+        if figure.metric in sheet.metrics and figure.section != SECTION_CROSSVERSION
+    ]
     if not figures:
         return None
     worksheet = _sheet(workbook, BUSINESS_SHEET_NAMES[language][sheet.key], language)
@@ -552,36 +571,6 @@ def _write_business_sheet(
     for figure in figures:
         row = _write_row(worksheet, row, _business_cells(figure, language))
     return worksheet
-
-
-def _business_cells(figure: CitedFigure, language: str) -> tuple[str, ...]:
-    """One figure as a business row: what it is called, and what it is.
-
-    No identifier column, no metric code, no kind and no unit -- RRA-009 puts each
-    of those in the audit region, and a business sheet carrying one would be the
-    identifier ledger with a friendlier tab name.
-
-    The name is composed the same way the web surface composes it, and for the same
-    reason: a bucket emits a value figure and a row-count figure carrying the same
-    metric and the same label, so a name that ignored `kind` would list two rows a
-    reader cannot tell apart. `business_metric_name` returns `None` for a metric no
-    table names, and those rows are named by their own label.
-    """
-    return (_business_name(figure, language), figure.renderings[language])
-
-
-def _business_name(figure: CitedFigure, language: str) -> str:
-    """A figure's business row name: its measure, its kind, and its label."""
-    name = business_metric_name(figure.metric, language)
-    qualifier = kind_qualifier(figure.kind, language)
-    if qualifier is not None:
-        name = f"{name} ({qualifier})" if name else qualifier
-    if figure.label is None:
-        # A scalar. Every scalar the bundle renders has a governed or derived name,
-        # which `test_every_rendered_metric_is_named_or_labelled` holds.
-        return name or figure.metric
-    label = worded(category_of(figure), language) if figure.label else figure.label
-    return f"{name} — {label}" if name else label
 
 
 def _write_report(workbook: Workbook, bundle: RenderableBundle, language: str) -> None:
@@ -1086,29 +1075,6 @@ def _figure_cells(figure: CitedFigure, language: str) -> tuple[str | None, ...]:
         figure.label,
         figure.renderings[language],
     )
-
-
-def _sheet(workbook: Workbook, name: str, language: str) -> Worksheet:
-    sheet = workbook.add_worksheet(name)
-    if LANGUAGE_DIRECTION[language] == DIRECTION_RTL:
-        # The only place direction is real rather than declared: this sets
-        # `rightToLeft` on the sheet view, so Arabic columns run the way Arabic
-        # reads instead of merely being labelled that way.
-        sheet.right_to_left()
-    return sheet
-
-
-def _write_row(sheet: Worksheet, row: int, values: tuple[str | None, ...]) -> int:
-    """Write one row of literal text and return the next row.
-
-    `write_string` rather than `write`: it has no coercion path at all, so a
-    label beginning `=` is a string here even if a future caller constructs the
-    workbook without `WORKBOOK_OPTIONS`.
-    """
-    for column, value in enumerate(values):
-        if value is not None:
-            sheet.write_string(row, column, value)
-    return row + 1
 
 
 def _content(bundle: RenderableBundle, output_size_bytes: int) -> SurfaceContent:

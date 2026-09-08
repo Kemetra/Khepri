@@ -129,6 +129,17 @@ def assemble_crossversion(
     if cause is not None:
         return CrossVersionRefusal(cause=cause, wording=refusal_wording(cause))
     facts = _crossversion_facts(request)
+    if not facts:
+        # Two admitted packages that state no metric in common -- each gapped in the
+        # columns the other retains -- have nothing to compare. Column gaps are not
+        # provenance, so admission cannot see them, and a bundle with no figures is
+        # refused by its own rules; that raise is neither a bundle nor a governed
+        # refusal. The cause is `incomplete coverage`: one side's coverage of the
+        # compared measures is incomplete, the same reading `_admission_cause` gives a
+        # package that cannot name its coverage manifest.
+        return CrossVersionRefusal(
+            cause=CAUSE_INCOMPLETE, wording=refusal_wording(CAUSE_INCOMPLETE)
+        )
     figures = tuple(figure for fact in facts for figure in _figures(fact))
     section = CrossVersionSection(tuple(figure.figure_id for figure in figures))
     return CrossVersionBundle(

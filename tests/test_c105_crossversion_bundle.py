@@ -383,6 +383,57 @@ def test_percentage_ratio_survives_the_governed_magnitude_extremes(
     assert ratio > Decimal("1e21")
 
 
+def test_pair_sharing_no_metric_refuses_rather_than_raising(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """Admission reads provenance, not columns; the empty comparison is a refusal.
+
+    Review of #408 (debate-review): two admitted packages gapped in each other's
+    columns passed every predicate, produced no facts, and the bundle's own rules
+    then raised -- neither a bundle nor governed wording. It is now a refusal under
+    `incomplete coverage`, with wording in both languages and no figure.
+    """
+    request = comparison_request
+    disjoint = replace(request, baseline=replace(request.baseline, facts=()))
+
+    result = build_crossversion_bundle(disjoint)
+
+    assert isinstance(result, CrossVersionRefusal)
+    assert result.cause == CAUSE_INCOMPLETE
+    assert set(result.wording) == {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}
+    assert result.figures == ()
+    assert result.bundle is None
+
+
+def test_workbook_writes_the_sibling_cells_to_their_own_sheet(
+    comparison_request: CrossVersionRequest,
+    tmp_path,
+) -> None:
+    """A workbook cell states which population it belongs to.
+
+    Review of #408 (debate-review): the business sheets are keyed by metric, so a
+    subject, a baseline and a difference row were written to Executive Summary as if
+    they were that package's headline totals. They now go to one sheet under the
+    section's governed heading, named measure-then-role, and no business sheet is
+    written for the sibling.
+    """
+    from tests import rra_workbooks
+
+    bundle = _bundle(comparison_request)
+    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+    renderer.render(bundle)
+    workbook = rra_workbooks.read(renderer.path_for(bundle).read_bytes())
+
+    names = set(workbook.sheets)
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        assert wording.SECTION_HEADINGS[language][SECTION_CROSSVERSION] in names
+        assert wording.BUSINESS_SHEET_NAMES[language]["executive_summary"] not in names
+    texts = set(workbook.texts)
+    assert "Revenue — Subject dataset" in texts
+    assert "Revenue — Baseline dataset" in texts
+    assert "Revenue — Difference" in texts
+
+
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
     """Every value is one governed string, so no surface can print a Python repr.
 
