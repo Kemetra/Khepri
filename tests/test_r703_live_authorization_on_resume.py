@@ -503,7 +503,7 @@ class TestBothLayersRefuseIndependently:
     `ActorResolver` refuses a disabled account at step 3 of resolution (`R3-05`); `resolve_scope`
     refuses one inside the bridge. An outcome-only test passes with either gate alone, which is the
     "redundant guards need separate evidence" shape this repo has recorded. Each is isolated here,
-    and the module's mutation table shows each mutant killing exactly one of these tests.
+    and this module's §Mutation evidence records each mutant killing exactly one of these tests.
 
     **The two gates are disablement's. Revocation's are different, and the asymmetry is real.**
     `ActorResolver` does not consult membership at all, so a revoked member authenticates
