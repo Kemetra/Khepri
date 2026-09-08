@@ -92,7 +92,7 @@
       <label for="compare-subject">{{ copy.compare_subject }}</label>
       <select id="compare-subject" name="subject">
         {% for candidate in compare_candidates %}
-        <option value="{{ candidate.version_id }}"{% if loop.first %} selected{% endif %}>{{ candidate.submitted.text }}</option>
+        <option value="{{ candidate.version_id }}" dir="ltr"{% if loop.first %} selected{% endif %}>{{ candidate.submitted.text }}</option>
         {% endfor %}
       </select>
     </p>
@@ -100,7 +100,7 @@
       <label for="compare-baseline">{{ copy.compare_baseline }}</label>
       <select id="compare-baseline" name="baseline">
         {% for candidate in compare_candidates %}
-        <option value="{{ candidate.version_id }}"{% if loop.index == 2 %} selected{% endif %}>{{ candidate.submitted.text }}</option>
+        <option value="{{ candidate.version_id }}" dir="ltr"{% if loop.index == 2 %} selected{% endif %}>{{ candidate.submitted.text }}</option>
         {% endfor %}
       </select>
     </p>

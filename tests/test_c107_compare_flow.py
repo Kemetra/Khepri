@@ -364,6 +364,11 @@ def test_arabic_labels_precede_their_controls_inside_rtl(tmp_path) -> None:
 
     assert 'dir="rtl"' in page
     assert page.index('dir="rtl"') < page.index("<form")
+    # The option text is a mixed-direction instant (digits plus a Latin "UTC"), so on an
+    # RTL page its segments reorder unless the option states its own direction, as every
+    # other timestamp in this template does (review on `#411`).
+    for option in re.findall(r"<option [^>]*>", page):
+        assert 'dir="ltr"' in option
     assert page.index('for="compare-subject"') < page.index('id="compare-subject"')
     assert page.index('for="compare-baseline"') < page.index('id="compare-baseline"')
     assert AR["compare_submit"] in page
