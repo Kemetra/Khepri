@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -337,10 +338,26 @@ class _OnDemandPrinter:
             return printer.print_to_pdf(page)
 
 
+def _own_render_directory(path: Path) -> None:
+    """Create the comparison render parent as this process's alone (`CWE-377`, review on `#409`).
+
+    The default sits in a shared temporary namespace, as the worker's workbook directory does,
+    so a path another local user pre-created -- or a symlink placed there -- would redirect or
+    fail every render. The directory is created private to the process user, a symlink is
+    refused, and on POSIX a directory owned by someone else is refused rather than used.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError(f"comparison render directory must not be a symlink: {path}")
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and path.stat().st_uid != getuid():
+        raise RuntimeError(f"comparison render directory is owned by another user: {path}")
+
+
 def build_comparison_actions(stack: RuntimeStack, *, workbooks: Path) -> ComparisonActions:
     """The comparison door (`C1-06`): a pair, resolved through `IsolationService`."""
     factory = stack.factory
-    workbooks.mkdir(parents=True, exist_ok=True)
+    _own_render_directory(workbooks)
     return ComparisonActions(
         isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
         stores=ComparisonStores(

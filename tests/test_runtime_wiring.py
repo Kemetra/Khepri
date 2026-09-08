@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from khepri.rca.identity import IdentityProvider
@@ -346,3 +348,18 @@ def test_the_comparison_render_directory_is_deployment_chosen(tmp_path) -> None:
     assert shell is not None and shell.comparisons is not None
     assert chosen.is_dir()
     assert shell.comparisons._assembly._excel.directory == chosen
+
+
+def test_the_comparison_render_directory_refuses_a_symlink(tmp_path) -> None:
+    """`CWE-377` (review on `#409`): the default parent sits in a shared temporary namespace, so a
+    symlink pre-placed at the path must be refused rather than followed."""
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    link = tmp_path / "comparisons"
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks unavailable here: {error}")
+
+    with pytest.raises(RuntimeError, match="symlink"):
+        build_shell_services(runtime_stack(), comparisons=link)
