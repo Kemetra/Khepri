@@ -280,7 +280,8 @@ class _StubComparisons:
                 pdf={"en": b"%PDF", "ar": b"%PDF"},
                 excel=b"xlsx",
                 subject_run_id="run-a",
-                baseline_run_id="run-b",
+                # `run-c` is `ver-b`'s run; `run-b` belongs to `ver-a` (review on `#411`).
+                baseline_run_id="run-c",
             ),
         )
 
@@ -372,7 +373,10 @@ def test_shell_surfaces_are_operable_at_every_viewport(
             )
             assert page.locator("h1").count() == 1
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            for locator in page.locator("button:visible, a:visible").all():
+            # Every interactive control the target-size requirement governs, not only the
+            # ones the shell happened to render before Compare added selects (`#411`).
+            controls = "button:visible, a:visible, select:visible, input:visible"
+            for locator in page.locator(controls).all():
                 box = locator.bounding_box()
                 assert box is not None and box["height"] >= 44
         finally:

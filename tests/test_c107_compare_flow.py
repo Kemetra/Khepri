@@ -113,10 +113,20 @@ def _visible(html: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class _Spec:
+    """One spine row to hand the candidate helper.
+
+    `at` is when the data was submitted and `started` when its run began: production reads
+    those from two independent clocks, and a fixture that collapses them cannot say which one
+    an order assertion means. `report_key` is stated rather than fixed, so the rule's treatment
+    of an unreachable report is asserted instead of assumed.
+    """
+
     version_id: str
     state_key: str | None = "run_state_completed"
     kind: str = "live"
     at: datetime = NOW
+    started: datetime | None = None
+    report_key: str = "report_available"
 
 
 def _spine(spec: _Spec) -> SpineRow:
@@ -124,14 +134,14 @@ def _spine(spec: _Spec) -> SpineRow:
     tombstone = spec.kind == "tombstone"
     data_gone = spec.kind == "deleted_data"
     return SpineRow(
-        started=submitted,
+        started=moment(spec.started if spec.started is not None else spec.at),
         data=DataReference(
             submitted=submitted,
             anchor=None if data_gone else spec.version_id,
             deleted=data_gone,
         ),
         state_key=None if tombstone else spec.state_key,
-        report_key=None if tombstone else "report_available",
+        report_key=None if tombstone else spec.report_key,
         retention_key="retention_deleted" if tombstone else "retention_kept",
         deleted=submitted if tombstone else None,
         run_id=None if tombstone else f"run-{spec.version_id}",
@@ -177,12 +187,26 @@ def test_compare_candidates_deduplicate_by_version_id() -> None:
 
 
 def test_compare_candidates_preserve_spine_order() -> None:
-    newer = _spine(_Spec("ver-new"))
-    older = _spine(_Spec("ver-old", at=NOW - timedelta(hours=1)))
+    """Spine order is run-start order, which the caller has already sorted. The two clocks are
+    crossed here -- the row that started later carries the earlier submission -- so an
+    implementation that re-sorted on the submission instant would return the other order."""
+    started_later = _spine(_Spec("ver-new", at=NOW - timedelta(hours=1), started=NOW))
+    started_earlier = _spine(_Spec("ver-old", at=NOW, started=NOW - timedelta(hours=1)))
 
-    found = compare_candidates((newer, older))
+    found = compare_candidates((started_later, started_earlier))
 
     assert tuple(item.version_id for item in found) == ("ver-new", "ver-old")
+
+
+def test_compare_candidates_keep_a_row_whose_report_is_unavailable() -> None:
+    """The candidate rule is reachability-blind by design: a completed run whose report is not
+    available is still a comparable entry, and the comparison itself states any refusal in its
+    own governed wording rather than the entry disappearing from the form without explanation."""
+    rows = (_spine(_Spec("ver-unreachable", report_key="report_unavailable")),)
+
+    found = compare_candidates(rows)
+
+    assert tuple(item.version_id for item in found) == ("ver-unreachable",)
 
 
 class _OperandParser(HTMLParser):

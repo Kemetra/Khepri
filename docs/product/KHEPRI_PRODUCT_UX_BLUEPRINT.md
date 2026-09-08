@@ -217,7 +217,7 @@ Result → Analysis detail                  (M3's durable home for the same resu
 Result ─┬─ Evidence / Why              (§10, contextual, M2 SHIPPED)
         ├─ Fix when possible           (§6 Fix & Continue, AUTHORITY-BLOCKED)
         ├─ Run Again / Compare         (§7.3 Run Again M3 CONTRACT-BLOCKED ·
-        │                               G4/C1 Compare M4 BLOCKED)
+        │                               G4/C1 Compare SHIPPED C1-06/C1-07)
         ├─ Export / Share              (§7.4 Analysis detail M3 ·
         │                               §16 Secure Share, future AUTHORITY-BLOCKED)
         ├─ Return next period          (§7.3 Run New Period, M3 CONTRACT-BLOCKED)
