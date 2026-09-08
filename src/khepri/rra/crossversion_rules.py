@@ -9,6 +9,7 @@ why the checks raise rather than persist a partial bundle.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from khepri.rra.analysis.comparison_package import COMPARISON_CROSSVERSION_VERSION
@@ -103,11 +104,20 @@ def require_identity_bundle_version(version: str) -> None:
 
 
 def require_citations(identity: CrossVersionIdentity) -> None:
-    """Non-empty, and every citation names the identity's own ordered pair."""
+    """Non-empty, one per citation, and each naming the identity's own ordered pair."""
     if not identity.citations:
         raise ValueError("cross-version identity has no composite provenance")
+    require_unique_citations(identity.citations)
     for citation in identity.citations:
         require_citation_bound(citation, identity)
+
+
+def require_unique_citations(citations: tuple[CrossVersionCitationProvenance, ...]) -> None:
+    """A repeated citation would collapse when the evidence rules key by identifier."""
+    ids = [citation.citation_id for citation in citations]
+    if len(ids) == len(set(ids)):
+        return
+    raise ValueError("cross-version identity repeats a citation")
 
 
 def require_citation_bound(
@@ -280,22 +290,27 @@ def require_admitted_caveat(caveats: tuple[StatedCaveat, ...]) -> None:
 
 
 def require_delta_operands(figures: tuple[CitedFigure, ...]) -> None:
-    grouped: dict[tuple[str, str], set[str | None]] = {}
+    grouped: dict[tuple[str, str], list[str | None]] = {}
     for figure in figures:
-        grouped.setdefault((figure.fact_id, figure.metric), set()).add(figure.label)
+        grouped.setdefault((figure.fact_id, figure.metric), []).append(figure.label)
     for labels in grouped.values():
-        require_delta_has_operands(labels)
+        require_delta_has_operands(Counter(labels))
 
 
-def require_delta_has_operands(labels: set[str | None]) -> None:
-    """Every comparison group shows subject, baseline and the absolute difference.
+def require_delta_has_operands(counts: Counter[str | None]) -> None:
+    """Exactly one subject, one baseline and one absolute difference per group.
 
-    Only the percentage difference is conditional (`RRA-008` §Operand order refuses
-    it unless `baseline > 0`); the other three are what makes a group a comparison.
+    Counted, not collected into a set: a set would hide a second `subject` cell, and
+    a duplicated operand renders as one. Only the percentage difference is
+    conditional (`RRA-008` §Operand order refuses it unless `baseline > 0`), and at
+    most one may appear.
     """
-    if {LABEL_SUBJECT, LABEL_BASELINE, LABEL_DIFFERENCE} <= labels:
-        return
-    raise ValueError("cross-version delta lacks its subject, baseline or difference operands")
+    if counts[LABEL_PERCENTAGE_DIFFERENCE] > 1:
+        raise ValueError("cross-version delta repeats its percentage difference")
+    if any(counts[label] != 1 for label in (LABEL_SUBJECT, LABEL_BASELINE, LABEL_DIFFERENCE)):
+        raise ValueError(
+            "cross-version delta repeats or lacks its subject, baseline or difference operands"
+        )
 
 
 def require_evidence(bundle: CrossVersionBundle) -> None:

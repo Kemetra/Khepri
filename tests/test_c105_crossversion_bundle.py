@@ -568,7 +568,9 @@ def test_report_bundle_version_is_not_a_constructor_argument() -> None:
     """
     assert "bundle_version" not in inspect.signature(ReportBundle).parameters
     report = ReportBundle.of(_package("100.00"))
-    with pytest.raises(TypeError, match="init=False"):
+    # CPython 3.13 raises TypeError here; earlier interpreters raised ValueError. The
+    # guarantee under test is the refusal, not the class the standard library chose.
+    with pytest.raises((TypeError, ValueError), match="init=False"):
         replace(report, bundle_version="rra006.bundle.v0")
 
 
@@ -586,6 +588,27 @@ def test_citation_naming_a_different_pair_than_its_identity_refuses(
 
     with pytest.raises(ValueError, match="different pair"):
         replace(identity, citations=(replace(first, pair=swapped_pair), *rest))
+
+
+def test_identity_repeating_a_citation_refuses(comparison_request: CrossVersionRequest) -> None:
+    """Keyed by identifier downstream, a repeated citation would silently collapse."""
+    identity = _bundle(comparison_request).identity
+    first, *rest = identity.citations
+
+    with pytest.raises(ValueError, match="repeats a citation"):
+        replace(identity, citations=(first, first, *rest))
+
+
+def test_group_with_a_repeated_operand_refuses(comparison_request: CrossVersionRequest) -> None:
+    """Two subject cells are not one subject; a set of labels would not notice."""
+    bundle = _bundle(comparison_request)
+    subject = next(figure for figure in bundle.figures if figure.label == LABEL_SUBJECT)
+    duplicate = replace(subject, figure_id=f"{subject.figure_id}-again")
+    figures = (*bundle.figures, duplicate)
+    section = replace(bundle.sections[0], figure_ids=tuple(figure.figure_id for figure in figures))
+
+    with pytest.raises(ValueError, match="repeats"):
+        replace(bundle, figures=figures, sections=(section,))
 
 
 def test_group_without_an_absolute_difference_refuses(
