@@ -462,6 +462,29 @@ def test_matched_metric_without_a_retained_basis_refuses(
     assert result.bundle is None
 
 
+def test_basis_map_covers_every_governed_metric_and_nothing_else(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """The import-time guard, asserted against the emitted set and exercised.
+
+    Review of #408 (debate-review): without this a metric added to GOVERNED_METRICS
+    later would refuse every pair under `incomplete coverage` instead of failing
+    once at import. The guard is called with a broken table so the test proves it
+    can fail, not only that the shipped table passes it.
+    """
+    from khepri.rra.facts import GOVERNED_METRICS
+
+    table = assembly_module._BASIS_BY_METRIC
+    assert set(table) == GOVERNED_METRICS
+    assert {figure.metric for figure in _bundle(comparison_request).figures} <= set(table)
+
+    missing_one = {metric: basis for metric, basis in table.items() if metric != "revenue"}
+    with pytest.raises(ValueError, match="missing \\['revenue'\\]"):
+        assembly_module._assert_basis_map_complete(missing_one)
+    with pytest.raises(ValueError, match="unknown \\['invented'\\]"):
+        assembly_module._assert_basis_map_complete({**table, "invented": "some_basis"})
+
+
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
     """Every value is one governed string, so no surface can print a Python repr.
 

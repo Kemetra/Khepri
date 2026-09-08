@@ -7,6 +7,7 @@ RRA-006 §Two-population bundle supplies only presentation assembly; RCA-005
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Context, Decimal, localcontext
 
@@ -66,6 +67,7 @@ from khepri.rra.crossversion_bundle import (
 )
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    GOVERNED_METRICS,
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
     METRIC_COST,
@@ -96,6 +98,26 @@ _BASIS_BY_METRIC = {
     METRIC_DISCOUNT: BASIS_SALES_REVENUE,
     METRIC_RETURNS: BASIS_FINANCIAL_REVENUE,
 }
+
+
+def _assert_basis_map_complete(table: Mapping[str, str]) -> None:
+    """Every governed metric names a basis, and nothing else does.
+
+    An import-time guard on the same pattern as the wording tables. Without it a
+    metric added to `GOVERNED_METRICS` later would fail `_find_basis` for every pair
+    and refuse under `incomplete coverage` -- a cause that means something else --
+    instead of failing here, once, where the omission is.
+    """
+    missing = GOVERNED_METRICS - set(table)
+    unknown = set(table) - GOVERNED_METRICS
+    if missing or unknown:
+        raise ValueError(
+            f"basis map disagrees with the governed metrics: missing {sorted(missing)}, "
+            f"unknown {sorted(unknown)}"
+        )
+
+
+_assert_basis_map_complete(_BASIS_BY_METRIC)
 
 
 #: `facts.RATIO_PRECISION` as a quantum: every `UNIT_RATIO` figure that reaches a
