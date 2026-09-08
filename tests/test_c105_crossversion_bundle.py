@@ -16,12 +16,16 @@ from types import ModuleType
 
 import pytest
 
+from khepri.rra import crossversion_assembly as assembly_module
 from khepri.rra import crossversion_bundle as crossversion_module
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.analysis.comparison_narrative import CROSSVERSION_REFUSALS
 from khepri.rra.analysis.comparison_package import (
     COMPARISON_CROSSVERSION_VERSION,
     OPERAND_ORDER,
+    MeasuredPair,
+    PairProvenance,
+    build_cross_version_fact,
 )
 from khepri.rra.analysis.compatibility import (
     CAUSE_CURRENCY,
@@ -355,6 +359,39 @@ def test_identity_discloses_composite_provenance(
     }
     for provenance in bundle.identity.pair_provenance:
         assert {provenance.subject_basis_id, provenance.baseline_basis_id} <= basis_ids
+
+
+def test_percentage_ratio_survives_the_governed_magnitude_extremes() -> None:
+    """The governed maximum subject over the governed minimum baseline derives.
+
+    Review of #408 (debate-review) suspected this pair overflowed Python's default
+    28-digit context. Checked: the quotient is 27 digits and fits, so there was no
+    live defect. The ratio is nonetheless computed under `ARITHMETIC_PRECISION` as
+    every other ratio in the repository is, and this pins that the extreme pair
+    derives to a four-place fraction rather than raising out of assembly.
+    """
+    fact = build_cross_version_fact(
+        MeasuredPair(
+            metric="revenue",
+            subject_value=Decimal("9" * 16 + ".99"),
+            baseline_value=Decimal("0.000001"),
+            precision=2,
+            unit_kind="monetary",
+        ),
+        PairProvenance(
+            subject_version_id="dsv_big",
+            subject_basis_id="basis_big",
+            subject_manifest_id="manifest_big",
+            baseline_version_id="dsv_tiny",
+            baseline_basis_id="basis_tiny",
+            baseline_manifest_id="manifest_tiny",
+        ),
+    )
+
+    ratio = assembly_module._percentage_ratio(fact)
+
+    assert ratio.as_tuple().exponent == -4
+    assert ratio > Decimal("1e21")
 
 
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:

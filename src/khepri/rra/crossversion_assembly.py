@@ -8,7 +8,7 @@ RRA-006 §Two-population bundle supplies only presentation assembly; RCA-005
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Context, Decimal, localcontext
 
 from khepri.rra.analysis.comparison import METRIC_DELTA_PERCENT
 from khepri.rra.analysis.comparison_narrative import refusal_wording
@@ -64,6 +64,7 @@ from khepri.rra.crossversion_bundle import (
     CrossVersionSection,
 )
 from khepri.rra.facts import (
+    ARITHMETIC_PRECISION,
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
     METRIC_COST,
@@ -295,8 +296,16 @@ def _percentage_ratio(fact: CrossVersionFact) -> Decimal:
     period-comparison family's `revenue_delta_percent` fact does. Review of `#408`
     found the earlier cell pre-formatted a percent sign into text the shared
     formatter could not parse, so it was published ungrouped at full precision.
+
+    Computed under `ARITHMETIC_PRECISION`, as `facts` and the period-comparison
+    family compute every ratio, so this module holds no arithmetic assumption of
+    its own. Review of `#408` asked whether the governed extremes -- a sixteen-digit
+    subject over a six-decimal baseline -- overflow Python's default 28-digit
+    context; they do not (27 digits), and the governed context makes the question
+    moot for any magnitude the package contract could later admit.
     """
-    return (fact.absolute_delta / fact.baseline_value).quantize(_RATIO_QUANTUM)
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        return (fact.absolute_delta / fact.baseline_value).quantize(_RATIO_QUANTUM)
 
 
 def _figure(fact: CrossVersionFact, cell: _FigureCell, position: int) -> CitedFigure:
