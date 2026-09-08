@@ -655,7 +655,12 @@ class Section:
     def __post_init__(self) -> None:
         # `_require_section` runs first, so everything after it may index the
         # per-section tables by `section_id` without re-checking membership.
-        _require_section(self.section_id)
+        if self.section_id not in ORDERED_SECTIONS:
+            # A report section indexes `SECTION_REASONS` and `SECTION_CHART_KINDS`,
+            # which know only the five ordered sections. The sibling bundle's section
+            # has its own type and never reaches these tables, so this type stays on
+            # the closed order even though a figure or caveat may name the sibling.
+            raise ValueError("unknown section")
         _require_section_state(self.state)
         _require_section_reason(self.section_id, self.state, self.reason)
         _require_distinct_figures(self.figure_ids, "section")

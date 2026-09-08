@@ -46,9 +46,11 @@ from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
     OUTCOME_DELIVERED,
     REQUIRED_SURFACES,
+    SECTION_REFUSED,
     BundleAssembler,
     CitedEvidence,
     ReportBundle,
+    Section,
     reconcile,
 )
 from khepri.rra.crossversion_bundle import (
@@ -187,10 +189,10 @@ def test_reversed_pair_changes_bundle_and_figure_identities(
     # their own, while the document named the wrong package as subject.
     subject_id = request.subject_period.dataset_version_id
     baseline_id = request.baseline_period.dataset_version_id
-    assert forward.identity.as_document()["subject"]["dataset_version_id"] == subject_id
-    assert forward.identity.as_document()["baseline"]["dataset_version_id"] == baseline_id
-    assert backward.identity.as_document()["subject"]["dataset_version_id"] == baseline_id
-    assert backward.identity.as_document()["baseline"]["dataset_version_id"] == subject_id
+    assert forward.identity.as_document()["subject.dataset_version_id"] == subject_id
+    assert forward.identity.as_document()["baseline.dataset_version_id"] == baseline_id
+    assert backward.identity.as_document()["subject.dataset_version_id"] == baseline_id
+    assert backward.identity.as_document()["baseline.dataset_version_id"] == subject_id
 
 
 def test_every_delta_has_both_operands(comparison_request: CrossVersionRequest) -> None:
@@ -330,20 +332,67 @@ def test_identity_discloses_composite_provenance(
     comparison_request: CrossVersionRequest,
 ) -> None:
     request = comparison_request
-    document = _bundle(request).identity.as_document()
-    serialized = canonical_json(document)
-    expected = (
-        request.subject_period.dataset_version_id,
-        request.baseline_period.dataset_version_id,
-        request.subject.coverage_manifest_identity,
-        request.baseline.coverage_manifest_identity,
+    bundle = _bundle(request)
+    document = bundle.identity.as_document()
+
+    assert document["subject.dataset_version_id"] == request.subject_period.dataset_version_id
+    assert document["baseline.dataset_version_id"] == request.baseline_period.dataset_version_id
+    assert (
+        document["subject.coverage_manifest_identity"] == request.subject.coverage_manifest_identity
     )
-    assert all(value is not None and value in serialized for value in expected)
-    assert all(
-        provenance.subject_basis_id in serialized and provenance.baseline_basis_id in serialized
-        for provenance in _bundle(request).identity.pair_provenance
+    assert (
+        document["baseline.coverage_manifest_identity"]
+        == request.baseline.coverage_manifest_identity
     )
-    assert document["operand_order"] == list(OPERAND_ORDER)
+    assert document["operand_order"] == ",".join(OPERAND_ORDER)
+    # The retained bases are per citation and live on the evidence records, which the
+    # rules bind to the identity's citations; the identity document itself is flat.
+    basis_ids = {
+        value
+        for record in bundle.evidence
+        for key, value in (record.provenance or ())
+        if key.endswith("_basis_id")
+    }
+    for provenance in bundle.identity.pair_provenance:
+        assert {provenance.subject_basis_id, provenance.baseline_basis_id} <= basis_ids
+
+
+def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
+    """Every value is one governed string, so no surface can print a Python repr.
+
+    Review of #408 (debate-review) found the earlier nested document reaching the
+    HTML provenance table and the workbook provenance sheet as dict and list reprs,
+    because both flatten the identity document value by value with str().
+    """
+    document = _bundle(comparison_request).identity.as_document()
+
+    assert all(isinstance(value, str) for value in document.values()), document
+    assert "citations" not in document
+    assert not any("{" in value or "[" in value for value in document.values())
+
+
+def test_pair_coverage_identity_is_a_digest(comparison_request: CrossVersionRequest) -> None:
+    """The Protocol's one manifest slot carries a digest, not a JSON blob."""
+    identity = _bundle(comparison_request).identity
+
+    assert re.fullmatch(r"[0-9a-f]{64}", identity.coverage_manifest_identity)
+
+
+def test_report_section_cannot_name_the_sibling_section() -> None:
+    """`Section` stays on the closed order: its tables know five sections.
+
+    Review of #408 found that widening the shared membership predicate let a
+    `Section("crossversion", refused, ...)` pass membership and then raise KeyError
+    from `SECTION_REASONS`. It is a ValueError again, before any table is indexed.
+    """
+    with pytest.raises(ValueError, match="unknown section"):
+        Section(
+            section_id=SECTION_CROSSVERSION,
+            state=SECTION_REFUSED,
+            reason="prior_window_absent",
+            figure_ids=(),
+            chart=None,
+        )
 
 
 def test_every_evidence_record_uses_crossversion_formula(

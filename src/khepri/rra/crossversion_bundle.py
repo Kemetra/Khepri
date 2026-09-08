@@ -99,6 +99,24 @@ class CrossVersionPackageIdentity:
             "coverage_signatures": list(self.coverage_signatures),
         }
 
+    def flat_document(self, role: str) -> dict[str, str]:
+        """One governed value per key, prefixed by the operand's role.
+
+        The HTML provenance table and the workbook provenance sheet serialize an
+        identity document value by value with `str()`, so a nested document reaches
+        a reader as a Python repr. Review of `#408` found exactly that; every value
+        here is a single version, digest or identifier, and the signature identities
+        are joined rather than listed.
+        """
+        return {
+            f"{role}.dataset_version_id": self.dataset_version_id,
+            f"{role}.package_digest": self.package_digest,
+            f"{role}.profile_digest": self.profile_digest,
+            f"{role}.source_sha256_hex": self.source_sha256_hex,
+            f"{role}.coverage_manifest_identity": self.coverage_manifest_identity,
+            f"{role}.coverage_signatures": ",".join(self.coverage_signatures),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class CrossVersionCitationProvenance:
@@ -151,29 +169,41 @@ class CrossVersionIdentity:
 
     @property
     def coverage_manifest_identity(self) -> str:
-        return canonical_json(
-            {
-                "subject": self.subject.coverage_manifest_identity,
-                "baseline": self.baseline.coverage_manifest_identity,
-            }
+        """A digest of the ordered pair of manifest identities.
+
+        The shared bundle Protocol has one slot for a manifest identity and this
+        bundle has two. A digest is what belongs in that slot -- the evidence drawer
+        prints it where a report bundle prints its manifest digest -- and both
+        underlying identities remain readable, unhashed, in `as_document()`.
+        """
+        pair = canonical_json(
+            [self.subject.coverage_manifest_identity, self.baseline.coverage_manifest_identity]
         )
+        return hashlib.sha256(pair.encode()).hexdigest()
 
     @property
     def coverage_signatures(self) -> tuple[str, ...]:
         return (*self.subject.coverage_signatures, *self.baseline.coverage_signatures)
 
     def as_document(self) -> dict[str, object]:
+        """Flat: one governed version, digest or identifier per key.
+
+        `citations` is deliberately absent, on the precedent that keeps `evidence`
+        out of `ReportBundle.as_document()`: every citation is a function of the
+        facts and the two package identities this document already digests, so
+        including it would rename the bundle for no change in what it presents.
+        The rules still cross-check every evidence record against the citations.
+        """
         return {
             "bundle_version": self.bundle_version,
-            "subject": self.subject.as_document(),
-            "baseline": self.baseline.as_document(),
-            "operand_order": list(OPERAND_ORDER),
+            "operand_order": ",".join(OPERAND_ORDER),
+            **self.subject.flat_document(OPERAND_ORDER[0]),
+            **self.baseline.flat_document(OPERAND_ORDER[1]),
             "package_version": self.package_version,
             "package_formula_version": self.package_formula_version,
             "mapping_version": self.mapping_version,
             "comparison_formula_version": self.comparison_formula_version,
             "narrative_version": self.narrative_version,
-            "citations": [entry.as_document() for entry in self.citations],
         }
 
 
