@@ -349,6 +349,9 @@ def _own_render_directory(path: Path) -> None:
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.is_symlink():
         raise RuntimeError(f"comparison render directory must not be a symlink: {path}")
+    # mkdir applies its mode only when it creates the directory; a path left behind by an
+    # earlier run, or pre-created wider, keeps its mode unless it is set here as well.
+    path.chmod(0o700)
     getuid = getattr(os, "getuid", None)
     if getuid is not None and path.stat().st_uid != getuid():
         raise RuntimeError(f"comparison render directory is owned by another user: {path}")

@@ -363,3 +363,17 @@ def test_the_comparison_render_directory_refuses_a_symlink(tmp_path) -> None:
 
     with pytest.raises(RuntimeError, match="symlink"):
         build_shell_services(runtime_stack(), comparisons=link)
+
+
+def test_a_pre_existing_render_directory_is_made_private(tmp_path) -> None:
+    """The mode leg of the guard: a directory already present keeps whatever mode it had unless
+    the guard sets it, so a parent left wide open by an earlier run is closed on wiring."""
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits only")
+    chosen = tmp_path / "comparisons"
+    chosen.mkdir(mode=0o777)
+    chosen.chmod(0o777)
+
+    build_shell_services(runtime_stack(), comparisons=chosen)
+
+    assert chosen.stat().st_mode & 0o777 == 0o700
