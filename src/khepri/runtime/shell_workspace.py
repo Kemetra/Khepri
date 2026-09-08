@@ -129,11 +129,18 @@ class CompareCandidate:
     """One live completed data entry the Analyses Compare form may name (`FR-132`).
 
     `version_id` is the opaque identifier carried only into `<option value>`. `submitted` is
-    how the Data surface names the same entry, and is the option's visible text.
+    how the Data surface names the same entry. `position` is that entry's place in this list,
+    counting from one: the submission instant is minute-resolution and two entries a few
+    seconds apart render the same text, so an option labelled by the instant alone would give
+    a member two identical choices. The Data surface answers the same collision with a second
+    visible field beside the instant, and an `<option>` may hold text only -- it cannot carry
+    the navigable anchor `DataReference` uses -- so the position is that second field, and it
+    also states the list's own order rather than leaving it implied.
     """
 
     version_id: str
     submitted: Moment
+    position: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,7 +408,7 @@ def spine_rows(
     return tuple(sorted(live + list(gone.values()), key=lambda row: row.started.at, reverse=True))
 
 
-def _compare_candidate(row: SpineRow) -> CompareCandidate | None:
+def _compare_candidate(row: SpineRow, position: int) -> CompareCandidate | None:
     if row.deleted is not None:
         return None
     if row.state_key != "run_state_completed":
@@ -413,14 +420,14 @@ def _compare_candidate(row: SpineRow) -> CompareCandidate | None:
         return None
     if not data.anchor:
         return None
-    return CompareCandidate(version_id=data.anchor, submitted=data.submitted)
+    return CompareCandidate(version_id=data.anchor, submitted=data.submitted, position=position)
 
 
 def compare_candidates(rows: Iterable[SpineRow]) -> tuple[CompareCandidate, ...]:
     """Live completed rows with present, kept data; newest first, unique by version."""
     found: dict[str, CompareCandidate] = {}
     for row in rows:
-        candidate = _compare_candidate(row)
+        candidate = _compare_candidate(row, len(found) + 1)
         if candidate is not None and candidate.version_id not in found:
             found[candidate.version_id] = candidate
     return tuple(found.values())

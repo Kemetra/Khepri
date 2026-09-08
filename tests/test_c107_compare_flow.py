@@ -157,7 +157,7 @@ def test_compare_candidates_keep_completed_live_rows_only() -> None:
 
     found = compare_candidates(rows)
 
-    assert found == (CompareCandidate(version_id="ver-new", submitted=moment(NOW)),)
+    assert found == (CompareCandidate(version_id="ver-new", submitted=moment(NOW), position=1),)
 
 
 def test_compare_candidates_exclude_deleted_data() -> None:
@@ -183,7 +183,7 @@ def test_compare_candidates_deduplicate_by_version_id() -> None:
 
     found = compare_candidates((first, again))
 
-    assert found == (CompareCandidate(version_id="ver-a", submitted=moment(NOW)),)
+    assert found == (CompareCandidate(version_id="ver-a", submitted=moment(NOW), position=1),)
 
 
 def test_compare_candidates_preserve_spine_order() -> None:
@@ -265,6 +265,29 @@ def _operands(html: str) -> dict[str, tuple[str, str]]:
     return parser.operands
 
 
+def test_two_entries_submitted_in_one_minute_are_distinguishable() -> None:
+    """`created_at` carries no uniqueness constraint and the instant is minute-resolution, so
+    two entries seconds apart share their visible text. Each option states its position too,
+    which is also the list's own order -- the alternative, a navigable anchor as `DataReference`
+    uses, is not open to an `<option>`, which may hold text only."""
+    same_minute = NOW.replace(second=0)
+    rows = (
+        _spine(_Spec("ver-first", at=same_minute, started=same_minute)),
+        _spine(
+            _Spec(
+                "ver-second",
+                at=same_minute.replace(second=40),
+                started=same_minute.replace(second=40),
+            )
+        ),
+    )
+
+    found = compare_candidates(rows)
+
+    assert len({item.submitted.text for item in found}) == 1
+    assert tuple(item.position for item in found) == (1, 2)
+
+
 def test_a_completed_pair_renders_the_compare_form(tmp_path) -> None:
     j = journey()
     who = member(j.w)
@@ -280,8 +303,8 @@ def test_a_completed_pair_renders_the_compare_form(tmp_path) -> None:
     assert form.selected["subject"] == newer.version_id
     assert form.selected["baseline"] == older.version_id
     assert form.option_text["subject"] == [
-        moment(newer.created_at).text,
-        moment(older.created_at).text,
+        f"1. {moment(newer.created_at).text}",
+        f"2. {moment(older.created_at).text}",
     ]
     assert pair.subject.version_id in form.values["subject"]
     assert pair.baseline.version_id in form.values["subject"]
