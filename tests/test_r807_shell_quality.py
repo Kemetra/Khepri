@@ -156,60 +156,87 @@ class _StubIsolation:
         return f"scope-{organization_id}"
 
 
+def _admitted_source() -> AdmittedSource:
+    return AdmittedSource(
+        plaintext_digest="d" * 64,
+        ciphertext_digest="d" * 64,
+        size_bytes=4096,
+        media_type="text/csv",
+        manifest_digest="d" * 64,
+        mapping_version="mapping-v-alpha",
+        admission_outcome="admitted",
+    )
+
+
+def _dataset(version_id: str, when: datetime) -> DatasetVersion:
+    return DatasetVersion._from_storage(
+        version_id=version_id,
+        owner_id="org-acme",
+        source=_admitted_source(),
+        lifecycle=VersionLifecycle(created_at=when, sealed_at=when),
+    )
+
+
+def _completed_run(run_id: str, version_id: str, when: datetime) -> AnalysisRun:
+    return AnalysisRun._from_storage(
+        subject=RunSubject(run_id=run_id, owner_id="org-acme", version_id=version_id),
+        outcome=RunOutcome(
+            state=RUN_COMPLETED,
+            package_digest="d" * 64,
+            package_version="package-v-alpha",
+            formula_version="formula-v-alpha",
+            completed_at=when,
+        ),
+        started_at=when,
+    )
+
+
+def _earlier_run() -> AnalysisRun:
+    when = NOW - timedelta(days=1)
+    return AnalysisRun._from_storage(
+        subject=RunSubject(run_id="run-b", owner_id="org-acme", version_id="ver-a"),
+        outcome=RunOutcome(
+            state=RUN_COMPLETED,
+            package_digest="d" * 64,
+            package_version="package-v-earlier",
+            formula_version="formula-v-earlier",
+            completed_at=when,
+        ),
+        started_at=when,
+    )
+
+
+def _bindings_for(*run_ids: str) -> tuple[ArtifactBinding, ...]:
+    return tuple(
+        ArtifactBinding._from_storage(
+            run_id=run_id,
+            owner_id="org-acme",
+            artifact=PublishedArtifact(surface=kind, artifact_digest="d" * 64),
+            published_at=NOW,
+        )
+        for run_id in run_ids
+        for kind in REQUIRED_ARTIFACT_KINDS
+    )
+
+
 class _StubRecords:
-    """One admitted data version with one completed analysis, so both new surfaces render rows
-    rather than their empty states."""
+    """Two admitted versions, each with a completed analysis, so Analyses can offer Compare
+    and both workspace surfaces render rows rather than their empty states."""
 
     def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
-        version = DatasetVersion._from_storage(
-            version_id="ver-a",
-            owner_id="org-acme",
-            source=AdmittedSource(
-                plaintext_digest="d" * 64,
-                ciphertext_digest="d" * 64,
-                size_bytes=4096,
-                media_type="text/csv",
-                manifest_digest="d" * 64,
-                mapping_version="mapping-v-alpha",
-                admission_outcome="admitted",
-            ),
-            lifecycle=VersionLifecycle(created_at=NOW, sealed_at=NOW),
-        )
-        run = AnalysisRun._from_storage(
-            subject=RunSubject(run_id="run-a", owner_id="org-acme", version_id="ver-a"),
-            outcome=RunOutcome(
-                state=RUN_COMPLETED,
-                package_digest="d" * 64,
-                package_version="package-v-alpha",
-                formula_version="formula-v-alpha",
-                completed_at=NOW,
-            ),
-            started_at=NOW,
-        )
-        bindings = tuple(
-            ArtifactBinding._from_storage(
-                run_id="run-a",
-                owner_id="org-acme",
-                artifact=PublishedArtifact(surface=kind, artifact_digest="d" * 64),
-                published_at=NOW,
-            )
-            for kind in REQUIRED_ARTIFACT_KINDS
-        )
-        # `W1-08`: an earlier completed run under other governed versions, so detail renders the
-        # Methodology Change Notice and the matrix measures it.
-        earlier = AnalysisRun._from_storage(
-            subject=RunSubject(run_id="run-b", owner_id="org-acme", version_id="ver-a"),
-            outcome=RunOutcome(
-                state=RUN_COMPLETED,
-                package_digest="d" * 64,
-                package_version="package-v-earlier",
-                formula_version="formula-v-earlier",
-                completed_at=NOW - timedelta(days=1),
-            ),
-            started_at=NOW - timedelta(days=1),
-        )
+        del owner_id
+        other_at = NOW - timedelta(hours=1)
+        # `W1-08`: `run-b` is an earlier completed run under other governed versions, so
+        # detail renders the Methodology Change Notice and the matrix measures it.
         return WorkspaceHistory(
-            versions=(version,), runs=(run, earlier), bindings=bindings, tombstones=()
+            versions=(_dataset("ver-a", NOW), _dataset("ver-b", other_at)),
+            runs=(
+                _completed_run("run-a", "ver-a", NOW),
+                _completed_run("run-c", "ver-b", other_at),
+                _earlier_run(),
+            ),
+            bindings=_bindings_for("run-a", "run-b", "run-c"),
+            tombstones=(),
         )
 
 
@@ -253,7 +280,8 @@ class _StubComparisons:
                 pdf={"en": b"%PDF", "ar": b"%PDF"},
                 excel=b"xlsx",
                 subject_run_id="run-a",
-                baseline_run_id="run-b",
+                # `run-c` is `ver-b`'s run; `run-b` belongs to `ver-a` (review on `#411`).
+                baseline_run_id="run-c",
             ),
         )
 
@@ -345,7 +373,10 @@ def test_shell_surfaces_are_operable_at_every_viewport(
             )
             assert page.locator("h1").count() == 1
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            for locator in page.locator("button:visible, a:visible").all():
+            # Every interactive control the target-size requirement governs, not only the
+            # ones the shell happened to render before Compare added selects (`#411`).
+            controls = "button:visible, a:visible, select:visible, input:visible"
+            for locator in page.locator(controls).all():
                 box = locator.bounding_box()
                 assert box is not None and box["height"] >= 44
         finally:

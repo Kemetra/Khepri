@@ -185,6 +185,11 @@ _EN = {
     "compare_baseline": "Baseline",
     "compare_passport": "Open analysis passport",
     "compare_report": "Download report",
+    "compare_submit": "Compare",
+    "compare_pick_intro": (
+        "Choose two analysed data entries; the comparison is derived when you ask"
+        " and is not stored."
+    ),
 }
 
 _AR = {
@@ -323,6 +328,8 @@ _AR = {
     "compare_baseline": "الأساس",
     "compare_passport": "افتح بطاقة التحليل",
     "compare_report": "نزّل التقرير",
+    "compare_submit": "قارِن",
+    "compare_pick_intro": "اختر إدخالَي بيانات سبق تحليلهما؛ تُشتق المقارنة عندما تطلبها ولا تُحفظ.",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

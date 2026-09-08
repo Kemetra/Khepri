@@ -217,7 +217,7 @@ Result → Analysis detail                  (M3's durable home for the same resu
 Result ─┬─ Evidence / Why              (§10, contextual, M2 SHIPPED)
         ├─ Fix when possible           (§6 Fix & Continue, AUTHORITY-BLOCKED)
         ├─ Run Again / Compare         (§7.3 Run Again M3 CONTRACT-BLOCKED ·
-        │                               G4/C1 Compare M4 BLOCKED)
+        │                               G4/C1 Compare SHIPPED C1-06/C1-07)
         ├─ Export / Share              (§7.4 Analysis detail M3 ·
         │                               §16 Secure Share, future AUTHORITY-BLOCKED)
         ├─ Return next period          (§7.3 Run New Period, M3 CONTRACT-BLOCKED)
@@ -249,7 +249,7 @@ phase, not a required stop on the way to the next row:
 | Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
 | What Changed (M4 enrichment) | §4, §22 | M4 | FUTURE SHAPING REQUIRED — adds to the M2/M3 result, does not gate it |
 | Explore | §22 | M4 optional / post-M4 | `X1-02` may ship inside M4 per roadmap `X1`; PROPOSED |
-| Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
+| Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare is authorized by active `RCA-005` §Comparison orchestration (FR-130–FR-133) and shipped by C1-06/C1-07 |
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
 | Guided questions | §22 | post-M4 | `X1-04` is outside the roadmap's M4-eligible `X1-01`–`X1-03`; PROPOSED |
@@ -408,7 +408,7 @@ state, its trust state, whether the report is available, its retention state, an
 action.
 
 Default order newest first. **No filtering system in M3** unless a real product need and contract
-later justify one. **No Compare in M3.**
+later justify one. **Compare is authorized by active `RCA-005` §Comparison orchestration (`FR-130`–`FR-133`) and shipped by `C1-06`/`C1-07`**: `FR-132` requires a completed comparison to be reachable from this surface, so the spine carries a Compare form below it. The spine itself still filters nothing and still promises no fixed count.
 
 Per state: a completed analysis opens; a processing analysis **shows its state without promising a
 durable progress page** unless a future contract provides one; a deleted analysis is a minimal
@@ -901,7 +901,7 @@ production code may not.
 |---|---|---|---|---|---|
 | **M3-U1** | Organization frame; **no destination link ships until its own surface does** | `W1-01` | the frame, route continuity, the nav mechanism | rendering a link for a surface a later slice delivers; list content; any new visual world | CONTRACT-BLOCKED |
 | **M3-U2** | Operational and trust state presentation | `W1-01`; `T1` for aggregate labels | state rendering, EN/AR copy keys | fusing the axes; exposing machine words; fixed result counts | CONTRACT-BLOCKED (principle is LOCKED) |
-| **M3-U3** | Analysis history and detail | `W1-04`, M3-U2 | list, detail, artifact access | Compare; filters; report redesign | CONTRACT-BLOCKED |
+| **M3-U3** | Analysis history and detail | `W1-04`, M3-U2 | list, detail, artifact access, **and the Compare entry `RCA-005` `FR-132` requires** (`C1-07`) | filters; report redesign | CONTRACT-BLOCKED |
 | **M3-U4** | Data history and detail | `W1-01`/`W1-04`, M3-U2 | list, detail, lineage | file preview; raw rows; version graph | CONTRACT-BLOCKED |
 | **M3-U5** | Overview | M3-U3, M3-U4 | latest work, data state, attention | KPI cards; charts; business metrics | CONTRACT-BLOCKED |
 | **M3-U6** | Retention and tombstones | `W1-07`, active `G2` (which decides clock cardinality) | retention display, tombstone rows | inventing tombstone fields; asserting any lifecycle relationship `G2` has not decided | AUTHORITY-BLOCKED |
