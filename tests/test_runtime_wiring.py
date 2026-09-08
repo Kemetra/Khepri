@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from khepri.rca.identity import IdentityProvider
@@ -333,3 +335,45 @@ def test_the_deployed_shell_offers_the_deletion_route() -> None:
     delete = {path for path in paths if path.endswith("/data/{version_id}/delete")}
     assert delete, f"no deletion route in the deployed app: {sorted(paths)}"
     assert all("POST" in route.methods for route in app.routes if route.path in delete)
+
+
+def test_the_comparison_render_directory_is_deployment_chosen(tmp_path) -> None:
+    """Review on `#409`: the parent of the per-request render directories was a fresh `mkdtemp`
+    per process start -- never removed, never configurable. It is a parameter now, created in
+    place, and kept apart from the retained-report workbook directory."""
+    chosen = tmp_path / "comparisons"
+
+    shell = build_shell_services(runtime_stack(), comparisons=chosen)
+
+    assert shell is not None and shell.comparisons is not None
+    assert chosen.is_dir()
+    assert shell.comparisons._assembly._excel.directory == chosen
+
+
+def test_the_comparison_render_directory_refuses_a_symlink(tmp_path) -> None:
+    """`CWE-377` (review on `#409`): the default parent sits in a shared temporary namespace, so a
+    symlink pre-placed at the path must be refused rather than followed."""
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    link = tmp_path / "comparisons"
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks unavailable here: {error}")
+
+    with pytest.raises(RuntimeError, match="symlink"):
+        build_shell_services(runtime_stack(), comparisons=link)
+
+
+def test_a_pre_existing_render_directory_is_made_private(tmp_path) -> None:
+    """The mode leg of the guard: a directory already present keeps whatever mode it had unless
+    the guard sets it, so a parent left wide open by an earlier run is closed on wiring."""
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits only")
+    chosen = tmp_path / "comparisons"
+    chosen.mkdir(mode=0o777)
+    chosen.chmod(0o777)
+
+    build_shell_services(runtime_stack(), comparisons=chosen)
+
+    assert chosen.stat().st_mode & 0o777 == 0o700

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,7 @@ from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
 from khepri.rca.workspace.audit_retention import WorkspaceAuditSweeper
+from khepri.rca.workspace.comparisons import ComparisonActions, ComparisonStores
 from khepri.rca.workspace.persistence import (
     SqlRunProvenanceStore,
     SqlRunReportStore,
@@ -66,7 +68,7 @@ from khepri.rra.persistence import (
 from khepri.rra.pipeline import ReportPipeline, ReportPipelinePorts
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
-from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer
+from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer, PrintablePage
 from khepri.rra.report_artifacts import MaterializedRenderer
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import (
@@ -81,6 +83,7 @@ from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.bridge import CommercialBridge
 from khepri.runtime.clerk_identity import ClerkIdentityProvider
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
+from khepri.runtime.comparison_assembly import ComparisonAssemblyPorts, CrossVersionAssembly
 from khepri.runtime.config import RuntimeSettings
 from khepri.runtime.external_auth_api import (
     KHEPRI_SESSION_LIFETIME,
@@ -325,6 +328,62 @@ def _record_stores(stack: RuntimeStack) -> RecordStores:
     )
 
 
+class _OnDemandPrinter:
+    """A `PagePrinter` that launches Chromium for one comparison request."""
+
+    def print_to_pdf(self, page: PrintablePage) -> bytes:
+        from khepri.rra.rendering.chromium import launch_chromium
+
+        with launch_chromium() as printer:
+            return printer.print_to_pdf(page)
+
+
+def _own_render_directory(path: Path) -> None:
+    """Create the comparison render parent as this process's alone (`CWE-377`, review on `#409`).
+
+    The default sits in a shared temporary namespace, as the worker's workbook directory does,
+    so a path another local user pre-created -- or a symlink placed there -- would redirect or
+    fail every render. The directory is created private to the process user, a symlink is
+    refused, and on POSIX a directory owned by someone else is refused rather than used.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError(f"comparison render directory must not be a symlink: {path}")
+    # mkdir applies its mode only when it creates the directory; a path left behind by an
+    # earlier run, or pre-created wider, keeps its mode unless it is set here as well.
+    path.chmod(0o700)
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and path.stat().st_uid != getuid():
+        raise RuntimeError(f"comparison render directory is owned by another user: {path}")
+
+
+def build_comparison_actions(stack: RuntimeStack, *, workbooks: Path) -> ComparisonActions:
+    """The comparison door (`C1-06`): a pair, resolved through `IsolationService`."""
+    factory = stack.factory
+    _own_render_directory(workbooks)
+    return ComparisonActions(
+        isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
+        stores=ComparisonStores(
+            workspace=SqlWorkspaceRecordStore(factory),
+            audit=SqlWorkspaceAuditStore(factory),
+            factory=factory,
+        ),
+        assembly=CrossVersionAssembly(
+            ports=ComparisonAssemblyPorts(
+                packages=stack.services.packages,
+                profiling=stack.services.profiling,
+                jobs=SqlJobSessions(factory),
+                reports=SqlRunReportStore(factory),
+                provenance=SqlRunProvenanceStore(factory),
+                workspace=SqlWorkspaceRecordStore(factory),
+            ),
+            html=HtmlReportRenderer(),
+            pdf=PdfReportRenderer(printer=_OnDemandPrinter()),
+            excel=ExcelSurfaceRenderer(directory=workbooks),
+        ),
+    )
+
+
 def build_workspace_actions(stack: RuntimeStack) -> WorkspaceActions:
     """The workspace's customer door (`W1-04`): a `Caller`, resolved through `IsolationService`.
 
@@ -511,7 +570,14 @@ def build_recovery_security_service(stack: RuntimeStack) -> RecoverySecurityServ
     )
 
 
-def build_web_app(stack: RuntimeStack) -> FastAPI:
+#: Where a comparison's per-request render directories are made. A deployment chooses it by
+#: passing another path; it is created in place, so nothing is left behind per process start.
+#: Deliberately not the retained-report workbook directory: a comparison is rendered on request
+#: and retained nowhere (`RRA-006` §Not stored), and its files never outlive the request.
+COMPARISON_DIRECTORY = Path("/tmp/khepri-comparisons")
+
+
+def build_web_app(stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY) -> FastAPI:
     beta = build_beta_services(stack)
     app = create_app(
         service=stack.services.invitations,
@@ -535,7 +601,9 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
     )
     add_legal_routes(app)
     add_landing_routes(app)
-    add_shell_routes(app, services=build_shell_services(stack), clock=stack.clock)
+    add_shell_routes(
+        app, services=build_shell_services(stack, comparisons=comparisons), clock=stack.clock
+    )
     return app
 
 
@@ -550,7 +618,9 @@ def _shell_invitations(stack: RuntimeStack) -> ShellInvitations:
     return ShellInvitations(store=store, service=RcaInvitationService(store))
 
 
-def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
+def build_shell_services(
+    stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY
+) -> ShellServices | None:
     """The shell over the same resolver the commercial API uses (`RCA-002` `FR-041`).
 
     Returns `None` when the commercial half is unwired, so the shell exists exactly when the
@@ -619,6 +689,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         # same tables the Overview and Data surfaces read, and the cascade that ends a pin lives
         # inside `set_retention_state` on this very class. A second `SqlWorkspaceRecordStore` over
         # the same factory would work and would be a second object holding one definition.
+        comparisons=build_comparison_actions(stack, workbooks=comparisons),
     )
 
 

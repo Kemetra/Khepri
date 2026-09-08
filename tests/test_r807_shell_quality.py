@@ -28,6 +28,11 @@ from playwright.sync_api import Error, sync_playwright
 from khepri.rca.errors import ScopeAccessDenied
 from khepri.rca.organizations import Organization, OrganizationMember
 from khepri.rca.session_cookie import SESSION_COOKIE
+from khepri.rca.workspace.comparisons import (
+    KIND_ADMITTED,
+    ComparisonOutcome,
+    ComparisonSurfaces,
+)
 from khepri.rca.workspace.contracts import (
     RUN_COMPLETED,
     AdmittedSource,
@@ -62,6 +67,7 @@ SHELL_SURFACES = {
     "data": "/org-acme/data",
     "analyses": "/org-acme/analyses",
     "analysis": "/org-acme/analyses/run-a",
+    "compare": "/org-acme/analyses/compare/ver-a/ver-b",
 }
 
 #: Templates that render inside another and are never a surface of their own.
@@ -237,6 +243,21 @@ class _StubBridge:
         raise AssertionError("the browser cases drive GETs only")
 
 
+class _StubComparisons:
+    def request(self, request: object, *, now: object) -> ComparisonOutcome:
+        return ComparisonOutcome(
+            kind=KIND_ADMITTED,
+            surfaces=ComparisonSurfaces(
+                claims={},
+                html={"en": "<p>ok</p>", "ar": "<p>حسنا</p>"},
+                pdf={"en": b"%PDF", "ar": b"%PDF"},
+                excel=b"xlsx",
+                subject_run_id="run-a",
+                baseline_run_id="run-b",
+            ),
+        )
+
+
 def _client(surface: str) -> TestClient:
     """One app per surface, configured so that surface is what renders."""
     app = FastAPI()
@@ -252,6 +273,7 @@ def _client(surface: str) -> TestClient:
             isolation=_StubIsolation(),
             provenance=_StubProvenance(),
             bridge=_StubBridge(),
+            comparisons=_StubComparisons(),
         ),
         clock=lambda: NOW,
     )

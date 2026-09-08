@@ -1,0 +1,47 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.compare_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  RCA-005 FR-132: a completed comparison is reachable from Analyses, naming both
+  source dataset versions, each linking to the Analysis Passport FR-119 already
+  requires. Derived at read time; nothing here is a stored artifact.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.compare_title }}</h1>
+  <p class="lede">{{ copy.compare_intro }}</p>
+  {#
+    Each source version is named as the Data surface and the Passport name it (`FR-119`):
+    by its submission instant, linking to its Data entry; the identifier stays in the anchor.
+    A refusal that followed both reads still names the pair; the Passport link needs a run.
+  #}
+  <ul class="compare-operands">
+    {% for operand, label in [(view.subject, copy.compare_subject), (view.baseline, copy.compare_baseline)] if operand %}
+    <li>
+      <span class="row-label">{{ label }}</span>
+      <a class="data-reference"
+         href="{{ prefix }}/{{ language }}/{{ organization_id }}/data#data-{{ operand.version_id }}">
+        <span class="row-label">{{ copy.passport_data_link }}</span>
+        <time datetime="{{ operand.submitted.at }}" dir="ltr">{{ operand.submitted.text }}</time>
+      </a>
+      {% if operand.run_id %}
+      <a class="compare-passport"
+         href="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/{{ operand.run_id }}">{{ copy.compare_passport }}</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if view.refusal %}
+  <p class="compare-refusal">{{ view.refusal }}</p>
+  {% else %}
+  {#
+    The three surfaces are handoffs, as every Analyses artifact is. The shell's policy is
+    `default-src 'none'` with no frame directive, so nothing here is framed or inlined.
+  #}
+  <p class="compare-downloads">
+    <a class="compare-html" href="{{ view.html_href }}" download="khepri-comparison.html">{{ copy.compare_report }}</a>
+    <a class="compare-pdf" href="{{ view.pdf_href }}" download="khepri-comparison.pdf">{{ copy.artifact_pdf }}</a>
+    <a class="compare-excel" href="{{ view.excel_href }}" download="khepri-comparison.xlsx">{{ copy.artifact_excel }}</a>
+  </p>
+  {% endif %}
+</section>
+{% endblock %}
