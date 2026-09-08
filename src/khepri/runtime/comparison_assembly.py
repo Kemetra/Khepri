@@ -31,7 +31,12 @@ from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.rca.workspace.store import SqlWorkspaceRecordStore
 from khepri.rra.aggregates import granularity_for
 from khepri.rra.analysis.comparison_narrative import refusal_wording
-from khepri.rra.analysis.dataset_period import CAUSE_INCOMPLETE, CAUSE_UNORDERED_PAIR, DatasetPeriod
+from khepri.rra.analysis.dataset_period import (
+    CAUSE_INCOMPLETE,
+    CAUSE_RETAIL_DAY,
+    CAUSE_UNORDERED_PAIR,
+    DatasetPeriod,
+)
 from khepri.rra.bundle import BundleAssembler, SurfaceContent
 from khepri.rra.coverage import CompletenessQuery, CoverageManifest, admits_completeness
 from khepri.rra.crossversion_assembly import assemble_crossversion
@@ -79,6 +84,8 @@ class _Operand:
     period: DatasetPeriod
     aggregate_scope: str | None
     run_id: str
+    #: The manifest's timezone: the retail day boundary every attested day is stated in.
+    timezone: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,7 +157,7 @@ class CrossVersionAssembly:
         if _load_missing(subject, baseline):
             return None
         if _load_incomplete(subject, baseline):
-            return _incomplete_outcome()
+            return _refused_outcome(CAUSE_INCOMPLETE)
         return self._assemble(owner_id, subject.operand, baseline.operand)
 
     def _assemble(
@@ -162,6 +169,14 @@ class CrossVersionAssembly:
                 kind=KIND_REFUSED,
                 refusal=ComparisonRefusal(built.cause, dict(built.wording)),
             )
+        if subject.timezone != baseline.timezone:
+            # `RRA-008` §Period rule refuses a pair whose periods differ in retail-day boundary,
+            # and the coverage manifest's timezone is that boundary. The frozen period type
+            # carries an hour, not a zone, so the family's predicate cannot see this; the
+            # comparison is made here, once every frozen predicate has admitted the pair, under
+            # the cause the family already froze. Its proper home is the predicate itself, which
+            # is an owner amendment recorded in the roadmap row (owner's reading, 2026-09-08).
+            return _refused_outcome(CAUSE_RETAIL_DAY)
         surfaces = self._render(built, subject.run_id, baseline.run_id)
         if surfaces is None:
             return None
@@ -224,10 +239,9 @@ def _scratch_under(directory: Path) -> Path | None:
         return None
 
 
-def _incomplete_outcome() -> ComparisonOutcome:
+def _refused_outcome(cause: str) -> ComparisonOutcome:
     return ComparisonOutcome(
-        kind=KIND_REFUSED,
-        refusal=ComparisonRefusal(CAUSE_INCOMPLETE, refusal_wording(CAUSE_INCOMPLETE)),
+        kind=KIND_REFUSED, refusal=ComparisonRefusal(cause, refusal_wording(cause))
     )
 
 
@@ -293,7 +307,13 @@ def _operand_from(ask: _OperandAsk) -> _Load:
     if manifest is None:
         return _Load(None, True)
     period = _dataset_period(ask.version_id, provenance, manifest)
-    operand = _Operand(bound.package, period, manifest.aggregate_scope, bound.run.run_id)
+    operand = _Operand(
+        package=bound.package,
+        period=period,
+        aggregate_scope=manifest.aggregate_scope,
+        run_id=bound.run.run_id,
+        timezone=manifest.timezone,
+    )
     return _Load(operand, False)
 
 

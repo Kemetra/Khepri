@@ -333,3 +333,16 @@ def test_the_deployed_shell_offers_the_deletion_route() -> None:
     delete = {path for path in paths if path.endswith("/data/{version_id}/delete")}
     assert delete, f"no deletion route in the deployed app: {sorted(paths)}"
     assert all("POST" in route.methods for route in app.routes if route.path in delete)
+
+
+def test_the_comparison_render_directory_is_deployment_chosen(tmp_path) -> None:
+    """Review on `#409`: the parent of the per-request render directories was a fresh `mkdtemp`
+    per process start -- never removed, never configurable. It is a parameter now, created in
+    place, and kept apart from the retained-report workbook directory."""
+    chosen = tmp_path / "comparisons"
+
+    shell = build_shell_services(runtime_stack(), comparisons=chosen)
+
+    assert shell is not None and shell.comparisons is not None
+    assert chosen.is_dir()
+    assert shell.comparisons._assembly._excel.directory == chosen

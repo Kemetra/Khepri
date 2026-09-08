@@ -18,7 +18,6 @@ import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
-from khepri.rca.persistence import Base as RcaBase
 from khepri.rca.workspace.audit import (
     ACTION_RUN_COMPLETED,
     ACTION_RUN_FAILED,
@@ -70,9 +69,14 @@ def _request(
     )
 
 
-def _workspace_counts(factory) -> dict[str, int]:
-    names = sorted(name for name in RcaBase.metadata.tables if name.startswith("rca_workspace_"))
+def _table_counts(factory) -> dict[str, int]:
+    """Every table on the engine this request path reaches -- not one prefix of one metadata.
+
+    Review found the earlier census (`rca_workspace_*` in the RCA metadata) could not enforce
+    "no row except the audit event": nine RCA tables and every `rra_` table were outside it.
+    """
     with factory() as database:
+        names = sorted(sa_inspect(database.get_bind()).get_table_names())
         return {
             name: int(database.scalar(text(f'SELECT count(*) FROM "{name}"')) or 0)
             for name in names
@@ -392,19 +396,20 @@ def test_a_request_writes_no_row_except_the_audit_event(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    before = _workspace_counts(j.w.factory)
+    before = _table_counts(j.w.factory)
 
     comparison_actions(j, tmp_path).request(
         _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
     )
 
-    after = _workspace_counts(j.w.factory)
+    after = _table_counts(j.w.factory)
     audit = "rca_workspace_audit_events"
     assert after[audit] == before[audit] + 1
     others = {name: after[name] for name in after if name != audit}
     expected = {name: before[name] for name in before if name != audit}
     assert others == expected
-    assert sa_inspect(j.w.factory().bind).get_table_names()
+    # The census reaches the tables this path reads through, so a stray write there would show.
+    assert "rra_fact_packages" in before and "rca_accounts" in before
 
 
 def test_refusal_detail_never_reaches_the_audit_record(tmp_path) -> None:

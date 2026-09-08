@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -338,10 +337,10 @@ class _OnDemandPrinter:
             return printer.print_to_pdf(page)
 
 
-def build_comparison_actions(stack: RuntimeStack) -> ComparisonActions:
+def build_comparison_actions(stack: RuntimeStack, *, workbooks: Path) -> ComparisonActions:
     """The comparison door (`C1-06`): a pair, resolved through `IsolationService`."""
     factory = stack.factory
-    workbooks = Path(tempfile.mkdtemp(prefix="khepri-compare-"))
+    workbooks.mkdir(parents=True, exist_ok=True)
     return ComparisonActions(
         isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
         stores=ComparisonStores(
@@ -551,7 +550,14 @@ def build_recovery_security_service(stack: RuntimeStack) -> RecoverySecurityServ
     )
 
 
-def build_web_app(stack: RuntimeStack) -> FastAPI:
+#: Where a comparison's per-request render directories are made. A deployment chooses it by
+#: passing another path; it is created in place, so nothing is left behind per process start.
+#: Deliberately not the retained-report workbook directory: a comparison is rendered on request
+#: and retained nowhere (`RRA-006` §Not stored), and its files never outlive the request.
+COMPARISON_DIRECTORY = Path("/tmp/khepri-comparisons")
+
+
+def build_web_app(stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY) -> FastAPI:
     beta = build_beta_services(stack)
     app = create_app(
         service=stack.services.invitations,
@@ -575,7 +581,9 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
     )
     add_legal_routes(app)
     add_landing_routes(app)
-    add_shell_routes(app, services=build_shell_services(stack), clock=stack.clock)
+    add_shell_routes(
+        app, services=build_shell_services(stack, comparisons=comparisons), clock=stack.clock
+    )
     return app
 
 
@@ -590,7 +598,9 @@ def _shell_invitations(stack: RuntimeStack) -> ShellInvitations:
     return ShellInvitations(store=store, service=RcaInvitationService(store))
 
 
-def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
+def build_shell_services(
+    stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY
+) -> ShellServices | None:
     """The shell over the same resolver the commercial API uses (`RCA-002` `FR-041`).
 
     Returns `None` when the commercial half is unwired, so the shell exists exactly when the
@@ -659,7 +669,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         # same tables the Overview and Data surfaces read, and the cascade that ends a pin lives
         # inside `set_retention_state` on this very class. A second `SqlWorkspaceRecordStore` over
         # the same factory would work and would be a second object holding one definition.
-        comparisons=build_comparison_actions(stack),
+        comparisons=build_comparison_actions(stack, workbooks=comparisons),
     )
 
 
