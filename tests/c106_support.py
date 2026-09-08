@@ -72,8 +72,8 @@ def completed_pair(j: Journey, who: Member) -> CompletedPair:
     )
 
 
-def comparison_actions(j: Journey, workbooks: Path) -> Any:
-    """ComparisonActions over the journey's live stores and a fake printer."""
+def comparison_actions(j: Journey, workbooks: Path, printer: Any = None) -> Any:
+    """ComparisonActions over the journey's live stores and a fake printer (or the given one)."""
     from khepri.rca.workspace.comparisons import ComparisonActions, ComparisonStores
     from khepri.rra.rendering import ExcelSurfaceRenderer, HtmlReportRenderer, PdfReportRenderer
     from khepri.runtime.comparison_assembly import ComparisonAssemblyPorts, CrossVersionAssembly
@@ -95,7 +95,7 @@ def comparison_actions(j: Journey, workbooks: Path) -> Any:
                 workspace=j.w.store,
             ),
             html=HtmlReportRenderer(),
-            pdf=PdfReportRenderer(printer=_Printer()),
+            pdf=PdfReportRenderer(printer=printer or _Printer()),
             excel=ExcelSurfaceRenderer(directory=workbooks),
         ),
     )
@@ -109,10 +109,13 @@ def compare_address(who: Member, subject_id: str, baseline_id: str, language: st
     return f"{compare_form_address(who, language)}/{subject_id}/{baseline_id}"
 
 
-def shell_with_comparisons(j: Journey, who: Member, workbooks: Path) -> TestClient:
+def shell_with_comparisons(
+    j: Journey, who: Member, workbooks: Path, printer: Any = None
+) -> TestClient:
     """A shell whose comparison action is wired, over the journey's isolation door."""
     app = FastAPI()
-    services = replace(services_over(j, who), comparisons=comparison_actions(j, workbooks))
+    actions = comparison_actions(j, workbooks, printer)
+    services = replace(services_over(j, who), comparisons=actions)
     add_shell_routes(app, services=services, clock=j.clock)
     client = TestClient(app, base_url=HTTPS)
     client.cookies.set(SESSION_COOKIE, "a-session-token")

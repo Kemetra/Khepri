@@ -9,6 +9,7 @@ C1-04 wording and no figure.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -99,7 +100,12 @@ def _declare_post(
             baseline_version_id=submitted.get("baseline", ""),
         )
         call = _RouteCall(services, rendering, clock, language, organization, session, asked)
-        return _respond(call)
+        # The body is read on the loop; the render is not. It launches Chromium through
+        # Playwright's synchronous API, which refuses to start on a running event loop, and
+        # the assembler would turn that refusal into the uniform unavailable page for a pair
+        # the GET address -- a plain `def`, run in the threadpool -- renders. Same thread
+        # model on both paths.
+        return await asyncio.to_thread(_respond, call)
 
 
 def _declare_get(

@@ -6,6 +6,7 @@ stub store would answer any key and hide the uniform refusal `FR-130` requires.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import re
 from datetime import timedelta
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
@@ -31,6 +33,7 @@ from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.pdf import PdfReportRenderer
 from khepri.runtime.shell_copy import SHELL_COPY
 from khepri.runtime.shell_workspace import moment
+from tests.c105_support import _Printer
 from tests.c106_support import (
     compare_address,
     compare_form_address,
@@ -505,6 +508,61 @@ def test_post_form_renders_the_same_admitted_pair(tmp_path) -> None:
     assert EN["compare_subject"] in posted.text
     assert f"/analyses/{pair.subject_run.run_id}" in posted.text
     assert f"/analyses/{pair.baseline_run.run_id}" in posted.text
+
+
+class _LoopRefusingPrinter:
+    """Behaves as Playwright's synchronous API does: refuses to start on a thread that is
+    running an asyncio event loop, and prints normally anywhere else."""
+
+    def print_to_pdf(self, page: Any) -> bytes:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return _Printer().print_to_pdf(page)
+        raise RuntimeError("Sync API inside the asyncio loop")
+
+
+def test_the_posted_form_renders_off_the_event_loop(tmp_path) -> None:
+    """The POST handler is a coroutine; the render behind it launches Chromium through
+    Playwright's synchronous API, which refuses to start on the event loop. Review found the
+    admitted pair therefore came back as the uniform unavailable page from the form while the
+    same pair rendered from the GET address. The render must run off the loop on both paths."""
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    client = shell_with_comparisons(j, who, tmp_path, printer=_LoopRefusingPrinter())
+    data = {"subject": pair.subject.version_id, "baseline": pair.baseline.version_id}
+
+    posted = client.post(compare_form_address(who), data=data)
+    fetched = client.get(compare_address(who, pair.subject.version_id, pair.baseline.version_id))
+
+    assert posted.status_code == fetched.status_code == 200
+    assert 'lang="en"' in _offered_html(posted.text)
+    assert 'lang="en"' in _offered_html(fetched.text)
+
+
+def test_the_posted_form_renders_with_the_production_printer(tmp_path) -> None:
+    """The same path against the printer production wires, which a fake cannot stand in for."""
+    from khepri.rra.rendering.chromium import launch_chromium
+    from khepri.runtime.wiring import _OnDemandPrinter
+
+    try:
+        with launch_chromium():
+            pass
+    except Exception as error:  # noqa: BLE001 - the pinned browser is an environment fact
+        pytest.skip(f"Pinned Chromium is unavailable: {error}")
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    client = shell_with_comparisons(j, who, tmp_path, printer=_OnDemandPrinter())
+
+    posted = client.post(
+        compare_form_address(who),
+        data={"subject": pair.subject.version_id, "baseline": pair.baseline.version_id},
+    )
+
+    assert posted.status_code == 200
+    assert 'lang="en"' in _offered_html(posted.text)
 
 
 def test_a_version_with_no_completed_run_is_uniformly_unavailable(tmp_path) -> None:
