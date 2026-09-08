@@ -65,6 +65,15 @@ CAVEAT_CROSSVERSION_ADMITTED_PAIR = "crossversion_admitted_pair"
 class CrossVersionRequest:
     """The caller-stated ordered pair and the two asserted organization scopes.
 
+    **Two bindings are the caller's, and this type cannot check them.** Each
+    `DatasetPeriod.dataset_version_id` must be the version whose completed run
+    produced the `FactPackage` beside it, and each organization scope must be the
+    scope both versions were read under. A package carries no version identifier and
+    no organization, so the bundle records what the caller states; the workspace
+    holds the run provenance that binds a version to a package digest, and the
+    orchestration slice verifies `RunProvenance.package_digest == package.digest`
+    before building this request (review of `#408`).
+
     `subject_aggregate_scope` and `baseline_aggregate_scope` mirror each manifest's
     `CoverageManifest.aggregate_scope` exactly: the governed aggregate label, or `None`
     meaning the manifest names a store roster. There is no "unknown": a package does not

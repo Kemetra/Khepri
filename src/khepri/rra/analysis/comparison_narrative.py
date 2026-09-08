@@ -26,8 +26,7 @@ change, or that the pair itself is the wrong question.
 from __future__ import annotations
 
 from khepri.rra.analysis.compatibility import (
-    CAUSE_CURRENCY,
-    CAUSE_FILTERS,
+    CAUSE_BASIS,
     CAUSE_FORMULA_DRIFT,
     CAUSE_MAPPING_DRIFT,
     CAUSE_PACKAGE_DRIFT,
@@ -96,15 +95,20 @@ CROSSVERSION_REFUSALS: dict[str, dict[str, str]] = {
             "الإشارة إلى أرقامهما بالطريقة نفسها. أعد تشغيل التحليل الأقدم."
         ),
     },
-    CAUSE_CURRENCY: {
+    # `D-5`'s one basis cause covers currency and admitted filters alike (`RRA-008`
+    # §Frozen contracts), so one wording names both. A `filter mismatch` entry once
+    # sat beside this one under a cause the frozen set does not contain.
+    CAUSE_BASIS: {
         LANGUAGE_ENGLISH: (
-            "The two datasets are stated in different currencies, and a difference "
-            "between two currencies is not a number. Compare datasets in one "
-            "currency."
+            "The two datasets are not stated on the same basis: they differ in "
+            "currency, in the kinds of transaction admitted, or in the statuses "
+            "admitted, so their figures do not measure the same events. Compare "
+            "datasets stated on one basis."
         ),
         LANGUAGE_ARABIC: (
-            "مجموعتا البيانات مذكورتان بعملتين مختلفتين، والفرق بين عملتين ليس رقمًا. "
-            "قارن مجموعات بيانات بعملة واحدة."
+            "مجموعتا البيانات غير مذكورتين على الأساس نفسه: تختلفان في العملة، أو في "
+            "أنواع الحركات المدخلة، أو في الحالات المدخلة، لذا لا تقيس أرقامهما الأحداث "
+            "نفسها. قارن مجموعات بيانات مذكورة على أساس واحد."
         ),
     },
     CAUSE_STORE_SET: {
@@ -117,17 +121,6 @@ CROSSVERSION_REFUSALS: dict[str, dict[str, str]] = {
             "تغطي مجموعتا البيانات مجموعتين مختلفتين من المتاجر. كل منهما مكتملة "
             "بذاتها، لكن مقارنتهما ستقارن مجتمعين مختلفين بدل مقارنة المجتمع نفسه "
             "على مدى الزمن."
-        ),
-    },
-    CAUSE_FILTERS: {
-        LANGUAGE_ENGLISH: (
-            "The two datasets admitted different kinds of transaction or different "
-            "statuses, so they do not count the same events. Compare datasets "
-            "admitted on the same terms."
-        ),
-        LANGUAGE_ARABIC: (
-            "أدخلت مجموعتا البيانات أنواعًا مختلفة من الحركات أو حالات مختلفة، لذا "
-            "لا تحسبان الأحداث نفسها. قارن مجموعات بيانات أُدخلت بالشروط نفسها."
         ),
     },
     CAUSE_GRANULARITY: {
