@@ -101,6 +101,31 @@ def test_stated_aggregate_scopes_are_compared_as_scopes(
     assert crossed.cause == CAUSE_SCOPE
 
 
+def test_unattested_roster_refuses_rather_than_matching_every_empty_roster(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """A roster package with no coverage signatures cannot establish `D-5`.
+
+    Review of #408 (debate-review): two roster packages with no attested stores both
+    projected to the empty store set and were admitted as one population whatever
+    stores they covered. The pair now refuses under `incomplete coverage`, as a
+    package that cannot name its coverage manifest does.
+    """
+    request = comparison_request
+    unattested = replace(
+        request,
+        subject=replace(request.subject, coverage_signatures=()),
+        baseline=replace(request.baseline, coverage_signatures=()),
+        subject_aggregate_scope=None,
+        baseline_aggregate_scope=None,
+    )
+
+    result = build_crossversion_bundle(unattested)
+
+    assert isinstance(result, CrossVersionRefusal)
+    assert result.cause == CAUSE_INCOMPLETE
+
+
 def test_blank_aggregate_scope_fails_at_construction(
     comparison_request: CrossVersionRequest,
 ) -> None:

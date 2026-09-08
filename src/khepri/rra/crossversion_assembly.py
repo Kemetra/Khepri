@@ -254,11 +254,27 @@ def _has_composite_provenance(request: CrossVersionRequest) -> bool:
     packages = (request.subject, request.baseline)
     if any(package.coverage_manifest_identity is None for package in packages):
         return False
+    if not _population_attested(request.subject, request.subject_aggregate_scope):
+        return False
+    if not _population_attested(request.baseline, request.baseline_aggregate_scope):
+        return False
     return all(
         _find_basis(package, metric) is not None
         for package in packages
         for metric in _shared_metrics(request)
     )
+
+
+def _population_attested(package: FactPackage, aggregate_scope: str | None) -> bool:
+    """A roster package must attest at least one store; an aggregate one names its scope.
+
+    An unattested roster projects to the empty store set, which equals every other
+    empty roster, so two packages covering different stores would pass `D-5` as one
+    population (review of `#408`). `D-5` compares identical *attested* store sets,
+    and a package that attests none cannot establish it -- the same reading as a
+    package that cannot name its coverage manifest.
+    """
+    return aggregate_scope is not None or bool(package.coverage_signatures)
 
 
 def _shared_metrics(request: CrossVersionRequest) -> set[str]:
