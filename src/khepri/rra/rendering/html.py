@@ -39,7 +39,6 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from khepri.rra import definitions
 from khepri.rra.bundle import (
-    GOVERNED_FIGURE_LABELS,
     KIND_VALUE,
     LANGUAGE_DIRECTION,
     ORDERED_SECTIONS,
@@ -47,8 +46,6 @@ from khepri.rra.bundle import (
     SECTION_REFUSED,
     SURFACE_WEB,
     CitedFigure,
-    ReportBundle,
-    Section,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
@@ -59,6 +56,7 @@ from khepri.rra.narrative import (
     REQUIRED_LANGUAGES,
     NarrativeDraft,
 )
+from khepri.rra.renderable import PresentationSection, RenderableBundle
 from khepri.rra.rendering.charts import ChartView, build_chart
 from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
@@ -66,10 +64,12 @@ from khepri.rra.rendering.wording import (
     LABEL_WORDING,
     SECTION_HEADINGS,
     business_metric_name,
+    category_of,
     caveat_prose,
     component_chrome,
     kind_qualifier,
     section_refusal_message,
+    worded,
 )
 from khepri.rra.report_artifacts import (
     HTML_MEDIA_TYPE,
@@ -325,10 +325,10 @@ class HtmlReportRenderer:
     def environment(self) -> Environment:
         return self._environment
 
-    def render(self, bundle: ReportBundle) -> SurfaceContent:
+    def render(self, bundle: RenderableBundle) -> SurfaceContent:
         return self.render_html(bundle).content
 
-    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+    def render_materialized(self, bundle: RenderableBundle) -> MaterializedSurface:
         surface = self.render_html(bundle)
         artifacts = tuple(
             ArtifactPayload.of(
@@ -349,7 +349,7 @@ class HtmlReportRenderer:
         )
         return MaterializedSurface(content=surface.content, artifacts=artifacts)
 
-    def render_html(self, bundle: ReportBundle) -> HtmlSurface:
+    def render_html(self, bundle: RenderableBundle) -> HtmlSurface:
         """Render both regions, and the claim about what they present."""
         template = self._environment.get_template(TEMPLATE_NAME)
         evidence_template = self._environment.get_template(EVIDENCE_TEMPLATE_NAME)
@@ -399,7 +399,7 @@ def build_environment() -> Environment:
 
 
 def build_content(
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     cells: dict[str, tuple[FigureCell, ...]],
     *,
     surface: str = SURFACE_WEB,
@@ -446,7 +446,7 @@ def build_content(
     )
 
 
-def build_cells(bundle: ReportBundle, language: str) -> tuple[FigureCell, ...]:
+def build_cells(bundle: RenderableBundle, language: str) -> tuple[FigureCell, ...]:
     """Every figure of one language as the supplied text, and nothing else."""
     return tuple(_cell(figure, language) for figure in bundle.figures)
 
@@ -465,7 +465,7 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         kind=figure.kind,
         unit_kind=figure.unit_kind,
         section=figure.section,
-        label=_row_label(figure.label, language),
+        label=_row_label(figure, language),
         text=text,
     )
 
@@ -505,7 +505,7 @@ def _business_name(figure: CitedFigure, language: str) -> str | None:
     return f"{name} ({qualifier})"
 
 
-def _row_label(label: str | None, language: str) -> str | None:
+def _row_label(figure: CitedFigure, language: str) -> str | None:
     """A row's own name, translated when it is a governed code rather than a value.
 
     A bucket label is a product or branch name and is reproduced exactly. A comparison
@@ -516,13 +516,13 @@ def _row_label(label: str | None, language: str) -> str | None:
     Nothing reconciled changes: `reconcile` compares a figure's *text*, never its
     label.
     """
-    if label is None or label not in GOVERNED_FIGURE_LABELS:
-        return label
-    return _CHROME[language]["labels"][f"label.{label}"]
+    if figure.label is None:
+        return None
+    return worded(category_of(figure), language)
 
 
 def _audit_region(
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     cells: tuple[FigureCell, ...],
     provenance: tuple[tuple[str, str], ...],
@@ -574,7 +574,7 @@ def _audit_region(
 
 
 def build_context(
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     cells: tuple[FigureCell, ...],
     *,
@@ -627,7 +627,7 @@ def build_context(
     }
 
 
-def _report_reference(bundle: ReportBundle) -> str:
+def _report_reference(bundle: RenderableBundle) -> str:
     """The short human reference a customer quotes when asking about a report.
 
     A prefix of the bundle identity rather than a new identifier: a second
@@ -663,7 +663,7 @@ def _passages(
 
 
 def _provenance(
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     extra: dict[str, str],
 ) -> tuple[tuple[str, str], ...]:
     """The version strings and digests a reader can check this report against.
@@ -749,7 +749,7 @@ class _SectionView:
 
 
 def _section_views(
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     cells: tuple[FigureCell, ...],
 ) -> list[_SectionView]:
@@ -1026,7 +1026,11 @@ def _absorb(
     return [*apart, (columns.union(*(entry[0] for entry in joined)), rows)]
 
 
-def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:
+def _stated_once(
+    bundle: RenderableBundle,
+    section_id: str,
+    language: str,
+) -> tuple[str, ...]:
     """One section's caveat codes, with codes that read identically collapsed.
 
     **Deduplicated by prose rather than by code, because the codes differ and the
@@ -1059,7 +1063,7 @@ def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[
 
 
 def _chart_of(
-    section: Section,
+    section: PresentationSection,
     figures: dict[str, CitedFigure],
     language: str,
 ) -> ChartView | None:

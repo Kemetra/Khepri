@@ -48,8 +48,24 @@
   drawer open.
 #}
 <tr class="evidence-drawer-row">
-<td colspan="7">{{ evidence_drawer(audit.evidence[cell.citation_id], chrome, audit.coverage,
-                                    open=evidence_open) }}</td>
+<td colspan="7">
+{{ evidence_drawer(audit.evidence[cell.citation_id], chrome, audit.coverage,
+                   open=evidence_open) }}
+{% set record = audit.evidence[cell.citation_id] %}
+{% if record.provenance is defined and record.provenance is not none %}
+<dl class="composite-provenance">
+<dt>{{ chrome.component.sources_compared }}</dt>
+<dd>
+<dl>
+{% for name, value in record.provenance %}
+<dt><code>{{ name }}</code></dt>
+<dd><code>{{ value }}</code></dd>
+{% endfor %}
+</dl>
+</dd>
+</dl>
+{% endif %}
+</td>
 </tr>
 {% endfor %}
 </tbody>

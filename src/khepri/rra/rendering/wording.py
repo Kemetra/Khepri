@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 from khepri.rra import facts, versions
 from khepri.rra.analysis import basket, comparison, concentration, growth
+from khepri.rra.analysis.comparison_narrative import CROSSVERSION_CAVEATS
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
@@ -38,9 +39,14 @@ from khepri.rra.bundle import (
     GOVERNED_SECTION_STATES,
     KIND_ROWS,
     ORDERED_SECTIONS,
+    SECTION_CROSSVERSION,
     SECTION_PRESENT,
     SECTION_REFUSED,
     CitedFigure,
+)
+from khepri.rra.crossversion_bundle import (
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
+    CROSSVERSION_FIGURE_LABELS,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 
@@ -74,6 +80,10 @@ LABEL_WORDING: dict[str, dict[str, str]] = {
         "metric.growth_volume_effect": "Volume effect",
         "label.period_over_period": "Against the previous period",
         "label.year_over_year": "Against the same period last year",
+        "label.subject": "Subject dataset",
+        "label.baseline": "Baseline dataset",
+        "label.difference": "Difference",
+        "label.percentage_difference": "Percentage difference",
     },
     LANGUAGE_ARABIC: {
         "metric.growth_revenue_change": "التغيّر في الإيرادات",
@@ -81,6 +91,10 @@ LABEL_WORDING: dict[str, dict[str, str]] = {
         "metric.growth_volume_effect": "أثر الحجم",
         "label.period_over_period": "مقابل الفترة السابقة",
         "label.year_over_year": "مقابل الفترة نفسها من العام الماضي",
+        "label.subject": "مجموعة البيانات موضوع المقارنة",
+        "label.baseline": "مجموعة البيانات الأساس",
+        "label.difference": "الفرق",
+        "label.percentage_difference": "الفرق بالنسبة المئوية",
     },
 }
 
@@ -91,6 +105,7 @@ LABEL_WORDING: dict[str, dict[str, str]] = {
 #: metrics reaching a mark without a label.
 _LOCALIZABLE_CHART_CODES = frozenset(
     {f"label.{mode}" for mode in GOVERNED_FIGURE_LABELS}
+    | {f"label.{label}" for label in CROSSVERSION_FIGURE_LABELS}
     | {f"metric.{metric}" for metric in growth.GOVERNED_METRICS}
 )
 
@@ -196,6 +211,7 @@ _GOVERNED_CAVEAT_CODES = {
     comparison.CAVEAT_PARTIAL_WINDOW,
     growth.CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
     growth.CAVEAT_ROUNDING_RESIDUAL,
+    CAVEAT_CROSSVERSION_ADMITTED_PAIR,
 }
 
 
@@ -880,6 +896,7 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "from the price effect calculated on its own. No figure is "
             "missing and nothing was adjusted."
         ),
+        CAVEAT_CROSSVERSION_ADMITTED_PAIR: CROSSVERSION_CAVEATS[LANGUAGE_ENGLISH],
     },
     LANGUAGE_ARABIC: {
         "currency_not_declared": (
@@ -944,6 +961,7 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "بمقدار وحدة واحدة من آخر خانة عشرية معروضة عن أثر السعر "
             "محسوباً بمفرده. لم يسقط أي رقم ولم يُعدَّل شيء."
         ),
+        CAVEAT_CROSSVERSION_ADMITTED_PAIR: CROSSVERSION_CAVEATS[LANGUAGE_ARABIC],
     },
 }
 
@@ -1120,6 +1138,7 @@ SECTION_HEADINGS: dict[str, dict[str, str]] = {
         "concentration": "Concentration",
         "growth": "Growth decomposition",
         "basket": "Basket structure",
+        SECTION_CROSSVERSION: "Two-population comparison",
     },
     LANGUAGE_ARABIC: {
         "overview": "نظرة عامة",
@@ -1127,6 +1146,7 @@ SECTION_HEADINGS: dict[str, dict[str, str]] = {
         "concentration": "التركّز",
         "growth": "تحليل النمو",
         "basket": "بنية السلة",
+        SECTION_CROSSVERSION: "مقارنة مجموعتي بيانات",
     },
 }
 
@@ -1150,8 +1170,9 @@ CHART_DESCRIPTIONS: dict[str, dict[str, str]] = {
 # rather than left to a test. A section added to `ORDERED_SECTIONS` without wording
 # would otherwise reach a reader as a `KeyError` mid-render on one surface and as a
 # missing chart title on another.
+_GOVERNED_HEADING_SECTIONS = frozenset((*ORDERED_SECTIONS, SECTION_CROSSVERSION))
 for _language, _headings in SECTION_HEADINGS.items():
-    if set(_headings) != set(ORDERED_SECTIONS):
+    if set(_headings) != _GOVERNED_HEADING_SECTIONS:
         raise RuntimeError("every governed section needs a heading in every language")
 
 
@@ -1200,9 +1221,14 @@ def category_of(figure: CitedFigure) -> ChartCategory:
     An earlier version used the figure's own rendered *value* as its name, which
     showed several amounts and identified none of them.
     """
+    sibling_label = figure.section == SECTION_CROSSVERSION
+    if sibling_label:
+        sibling_label = figure.label in CROSSVERSION_FIGURE_LABELS
     if figure.label in GOVERNED_FIGURE_LABELS:
         # A governed label is an internal identifier, not customer text. Treating one
         # as final put `period_over_period` on both the English and the Arabic axis.
+        return ChartCategory(value=f"label.{figure.label}", localize=True)
+    if sibling_label:
         return ChartCategory(value=f"label.{figure.label}", localize=True)
     if figure.label is not None:
         return ChartCategory(value=figure.label, localize=False)
@@ -1636,6 +1662,7 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         # The second coverage field. A manifest identity with no compatible signature is
         # unproven coverage, and the empty list has to be stated (`#352` review).
         "coverage_signatures": "Coverage signatures",
+        "sources_compared": "Sources compared",
     },
     LANGUAGE_ARABIC: {
         "quality_summary": "جودة التحليل",
@@ -1650,6 +1677,7 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "inputs": "المدخلات",
         "unavailable": "غير مذكور",
         "coverage_signatures": "توقيعات التغطية",
+        "sources_compared": "المصادر المقارنة",
     },
 }
 

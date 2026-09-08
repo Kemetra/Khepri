@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from khepri.rra.analysis.compatibility import (
+    CAUSE_BASIS,
     CAUSE_CURRENCY,
     CAUSE_FILTERS,
     CAUSE_FORMULA_DRIFT,
@@ -161,14 +162,22 @@ class TestOneCause:
         assert packages_compatible(SUBJECT, both) == CAUSE_MAPPING_DRIFT
 
     def test_every_cause_is_a_distinct_string(self) -> None:
+        """Distinct over the frozen set, with currency and filters sharing one cause.
+
+        `RRA-008` §Frozen contracts: differing admitted filters "fail `D-5`, with its
+        existing cause `incomparable basis` -- the same cause a currency ... difference
+        raises", and neither filter case is a new refusal cause. An earlier revision of
+        this test asserted `filter mismatch` distinct from `incomparable basis`, which
+        pinned a cause the frozen set does not contain (review of `#408`).
+        """
         causes = (
             CAUSE_SCOPE,
             CAUSE_MAPPING_DRIFT,
             CAUSE_FORMULA_DRIFT,
             CAUSE_PACKAGE_DRIFT,
-            CAUSE_CURRENCY,
+            CAUSE_BASIS,
             CAUSE_STORE_SET,
-            CAUSE_FILTERS,
         )
 
         assert len(set(causes)) == len(causes)
+        assert CAUSE_CURRENCY == CAUSE_FILTERS == CAUSE_BASIS == "incomparable basis"

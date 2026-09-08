@@ -32,6 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 __all__ = [
+    "CAUSE_BASIS",
     "CAUSE_CURRENCY",
     "CAUSE_FILTERS",
     "CAUSE_FORMULA_DRIFT",
@@ -50,9 +51,15 @@ CAUSE_SCOPE = "cross-organization or scope mismatch"
 CAUSE_MAPPING_DRIFT = "mapping drift"
 CAUSE_FORMULA_DRIFT = "formula drift"
 CAUSE_PACKAGE_DRIFT = "package drift"
-CAUSE_CURRENCY = "incomparable basis"
+#: `D-5`'s basis cause. `RRA-008` §Frozen contracts: two filters each admitted but
+#: differing between the versions "fail `D-5`, with its existing cause `incomparable
+#: basis` -- the same cause a currency ... difference raises", and neither filter case
+#: is a new refusal cause. An earlier revision emitted `filter mismatch`, a cause the
+#: frozen set does not contain (review of `#408`); the two names below are one cause.
+CAUSE_BASIS = "incomparable basis"
+CAUSE_CURRENCY = CAUSE_BASIS
+CAUSE_FILTERS = CAUSE_BASIS
 CAUSE_STORE_SET = "store mismatch"
-CAUSE_FILTERS = "filter mismatch"
 
 
 @dataclass(frozen=True, slots=True)

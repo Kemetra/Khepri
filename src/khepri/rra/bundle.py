@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import (
     Context,
     Decimal,
@@ -84,6 +84,7 @@ from khepri.rra.narrative import (
     NarrativeDraft,
 )
 from khepri.rra.profiling import canonical_json
+from khepri.rra.renderable import RenderableBundle
 from khepri.rra.versions import (
     REASON_FAMILY_VERSION_UNADMITTED as _VERSIONS_FAMILY_UNADMITTED,
 )
@@ -160,6 +161,9 @@ SECTION_COMPARISON = "comparison"
 SECTION_CONCENTRATION = "concentration"
 SECTION_GROWTH = "growth"
 SECTION_BASKET = "basket"
+# A sibling bundle owns this section. It is deliberately absent from
+# `ORDERED_SECTIONS`, whose closed order belongs only to `ReportBundle`.
+SECTION_CROSSVERSION = "crossversion"
 ORDERED_SECTIONS = (
     SECTION_OVERVIEW,
     SECTION_COMPARISON,
@@ -167,6 +171,7 @@ ORDERED_SECTIONS = (
     SECTION_GROWTH,
     SECTION_BASKET,
 )
+PRESENTATION_SECTIONS = frozenset((*ORDERED_SECTIONS, SECTION_CROSSVERSION))
 
 # A section whose figures could not be drawn. Returning no chart is not by itself
 # a disclosure -- the section would simply look sparse, and a reader could not tell
@@ -650,7 +655,12 @@ class Section:
     def __post_init__(self) -> None:
         # `_require_section` runs first, so everything after it may index the
         # per-section tables by `section_id` without re-checking membership.
-        _require_section(self.section_id)
+        if self.section_id not in ORDERED_SECTIONS:
+            # A report section indexes `SECTION_REASONS` and `SECTION_CHART_KINDS`,
+            # which know only the five ordered sections. The sibling bundle's section
+            # has its own type and never reaches these tables, so this type stays on
+            # the closed order even though a figure or caveat may name the sibling.
+            raise ValueError("unknown section")
         _require_section_state(self.state)
         _require_section_reason(self.section_id, self.state, self.reason)
         _require_distinct_figures(self.figure_ids, "section")
@@ -670,7 +680,7 @@ class Section:
 
 
 def _require_section(section_id: str) -> None:
-    if section_id not in ORDERED_SECTIONS:
+    if section_id not in PRESENTATION_SECTIONS:
         raise ValueError("unknown section")
 
 
@@ -875,6 +885,10 @@ class CitedEvidence:
     formula_version: str
     precision: int | None
     inputs: tuple[str, ...] | None
+    #: Composite pair provenance (`RRA-008` §Composite provenance). Ordered
+    #: `(key, value)` pairs; `None` means this record has no composite
+    #: provenance, the same governed absence `precision` and `inputs` use.
+    provenance: tuple[tuple[str, str], ...] | None = None
 
     def as_entry(self, definition: str) -> dict[str, object]:
         """This record as the audit context carries it, with its resolved definition.
@@ -883,7 +897,7 @@ class CitedEvidence:
         belongs to `RRA-011`'s vocabulary, which this module cannot import. Every
         other key is the record's own, and there is no `value`.
         """
-        return {
+        entry: dict[str, object] = {
             "citation_id": self.citation_id,
             "metric": self.metric,
             "unit_kind": self.unit_kind,
@@ -892,6 +906,10 @@ class CitedEvidence:
             "inputs": None if self.inputs is None else list(self.inputs),
             "definition": definition,
         }
+        if self.provenance is None:
+            return entry
+        entry["provenance"] = list(self.provenance)
+        return entry
 
 
 @dataclass(frozen=True, slots=True)
@@ -910,6 +928,13 @@ class ReportBundle:
     #: would rename every report for no change in what was published. Defaulted so
     #: a bundle built by hand still constructs.
     evidence: tuple[CitedEvidence, ...] = ()
+    #: `RRA-006`: the report bundle's own document version. Not a constructor
+    #: argument: `BundleIdentity.as_document()` always serializes `BUNDLE_VERSION`, so
+    #: a caller-supplied value here would give one bundle two versions -- one in its
+    #: identity and another in its `BundleAttempt`. An attribute rather than a
+    #: property because the sibling `RenderableBundle` Protocol reads it either way
+    #: and this module is at its function budget.
+    bundle_version: str = field(default=BUNDLE_VERSION, init=False)
 
     def __post_init__(self) -> None:
         _require_governed_section_order(self.sections)
@@ -1350,7 +1375,7 @@ class SurfaceRenderer(Protocol):
     @property
     def surface(self) -> str: ...
 
-    def render(self, bundle: ReportBundle) -> SurfaceContent: ...
+    def render(self, bundle: RenderableBundle) -> SurfaceContent: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -1396,7 +1421,7 @@ class BundleAssembler:
     def __init__(self, *, renderers: Sequence[SurfaceRenderer]) -> None:
         self._renderers = tuple(renderers)
 
-    def assemble(self, bundle: ReportBundle) -> BundleResult:
+    def assemble(self, bundle: RenderableBundle) -> BundleResult:
         """Render every required surface, or deliver none of them.
 
         RRA-006 calls a partial export an incomplete bundle, and the reason is
@@ -1443,7 +1468,7 @@ class BundleAssembler:
 
     def _incomplete(
         self,
-        bundle: ReportBundle,
+        bundle: RenderableBundle,
         produced: dict[str, SurfaceContent],
         reason: str,
     ) -> BundleResult:
@@ -1461,13 +1486,13 @@ class BundleAssembler:
 
     def _attempt(
         self,
-        bundle: ReportBundle,
+        bundle: RenderableBundle,
         surfaces: tuple[str, ...],
         outcome: str,
         reason: str | None,
     ) -> BundleAttempt:
         return BundleAttempt(
-            bundle_version=BUNDLE_VERSION,
+            bundle_version=bundle.bundle_version,
             bundle_id=bundle.bundle_id,
             package_version=bundle.identity.package_version,
             narrative_state=bundle.narrative_state,
@@ -1477,7 +1502,7 @@ class BundleAssembler:
         )
 
 
-def reconcile(content: SurfaceContent, *, bundle: ReportBundle) -> None:
+def reconcile(content: SurfaceContent, *, bundle: RenderableBundle) -> None:
     """Refuse a surface that presents anything the bundle did not supply."""
     if content.surface not in REQUIRED_SURFACES:
         raise BundleRefused(REASON_UNKNOWN_SURFACE)
@@ -1499,7 +1524,7 @@ def reconcile(content: SurfaceContent, *, bundle: ReportBundle) -> None:
 
     for entry in seen.values():
         _reconcile_language(entry, bundle)
-        _reconcile_claimed_section_names(entry)
+        _reconcile_claimed_section_names(entry, bundle)
         _reconcile_charts(entry, bundle)
 
     coverage = [seen[language] for language in sorted(seen)]
@@ -1522,7 +1547,7 @@ def reconcile(content: SurfaceContent, *, bundle: ReportBundle) -> None:
         _reconcile_sections_against_bundle(entry, bundle)
 
 
-def _reconcile_language(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
+def _reconcile_language(entry: SurfaceLanguage, bundle: RenderableBundle) -> None:
     if entry.direction != LANGUAGE_DIRECTION[entry.language]:
         raise BundleRefused(REASON_WRONG_DIRECTION)
     if entry.disclosure != bundle.disclosure(entry.language):
@@ -1536,7 +1561,7 @@ def _reconcile_language(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
         figure = bundle.figure(stated.figure_id)
         if figure is None:
             raise BundleRefused(REASON_UNKNOWN_FIGURE)
-        _reconcile_placement(stated, figure)
+        _reconcile_placement(stated, figure, bundle)
         if stated.text != figure.renderings.get(entry.language):
             # Text, not value. `500.0` and `500.00` are the same number and a
             # different statement about precision, and a surface is not
@@ -1544,7 +1569,11 @@ def _reconcile_language(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
             raise BundleRefused(REASON_FIGURE_NOT_RECONCILED)
 
 
-def _reconcile_placement(stated: StatedFigure, figure: CitedFigure) -> None:
+def _reconcile_placement(
+    stated: StatedFigure,
+    figure: CitedFigure,
+    bundle: RenderableBundle,
+) -> None:
     """Where a figure was shown is a claim like the text of it.
 
     A figure printed under the wrong heading is cited correctly and read
@@ -1553,13 +1582,16 @@ def _reconcile_placement(stated: StatedFigure, figure: CitedFigure) -> None:
     invents is checked before the one it misplaces, so an unknown name and a
     wrong-but-governed name give different reasons.
     """
-    if stated.section not in ORDERED_SECTIONS:
+    if stated.section not in (*ORDERED_SECTIONS, *bundle.section_ids):
         raise BundleRefused(REASON_UNKNOWN_SECTION)
     if stated.section != figure.section:
         raise BundleRefused(REASON_FIGURE_MISPLACED)
 
 
-def _reconcile_claimed_section_names(entry: SurfaceLanguage) -> None:
+def _reconcile_claimed_section_names(
+    entry: SurfaceLanguage,
+    bundle: RenderableBundle,
+) -> None:
     """An invented section name is its own failure, and the most specific one.
 
     Checked first and per language, before the claim is compared with anything,
@@ -1567,13 +1599,13 @@ def _reconcile_claimed_section_names(entry: SurfaceLanguage) -> None:
     being reported as disagreeing with the bundle or with the other language.
     """
     for section_id in entry.sections:
-        if section_id not in ORDERED_SECTIONS:
+        if section_id not in (*ORDERED_SECTIONS, *bundle.section_ids):
             raise BundleRefused(REASON_UNKNOWN_SECTION)
 
 
 def _reconcile_sections_against_bundle(
     entry: SurfaceLanguage,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
 ) -> None:
     """Compared against the bundle, because the bundle is what knows.
 
@@ -1590,7 +1622,7 @@ def _reconcile_sections_against_bundle(
         raise BundleRefused(REASON_SECTION_NOT_PRESENTED)
 
 
-def _reconcile_charts(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
+def _reconcile_charts(entry: SurfaceLanguage, bundle: RenderableBundle) -> None:
     """Every plotted figure is also a figure this language says it presented.
 
     `ChartSpec.figure_ids` is already a subset of its section's figures by

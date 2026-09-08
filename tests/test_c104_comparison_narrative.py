@@ -29,8 +29,7 @@ from khepri.rra.analysis.comparison_narrative import (
     refusal_wording,
 )
 from khepri.rra.analysis.compatibility import (
-    CAUSE_CURRENCY,
-    CAUSE_FILTERS,
+    CAUSE_BASIS,
     CAUSE_FORMULA_DRIFT,
     CAUSE_MAPPING_DRIFT,
     CAUSE_PACKAGE_DRIFT,
@@ -52,9 +51,8 @@ ALL_CAUSES = (
     CAUSE_MAPPING_DRIFT,
     CAUSE_FORMULA_DRIFT,
     CAUSE_PACKAGE_DRIFT,
-    CAUSE_CURRENCY,
+    CAUSE_BASIS,
     CAUSE_STORE_SET,
-    CAUSE_FILTERS,
     CAUSE_GRANULARITY,
     CAUSE_RETAIL_DAY,
     CAUSE_INCOMPLETE,
