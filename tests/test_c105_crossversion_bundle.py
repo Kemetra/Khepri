@@ -434,6 +434,34 @@ def test_workbook_writes_the_sibling_cells_to_their_own_sheet(
     assert "Revenue — Difference" in texts
 
 
+def test_matched_metric_without_a_retained_basis_refuses(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """A basis the cited metric needs but the package does not retain is a refusal.
+
+    Review of #408: admission checked only that each package retained *some* basis,
+    so a package missing the one a matched metric cites raised from the basis
+    lookup after the pair was admitted. Admission now checks every shared metric on
+    both sides and refuses under `incomplete coverage`.
+    """
+    request = comparison_request
+    without_revenue_basis = tuple(
+        basis
+        for basis in request.baseline.retained_bases
+        if basis.name != "financial_revenue_basis"
+    )
+    assert len(without_revenue_basis) == len(request.baseline.retained_bases) - 1
+    thinned = replace(
+        request, baseline=replace(request.baseline, retained_bases=without_revenue_basis)
+    )
+
+    result = build_crossversion_bundle(thinned)
+
+    assert isinstance(result, CrossVersionRefusal)
+    assert result.cause == CAUSE_INCOMPLETE
+    assert result.bundle is None
+
+
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
     """Every value is one governed string, so no surface can print a Python repr.
 

@@ -39,6 +39,7 @@ from khepri.rra.bases import (
     BASIS_SALES_REVENUE_TRANSACTION,
     BASIS_SALES_REVENUE_UNITS,
     BASIS_SALES_TRANSACTION,
+    RetainedBasis,
 )
 from khepri.rra.bundle import (
     KIND_VALUE,
@@ -200,11 +201,28 @@ def _population_scope(package: FactPackage) -> tuple[str, tuple[str, ...]]:
 
 
 def _has_composite_provenance(request: CrossVersionRequest) -> bool:
+    """Both manifests named, and a retained basis on both sides for every shared metric.
+
+    Checked at admission so that a package missing the basis a matched metric cites
+    refuses under `incomplete coverage` rather than raising from `_basis_id` after
+    the pair was admitted -- review of `#408` found that path.
+    """
     packages = (request.subject, request.baseline)
+    if any(package.coverage_manifest_identity is None for package in packages):
+        return False
     return all(
-        package.coverage_manifest_identity is not None and package.retained_bases
+        _find_basis(package, metric) is not None
         for package in packages
+        for metric in _shared_metrics(request)
     )
+
+
+def _shared_metrics(request: CrossVersionRequest) -> set[str]:
+    """The metrics both packages state with the same unit -- the ones compared."""
+    subject = {fact.metric: fact.unit_kind for fact in request.subject.facts}
+    return {
+        fact.metric for fact in request.baseline.facts if subject.get(fact.metric) == fact.unit_kind
+    }
 
 
 def _crossversion_facts(request: CrossVersionRequest) -> tuple[CrossVersionFact, ...]:
@@ -244,14 +262,19 @@ def _pair_provenance(metric: str, request: CrossVersionRequest) -> PairProvenanc
 
 
 def _basis_id(package: FactPackage, metric: str) -> str:
-    basis_name = _BASIS_BY_METRIC.get(metric)
-    found = next(
-        (basis for basis in package.retained_bases if basis.name == basis_name),
-        None,
-    )
+    """The cited basis for an admitted metric; admission already proved it exists."""
+    found = _find_basis(package, metric)
     if found is None:
         raise ValueError(f"metric {metric!r} has no retained reconciliation basis")
     return found.identity
+
+
+def _find_basis(package: FactPackage, metric: str) -> RetainedBasis | None:
+    basis_name = _BASIS_BY_METRIC.get(metric)
+    return next(
+        (basis for basis in package.retained_bases if basis.name == basis_name),
+        None,
+    )
 
 
 def _manifest_id(package: FactPackage) -> str:
