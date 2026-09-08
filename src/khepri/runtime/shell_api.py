@@ -59,7 +59,7 @@ from khepri.runtime.shell_analysis import (
 )
 from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_change_notice import methodology_change, previous_completed
-from khepri.runtime.shell_comparison import add_comparison_routes
+from khepri.runtime.shell_comparison import add_comparison_routes, offers_comparisons
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_deletion import add_deletion_route
 from khepri.runtime.shell_frame import (
@@ -75,6 +75,7 @@ from khepri.runtime.shell_pins import add_pin_routes, offers_pins
 from khepri.runtime.shell_workspace import (
     UNRENDERABLE_FAILURE,
     UnrenderableRecord,
+    compare_candidates,
     data_rows,
     marked_rows,
     overview_view,
@@ -519,20 +520,26 @@ def _analyses_response(
     """
     owner_id, reads = _workspace_reads(services, context, surface="analyses")
     history = reads.pop("history")
-    rows = spine_rows(history.runs, history.tombstones, history.versions, history.bindings)
     found = _spine_provenance(services, owner_id, history)
+    rows = tuple(
+        _row_availability(row, found)
+        for row in spine_rows(history.runs, history.tombstones, history.versions, history.bindings)
+    )
+    candidates = compare_candidates(rows)
     return _render(
         environment,
         "analyses.html.j2",
         language=language,
         status_code=200,
-        rows=tuple(_row_availability(row, found) for row in rows),
+        rows=rows,
         trust={
             run_id: trust_groups(p.sections, language)
             for run_id, p in found.items()
             if p is not None
         },
         offers_detail=offers_analyses(services),
+        compare_candidates=candidates,
+        offers_compare=offers_comparisons(services) and len(candidates) >= 2,
         **reads,
     )
 

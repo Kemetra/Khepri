@@ -2,10 +2,12 @@
 {% block title %}{{ copy.analyses_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
 {#
-  `RCA-005` FR-117, blueprint §7.3: the single history spine, newest first. No filter, no Compare,
-  no fixed count -- this template iterates what `shell_workspace.spine_rows` handed it and decides
-  nothing. A tombstone row reads as a tombstone in both languages (FR-122) and carries no content
-  action: `KHEPRI-DEC-033` §1 keeps the row so history does not silently shorten.
+  `RCA-005` FR-117, blueprint §7.3: the single history spine, newest first. The spine itself still
+  filters nothing and has no fixed count -- this template iterates what `shell_workspace.spine_rows`
+  handed it and decides nothing. Compare is offered below the spine under FR-132 when two completed
+  live data entries exist and comparisons are wired. A tombstone row reads as a tombstone in both
+  languages (FR-122) and carries no content action: `KHEPRI-DEC-033` §1 keeps the row so history
+  does not silently shorten.
 
   Dispatched since `W1-06`, which supplied the two things `#374` withheld it for: a live row's
   trust state -- the report's own quality groups, read through the provenance the run binds
@@ -81,6 +83,29 @@
   </ul>
   {% else %}
   <p class="empty-state">{{ copy.analyses_empty }}</p>
+  {% endif %}
+  {% if offers_compare %}
+  <form method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/compare">
+    <h2 class="region-label">{{ copy.compare_title }}</h2>
+    <p class="lede">{{ copy.compare_pick_intro }}</p>
+    <p>
+      <label for="compare-subject">{{ copy.compare_subject }}</label>
+      <select id="compare-subject" name="subject">
+        {% for candidate in compare_candidates %}
+        <option value="{{ candidate.version_id }}"{% if loop.first %} selected{% endif %}>{{ candidate.submitted.text }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <label for="compare-baseline">{{ copy.compare_baseline }}</label>
+      <select id="compare-baseline" name="baseline">
+        {% for candidate in compare_candidates %}
+        <option value="{{ candidate.version_id }}"{% if loop.index == 2 %} selected{% endif %}>{{ candidate.submitted.text }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <button type="submit">{{ copy.compare_submit }}</button>
+  </form>
   {% endif %}
 </section>
 {% endblock %}

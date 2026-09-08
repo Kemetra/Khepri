@@ -249,7 +249,7 @@ phase, not a required stop on the way to the next row:
 | Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
 | What Changed (M4 enrichment) | §4, §22 | M4 | FUTURE SHAPING REQUIRED — adds to the M2/M3 result, does not gate it |
 | Explore | §22 | M4 optional / post-M4 | `X1-02` may ship inside M4 per roadmap `X1`; PROPOSED |
-| Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
+| Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare is authorized by active `RCA-005` §Comparison orchestration (FR-130–FR-133) and shipped by C1-06/C1-07 |
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
 | Guided questions | §22 | post-M4 | `X1-04` is outside the roadmap's M4-eligible `X1-01`–`X1-03`; PROPOSED |

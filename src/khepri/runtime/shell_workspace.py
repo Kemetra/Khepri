@@ -125,6 +125,18 @@ class DataReference:
 
 
 @dataclass(frozen=True, slots=True)
+class CompareCandidate:
+    """One live completed data entry the Analyses Compare form may name (`FR-132`).
+
+    `version_id` is the opaque identifier carried only into `<option value>`. `submitted` is
+    how the Data surface names the same entry, and is the option's visible text.
+    """
+
+    version_id: str
+    submitted: Moment
+
+
+@dataclass(frozen=True, slots=True)
 class SpineRow:
     """One entry on the Analyses history spine (`FR-117`): a live run or a run's tombstone.
 
@@ -389,6 +401,31 @@ def spine_rows(
     return tuple(sorted(live + list(gone.values()), key=lambda row: row.started.at, reverse=True))
 
 
+def _compare_candidate(row: SpineRow) -> CompareCandidate | None:
+    if row.deleted is not None:
+        return None
+    if row.state_key != "run_state_completed":
+        return None
+    data = row.data
+    if data is None:
+        return None
+    if data.deleted:
+        return None
+    if not data.anchor:
+        return None
+    return CompareCandidate(version_id=data.anchor, submitted=data.submitted)
+
+
+def compare_candidates(rows: Iterable[SpineRow]) -> tuple[CompareCandidate, ...]:
+    """Live completed rows with present, kept data; newest first, unique by version."""
+    found: dict[str, CompareCandidate] = {}
+    for row in rows:
+        candidate = _compare_candidate(row)
+        if candidate is not None and candidate.version_id not in found:
+            found[candidate.version_id] = candidate
+    return tuple(found.values())
+
+
 __all__ = [
     "ADMISSION_COPY",
     "RUN_STATE_COPY",
@@ -396,12 +433,14 @@ __all__ = [
     "UnrenderableRecord",
     "report_key",
     "worded",
+    "CompareCandidate",
     "DataReference",
     "DataRow",
     "Moment",
     "OverviewView",
     "SpineRow",
     "WorkRow",
+    "compare_candidates",
     "data_rows",
     "moment",
     "overview_view",
