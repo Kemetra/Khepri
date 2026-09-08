@@ -185,6 +185,62 @@ def test_compare_candidates_preserve_spine_order() -> None:
     assert tuple(item.version_id for item in found) == ("ver-new", "ver-old")
 
 
+class _OperandParser(HTMLParser):
+    """The comparison result page's operand list: each label with the pair of ids it carries.
+
+    A `<li>` holds one label, a Data-entry link naming a version, and a Passport link naming a
+    run. Reading them together is what distinguishes a correct page from one that attached the
+    baseline's run to the subject's row.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.operands: dict[str, tuple[str, str]] = {}
+        self._label = ""
+        self._version = ""
+        self._run = ""
+        self._in_label = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        named = dict(attrs)
+        if tag == "span" and named.get("class") == "row-label":
+            self._in_label = True
+        if tag == "a":
+            self._read_link(named)
+
+    def _read_link(self, named: dict[str, str | None]) -> None:
+        href = named.get("href") or ""
+        kind = named.get("class") or ""
+        if kind == "data-reference" and "#data-" in href:
+            self._version = href.split("#data-", 1)[1]
+        if kind == "compare-passport" and "/analyses/" in href:
+            self._run = href.rsplit("/analyses/", 1)[1]
+
+    def _wants_label(self, text: str) -> bool:
+        """The first non-empty label text inside a `<li>` names the operand."""
+        if not self._in_label:
+            return False
+        return bool(text) and not self._label
+
+    def handle_data(self, data: str) -> None:
+        text = data.strip()
+        if self._wants_label(text):
+            self._label = text
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "span":
+            self._in_label = False
+        if tag == "li" and self._label:
+            self.operands[self._label] = (self._version, self._run)
+            self._label = self._version = self._run = ""
+
+
+def _operands(html: str) -> dict[str, tuple[str, str]]:
+    parser = _OperandParser()
+    parser.feed(html)
+    return parser.operands
+
+
 def test_a_completed_pair_renders_the_compare_form(tmp_path) -> None:
     j = journey()
     who = member(j.w)
@@ -262,11 +318,18 @@ def test_posting_the_form_defaults_renders_the_admitted_result(tmp_path) -> None
     )
 
     assert posted.status_code == 200
-    assert EN["compare_subject"] in posted.text
-    assert EN["compare_baseline"] in posted.text
     assert EN["compare_passport"] in posted.text
-    assert f"/analyses/{pair.subject_run.run_id}" in posted.text
-    assert f"/analyses/{pair.baseline_run.run_id}" in posted.text
+    # Per operand, not per page: both Passport links land in one body, so a subject/baseline
+    # swap is invisible to a membership check over the whole page (review on `#PR#`). The
+    # expectation is what the form posted -- the newest entry as subject -- which is the
+    # reverse of the fixture's own field names, so a page echoing the fixture would fail here.
+    runs = {run.version_id: run.run_id for run in j.w.store.analysis_runs_for_scope(who.owner_id)}
+    posted_subject = form.selected["subject"]
+    posted_baseline = form.selected["baseline"]
+    assert {pair.subject.version_id, pair.baseline.version_id} == {posted_subject, posted_baseline}
+    operands = _operands(posted.text)
+    assert operands[EN["compare_subject"]] == (posted_subject, runs[posted_subject])
+    assert operands[EN["compare_baseline"]] == (posted_baseline, runs[posted_baseline])
 
 
 def test_arabic_labels_precede_their_controls_inside_rtl(tmp_path) -> None:
