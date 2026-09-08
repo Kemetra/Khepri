@@ -33,13 +33,15 @@
   {% if view.refusal %}
   <p class="compare-refusal">{{ view.refusal }}</p>
   {% else %}
+  {#
+    The three surfaces are handoffs, as every Analyses artifact is. The shell's policy is
+    `default-src 'none'` with no frame directive, so nothing here is framed or inlined.
+  #}
   <p class="compare-downloads">
+    <a class="compare-html" href="{{ view.html_href }}" download="khepri-comparison.html">{{ copy.compare_report }}</a>
     <a class="compare-pdf" href="{{ view.pdf_href }}" download="khepri-comparison.pdf">{{ copy.artifact_pdf }}</a>
     <a class="compare-excel" href="{{ view.excel_href }}" download="khepri-comparison.xlsx">{{ copy.artifact_excel }}</a>
   </p>
-  <iframe class="compare-report"
-          title="{{ copy.compare_report }}"
-          srcdoc="{{ view.html }}"></iframe>
   {% endif %}
 </section>
 {% endblock %}

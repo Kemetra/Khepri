@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ from khepri.rca.workspace.store import SqlWorkspaceRecordStore
 from khepri.rra.aggregates import granularity_for
 from khepri.rra.analysis.comparison_narrative import refusal_wording
 from khepri.rra.analysis.dataset_period import CAUSE_INCOMPLETE, CAUSE_UNORDERED_PAIR, DatasetPeriod
-from khepri.rra.bundle import BundleAssembler
+from khepri.rra.bundle import BundleAssembler, SurfaceContent
 from khepri.rra.coverage import CompletenessQuery, CoverageManifest, admits_completeness
 from khepri.rra.crossversion_assembly import assemble_crossversion
 from khepri.rra.crossversion_bundle import CrossVersionRefusal, CrossVersionRequest
@@ -102,6 +103,27 @@ class _OperandAsk:
     bound: _RunPackage
 
 
+@dataclass(slots=True)
+class _Captured:
+    """A `SurfaceRenderer` over one full render, keeping the document it produced.
+
+    `BundleAssembler.assemble` is what turns a renderer fault into an incomplete
+    bundle, and so into the uniform unavailable outcome with its audit event. It
+    asks each renderer only for its claim, so reaching the documents needed a
+    second render pass -- one nothing guarded, so a fault there escaped the
+    request before the audit write, and one whose bytes the recorded claims did
+    not describe. Rendering once inside the assembler and keeping the document
+    leaves one pass, governed, whose claim is about the bytes delivered.
+    """
+
+    produce: Callable[[Any], Any]
+    document: Any = None
+
+    def render(self, bundle: Any) -> SurfaceContent:
+        self.document = self.produce(bundle)
+        return self.document.content
+
+
 class CrossVersionAssembly:
     """Load two retained packages and assemble the in-request bundle."""
 
@@ -170,17 +192,17 @@ class CrossVersionAssembly:
         subject_run_id: str,
         baseline_run_id: str,
     ) -> ComparisonSurfaces | None:
-        result = BundleAssembler(renderers=(self._html, self._pdf, excel)).assemble(bundle)
+        html = _Captured(self._html.render_html)
+        pdf = _Captured(self._pdf.render_pdf)
+        workbook = _Captured(excel.render_materialized)
+        result = BundleAssembler(renderers=(html, pdf, workbook)).assemble(bundle)
         if result.incomplete or result.surfaces is None:
             return None
-        html = self._html.render_html(bundle)
-        pdf = self._pdf.render_pdf(bundle)
-        excel_surface = excel.render_materialized(bundle)
         return ComparisonSurfaces(
             claims={content.surface: content for content in result.surfaces},
-            html=html.documents,
-            pdf=pdf.documents,
-            excel=excel_surface.artifacts[0].content,
+            html=html.document.documents,
+            pdf=pdf.document.documents,
+            excel=workbook.document.artifacts[0].content,
             subject_run_id=subject_run_id,
             baseline_run_id=baseline_run_id,
         )

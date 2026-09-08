@@ -6,12 +6,13 @@ stub store would answer any key and hide the uniform refusal `FR-130` requires.
 
 from __future__ import annotations
 
+import base64
+import re
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
@@ -26,6 +27,8 @@ from khepri.rca.workspace.comparisons import ComparisonActor, ComparisonRequest
 from khepri.rra.analysis.dataset_period import CAUSE_UNORDERED_PAIR
 from khepri.rra.bundle import REQUIRED_SURFACES, reconcile
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer, WorkbookUnavailable
+from khepri.rra.rendering.html import HtmlReportRenderer
+from khepri.rra.rendering.pdf import PdfReportRenderer
 from khepri.runtime.shell_copy import SHELL_COPY
 from khepri.runtime.shell_workspace import moment
 from tests.c106_support import (
@@ -108,28 +111,71 @@ def test_cross_organization_pair_matches_a_nonexistent_id(tmp_path) -> None:
     assert cross.bundle is None
 
 
-def test_a_failed_render_leaves_no_workbook_on_disk(tmp_path) -> None:
-    """`RRA-006` §Not stored holds for a request that fails, not only one that succeeds.
+def test_a_renderer_fault_is_governed_audited_once_and_leaves_no_workbook(tmp_path) -> None:
+    """A fault in any renderer owes three things: the uniform unavailable outcome, exactly
+    one audit event (`FR-133`), and an empty render directory (`RRA-006` §Not stored).
 
-    The assembler writes the workbook before the page renderers run, so a fault after
-    that point -- here the workbook bytes cannot be read back -- would leave a finished
-    comparison on disk if cleanup lived only on the success path.
+    Review found the surfaces rendered twice, once inside the assembler -- which turns a
+    fault into an incomplete bundle -- and once outside it, unguarded, so a fault there
+    escaped the request before the audit write. One pass now, inside the assembler.
     """
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
     actions = comparison_actions(j, tmp_path)
     fault = WorkbookUnavailable("The Excel surface could not be read.")
+    j.clock.advance(timedelta(minutes=1))
+    before = len(j.w.audit.events_for_scope(who.owner_id))
 
-    with (
-        patch.object(ExcelSurfaceRenderer, "render_materialized", side_effect=fault),
-        pytest.raises(WorkbookUnavailable),
-    ):
-        actions.request(
+    with patch.object(ExcelSurfaceRenderer, "render_materialized", side_effect=fault):
+        outcome = actions.request(
             _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
         )
 
+    added = j.w.audit.events_for_scope(who.owner_id)[before:]
+    assert outcome.unavailable
+    assert [event.action for event in added] == [ACTION_RUN_FAILED]
     assert not any(tmp_path.iterdir())
+
+
+def test_each_surface_is_rendered_once_and_its_claim_describes_the_delivered_bytes(
+    tmp_path,
+) -> None:
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    actions = comparison_actions(j, tmp_path)
+    calls = {"html": 0, "pdf": 0, "excel": 0}
+
+    def counting(name: str, original: Any) -> Any:
+        def render(self: Any, bundle: Any) -> Any:
+            calls[name] += 1
+            return original(self, bundle)
+
+        return render
+
+    with (
+        patch.object(
+            HtmlReportRenderer, "render_html", counting("html", HtmlReportRenderer.render_html)
+        ),
+        patch.object(
+            PdfReportRenderer, "render_pdf", counting("pdf", PdfReportRenderer.render_pdf)
+        ),
+        patch.object(
+            ExcelSurfaceRenderer,
+            "render_materialized",
+            counting("excel", ExcelSurfaceRenderer.render_materialized),
+        ),
+    ):
+        outcome = actions.request(
+            _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
+        )
+
+    assert outcome.admitted
+    assert calls == {"html": 1, "pdf": 1, "excel": 1}
+    surfaces = outcome.surfaces
+    assert surfaces is not None
+    assert surfaces.claims["excel"].output_size_bytes == len(surfaces.excel)
 
 
 def test_two_requests_for_one_pair_never_share_a_workbook_path(tmp_path) -> None:
@@ -390,10 +436,18 @@ def test_the_arabic_page_is_rtl(tmp_path) -> None:
     assert 'dir="rtl"' in page.text
     assert AR["compare_subject"] in page.text
     assert AR["compare_baseline"] in page.text
-    # The surface travels escaped inside `srcdoc`, so its own `lang` attribute is the
-    # evidence that the Arabic rendering, not the English one, was embedded.
-    assert "lang=&#34;ar&#34;" in page.text
-    assert "lang=&#34;en&#34;" not in page.text
+    # The offered document's own `lang` attribute is the evidence that the Arabic
+    # rendering, not the English one, is what this page hands off.
+    offered = _offered_html(page.text)
+    assert 'lang="ar"' in offered
+    assert 'lang="en"' not in offered
+
+
+def _offered_html(page_text: str) -> str:
+    """The HTML surface behind the page's download link, decoded."""
+    found = re.search(r'href="data:text/html; charset=utf-8;base64,([^"]+)"', page_text)
+    assert found is not None, "the page offers no HTML surface"
+    return base64.b64decode(found.group(1)).decode("utf-8")
 
 
 def test_http_cross_organization_matches_nonexistent_byte_for_byte(tmp_path) -> None:

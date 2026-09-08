@@ -184,7 +184,7 @@ _EN = {
     "compare_subject": "Subject",
     "compare_baseline": "Baseline",
     "compare_passport": "Open analysis passport",
-    "compare_report": "Comparison report",
+    "compare_report": "Download report",
 }
 
 _AR = {
@@ -322,7 +322,7 @@ _AR = {
     "compare_subject": "الموضوع",
     "compare_baseline": "الأساس",
     "compare_passport": "افتح بطاقة التحليل",
-    "compare_report": "تقرير المقارنة",
+    "compare_report": "نزّل التقرير",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

@@ -24,7 +24,7 @@ from khepri.rca.workspace.comparisons import (
     ComparisonRequest,
     ComparisonSurfaces,
 )
-from khepri.rra.report_artifacts import PDF_MEDIA_TYPE, XLSX_MEDIA_TYPE
+from khepri.rra.report_artifacts import HTML_MEDIA_TYPE, PDF_MEDIA_TYPE, XLSX_MEDIA_TYPE
 from khepri.runtime.shell_invitations import ShellRendering, _form
 from khepri.runtime.shell_workspace import Moment, moment
 
@@ -50,7 +50,7 @@ class _OperandView:
 class _CompareView:
     subject: _OperandView | None
     baseline: _OperandView | None
-    html: str
+    html_href: str
     pdf_href: str
     excel_href: str
     refusal: str | None
@@ -229,7 +229,10 @@ def _filled_view(
     return _CompareView(
         subject=subject,
         baseline=baseline,
-        html=surfaces.html[language],
+        # Offered as handoffs, the way every Analyses artifact is reached. The shell's
+        # policy is `default-src 'none'` with no frame directive, so a framed surface
+        # cannot render here; the rest of the shell never displays report HTML inline.
+        html_href=_data_href(HTML_MEDIA_TYPE, surfaces.html[language].encode("utf-8")),
         pdf_href=_data_href(PDF_MEDIA_TYPE, surfaces.pdf[language]),
         excel_href=_data_href(XLSX_MEDIA_TYPE, surfaces.excel),
         refusal=None,
