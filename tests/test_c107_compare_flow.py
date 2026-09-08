@@ -320,7 +320,7 @@ def test_posting_the_form_defaults_renders_the_admitted_result(tmp_path) -> None
     assert posted.status_code == 200
     assert EN["compare_passport"] in posted.text
     # Per operand, not per page: both Passport links land in one body, so a subject/baseline
-    # swap is invisible to a membership check over the whole page (review on `#PR#`). The
+    # swap is invisible to a membership check over the whole page (review on `#411`). The
     # expectation is what the form posted -- the newest entry as subject -- which is the
     # reverse of the fixture's own field names, so a page echoing the fixture would fail here.
     runs = {run.version_id: run.run_id for run in j.w.store.analysis_runs_for_scope(who.owner_id)}
