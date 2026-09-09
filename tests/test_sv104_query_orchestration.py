@@ -52,12 +52,14 @@ class _FakePort:
     """
 
     def __init__(self, outcome: ports.ViewOutcome | None) -> None:
+        """Answer with `outcome` every time, and keep what each call was handed."""
         self.outcome = outcome
         self.calls: list[tuple[ports.SemanticViewRequest, tuple[object, ...]]] = []
 
     def project(
         self, request: ports.SemanticViewRequest, sources: tuple[object, ...]
     ) -> ports.ViewOutcome | None:
+        """Record the request and scoped sources, then answer as configured."""
         self.calls.append((request, sources))
         return self.outcome
 
@@ -66,10 +68,12 @@ class _SpyReader:
     """The real store behind a recorder, so "never reached a store read" is checkable."""
 
     def __init__(self, store: object) -> None:
+        """Wrap the real store; every read is recorded before it is served."""
         self._store = store
         self.reads: list[tuple[str, str | None]] = []
 
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
+        """Record the read, then serve it from the real store unchanged."""
         self.reads.append((run_id, owner_id))
         return self._store.get_analysis_run(run_id, owner_id)  # type: ignore[attr-defined]
 
@@ -77,6 +81,7 @@ class _SpyReader:
 def _actions(
     j: Journey, port: _FakePort, reader: object | None = None
 ) -> queries.SemanticQueryActions:
+    """The orchestration over the journey's real isolation door and stores."""
     return queries.SemanticQueryActions(
         isolation=IsolationService(j.w.organizations, SqlAccountStore(j.w.factory)),
         sources=reader or j.w.store,  # type: ignore[arg-type]
@@ -85,12 +90,14 @@ def _actions(
 
 
 def _view() -> ports.SemanticViewRequest:
+    """One exact published view version, named the way `FR-143` requires."""
     return ports.SemanticViewRequest(
         view_id="ExecutiveOverviewView", view_version="sv1.executive_overview.v1"
     )
 
 
 def _request(who: Member, *source_ids: str) -> queries.SemanticQueryRequest:
+    """`who` asking for `_view()` over the named sources in their own organization."""
     return queries.SemanticQueryRequest(
         actor=queries.SemanticQueryActor(account_id=who.account_id),
         organization_id=who.organization_id,
@@ -100,6 +107,7 @@ def _request(who: Member, *source_ids: str) -> queries.SemanticQueryRequest:
 
 
 def _admitted() -> ports.ViewOutcome:
+    """A projection outcome, so a test can tell delegation from refusal."""
     return ports.ViewOutcome(
         kind=ports.KIND_ADMITTED,
         projection=ports.ViewProjection(
@@ -285,6 +293,7 @@ def test_a_request_writes_no_row_at_the_connection() -> None:
     statements: list[str] = []
 
     def _record(conn, cursor, statement, parameters, context, executemany) -> None:  # noqa: ANN001
+        """Keep every statement the request issues, to any table."""
         statements.append(statement)
 
     engine = j.w.factory.kw["bind"]

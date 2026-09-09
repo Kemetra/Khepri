@@ -135,14 +135,17 @@ class ViewOutcome:
 
     @property
     def admitted(self) -> bool:
+        """A projection the reader may see."""
         return self.kind == KIND_ADMITTED
 
     @property
     def refused(self) -> bool:
+        """A governed view refusal (`FR-141`), carrying no partial result."""
         return self.kind == KIND_REFUSED
 
     @property
     def unavailable(self) -> bool:
+        """The uniform content-free miss (`FR-146`), naming no condition."""
         return self.kind == KIND_UNAVAILABLE
 
 
@@ -170,4 +173,6 @@ class SemanticViewPort(Protocol):
 
     def project(
         self, request: SemanticViewRequest, sources: tuple[object, ...]
-    ) -> ViewOutcome | None: ...
+    ) -> ViewOutcome | None:
+        """Validate and project, or answer `None` when the sources cannot be read."""
+        ...

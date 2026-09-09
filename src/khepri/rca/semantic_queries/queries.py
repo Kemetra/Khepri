@@ -92,7 +92,9 @@ class ScopedSourceReader(Protocol):
     assertion hard to falsify later.
     """
 
-    def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None: ...
+    def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
+        """One run under this scope, or `None` if absent, ended, or another scope's."""
+        ...
 
 
 def _unavailable() -> ViewOutcome:
@@ -109,6 +111,7 @@ class SemanticQueryActions:
         sources: ScopedSourceReader,
         port: SemanticViewPort,
     ) -> None:
+        """Hold the authorization door, the one scoped read, and the RRA seam."""
         self._isolation = isolation
         self._sources = sources
         self._port = port
