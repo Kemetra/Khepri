@@ -247,23 +247,28 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 ### `SV1-02` — The closed definition registry
 
 - **Requirements:** `FR-134`, `FR-135`, `FR-136`.
-- **Interfaces.** Consumes: `definitions.METRIC_CODES`, `definitions.POPULATION_CODES`,
-  `facts.SERIES_DIMENSIONS`, `renderable.RenderableBundle`. Produces: `SemanticViewDefinition` (the
-  ten contract fields), `PUBLISHED_VIEWS`, `define_view(view_id, view_version)`.
+- **Interfaces.** Consumes: `definitions.FAMILY_METRICS` and the governed family version constants
+  it is keyed by, `facts.SERIES_MEASURES`, `facts.SERIES_DIMENSIONS`. `renderable.RenderableBundle`
+  is the identical-projection contract `either_bundle` rests on, named rather than imported.
+  Produces: `SemanticViewDefinition` (the ten contract fields), `ViewDefinitionRefused`,
+  `view_ids()`, `define_view(view_id)`. `define_view` takes no version — `SV1-02` publishes one
+  version per view, and `FR-143`'s exact-version resolution over published history is `SV1-06`'s.
 - **Delivers:** `semantic_views/contracts.py` and `registry.py`. The ten `RRA-014` contract fields
   as one frozen record — `view_id`, `view_version`, `accepted_source_shape`, `metric_allowlist`,
   `dimension_allowlist`, `request_filter_allowlist`, `fixed_filters`, `required_evidence`,
   `output_field_order`, `empty_result_rule` — and exactly eight published definitions. Every
-  allowlist member is **derived**: metrics from `definitions.METRIC_CODES` (itself already derived
-  from `FAMILY_METRICS | SERIES_METRICS`), dimensions from `facts.SERIES_DIMENSIONS` (itself
-  `(PERIOD_DIMENSION, *COMPARISON_DIMENSIONS)`). The record's field types are designed against §2's
-  seam.
+  allowlist member is **derived**: family metrics are read out of `definitions.FAMILY_METRICS` by
+  the contract version that publishes them, series metrics are composed over `facts.SERIES_MEASURES`
+  the way `definitions.SERIES_METRICS` composes them, and dimensions come from
+  `facts.SERIES_DIMENSIONS` (itself `(PERIOD_DIMENSION, *COMPARISON_DIMENSIONS)`). The record's
+  field types are designed against §2's seam.
 - **Acceptance:** the registry's key set **equals** the eight named views — equality *and*
   non-empty, never `>=`; every metric in every `metric_allowlist` satisfies
   `definitions.admits_metric`, asserted by iterating the registry rather than a hand-list; every
-  dimension is a member of `facts.SERIES_DIMENSIONS`; a ninth view cannot be registered; the record
-  is frozen and a `dataclasses.replace` that changes any of the ten fields produces a record whose
-  `view_version` differs, or raises.
+  dimension is a member of `facts.SERIES_DIMENSIONS`; a ninth view cannot be registered; a value
+  outside `FR-136`'s source shapes or `FR-142`'s empty rules refuses at construction rather than at
+  query time; and the record is frozen and a `dataclasses.replace` that changes any of the eight
+  version-moving fields produces a record whose `view_version` differs, or raises.
 - **Risk:** **a subset assertion cannot see a ninth view added.** `RCA_TABLES` drifted three times
   this way, and a widening survived all 3,618 tests once. `FR-135` says "closed", which is an extent
   claim: assert set equality against the eight literal names *and* that the set is non-empty, so a
@@ -367,7 +372,7 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 ### `SV1-06` — Published versions and exact-version rollback
 
 - **Requirements:** `FR-143`, and `FR-134`'s immutability.
-- **Interfaces.** Consumes: `PUBLISHED_VIEWS`, `define_view`. Produces:
+- **Interfaces.** Consumes: `view_ids`, `define_view`. Produces:
   `resolve(view_id, view_version) -> SemanticViewDefinition | ViewRefusal`, `PUBLISHED_HISTORY`.
 - **Delivers:** `semantic_views/published.py`. Requests name an exact version; supported historical
   readers return that immutable definition, unsupported versions refuse. **No `latest` alias and no
