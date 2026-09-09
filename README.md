@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/khepri-readme-hero.svg" alt="Khepri — governed retail intelligence, from retail files to reconciled reports" width="100%" />
+  <img src="docs/assets/khepri-logo.png" alt="Khepri golden scarab badge" width="320" />
 </p>
 
 <h1 align="center">KHEPRI</h1>
@@ -22,6 +22,10 @@
   <a href="#how-the-truth-travels">Architecture</a> ·
   <a href="#run-it-locally">Run locally</a> ·
   <a href="#governance-with-teeth">Governance</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/khepri-readme-hero.svg" alt="Khepri — governed retail intelligence, from retail files to reconciled reports" width="100%" />
 </p>
 
 ---
