@@ -25,9 +25,11 @@
 
 The allocation plan made this slice conditional: "if the runtime adapter deferred, there is no
 shipped composition to measure and this whole slice is recorded NOT EXERCISED rather than passed."
-The condition holds and the end-to-end baseline is recorded NOT EXERCISED. The rest is not, because
-it does not depend on the composition — and §3 shows the reason for the deferral is sharper than
-the plan assumed, which is itself the most useful thing this slice found.
+The condition held *when this ledger was first written* and the end-to-end baseline was recorded
+NOT EXERCISED on those grounds. `RCA-007` was proposed and merged the same day and the adapter
+shipped, so that entry is now historical and §3a carries the measurement. Everything else here
+never depended on the composition — and §3 remains the record of why the deferral was sharper than
+the plan assumed, which is what led to `RCA-007` being written at all.
 
 ---
 
@@ -267,7 +269,9 @@ runtime wiring; `RCA-005` §Scope names only `shell_api.py` and `shell_templates
 `R7-01` is a design note that is not in the registry. Article IV forbids widening the runtime
 boundary without an owner-merged artifact, so the amendment is the gate.
 
-What that amendment would need to say is now more specific than "wire the port": it must name a
-path that **constructs a `RenderableBundle` from an `AnalysisRun`**, because §3 shows that is the
-real gap. Until it exists, `SV1-01`–`SV1-08` deliver a complete, tested, governed semantic-view
-capability that nothing in the running image can call.
+What that amendment needed to say was more specific than "wire the port": it had to name a path
+that **constructs a `RenderableBundle` from an `AnalysisRun`**, because §3 shows that is the real
+gap. `RCA-007` says exactly that and is merged; `src/khepri/runtime/semantic_view_adapter.py`
+ships, and a semantic view over an organization-scoped run reaches a real projection. The sentence
+that stood here — that `SV1-01`–`SV1-08` deliver a capability nothing in the running image can call
+— was true for about forty minutes.

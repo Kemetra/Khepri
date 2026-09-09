@@ -19,8 +19,17 @@ runs `RRA-004`'s derivation -- `KHEPRI-DEC-032` measured it calling
 constructor publishes no figure, and a semantic view does. `RCA-007` put that
 question to the owner with its counter-argument stated, and merging it was the
 ruling: determinism is protected by checks rather than by avoidance. The two
-checks are here and both fail closed -- the digest (`FR-153`) and the version
-triple the run recorded at delivery (`FR-157`).
+checks are here and both fail closed -- the digest (`FR-153`) and the versions
+the run recorded at delivery (`FR-157`).
+
+`FR-157` calls those a triple; the run records a pair. `AnalysisRun` carries
+`package_version` and `formula_version` and no mapping version, so there is
+nothing on the run to compare a third against -- and nothing needs to be. The
+run names its package *by digest*, `FactPackageRecord.verify` refuses a record
+whose mapping version disagrees with its document, and the digest hashes that
+document: a package with a different mapping version has a different digest and
+no run reaches it. `test_the_mapping_version_is_bound_by_the_digest_not_by_a_comparison`
+asserts that rather than leaving it as a claim in prose.
 
 **Every miss is the same miss.** `FR-151` and `RCA-006` `FR-146` require an
 absent package, a cross-scope one, a run that never derived one and a document
@@ -148,6 +157,9 @@ def _as_run(source: object) -> _Run | None:
 
 def _versions_agree(run: _Run, record: FactPackageRecord) -> bool:
     """`FR-157`: the run's recorded versions still name the stored package's.
+
+    The pair the run records, not the triple `FR-157` names -- see the module
+    docstring for why the mapping version needs no comparison here.
 
     A triple that moved after delivery stops the path. Without this a view could
     publish figures under semantics no delivered surface ever ran, which is the

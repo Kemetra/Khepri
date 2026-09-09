@@ -24,6 +24,7 @@ away from the fourth in a field a later slice adds.
 from __future__ import annotations
 
 import ast
+import hashlib
 import pathlib
 from dataclasses import dataclass
 
@@ -34,6 +35,7 @@ from khepri.rca.persistence import SqlAccountStore
 from khepri.rca.semantic_queries import ports, queries
 from khepri.rra.packages import FactPackageRecord
 from khepri.rra.persistence import FactPackageRow, SqlFactPackageRepository
+from khepri.rra.profiling import canonical_json
 from khepri.runtime import semantic_view_adapter
 from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
 from tests.c106_support import completed_pair
@@ -104,30 +106,29 @@ def test_the_projection_carries_the_packages_own_values_and_versions() -> None:
     assert stated["formula"] == run.formula_version
 
 
-def _unavailable_outcomes(j: Journey, who: Member, other: Member, run_id: str) -> list[object]:
-    """The four conditions `FR-151` requires to be indistinguishable."""
-    return [
-        _actions(j, who).request(_request(who, MISSING_ID)),
-        _actions(j, other).request(_request(other, run_id)),
-        _actions(j, who).request(_request(who, run_id)),
-    ]
-
-
 def test_every_way_the_bridge_can_miss_answers_the_same_way() -> None:
     """`FR-151` -- absent, cross-scope and package-less are one outcome.
 
     The third is made package-less by deleting the package row the run names,
     which leaves a completed run pointing at nothing -- the state a retention
     sweep produces and the one a stub would never reproduce faithfully.
+
+    **Order matters, and a first version got it wrong.** The delete ran before
+    the cross-scope request, so that request would have answered `unavailable`
+    for the wrong reason -- a missing package rather than a foreign scope -- and
+    the equality would have held even with scope enforcement gone. The foreign
+    run is asked for while its package is still there.
     """
     j = journey()
     who = member(j.w)
     other = member(j.w, email="other@example.test", name="Other")
     pair = completed_pair(j, who)
     run = pair.subject_run
-    _delete_package(j, run.package_digest)
 
-    absent, cross_scope, package_less = _unavailable_outcomes(j, who, other, run.run_id)
+    absent = _actions(j, who).request(_request(who, MISSING_ID))
+    cross_scope = _actions(j, other).request(_request(other, run.run_id))
+    _delete_package(j, run.package_digest)
+    package_less = _actions(j, who).request(_request(who, run.run_id))
 
     assert absent.kind == ports.KIND_UNAVAILABLE
     assert cross_scope == absent
@@ -258,17 +259,41 @@ def _adapter_source() -> str:
     return pathlib.Path(semantic_view_adapter.__file__).read_text(encoding="utf-8")
 
 
+def _imported_roots(source: str) -> set[str]:
+    """Every top-level module name `source` imports, in either import form.
+
+    Both node types, because a scan that reads only `ast.ImportFrom` is blind to
+    a plain `import fastapi` -- which is exactly the import these boundary
+    assertions exist to catch. A first version of this file had that hole in
+    three places.
+    """
+    roots: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            roots |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            roots.add((node.module or "").split(".")[0])
+    return roots
+
+
+def _imported_modules(source: str) -> set[str]:
+    """Every fully-qualified module name `source` imports, in either form."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            names.add(node.module or "")
+    return names
+
+
 def test_the_adapter_serves_no_route_and_no_response() -> None:
     """`FR-158` -- `report_api.py`'s boundary is untouched by this module.
 
     A figure-returning route would be an `RRA-006` surface. This module returns a
     projection to `RCA-006` in process and imports nothing that could answer HTTP.
     """
-    imported = {
-        (node.module or "").split(".")[0]
-        for node in ast.walk(ast.parse(_adapter_source()))
-        if isinstance(node, ast.ImportFrom)
-    }
+    imported = _imported_roots(_adapter_source())
 
     assert "fastapi" not in imported
     assert "starlette" not in imported
@@ -287,10 +312,10 @@ def test_the_rca_package_still_imports_no_concrete_rra() -> None:
     assert len(sources) >= 3, f"the scan found too few files to be scanning anything: {sources}"
 
     offenders = [
-        f"{path.name}:{node.lineno}"
+        f"{path.name}: {name}"
         for path in sources
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("khepri.rra")
+        for name in sorted(_imported_modules(path.read_text(encoding="utf-8")))
+        if name.startswith("khepri.rra")
     ]
     assert offenders == [], f"the RCA package reached a concrete RRA module: {offenders}"
 
@@ -318,9 +343,8 @@ def test_the_adapter_is_the_only_runtime_module_reaching_the_projection() -> Non
 def _reaches_semantic_views(path: pathlib.Path) -> bool:
     """Whether a runtime module imports the `RRA-014` semantic-view package."""
     return any(
-        (node.module or "").startswith("khepri.rra.semantic_views")
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.ImportFrom)
+        name.startswith("khepri.rra.semantic_views")
+        for name in _imported_modules(path.read_text(encoding="utf-8"))
     )
 
 
@@ -499,3 +523,39 @@ def _record_claiming_digest(row: FactPackageRow, digest: str) -> FactPackageReco
         created_at=row.created_at,
         document=dict(row.document),
     )
+
+
+def test_the_mapping_version_is_bound_by_the_digest_not_by_a_comparison() -> None:
+    """`FR-157`'s third leg, which `_versions_agree` does not compare and need not.
+
+    `AnalysisRun` records `package_digest`, `package_version` and
+    `formula_version`, and no mapping version -- so there is nothing on the run
+    to compare a mapping version against. That is not a hole: the run names its
+    package *by digest*, `FactPackageRecord.verify` refuses a record whose
+    `mapping_version` disagrees with its document, and the digest is the hash of
+    that document. A package with a different mapping version therefore has a
+    different digest and no run can reach it.
+
+    Asserted here rather than argued, because "the digest covers it" is the kind
+    of claim that is true until someone changes what the digest covers.
+    """
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    with j.w.factory() as database:
+        row = database.scalars(
+            select(FactPackageRow).where(
+                FactPackageRow.package_digest == pair.subject_run.package_digest
+            )
+        ).first()
+        assert row is not None
+        document = dict(row.document)
+
+    assert document["mapping_version"] == row.mapping_version
+    assert _digest_of(document) == row.package_digest
+    assert _digest_of({**document, "mapping_version": "rra004.mapping.v999"}) != row.package_digest
+
+
+def _digest_of(document: dict[str, object]) -> str:
+    """The digest a stored package document hashes to, computed independently."""
+    return hashlib.sha256(canonical_json(document).encode()).hexdigest()
