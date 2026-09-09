@@ -398,3 +398,12 @@ artifacts:
       - RRA-008
       - RRA-009
       - RRA-011
+  - type: specification
+    id: RCA-006
+    state: active
+    document: governance/specifications/RCA-006.md
+    depends_on:
+      - RCA
+      - RCA-001
+      - RCA-005
+      - RRA-014
