@@ -393,10 +393,12 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 - **Interfaces.** Consumes: `SemanticViewDefinition`, `define_view` (`SV1-02`), `validate`
   (`SV1-03`), `RenderableBundle`, `ViewProjection`. Produces: `project(request:
   SemanticViewRequest, sources: tuple[object, ...]) -> ViewOutcome` — **the `SemanticViewPort`
-  implementation itself**, matching §2's Protocol signature exactly. The definition is *not* a
-  parameter: it is looked up inside this call via `define_view(request.view_id,
-  request.view_version)`, because `RCA-006` §Exclusions bars the RCA side from knowing what a
-  definition is. `SV1-06` later **replaces that one call** with its history-aware `resolve`, which
+  implementation itself**, matching §2's Protocol signature *structurally* — `khepri.rra` may not
+  import `khepri.rca`, so the RRA half speaks its own request and outcome types and the composition
+  root translates, exactly as `crossversion_bundle.CrossVersionRefusal` and
+  `comparisons.ComparisonRefusal` already do. The definition is *not* a parameter: it is looked up
+  inside this call via `define_view(request.view_id)` — one argument, as `SV1-02` published it —
+  because `RCA-006` §Exclusions bars the RCA side from knowing what a definition is. `SV1-06` later **replaces that one call** with its history-aware `resolve`, which
   is why `SV1-06` follows this slice rather than preceding it: the lookup seam exists here, and
   `SV1-06` widens what it can resolve without changing this signature.
 - **Delivers:** `semantic_views/projection.py`. Select fields in `output_field_order`, carry every
