@@ -507,6 +507,21 @@ names its requirements, what it delivers, its acceptance, and the one thing most
   EXERCISED rather than passed. A latency figure taken over a test-local fake port measures the
   fake, and publishing it as the baseline `D1-09` will later optimize against is worse than having
   none.
+- **RESOLVED (`SV1-08`, measured 2026-09-09).** The conditional held and is recorded, but the
+  reason turned out to be sharper than this plan assumed. It is not merely that a fake port would
+  be measured: **the two shipped halves cannot compose at all.** `SemanticQueryActions` loads
+  `AnalysisRun` rows and `project` admits a `RenderableBundle`, so composing them by hand with no
+  fake anywhere returns `ViewRefusal('incompatible source shape')` every time. The deferred adapter
+  is therefore a *bundle construction*, not a wiring line, and that unbuilt step is where the
+  end-to-end latency and the real source-acquisition query shape both live.
+  **End-to-end latency: NOT EXERCISED**, proven by a test that fails the day an adapter makes the
+  halves meet. **Query shape, the four prohibitions and the projection half's own latency:
+  MEASURED**, over shipped code with no fake — they do not depend on the composition. All eight
+  views reach a non-empty projection, so no figure is of the null case; a first pass recorded
+  `PeriodComparisonView` unreachable, which was the fixture's single-population shape and not the
+  product's. Ledger: `docs/superpowers/plans/2026-09-09-sv1-08-baseline-evidence.md`. Evidence:
+  `tests/test_sv108_query_baseline.py`, 25 tests, one mutant per guard killed and one negative control.
+
 - **Risk:** **a measurement that changes what it measures.** `FR-144`'s final clause bars "result
   changes"; a timing harness that warms a path, memoizes a definition lookup, or reorders work is a
   result change. Second risk: measuring the null case — a view that returns empty for the fixture
