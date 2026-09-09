@@ -430,7 +430,11 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 
 - **Requirements:** `FR-143`, and `FR-134`'s immutability.
 - **Interfaces.** Consumes: `view_ids`, `define_view`. Produces:
-  `resolve(view_id, view_version) -> SemanticViewDefinition | ViewRefusal`, `PUBLISHED_HISTORY`.
+  `resolve(view_id, view_version) -> SemanticViewDefinition | ViewRefusal`, `published_history()`,
+  `published_versions(view_id)`, `PUBLISHED_DIGESTS` and `definition_digest`. A function rather
+  than the `PUBLISHED_HISTORY` constant first sketched here: the history derives from the registry,
+  and a module-level constant would freeze it at import while a ninth view could still be
+  published. `PUBLISHED_DIGESTS` is the addition this slice found it needed — see its Risk.
 - **Delivers:** `semantic_views/published.py`. Requests name an exact version; supported historical
   readers return that immutable definition, unsupported versions refuse. **No `latest` alias and no
   silent upgrade exists.**
@@ -443,6 +447,18 @@ names its requirements, what it delivers, its acceptance, and the one thing most
   *creates a new version* — a slice that "fixes" a published definition in place violates
   immutability while every test still passes, because the tests read the same object. Assert the
   historical record separately from the current one.
+
+  **How the second risk was met (`SV1-06`).** "Separately" has to mean *independently*, and nothing
+  derived from the registry can be that: comparing `resolve(...)` with `define_view(...)` passes no
+  matter what changed. `PUBLISHED_DIGESTS` records the content digest each version was published
+  with, **as literals**. Everywhere else in this package a second literal is the "second truth"
+  `FR-135` forbids; here it is the only possible witness. A mutant that edits a published
+  `output_field_order` in place is killed by it.
+
+  That leaves one gap no behavioural test can close: if the table were ever *computed* from the
+  registry, every immutability assertion would pass vacuously and nothing at runtime would show it.
+  So a test parses the module and asserts every digest is a string literal — a derived table fails
+  before any behaviour is exercised.
 
 ### `SV1-07` — Cross-cutting boundary evidence
 

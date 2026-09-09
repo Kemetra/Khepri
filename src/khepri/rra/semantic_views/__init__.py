@@ -8,8 +8,8 @@ or incompatible request.
 
 `SV1-02` publishes the closed eight-view registry and the definition record;
 `SV1-03` the closed refusal set and the early-refusal validator; `SV1-05` the
-projection that selects, orders and propagates. Published-version resolution
-(`SV1-06`) joins this package as its slice lands.
+projection that selects, orders and propagates; `SV1-06` the published version
+history and its exact-version resolver.
 """
 
 from __future__ import annotations
@@ -31,6 +31,13 @@ from khepri.rra.semantic_views.projection import (
     ViewProjection,
     project,
 )
+from khepri.rra.semantic_views.published import (
+    PUBLISHED_DIGESTS,
+    definition_digest,
+    published_history,
+    published_versions,
+    resolve,
+)
 from khepri.rra.semantic_views.refusals import (
     REFUSAL_CAUSES,
     ViewRefusal,
@@ -41,6 +48,7 @@ from khepri.rra.semantic_views.registry import UnknownView, define_view, view_id
 __all__ = [
     "ADMITTED_SOURCE_SHAPES",
     "EMPTY_RULES",
+    "PUBLISHED_DIGESTS",
     "REFUSAL_CAUSES",
     "EffectiveRequest",
     "SemanticViewDefinition",
@@ -52,7 +60,11 @@ __all__ = [
     "ViewProjection",
     "ViewRefusal",
     "define_view",
+    "definition_digest",
     "project",
+    "published_history",
+    "published_versions",
+    "resolve",
     "refusal_wording",
     "validate",
     "view_ids",
