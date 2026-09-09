@@ -7,9 +7,9 @@ populations, evidence and governed versions; and it fails closed on an unknown
 or incompatible request.
 
 `SV1-02` publishes the closed eight-view registry and the definition record;
-`SV1-03` the closed refusal set and the early-refusal validator. Projection
-(`SV1-05`) and published-version resolution (`SV1-06`) join this package as
-their slices land.
+`SV1-03` the closed refusal set and the early-refusal validator; `SV1-05` the
+projection that selects, orders and propagates. Published-version resolution
+(`SV1-06`) joins this package as its slice lands.
 """
 
 from __future__ import annotations
@@ -25,6 +25,12 @@ from khepri.rra.semantic_views.contracts import (
     SemanticViewDefinition,
     ViewDefinitionRefused,
 )
+from khepri.rra.semantic_views.projection import (
+    EffectiveRequest,
+    ViewOutcome,
+    ViewProjection,
+    project,
+)
 from khepri.rra.semantic_views.refusals import (
     REFUSAL_CAUSES,
     ViewRefusal,
@@ -36,13 +42,17 @@ __all__ = [
     "ADMITTED_SOURCE_SHAPES",
     "EMPTY_RULES",
     "REFUSAL_CAUSES",
+    "EffectiveRequest",
     "SemanticViewDefinition",
     "SemanticViewRequest",
     "SourceCandidate",
     "UnknownView",
     "ViewDefinitionRefused",
+    "ViewOutcome",
+    "ViewProjection",
     "ViewRefusal",
     "define_view",
+    "project",
     "refusal_wording",
     "validate",
     "view_ids",

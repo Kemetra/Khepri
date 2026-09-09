@@ -58,10 +58,19 @@ ADMITTED_SOURCE_SHAPES: frozenset[str] = frozenset(
 
 #: The shapes a *source* can actually be. `SHAPE_EITHER_BUNDLE` is a
 #: definition-side value meaning "both are admitted"; no bundle is ever both, so
-#: it is admitted of a definition and never of a source. Derived by removing it
+#: it is admitted of a definition and never of a source. Derived by exclusion
 #: rather than relisted, so a third concrete shape added above joins here with no
 #: edit and cannot be admitted of a definition while being unknown to a source.
-CONCRETE_SOURCE_SHAPES: frozenset[str] = ADMITTED_SOURCE_SHAPES - {SHAPE_EITHER_BUNDLE}
+#:
+#: Written as a comprehension rather than `ADMITTED_SOURCE_SHAPES - {...}`
+#: because `SV1-05`'s arithmetic scan reads `ast.Sub` as arithmetic, and a set
+#: difference is indistinguishable from a subtraction in the tree. Narrowing the
+#: scan to let `Sub` through would blind it to real arithmetic in a projection,
+#: which is the thing `FR-138` actually bars -- so the expression moved instead
+#: of the rule.
+CONCRETE_SOURCE_SHAPES: frozenset[str] = frozenset(
+    shape for shape in ADMITTED_SOURCE_SHAPES if shape != SHAPE_EITHER_BUNDLE
+)
 
 #: The admitted request matched no row. `FR-142`: the result "never widens to
 #: unfiltered data, a nearby dimension, another version, or a partial result",
