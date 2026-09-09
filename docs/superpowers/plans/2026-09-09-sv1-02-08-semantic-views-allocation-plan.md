@@ -138,6 +138,7 @@ class SemanticViewRequest:
 
     view_id: str
     view_version: str
+    metrics: tuple[str, ...]               # empty asks for the definition's own selection
     dimensions: tuple[str, ...]
     filters: tuple[tuple[str, str], ...]   # ordered pairs; never a dict, so order is identity
 
@@ -206,6 +207,14 @@ Three decisions this pins, each with its reason:
 3. **One `project` call, not a validate-then-project pair.** `FR-137` and `FR-141` require refusal
    *before* projection, which is a guarantee about the callee's internal order, not about the number
    of calls. Two calls would let a caller skip validation.
+
+**Amended by `SV1-03`: `metrics` was missing.** As first written this block gave `SemanticViewRequest`
+no metric field, and `FR-141` names *unknown metric* as a refusal cause. A request that cannot name a
+metric can never name an unknown one, so the cause would have been unreachable at the seam — declared,
+worded, and dead. The field is added here rather than in `SV1-04` because this block is what `SV1-04`
+writes verbatim, and because `SV1-02` published nothing that the addition disturbs: the request is a
+seam type, not one of `FR-134`'s ten contract fields. An empty tuple asks for the definition's own
+published selection rather than for nothing.
 
 ---
 
@@ -280,7 +289,17 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 
 - **Requirements:** `FR-137`, `FR-141`.
 - **Interfaces.** Consumes: `SemanticViewDefinition`, `define_view`. Produces:
-  `validate(request, definition) -> ViewRefusal | None`, `REFUSAL_CAUSES`, `refusal_wording(cause)`.
+  `validate(request, definition, candidate) -> ViewRefusal | None`, `SemanticViewRequest`,
+  `SourceCandidate`, `Admission`, `ViewRefusal`, `REFUSAL_CAUSES`, `refusal_wording(cause)`.
+  `validate` takes three arguments, not the two first written here. `candidate` carries what the
+  sources offer — their concrete shape and the evidence codes they hold — because two of `FR-141`'s
+  seven causes, *incompatible source shape* and *missing required evidence*, read the sources rather
+  than the request; the two-argument form could not raise either. It is a `SourceCandidate` and not
+  the sources themselves for `ComparisonCandidate`'s reason: a validator that could read a figure
+  could return one, and `FR-137` refuses *before* projection. `definition` is nullable because
+  `None` is how the caller reports that the registry publishes no such view, which keeps all seven
+  causes in one ordered table instead of splitting them between a lookup that raises and a validator
+  that returns.
 - **Delivers:** `semantic_views/compatibility.py` — one **ordered predicate table** returning the
   first cause, following `C1-02`'s `analysis/compatibility.py`, which `#408` corrected precisely for
   inventing a cause its specification did not list. And `refusals.py` — the closed cause set with
