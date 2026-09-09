@@ -363,11 +363,25 @@ def test_the_package_imports_no_concrete_rra_implementation() -> None:
 
 
 def test_the_port_is_a_protocol_the_package_only_declares() -> None:
-    """The consumer owns the seam; the composition root binds it, and is not here."""
+    """The consumer owns the seam; the composition root binds it, and is not here.
+
+    The last line used to assert the runtime adapter did not exist at all, which
+    was the `SV1-04` deferral recorded as a test. `RCA-007` merged and shipped
+    it, and this failed exactly as that marker was meant to. What the test is
+    actually for survives unchanged and is now asserted directly: the binding
+    lives outside this package, so the adapter is in `khepri/runtime/` and
+    nothing in `khepri/rca/semantic_queries/` names it.
+    """
     assert getattr(ports.SemanticViewPort, "_is_protocol", False)
     package = pathlib.Path(queries.__file__).parent
     assert not (package / "adapter.py").exists()
-    assert not (package.parent.parent / "runtime" / "semantic_view_adapter.py").exists()
+    assert (package.parent.parent / "runtime" / "semantic_view_adapter.py").exists()
+    named = [
+        path.name
+        for path in sorted(package.glob("*.py"))
+        if "semantic_view_adapter" in path.read_text(encoding="utf-8")
+    ]
+    assert named == [], f"the package names its own composition root: {named}"
 
 
 def test_a_returned_refusal_cannot_be_edited_through_its_wording() -> None:
