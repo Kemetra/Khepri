@@ -21,7 +21,7 @@ stale exactly when a cause is added.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 
@@ -36,7 +36,6 @@ __all__ = [
     "REFUSAL_CAUSES",
     "VIEW_REFUSALS",
     "ViewRefusal",
-    "refuse",
     "refusal_wording",
 ]
 
@@ -178,17 +177,31 @@ class ViewRefusal:
     The record carries no field a partial result could travel in -- no figure,
     no row, no bundle. `FR-141` admits "no partial result", and a refusal type
     with somewhere to put one is a refusal that can carry one.
+
+    **`wording` is read from `cause`, never stored and never passed in.**
+    `FR-141` requires *bilingual* wording, and while it was an ordinary field the
+    type could be built two ways that break it: `ViewRefusal(cause)` alone
+    produced a governed cause carrying no wording at all, and a caller could pass
+    wording of its own -- text no governed vocabulary authorized, which `FR-139`
+    bars elsewhere as "relabelling outside governed vocabulary".
+
+    A property rather than a field set in `__post_init__`: assigning to a frozen
+    record needs `object.__setattr__`, which `RCA-001`'s forgery scan bars from
+    every production module -- "neither has an ordinary use, so a hit anywhere is
+    worth a review" (`#200`). Reading the table on access needs no assignment at
+    all, and leaves `cause` as the record's only state, so there is one truth
+    about what this refusal says rather than a stored copy that could disagree
+    with the table it came from.
     """
 
     cause: str
-    wording: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Refuse a refusal whose cause `FR-141` does not name."""
+        """Refuse a cause `FR-141` does not name."""
         if self.cause not in REFUSAL_CAUSES:
             raise ValueError(f"{self.cause!r} is not one of {sorted(REFUSAL_CAUSES)}")
 
-
-def refuse(cause: str) -> ViewRefusal:
-    """The complete refusal for one governed cause, wording attached."""
-    return ViewRefusal(cause=cause, wording=refusal_wording(cause))
+    @property
+    def wording(self) -> dict[str, str]:
+        """Both governed languages for this refusal's cause."""
+        return refusal_wording(self.cause)

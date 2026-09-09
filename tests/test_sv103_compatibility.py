@@ -273,9 +273,11 @@ def test_a_definition_resolved_for_another_view_refuses_as_unknown() -> None:
 def test_a_refusal_carries_wording_and_nothing_a_result_could_travel_in() -> None:
     """`FR-141` -- no partial result. A field for one is a place one can appear."""
     names = {field.name for field in dataclasses.fields(refusals.ViewRefusal)}
-    assert names == {"cause", "wording"}
-    refusal = refusals.refuse(refusals.CAUSE_UNKNOWN_VIEW)
+    assert names == {"cause"}
+    refusal = refusals.ViewRefusal(refusals.CAUSE_UNKNOWN_VIEW)
     assert refusal.wording == refusals.refusal_wording(refusals.CAUSE_UNKNOWN_VIEW)
+    assert isinstance(refusals.ViewRefusal.wording, property)
+    assert refusals.ViewRefusal.wording.fset is None, "wording must be read-only"
 
 
 def test_a_refusal_cannot_be_built_for_a_cause_fr141_does_not_name() -> None:
@@ -288,3 +290,59 @@ def test_validate_reads_no_row_because_it_is_handed_none() -> None:
     """`FR-137` refuses *before* projection; a validator given a value could return one."""
     names = {field.name for field in dataclasses.fields(compatibility.SourceCandidate)}
     assert names == {"source_shape", "evidence_codes"}
+
+
+def test_a_refusal_derives_its_wording_from_its_cause() -> None:
+    """`FR-141` -- bilingual. A governed cause carrying no wording is not one.
+
+    The field was an ordinary argument once, and `ViewRefusal(cause)` then built
+    a refusal whose wording was `{}`: a stable contract refusal the reader could
+    not read.
+    """
+    for cause in sorted(refusals.REFUSAL_CAUSES):
+        refusal = refusals.ViewRefusal(cause)
+        assert refusal.wording == refusals.refusal_wording(cause)
+        assert set(refusal.wording) == {LANGUAGE_ENGLISH, LANGUAGE_ARABIC}
+
+
+def test_a_caller_cannot_supply_wording_of_its_own() -> None:
+    """One cause admits one wording; supplied text is outside governed vocabulary."""
+    with pytest.raises(TypeError):
+        refusals.ViewRefusal(  # type: ignore[call-arg]
+            refusals.CAUSE_UNKNOWN_VIEW, wording={"en": "whatever you like"}
+        )
+
+
+@pytest.mark.parametrize("shape", [contracts.SHAPE_EITHER_BUNDLE, "not-a-shape-at-all", ""])
+def test_a_source_naming_no_concrete_shape_refuses_even_for_either_bundle(
+    shape: str,
+) -> None:
+    """ "Either" means either of the two, not anything.
+
+    `RRA-014` §Invariants makes incompatible-shape handling fail closed. While
+    the permissive branch returned early, an unrecognized shape -- and
+    `SHAPE_EITHER_BUNDLE` itself, which no source can be -- passed validation
+    against a view admitting both bundles.
+    """
+    assert _EVIDENCE_VIEW.accepted_source_shape == contracts.SHAPE_EITHER_BUNDLE
+    candidate = compatibility.SourceCandidate(source_shape=shape)
+    refusal = compatibility.validate(_request(_EVIDENCE_VIEW), _EVIDENCE_VIEW, candidate)
+    assert refusal is not None
+    assert refusal.cause == refusals.CAUSE_INCOMPATIBLE_SOURCE_SHAPE
+
+
+def test_a_source_naming_no_concrete_shape_refuses_for_a_single_shape_view() -> None:
+    """The same closure on the branch that was already strict."""
+    candidate = compatibility.SourceCandidate(source_shape="not-a-shape-at-all")
+    refusal = compatibility.validate(_request(_OVERVIEW), _OVERVIEW, candidate)
+    assert refusal is not None
+    assert refusal.cause == refusals.CAUSE_INCOMPATIBLE_SOURCE_SHAPE
+
+
+def test_the_concrete_shapes_are_the_admitted_ones_less_either_bundle() -> None:
+    """Derived, so a third concrete shape cannot be admitted yet unknown to a source."""
+    assert (
+        contracts.ADMITTED_SOURCE_SHAPES - {contracts.SHAPE_EITHER_BUNDLE}
+        == contracts.CONCRETE_SOURCE_SHAPES
+    )
+    assert contracts.SHAPE_EITHER_BUNDLE not in contracts.CONCRETE_SOURCE_SHAPES

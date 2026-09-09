@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from khepri.rra.semantic_views.contracts import (
+    CONCRETE_SOURCE_SHAPES,
     SHAPE_EITHER_BUNDLE,
     SemanticViewDefinition,
 )
@@ -42,7 +43,6 @@ from khepri.rra.semantic_views.refusals import (
     CAUSE_UNKNOWN_VERSION,
     CAUSE_UNKNOWN_VIEW,
     ViewRefusal,
-    refuse,
 )
 
 __all__ = [
@@ -83,9 +83,10 @@ class SemanticViewRequest:
 class SourceCandidate:
     """What admission reads about the sources, and nothing that could be projected.
 
-    `source_shape` is always one concrete shape. `SHAPE_EITHER_BUNDLE` is a
+    `source_shape` must name one concrete shape, and the shape predicate refuses
+    anything else rather than trusting this docstring. `SHAPE_EITHER_BUNDLE` is a
     *definition*-side value meaning "both are admitted"; no source is ever both,
-    so a candidate naming it would be describing a source that does not exist.
+    so a candidate naming it describes a source that cannot exist.
     """
 
     source_shape: str
@@ -158,13 +159,23 @@ def _unknown_filter(admission: Admission) -> bool:
 def _incompatible_source_shape(admission: Admission) -> bool:
     """The source is not a shape this definition admits (`FR-136`).
 
-    A definition naming `SHAPE_EITHER_BUNDLE` admits both concrete shapes -- that
-    is what the value means -- so it can never raise this cause.
+    A source that names no concrete shape refuses whatever the definition
+    admits, `SHAPE_EITHER_BUNDLE` included. "Either" means *either of the two*,
+    not *anything*: a definition admitting both bundles still admits only
+    bundles, and `RRA-014` §Invariants makes incompatible-shape handling one of
+    the five that fail closed. An unrecognized shape sailing through the
+    permissive branch would fail open.
+
+    Beyond that, a definition naming `SHAPE_EITHER_BUNDLE` admits both concrete
+    shapes -- that is what the value means -- so it raises no cause between them.
     """
     definition = admission.definition
-    if definition is None or definition.accepted_source_shape == SHAPE_EITHER_BUNDLE:
+    if definition is None:
         return False
-    return definition.accepted_source_shape != admission.candidate.source_shape
+    shape = admission.candidate.source_shape
+    if shape not in CONCRETE_SOURCE_SHAPES:
+        return True
+    return definition.accepted_source_shape not in (shape, SHAPE_EITHER_BUNDLE)
 
 
 def _missing_required_evidence(admission: Admission) -> bool:
@@ -207,4 +218,4 @@ def validate(
         (cause for cause, holds in _PREDICATES if holds(admission)),  # type: ignore[operator]
         None,
     )
-    return None if cause is None else refuse(cause)
+    return None if cause is None else ViewRefusal(cause)

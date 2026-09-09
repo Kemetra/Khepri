@@ -25,6 +25,7 @@ from dataclasses import dataclass, fields
 
 __all__ = [
     "ADMITTED_SOURCE_SHAPES",
+    "CONCRETE_SOURCE_SHAPES",
     "EMPTY_RULES",
     "EMPTY_STATED_ABSENCE",
     "EMPTY_STATED_NO_ROWS",
@@ -54,6 +55,13 @@ SHAPE_EITHER_BUNDLE = "either_bundle"
 ADMITTED_SOURCE_SHAPES: frozenset[str] = frozenset(
     {SHAPE_SINGLE_POPULATION, SHAPE_TWO_POPULATION, SHAPE_EITHER_BUNDLE}
 )
+
+#: The shapes a *source* can actually be. `SHAPE_EITHER_BUNDLE` is a
+#: definition-side value meaning "both are admitted"; no bundle is ever both, so
+#: it is admitted of a definition and never of a source. Derived by removing it
+#: rather than relisted, so a third concrete shape added above joins here with no
+#: edit and cannot be admitted of a definition while being unknown to a source.
+CONCRETE_SOURCE_SHAPES: frozenset[str] = ADMITTED_SOURCE_SHAPES - {SHAPE_EITHER_BUNDLE}
 
 #: The admitted request matched no row. `FR-142`: the result "never widens to
 #: unfiltered data, a nearby dimension, another version, or a partial result",
