@@ -294,6 +294,43 @@ def test_a_request_writes_no_row_at_the_connection() -> None:
     assert written == [], f"the path issued a write: {written}"
 
 
+def _names_rra(name: str | None) -> bool:
+    """Whether an import names the package `RCA-006` bars this one from reaching."""
+    return (name or "").startswith("khepri.rra")
+
+
+def _from_import(node: ast.AST) -> list[str]:
+    """`from khepri.rra... import ...`, if that is what this node is."""
+    if not isinstance(node, ast.ImportFrom):
+        return []
+    if not _names_rra(node.module):
+        return []
+    return [f"{node.lineno}: from {node.module}"]
+
+
+def _plain_import(node: ast.AST) -> list[str]:
+    """`import khepri.rra...`, for every alias on the node that names it."""
+    if not isinstance(node, ast.Import):
+        return []
+    return [f"{node.lineno}: import {alias.name}" for alias in node.names if _names_rra(alias.name)]
+
+
+def _rra_imports(source: str) -> list[str]:
+    """Every reach into `khepri.rra` one module makes, whichever form it takes.
+
+    Split across three small readers rather than one loop with a compound
+    condition: CodeScene reads `isinstance(...) and startswith(...)` as a complex
+    conditional, and its threshold here is two branches. Suppressing the finding
+    was the offered alternative and is not one -- a gate waived for the test that
+    guards `FR-150`'s import boundary is the boundary unguarded.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        found += _from_import(node)
+        found += _plain_import(node)
+    return found
+
+
 def test_the_package_imports_no_concrete_rra_implementation() -> None:
     """`FR-150` -- a static scan, so the boundary holds without the module running.
 
@@ -302,18 +339,11 @@ def test_the_package_imports_no_concrete_rra_implementation() -> None:
     to execute would pass a runtime check and fail this one.
     """
     package = pathlib.Path(queries.__file__).parent
-    offenders: list[str] = []
-    for path in sorted(package.glob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("khepri.rra"):
-                offenders.append(f"{path.name}:{node.lineno}: from {node.module}")
-            if isinstance(node, ast.Import):
-                offenders += [
-                    f"{path.name}:{node.lineno}: import {alias.name}"
-                    for alias in node.names
-                    if alias.name.startswith("khepri.rra")
-                ]
+    offenders = [
+        f"{path.name}:{hit}"
+        for path in sorted(package.glob("*.py"))
+        for hit in _rra_imports(path.read_text(encoding="utf-8"))
+    ]
     assert offenders == [], f"khepri.rca.semantic_queries imports khepri.rra: {offenders}"
 
 
