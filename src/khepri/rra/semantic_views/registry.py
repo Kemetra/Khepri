@@ -86,114 +86,118 @@ def _series(*dimensions: str) -> tuple[str, ...]:
     )
 
 
-def _view(
-    view_id: str,
-    version: str,
-    *,
-    shape: str,
-    metrics: tuple[str, ...],
-    dimensions: tuple[str, ...],
-    filters: tuple[str, ...] = (),
-    fixed: tuple[tuple[str, str], ...] = (),
-    evidence: tuple[str, ...] = (),
-    fields: tuple[str, ...],
-    empty: str = EMPTY_STATED_NO_ROWS,
-) -> SemanticViewDefinition:
-    """Build one definition. Keyword-only past the identity, so a published
-    allowlist cannot be swapped with another by position."""
-    return SemanticViewDefinition(
-        view_id=view_id,
-        view_version=version,
-        accepted_source_shape=shape,
-        metric_allowlist=metrics,
-        dimension_allowlist=dimensions,
-        request_filter_allowlist=filters,
-        fixed_filters=fixed,
-        required_evidence=evidence,
-        output_field_order=fields,
-        empty_result_rule=empty,
-    )
-
-
+# The eight definitions, constructed directly rather than through a builder.
+#
+# A `_view(...)` helper taking the ten contract fields is the obvious shape and
+# the wrong one: it carries ten arguments where CodeScene's gate admits four,
+# and the fix is not to extract more helpers -- that raises the module's mean
+# complexity -- but to let the value object be the value object.
+# `SemanticViewDefinition` is already the grouping, and naming every field at
+# each construction reads as the published record it is.
 _PUBLISHED: dict[str, SemanticViewDefinition] = {
     definition.view_id: definition
     for definition in (
-        _view(
-            "ExecutiveOverviewView",
-            "sv1.executive_overview.v1",
-            shape=SHAPE_SINGLE_POPULATION,
-            metrics=_metrics(_CORE),
-            dimensions=(facts.PERIOD_DIMENSION,),
-            fields=("metric", "value", "population", "versions"),
-            empty=EMPTY_STATED_ABSENCE,
+        SemanticViewDefinition(
+            view_id="ExecutiveOverviewView",
+            view_version="sv1.executive_overview.v1",
+            accepted_source_shape=SHAPE_SINGLE_POPULATION,
+            metric_allowlist=_metrics(_CORE),
+            dimension_allowlist=(facts.PERIOD_DIMENSION,),
+            request_filter_allowlist=(),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("metric", "value", "population", "versions"),
+            empty_result_rule=EMPTY_STATED_ABSENCE,
         ),
-        _view(
-            "PeriodComparisonView",
-            "sv1.period_comparison.v1",
-            shape=SHAPE_TWO_POPULATION,
-            metrics=_metrics(_CORE, _COMPARISON, _GROWTH),
-            dimensions=(facts.PERIOD_DIMENSION,),
-            fields=("metric", "subject", "baseline", "delta", "versions"),
-            empty=EMPTY_STATED_ABSENCE,
+        SemanticViewDefinition(
+            view_id="PeriodComparisonView",
+            view_version="sv1.period_comparison.v1",
+            accepted_source_shape=SHAPE_TWO_POPULATION,
+            metric_allowlist=_metrics(_CORE, _COMPARISON, _GROWTH),
+            dimension_allowlist=(facts.PERIOD_DIMENSION,),
+            request_filter_allowlist=(),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("metric", "subject", "baseline", "delta", "versions"),
+            empty_result_rule=EMPTY_STATED_ABSENCE,
         ),
-        _view(
-            "BranchPerformanceView",
-            "sv1.branch_performance.v1",
-            shape=SHAPE_SINGLE_POPULATION,
-            metrics=_series(facts.SEMANTIC_STORE),
-            dimensions=(facts.SEMANTIC_STORE,),
-            filters=(facts.SEMANTIC_STORE,),
-            fields=("store", "metric", "value", "population"),
+        SemanticViewDefinition(
+            view_id="BranchPerformanceView",
+            view_version="sv1.branch_performance.v1",
+            accepted_source_shape=SHAPE_SINGLE_POPULATION,
+            metric_allowlist=_series(facts.SEMANTIC_STORE),
+            dimension_allowlist=(facts.SEMANTIC_STORE,),
+            request_filter_allowlist=(facts.SEMANTIC_STORE,),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("store", "metric", "value", "population"),
+            empty_result_rule=EMPTY_STATED_NO_ROWS,
         ),
-        _view(
-            "ProductCategoryView",
-            "sv1.product_category.v1",
-            shape=SHAPE_SINGLE_POPULATION,
-            metrics=_series(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
-            dimensions=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
-            filters=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
-            fields=("dimension", "member", "metric", "value", "population"),
+        SemanticViewDefinition(
+            view_id="ProductCategoryView",
+            view_version="sv1.product_category.v1",
+            accepted_source_shape=SHAPE_SINGLE_POPULATION,
+            metric_allowlist=_series(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
+            dimension_allowlist=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
+            request_filter_allowlist=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("dimension", "member", "metric", "value", "population"),
+            empty_result_rule=EMPTY_STATED_NO_ROWS,
         ),
-        _view(
-            "BasketView",
-            "sv1.basket.v1",
-            shape=SHAPE_SINGLE_POPULATION,
-            metrics=_metrics(_BASKET),
-            dimensions=(facts.PERIOD_DIMENSION,),
-            fields=("metric", "value", "population", "versions"),
-            empty=EMPTY_STATED_ABSENCE,
+        SemanticViewDefinition(
+            view_id="BasketView",
+            view_version="sv1.basket.v1",
+            accepted_source_shape=SHAPE_SINGLE_POPULATION,
+            metric_allowlist=_metrics(_BASKET),
+            dimension_allowlist=(facts.PERIOD_DIMENSION,),
+            request_filter_allowlist=(),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("metric", "value", "population", "versions"),
+            empty_result_rule=EMPTY_STATED_ABSENCE,
         ),
-        _view(
-            "ConcentrationView",
-            "sv1.concentration.v1",
-            shape=SHAPE_SINGLE_POPULATION,
-            metrics=_metrics(_CONCENTRATION),
-            dimensions=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
-            filters=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
-            fields=("dimension", "metric", "value", "population"),
-            empty=EMPTY_STATED_ABSENCE,
+        SemanticViewDefinition(
+            view_id="ConcentrationView",
+            view_version="sv1.concentration.v1",
+            accepted_source_shape=SHAPE_SINGLE_POPULATION,
+            metric_allowlist=_metrics(_CONCENTRATION),
+            dimension_allowlist=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
+            request_filter_allowlist=(facts.SEMANTIC_PRODUCT, facts.SEMANTIC_CATEGORY),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("dimension", "metric", "value", "population"),
+            empty_result_rule=EMPTY_STATED_ABSENCE,
         ),
-        _view(
-            "ReportEvidenceView",
-            "sv1.report_evidence.v1",
+        SemanticViewDefinition(
+            view_id="ReportEvidenceView",
+            view_version="sv1.report_evidence.v1",
             # Evidence is carried identically by both bundles: `CitedEvidence` is
             # a `RenderableBundle` member, and `C1-05` widened it with one
             # defaulted `provenance` field emitted only when present, keeping
             # every report-bundle evidence document byte-identical.
-            shape=SHAPE_EITHER_BUNDLE,
-            metrics=_metrics(_CORE),
-            dimensions=(facts.PERIOD_DIMENSION,),
-            fields=("figure", "evidence", "provenance", "absence"),
-            empty=EMPTY_STATED_ABSENCE,
+            accepted_source_shape=SHAPE_EITHER_BUNDLE,
+            metric_allowlist=_metrics(_CORE),
+            dimension_allowlist=(facts.PERIOD_DIMENSION,),
+            request_filter_allowlist=(),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("figure", "evidence", "provenance", "absence"),
+            empty_result_rule=EMPTY_STATED_ABSENCE,
         ),
-        _view(
-            "MetricAvailabilityView",
-            "sv1.metric_availability.v1",
-            shape=SHAPE_EITHER_BUNDLE,
-            metrics=_metrics(_CORE, _COMPARISON, _GROWTH, _BASKET, _CONCENTRATION),
-            dimensions=facts.SERIES_DIMENSIONS,
-            fields=("metric", "availability", "reason", "versions"),
-            empty=EMPTY_STATED_ABSENCE,
+        SemanticViewDefinition(
+            view_id="MetricAvailabilityView",
+            view_version="sv1.metric_availability.v1",
+            accepted_source_shape=SHAPE_EITHER_BUNDLE,
+            metric_allowlist=_metrics(
+                _CORE, _COMPARISON, _GROWTH, _BASKET, _CONCENTRATION
+            ),
+            dimension_allowlist=facts.SERIES_DIMENSIONS,
+            request_filter_allowlist=(),
+            fixed_filters=(),
+            required_evidence=(),
+            output_field_order=("metric", "availability", "reason", "versions"),
+            empty_result_rule=EMPTY_STATED_ABSENCE,
         ),
     )
 }
