@@ -17,6 +17,7 @@ from khepri.rra.semantic_views.contracts import (
     ADMITTED_SOURCE_SHAPES,
     EMPTY_RULES,
     SemanticViewDefinition,
+    ViewDefinitionRefused,
 )
 from khepri.rra.semantic_views.registry import UnknownView, define_view, view_ids
 
@@ -25,6 +26,7 @@ __all__ = [
     "EMPTY_RULES",
     "SemanticViewDefinition",
     "UnknownView",
+    "ViewDefinitionRefused",
     "define_view",
     "view_ids",
 ]

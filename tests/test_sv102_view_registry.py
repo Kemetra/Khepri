@@ -162,3 +162,111 @@ def test_view_versions_are_unique_across_the_registry() -> None:
     """Two views sharing a version make `FR-143`'s exact-version request ambiguous."""
     versions = [registry.define_view(v).view_version for v in sorted(registry.view_ids())]
     assert len(versions) == len(set(versions))
+
+
+def _definition(view_id: str, **overrides: object) -> contracts.SemanticViewDefinition:
+    """A minimal admissible definition, so each test varies one field only.
+
+    Each caller passes its own `view_id`: `FR-134`'s identity invariant is
+    process-wide by construction, so a shared identity would make one test's
+    record the cause of another test's refusal.
+    """
+    fields: dict[str, object] = {
+        "view_id": view_id,
+        "view_version": f"sv1.{view_id}.v1",
+        "accepted_source_shape": contracts.SHAPE_SINGLE_POPULATION,
+        "metric_allowlist": ("revenue",),
+        "dimension_allowlist": (facts.PERIOD_DIMENSION,),
+        "request_filter_allowlist": (),
+        "fixed_filters": (),
+        "required_evidence": (),
+        "output_field_order": ("metric", "value"),
+        "empty_result_rule": contracts.EMPTY_STATED_ABSENCE,
+    }
+    return contracts.SemanticViewDefinition(**(fields | overrides))  # type: ignore[arg-type]
+
+
+def test_an_unadmitted_source_shape_refuses_at_construction() -> None:
+    """`FR-136` admits exactly three shapes; `frozen=True` cannot see a fourth.
+
+    The constant existed before this test and nothing read it, which is a
+    vocabulary that documents rather than governs.
+    """
+    with pytest.raises(contracts.ViewDefinitionRefused):
+        _definition("ShapeProbeView", accepted_source_shape="invalid")
+
+
+def test_an_unknown_empty_rule_refuses_at_construction() -> None:
+    """`FR-142`'s rule is per-definition, so a definition may not invent one."""
+    with pytest.raises(contracts.ViewDefinitionRefused):
+        _definition("EmptyRuleProbeView", empty_result_rule="widen_to_unfiltered")
+
+
+def test_every_admitted_shape_and_rule_constructs() -> None:
+    """The refusal must not be a blanket one: each published value is admitted."""
+    for index, shape in enumerate(sorted(contracts.ADMITTED_SOURCE_SHAPES)):
+        for rule in sorted(contracts.EMPTY_RULES):
+            definition = _definition(
+                f"AdmittedProbeView{index}{rule}",
+                accepted_source_shape=shape,
+                empty_result_rule=rule,
+            )
+            assert definition.accepted_source_shape == shape
+            assert definition.empty_result_rule == rule
+
+
+def test_replacing_a_semantic_field_without_moving_the_version_refuses() -> None:
+    """`FR-134` -- a changed field is a new version, and `replace` bypasses `frozen`.
+
+    `frozen=True` blocks assignment to an existing record; it does not stop
+    `dataclasses.replace` producing a second record that keeps `view_id` and
+    `view_version` while changing what they mean.
+    """
+    published = registry.define_view("ExecutiveOverviewView")
+    with pytest.raises(contracts.ViewDefinitionRefused):
+        dataclasses.replace(published, output_field_order=("value", "metric"))
+
+
+def test_every_version_moving_field_is_covered_by_the_identity_check() -> None:
+    """`FR-134` names eight fields; a ninth added to the record joins them.
+
+    Iterates the record's own fields rather than a list retyped here, so a
+    contract field added without joining the comparison fails this test.
+    """
+    published = registry.define_view("BranchPerformanceView")
+    changed: dict[str, object] = {
+        "accepted_source_shape": contracts.SHAPE_TWO_POPULATION,
+        "metric_allowlist": ("revenue",),
+        "dimension_allowlist": (facts.SEMANTIC_PRODUCT,),
+        "request_filter_allowlist": (facts.SEMANTIC_PRODUCT,),
+        "fixed_filters": (("channel", "web"),),
+        "required_evidence": ("figure_provenance",),
+        "output_field_order": ("metric",),
+        "empty_result_rule": contracts.EMPTY_STATED_ABSENCE,
+    }
+    version_moving = {
+        field.name
+        for field in dataclasses.fields(contracts.SemanticViewDefinition)
+        if field.name not in {"view_id", "view_version"}
+    }
+    assert set(changed) == version_moving, "a contract field is not exercised here"
+    for name, value in changed.items():
+        with pytest.raises(contracts.ViewDefinitionRefused, match="new version"):
+            dataclasses.replace(published, **{name: value})
+
+
+def test_moving_the_version_admits_the_changed_definition() -> None:
+    """The refusal is about reusing a version, not about changing a definition."""
+    published = registry.define_view("ConcentrationView")
+    successor = dataclasses.replace(
+        published,
+        view_version="sv1.concentration.v2",
+        output_field_order=("metric", "dimension", "value", "population"),
+    )
+    assert successor.view_version != published.view_version
+
+
+def test_reconstructing_an_identical_definition_is_admitted() -> None:
+    """An import is not an edit: the check compares content, not repetition."""
+    published = registry.define_view("BasketView")
+    assert dataclasses.replace(published) == published
