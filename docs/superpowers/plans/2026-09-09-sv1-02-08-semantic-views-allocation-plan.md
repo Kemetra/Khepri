@@ -327,8 +327,12 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 - **Delivers:** `semantic_queries/ports.py` (§2 verbatim) and `queries.py`. The flow is
   `comparisons.py`'s: resolve the actor and organization through canonical `RCA-001` authorization
   **before any source read** (`FR-145`); load every named source through the requesting
-  organization's opaque scope (`FR-146`); pass only successfully scoped sources plus the explicit
-  request to the injected port (`FR-147`); return its outcome unchanged.
+  organization's opaque scope (`FR-146`); pass the scoped sources plus the explicit request to the
+  injected port (`FR-147`) **only when every named source resolves** — if any one of them misses,
+  return the uniform unavailable outcome without calling the port at all; return the port's outcome
+  unchanged. All-or-nothing is the point: a partial tuple would let a two-population view project
+  over one population, which is a narrower answer than the reader asked for delivered as though it
+  were the answer.
 
   **`runtime/semantic_view_adapter.py` is NOT delivered — the scope question below was resolved
   against it.** See the Risk entry.

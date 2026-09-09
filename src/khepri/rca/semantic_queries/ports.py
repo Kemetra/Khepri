@@ -18,7 +18,7 @@ reshape a new view version rather than an edit.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 __all__ = [
@@ -76,10 +76,26 @@ class EffectiveRequest:
 
 @dataclass(frozen=True, slots=True)
 class ViewRefusal:
-    """`FR-141` -- a stable contract refusal with bilingual wording, no partial result."""
+    """`FR-141` -- a stable contract refusal with bilingual wording, no partial result.
+
+    Wording is carried as ordered pairs and read back as a mapping. `frozen=True`
+    freezes the reference, not the referent: while this was a `dict` field a
+    caller could rewrite the wording of a refusal already returned, and two
+    refusals built from one mapping shared it, so mutating either changed both.
+
+    Pairs rather than a `MappingProxyType` assigned in `__post_init__`, because
+    that assignment needs `object.__setattr__`, which `RCA-001`'s forgery scan
+    bars from every production module. §2 already reached for pairs over a
+    mapping on `filters`, for the neighbouring reason.
+    """
 
     cause: str
-    wording: dict[str, str] = field(default_factory=dict)
+    wording_pairs: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def wording(self) -> dict[str, str]:
+        """Both governed languages, as a fresh mapping the caller may keep."""
+        return dict(self.wording_pairs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,12 +106,22 @@ class ViewProjection:
     view_version: str
     fields: tuple[str, ...] = ()
     rows: tuple[tuple[object, ...], ...] = ()
-    versions: dict[str, str] = field(default_factory=dict)
+    version_pairs: tuple[tuple[str, str], ...] = ()
     caveats: tuple[object, ...] = ()
     population_qualifiers: tuple[object, ...] = ()
     evidence: tuple[object, ...] = ()
     evidence_absences: tuple[str, ...] = ()
     is_empty: bool = False
+
+    @property
+    def versions(self) -> dict[str, str]:
+        """Mapping, package, formula, family, bundle and view versions.
+
+        Pairs behind a mapping for `ViewRefusal.wording`'s reason. `FR-139`
+        requires these equal the source records; a projection whose versions a
+        caller could edit after the fact could not carry that guarantee.
+        """
+        return dict(self.version_pairs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,10 +155,19 @@ class SemanticViewPort(Protocol):
     and the RRA side validates the shape (`FR-136`) and refuses an incompatible
     one. `ComparisonOutcome.bundle` uses the same `object` for the same reason.
 
+    `None` is part of the contract, not an escape from it: it says the RRA half
+    could not read these sources at all, which is `FR-146`'s *corrupt* condition.
+    The RCA half maps it to the one uniform unavailable outcome, so that outcome
+    is built in exactly one place and cannot drift from the absent, deleted and
+    cross-scope answers. Annotating it here is what lets an implementation say so
+    without a type suppression.
+
     One `project` call, not a validate-then-project pair. `FR-137` and `FR-141`
     require refusal *before* projection, which is a guarantee about the callee's
     internal order rather than about the number of calls; two calls would let a
     caller skip validation.
     """
 
-    def project(self, request: SemanticViewRequest, sources: tuple[object, ...]) -> ViewOutcome: ...
+    def project(
+        self, request: SemanticViewRequest, sources: tuple[object, ...]
+    ) -> ViewOutcome | None: ...

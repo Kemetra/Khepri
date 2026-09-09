@@ -18,6 +18,7 @@ outcome comes back unchanged.
 from __future__ import annotations
 
 import ast
+import inspect
 import pathlib
 
 import pytest
@@ -56,9 +57,9 @@ class _FakePort:
 
     def project(
         self, request: ports.SemanticViewRequest, sources: tuple[object, ...]
-    ) -> ports.ViewOutcome:
+    ) -> ports.ViewOutcome | None:
         self.calls.append((request, sources))
-        return self.outcome  # type: ignore[return-value]
+        return self.outcome
 
 
 class _SpyReader:
@@ -255,7 +256,12 @@ def test_the_port_outcome_is_returned_unchanged() -> None:
     pair = completed_pair(j, owner)
     for outcome in (
         _admitted(),
-        ports.ViewOutcome(kind=ports.KIND_REFUSED, refusal=ports.ViewRefusal(cause="unknown view")),
+        ports.ViewOutcome(
+            kind=ports.KIND_REFUSED,
+            refusal=ports.ViewRefusal(
+                cause="unknown view", wording_pairs=(("en", "no"), ("ar", "لا"))
+            ),
+        ),
     ):
         port = _FakePort(outcome)
         returned = _actions(j, port).request(_request(owner, pair.subject_run.run_id))
@@ -353,3 +359,55 @@ def test_the_port_is_a_protocol_the_package_only_declares() -> None:
     package = pathlib.Path(queries.__file__).parent
     assert not (package / "adapter.py").exists()
     assert not (package.parent.parent / "runtime" / "semantic_view_adapter.py").exists()
+
+
+def test_a_returned_refusal_cannot_be_edited_through_its_wording() -> None:
+    """`frozen=True` freezes the reference, not a mapping behind it.
+
+    While `wording` was a `dict` field, a caller could rewrite the wording of a
+    refusal already handed back, and two refusals built from one mapping shared
+    it -- editing either changed both.
+    """
+    shared = (("en", "no"), ("ar", "\u0644\u0627"))
+    first = ports.ViewRefusal(cause="unknown view", wording_pairs=shared)
+    second = ports.ViewRefusal(cause="unknown view", wording_pairs=shared)
+
+    first.wording["en"] = "edited"
+
+    assert first.wording == {"en": "no", "ar": "\u0644\u0627"}
+    assert second.wording == first.wording
+    with pytest.raises((AttributeError, TypeError)):
+        first.wording_pairs = ()  # type: ignore[misc]
+
+
+def test_a_projection_cannot_be_edited_through_its_versions() -> None:
+    """`FR-139` -- projected versions equal the source records, and stay equal."""
+    projection = ports.ViewProjection(
+        view_id="ExecutiveOverviewView",
+        view_version="sv1.executive_overview.v1",
+        version_pairs=(("formula", "rra004.formula.v2"),),
+    )
+
+    twin = ports.ViewProjection(
+        view_id="ExecutiveOverviewView",
+        view_version="sv1.executive_overview.v1",
+        version_pairs=(("formula", "rra004.formula.v2"),),
+    )
+
+    projection.versions.clear()
+    projection.versions["formula"] = "forged"
+
+    assert projection.versions == {"formula": "rra004.formula.v2"}
+    assert twin.versions == projection.versions
+    assert projection.versions is not projection.versions
+
+
+def test_the_port_may_answer_none_without_a_type_suppression() -> None:
+    """`FR-146`'s *corrupt* condition is part of the contract, so it is annotated.
+
+    The Protocol promised `ViewOutcome` while the orchestration handled `None`,
+    which meant a conforming implementation could not say "I could not read
+    these" without suppressing its own types.
+    """
+    returns = inspect.signature(ports.SemanticViewPort.project).return_annotation
+    assert returns == "ViewOutcome | None"
