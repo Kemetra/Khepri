@@ -232,7 +232,7 @@ published selection rather than for nothing.
 | `src/khepri/rca/semantic_queries/__init__.py` | **Create (`SV1-04`).** Package marker. |
 | `src/khepri/rca/semantic_queries/ports.py` | **Create (`SV1-04`).** §2's seam verbatim: `SemanticViewPort` and its five value types. |
 | `src/khepri/rca/semantic_queries/queries.py` | **Create (`SV1-04`).** `SemanticQueryActions.request` — authorize, scope-load, call the port, return. `comparisons.py` is the precedent. |
-| `src/khepri/runtime/semantic_view_adapter.py` | **Create (`SV1-04`).** The composition-root adapter binding the RRA registry to `SemanticViewPort`. **Confirm scope before writing** — see `SV1-04`'s Risk. |
+| ~~`src/khepri/runtime/semantic_view_adapter.py`~~ | **NOT created.** `SV1-04` resolved the scope question against it: no active specification names the path, and `RCA-006` §Scope governs no runtime wiring. It needs an `RCA-006` amendment the owner merges. See `SV1-04`'s RESOLVED entry. |
 | `tests/test_sv102_view_registry.py` | **Create (`SV1-02`).** Extent, derivation, immutability. |
 | `tests/test_sv103_compatibility.py` | **Create (`SV1-03`).** Early refusal, cause ordering, bilingual wording. |
 | `tests/test_sv104_query_orchestration.py` | **Create (`SV1-04`).** Authorization, uniform unavailable, no-import. |
@@ -328,15 +328,47 @@ names its requirements, what it delivers, its acceptance, and the one thing most
   `comparisons.py`'s: resolve the actor and organization through canonical `RCA-001` authorization
   **before any source read** (`FR-145`); load every named source through the requesting
   organization's opaque scope (`FR-146`); pass only successfully scoped sources plus the explicit
-  request to the injected port (`FR-147`); return its outcome unchanged. Plus
-  `runtime/semantic_view_adapter.py`, the composition-root binding.
+  request to the injected port (`FR-147`); return its outcome unchanged.
+
+  **`runtime/semantic_view_adapter.py` is NOT delivered — the scope question below was resolved
+  against it.** See the Risk entry.
 - **Acceptance:** an unauthenticated or cross-organization actor never reaches a store read, proven
   by driving the real entry point rather than calling the guard; absent, deleted, corrupt and
   cross-scope sources produce **byte-identical** outcomes, asserted by comparing all four against
   *each other*; zero rows written, evidenced at the session/connection level; zero audit and zero
   telemetry events; `khepri.rca.semantic_queries` imports nothing from `khepri.rra`, asserted by a
   module-level import scan.
-- **Risk:** **`runtime/semantic_view_adapter.py` may be out of scope.** `RCA-006` §Scope names
+- **RESOLVED (`SV1-04`, against the adapter).** The question below was put to the primary sources
+  before any adapter code was written, and they answer it without ambiguity:
+
+  - `RCA-006` §Scope: "No route, **runtime wiring**, template, shell asset, public API, migration,
+    cache, background job, renderer, or existing workspace file is governed."
+  - `RRA-014` §Scope: runtime routes are outside scope, as is "every path governed by another
+    active specification".
+  - `RCA-005` §Scope names **only** `src/khepri/runtime/shell_api.py` and `shell_templates/` — not
+    `runtime/` broadly. So `runtime/comparison_assembly.py`, the precedent this plan leaned on, is
+    itself a path no active specification names. It is an unnamed-path precedent, not an authorizing
+    one, and cannot carry authority it never had.
+  - `R7-01`, which `comparison_assembly.py`'s own docstring cites, is a **design note**. It appears
+    only in decision records, is not an artifact in `governance/registry.yaml`, and grants no scope.
+  - Constitution IV: a slice "does not widen its specification, privacy boundary, runtime boundary,
+    or data use. Material boundary changes require the owner to merge an updated or new artifact
+    first."
+
+  **So the adapter needs scope named in an `RCA-006` amendment the owner merges, and `SV1-04` ships
+  the Protocol and actions only.** Constitution II makes that the owner's merge and nothing else;
+  no instruction to an implementer can substitute for it.
+
+  **What the deferral costs, stated rather than papered over.** `SV1-07`'s no-concrete-RRA-import
+  composition property and all of `SV1-08`'s latency and query-shape measurement can then only run
+  over a test-local fake port, and both are recorded **NOT EXERCISED**, never passed. `W1-07a` is
+  the precedent — a route absent from the image with seven tests green over a hand-built
+  `ShellServices`. A fake port does not substitute for an absent adapter. `SV1-04`'s own tests use a
+  fake port and say so in the module docstring; what they prove is the RCA half, which `RCA-006`
+  does govern in full.
+
+- **Original risk (retained for the record):** **`runtime/semantic_view_adapter.py` may be out of
+  scope.** `RCA-006` §Scope names
   `src/khepri/rca/semantic_queries/` and says "no runtime wiring… is governed"; `C1-07` already
   carried forward that `runtime/shell_assets/` is named by no active artifact, and
   `runtime/comparison_assembly.py` exists as the `C1-06` precedent under `RCA-005`. **Resolve this
