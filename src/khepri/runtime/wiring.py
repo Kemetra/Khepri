@@ -532,11 +532,15 @@ def build_external_authentication_services(
     sessions = RcaSessionService(
         SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME
     )
+    recovery = build_recovery_security_service(stack)
+    if recovery is None:
+        return None
     return ExternalAuthenticationServices(
         identity_provider=stack.identity_provider,
         sessions=sessions,
         lifecycle=LifecycleService(accounts, organizations),
         switcher=OrganizationSwitcher(sessions, organizations),
+        recovery=recovery,
     )
 
 

@@ -10,6 +10,7 @@ worker, where before a visibility timeout and a database lease had to agree.
 from __future__ import annotations
 
 import socket
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,6 +36,9 @@ from khepri.runtime.wiring import (
 
 LEASE_FOR = timedelta(seconds=300)
 RETRY_DELAY = timedelta(seconds=60)
+#: Pause between idle claims. `run_forever` used to spin `recover`/`receive`
+#: against PostgreSQL with no wait, which is a self-DoS on an empty queue.
+IDLE_BACKOFF = timedelta(seconds=1)
 WORKBOOK_DIRECTORY = Path("/tmp/khepri-workbooks")
 
 
@@ -119,9 +123,15 @@ class ClaimWorkerLoop:
             self._settle(delivery)
         return True
 
-    def run_forever(self) -> None:
+    def run_forever(self, *, sleep: Callable[[float], None] = time.sleep) -> None:
+        """Claim forever, backing off when the queue is empty.
+
+        `sleep` is injectable so a test can prove the idle pause without waiting
+        a wall-clock second. Production keeps `time.sleep`.
+        """
         while True:
-            self.run_once()
+            if not self.run_once():
+                sleep(IDLE_BACKOFF.total_seconds())
 
     def _settle(self, delivery: ClaimedDelivery) -> None:
         """Complete the job unless the worker already did.

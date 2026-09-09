@@ -11,14 +11,17 @@ from typing import Annotated
 from fastapi import FastAPI, Header, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from khepri.rca.errors import AuthenticationFailed
 from khepri.rca.identity import IdentityProvider
 from khepri.rca.lifecycle import LifecycleService
+from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.session_cookie import issue_session_cookie
 from khepri.rca.session_service import SessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.runtime.commercial_api import COMMERCIAL_PREFIX
 
 EXTERNAL_SESSION_PATH = f"{COMMERCIAL_PREFIX}/auth/session"
+EXTERNAL_RECOVERY_PATH = f"{COMMERCIAL_PREFIX}/auth/recovery"
 KHEPRI_SESSION_LIFETIME = timedelta(hours=12)
 _BEARER_SCHEME = "Bearer "
 
@@ -42,6 +45,7 @@ class ExternalAuthenticationServices:
     sessions: SessionService
     lifecycle: LifecycleService
     switcher: OrganizationSwitcher
+    recovery: RecoverySecurityService
 
 
 def _refusal() -> Response:
@@ -82,7 +86,15 @@ def add_external_authentication_routes(
     """Register the handoff only when a provider is admitted and configured."""
     if services is None:
         return
+    _register_session_route(app, services, clock)
+    _register_recovery_route(app, services, clock)
 
+
+def _register_session_route(
+    app: FastAPI,
+    services: ExternalAuthenticationServices,
+    clock: Callable[[], datetime],
+) -> None:
     @app.post(EXTERNAL_SESSION_PATH, status_code=status.HTTP_204_NO_CONTENT)
     def create_external_session(
         payload: ExternalSessionRequest,
@@ -123,7 +135,46 @@ def add_external_authentication_routes(
         return response
 
 
+def _register_recovery_route(
+    app: FastAPI,
+    services: ExternalAuthenticationServices,
+    clock: Callable[[], datetime],
+) -> None:
+    """Khepri-owned session revocation after provider-owned credential recovery.
+
+    Clerk owns password replacement. This route is the consequence `KHEPRI-DEC-025`
+    §4 required on the web app: verify the same Bearer, revoke every Khepri
+    session for that account, record a content-free event. Missing or invalid
+    material returns the same empty 404 as the session handoff.
+    """
+
+    @app.post(EXTERNAL_RECOVERY_PATH, status_code=status.HTTP_204_NO_CONTENT)
+    def complete_recovery(
+        authorization: Annotated[str | None, Header()] = None,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> Response:
+        credential = _bearer(authorization)
+        if credential is None:
+            return _refusal()
+        if not _is_opaque_credential(idempotency_key or ""):
+            return _refusal()
+        try:
+            identity = services.identity_provider.verify(credential)
+        except Exception:  # noqa: BLE001 - provider failure must fail closed
+            return _refusal()
+        if identity is None:
+            return _refusal()
+        try:
+            services.recovery.complete(
+                identity, idempotency_key=idempotency_key or "", now=clock()
+            )
+        except AuthenticationFailed:
+            return _refusal()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 __all__ = [
+    "EXTERNAL_RECOVERY_PATH",
     "EXTERNAL_SESSION_PATH",
     "KHEPRI_SESSION_LIFETIME",
     "ExternalAuthenticationServices",

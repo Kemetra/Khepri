@@ -1,9 +1,10 @@
 # KHEPRI-DEC-026: Narrative model-provider selection and enabling gates
 
-> Proposed. Not active. This document is a proposal on a branch and governs nothing until the sole
-> owner merges it to `main`. It is deliberately absent from `governance/registry.yaml`; the
-> registry records only `active` and `retired` artifacts, and adding a row here would assert an
-> approval the owner has not given.
+> Active when merged to `main`. The registry is authoritative: this decision is `active` there.
+> The withheld-adapter substance is unchanged — this record still withholds a live narrative
+> provider until its evaluation, ZDR, HTTP and egress gates are satisfied. `KHEPRI-DEC-008` is
+> retired and superseded by `KHEPRI-DEC-028`; citations below that name `-008` as the live
+> runtime target should be read as `-028`.
 
 ## Context
 
@@ -168,5 +169,6 @@ model routing, benchmarking, arbitration, or provider fallback; and nothing comm
   introduce an unpinned model.
 - The deterministic narrator is confirmed as a governed product path rather than a placeholder, and
   a report bundle remains reachable with every provider disabled.
-- This decision supersedes nothing. `KHEPRI-DEC-008` remains active and unchanged; this decision
-  settles the selection question that decision reserved.
+- This decision supersedes nothing. `KHEPRI-DEC-008` is retired, superseded by
+  `KHEPRI-DEC-028`. This decision remains the withheld-adapter gate that `-008`
+  reserved and that `-028` still points at.

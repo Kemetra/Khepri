@@ -14,7 +14,7 @@ from khepri.rra.jobs import (
     ReportJob,
 )
 from khepri.rra.worker import ReportExecutionFailed, ReportJobMessage
-from khepri.runtime.worker import LEASE_FOR, RETRY_DELAY, ClaimWorkerLoop
+from khepri.runtime.worker import IDLE_BACKOFF, LEASE_FOR, RETRY_DELAY, ClaimWorkerLoop
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -110,6 +110,28 @@ def test_empty_receive_does_no_work() -> None:
 
     assert loop(queue, WorkerStub(), ReaderStub()).run_once() is False
     assert queue.acknowledged == []
+
+
+def test_an_idle_loop_backs_off_before_the_next_claim() -> None:
+    """An empty queue must not spin recover/receive in a tight loop.
+
+    Staging starts `python -m khepri.runtime.worker` as `run_forever`. Returning
+    False from `run_once` used to fall through to the next iteration immediately,
+    which is a self-DoS of PostgreSQL on an idle stack.
+    """
+    queue = QueueStub(None)
+    slept: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        loop(queue, WorkerStub(), ReaderStub()).run_forever(sleep=sleep)
+
+    assert slept == [IDLE_BACKOFF.total_seconds()]
+    assert queue.receives == 1
+    assert queue.recoveries == 1
 
 
 def test_successful_processing_settles_the_delivery() -> None:

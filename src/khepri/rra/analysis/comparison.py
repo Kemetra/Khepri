@@ -108,6 +108,7 @@ from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     RATIO_PRECISION,
     REASON_INPUT_UNAVAILABLE,
+    REASON_NEGATIVE_BASE,
     REASON_ZERO_DENOMINATOR,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -154,7 +155,6 @@ METRIC_DELTA_PERCENT = "revenue_delta_percent"
 GOVERNED_METRICS = (METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT)
 
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
-REASON_NEGATIVE_BASE = "negative_base"
 #: `RRA-008`: "Sparse, non-contiguous, count-equal, gap-containing,
 #: scope-mismatched, store-mismatched, or filter-mismatched structures refuse.
 #: Equal counts, observed rows, date bounds, and generated date spines never

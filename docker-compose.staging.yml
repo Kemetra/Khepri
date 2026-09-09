@@ -57,10 +57,11 @@ x-runtime-environment: &runtime-environment
   KHEPRI_STORAGE_ENDPOINT: https://minio:9000
   KHEPRI_STORAGE_REGION: us-east-1
   KHEPRI_BUCKET: khepri-staging-content
-  # 32 zero bytes, base64. Deliberately fixed and deliberately not a secret: a
-  # generated key would make objects written by one container unreadable by the
-  # next. The real secret source is a `KHEPRI-DEC-027` stop-gate.
-  KHEPRI_STORAGE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  # No default. The runtime refuses the published all-zero key that used to
+  # live here: anyone with the repo could decrypt every object. Supply 32
+  # random bytes, base64, per machine. Local fixtures keep the zero key in
+  # `khepri.local` only.
+  KHEPRI_STORAGE_MASTER_KEY: ${KHEPRI_STORAGE_MASTER_KEY:?set a 32-byte base64 master key}
   AWS_ACCESS_KEY_ID: khepristaging
   AWS_SECRET_ACCESS_KEY: khepristaging
   # botocore reads this natively, so the local CA is trusted without modifying the

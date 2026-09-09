@@ -154,6 +154,10 @@ def _master_key(environment: Mapping[str, str]) -> MasterKey:
         raise RuntimeConfigurationError(
             f"{MASTER_KEY_VARIABLE} must be base64-encoded."
         ) from error
+    if material == bytes(32):
+        raise RuntimeConfigurationError(
+            f"{MASTER_KEY_VARIABLE} must not be the published all-zero key."
+        )
     try:
         return MasterKey(material=material)
     except EnvelopeError as error:

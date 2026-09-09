@@ -20,7 +20,10 @@ from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeSettings
-from khepri.runtime.external_auth_api import EXTERNAL_SESSION_PATH
+from khepri.runtime.external_auth_api import (
+    EXTERNAL_RECOVERY_PATH,
+    EXTERNAL_SESSION_PATH,
+)
 from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.pipeline_recording import (
     PipelineRecorder,
@@ -90,6 +93,18 @@ def test_disabled_provider_configuration_registers_no_external_session_route() -
     paths = {route.path for route in build_web_app(runtime_stack()).routes}
 
     assert EXTERNAL_SESSION_PATH not in paths
+    assert EXTERNAL_RECOVERY_PATH not in paths
+
+
+def test_clerk_enabled_app_registers_the_recovery_consequence_route() -> None:
+    """`KHEPRI-DEC-025` §4: the recovery service must be reachable from the web app.
+
+    `build_recovery_security_service` existed as a library. `build_web_app` never
+    called it, so a stolen `khepri_session` survived Clerk credential replacement.
+    """
+    paths = {route.path for route in build_web_app(clerk_enabled_stack()).routes}
+
+    assert EXTERNAL_RECOVERY_PATH in paths
 
 
 def clerk_enabled_settings() -> RuntimeSettings:

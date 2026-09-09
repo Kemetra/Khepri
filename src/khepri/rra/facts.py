@@ -160,6 +160,12 @@ UNDATED_RETURN_PERIOD = "undated"
 
 REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
+#: `RRA-004` refuses a ratio when its denominator is `<= 0`. Zero is
+#: `REASON_ZERO_DENOMINATOR`. A negative base is a different lie: a shrinking
+#: loss reads as growth, which is why `RRA-008` already names this code for
+#: percentage deltas. Gross margin uses the same code so a net-returns window
+#: cannot publish a healthy-looking ratio.
+REASON_NEGATIVE_BASE = "negative_base"
 REASON_RECONCILIATION_FAILED = "reconciliation_failed"
 REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
@@ -2154,6 +2160,16 @@ def _add_ratio(
             precision=precision,
             inputs=inputs,
             reason=REASON_ZERO_DENOMINATOR,
+        )
+        return
+    if Decimal(denominator) < 0:
+        add(
+            metric,
+            None,
+            unit_kind=unit_kind,
+            precision=precision,
+            inputs=inputs,
+            reason=REASON_NEGATIVE_BASE,
         )
         return
     add(
