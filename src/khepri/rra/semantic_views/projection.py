@@ -146,14 +146,24 @@ class ViewOutcome:
         return self.kind == KIND_REFUSED
 
 
+#: The members `RenderableBundle` declares and this module reads. Checked before
+#: a source is called a bundle at all: a `bundle_version` alone is not a bundle,
+#: and classifying on it let an incomplete object past validation and into
+#: `AttributeError` -- a crash where `Constitution V` requires a refusal.
+_REQUIRED_MEMBERS = ("identity", "figures", "caveats", "evidence", "bundle_version")
+
+
 def _shape_of(source: object) -> str:
     """Which concrete source shape this bundle is (`FR-136`).
 
-    An object that is not a governed bundle answers a name no definition admits,
-    which the shape predicate refuses -- so an unrecognized source fails closed
-    rather than being guessed at.
+    An object missing any member `RenderableBundle` declares, or carrying no
+    version, answers a name no definition admits -- and the shape predicate
+    refuses it. So an unrecognized source fails closed rather than being guessed
+    at, and never reaches the projection to raise there.
     """
-    version = getattr(source, "bundle_version", "")
+    if any(not hasattr(source, member) for member in _REQUIRED_MEMBERS):
+        return "unrecognized_source"
+    version = source.bundle_version  # type: ignore[attr-defined]
     if not isinstance(version, str) or not version:
         return "unrecognized_source"
     if _TWO_POPULATION_MARKER in version:
@@ -170,7 +180,7 @@ def _evidence_absences(evidence: tuple[CitedEvidence, ...]) -> tuple[tuple[str, 
     """
     absences: list[tuple[str, str]] = []
     for record in evidence:
-        absences += _absences_of(record)
+        absences.extend(_absences_of(record))
     return tuple(absences)
 
 
@@ -185,7 +195,9 @@ def _absences_of(record: CitedEvidence) -> list[tuple[str, str]]:
 
 
 def _versions_of(
-    bundle: RenderableBundle, definition: SemanticViewDefinition
+    bundle: RenderableBundle,
+    definition: SemanticViewDefinition,
+    figures: tuple[CitedFigure, ...],
 ) -> tuple[tuple[str, str], ...]:
     """Every governed version the result must carry (`FR-139`).
 
@@ -201,7 +213,31 @@ def _versions_of(
         ("bundle", bundle.bundle_version),
         ("view", definition.view_version),
     )
-    return tuple((name, value) for name, value in named if isinstance(value, str))
+    stated = tuple((name, value) for name, value in named if isinstance(value, str))
+    return (*stated, *_family_versions(bundle, figures))
+
+
+def _family_versions(
+    bundle: RenderableBundle, figures: tuple[CitedFigure, ...]
+) -> tuple[tuple[str, str], ...]:
+    """The analysis-family version behind each projected figure (`FR-139`).
+
+    `FR-139` names *family* alongside mapping, package, formula, bundle and view,
+    and `identity.formula_version` is the **package** formula -- the wrong answer
+    for a derived figure, whose family version `CitedEvidence.formula_version`
+    carries. Reading only the identity omitted the family entirely.
+
+    Keyed by section rather than by one `family` entry, because a bundle spans
+    several: one key would collapse comparison and growth into whichever was seen
+    last, and a version silently overwritten is worse than one absent.
+    """
+    by_citation = {record.citation_id: record.formula_version for record in bundle.evidence}
+    sections: dict[str, str] = {}
+    for figure in figures:
+        version = by_citation.get(figure.citation_id)
+        if isinstance(version, str):
+            sections.setdefault(f"family:{figure.section}", version)
+    return tuple(sections.items())
 
 
 def _metric(figure: CitedFigure, _bundle: RenderableBundle) -> object:
@@ -286,15 +322,23 @@ def _matches(figure: CitedFigure, filters: tuple[tuple[str, str], ...]) -> bool:
 def _admitted_figures(
     bundle: RenderableBundle,
     definition: SemanticViewDefinition,
-    filters: tuple[tuple[str, str], ...],
+    request: SemanticViewRequest,
 ) -> tuple[CitedFigure, ...]:
-    """The bundle's figures this view admits, in the bundle's own order.
+    """The figures this request asked for and this view admits, in source order.
+
+    A request naming metrics gets those metrics and no others. Reading the
+    allowlist unconditionally returned every measure the *view* admits, which is
+    wider than what the reader asked for -- the widening this specification
+    exists to prevent, arriving through the selector rather than through a
+    dropped filter. `validate` has already refused any metric outside the
+    allowlist, so an empty tuple is "the view's own selection" and never "none".
 
     Selection, never ranking: the order is the source's and no key reorders it,
     because `FR-138` bars ranking and `FR-134` makes output order part of view
     identity rather than something computed per request.
     """
-    allowed = frozenset(definition.metric_allowlist)
+    requested, filters = request.metrics, request.filters
+    allowed = frozenset(requested or definition.metric_allowlist)
     return tuple(
         figure
         for figure in bundle.figures
@@ -335,14 +379,14 @@ def _projection(
     bundle: RenderableBundle,
 ) -> ViewProjection:
     """Select, order and propagate -- the whole of what this module does."""
-    figures = _admitted_figures(bundle, definition, request.filters)
+    figures = _admitted_figures(bundle, definition, request)
     fields = definition.output_field_order
     return ViewProjection(
         view_id=definition.view_id,
         view_version=definition.view_version,
         fields=fields,
         rows=tuple(_row(figure, bundle, fields) for figure in figures),
-        version_pairs=_versions_of(bundle, definition),
+        version_pairs=_versions_of(bundle, definition, figures),
         caveats=bundle.caveats,
         population_qualifiers=(),
         evidence=bundle.evidence,

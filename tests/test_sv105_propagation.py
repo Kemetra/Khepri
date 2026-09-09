@@ -29,7 +29,6 @@ import pytest
 from khepri.rra import definitions
 from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
-    SECTION_OVERVIEW,
     SECTION_PRESENT,
     BundleIdentity,
     CitedEvidence,
@@ -123,24 +122,28 @@ def _bundle(
 ) -> ReportBundle:
     """A single-population bundle carrying exactly what a test needs.
 
-    The overview section indexes every figure, because `ReportBundle` refuses a
-    bundle whose sections and figures disagree about placement. Derived from the
-    figures rather than supplied beside them, so a test can vary the figures
-    without also maintaining the index.
+    Sections are derived from the figures' own `section`, because `ReportBundle`
+    refuses a bundle whose sections and figures disagree about placement.
+    Derived rather than supplied beside them, so a test can vary the figures --
+    including across sections -- without also maintaining the index.
     """
+    placed: dict[str, list[str]] = {}
+    for figure in figures:
+        placed.setdefault(figure.section, []).append(figure.figure_id)
     return ReportBundle(
         identity=_identity(),
         figures=figures,
         caveats=caveats,
         narrative_state=NARRATIVE_OMITTED,
-        sections=(
+        sections=tuple(
             Section(
-                section_id=SECTION_OVERVIEW,
+                section_id=section_id,
                 state=SECTION_PRESENT,
                 reason=None,
-                figure_ids=tuple(figure.figure_id for figure in figures),
+                figure_ids=tuple(figure_ids),
                 chart=None,
-            ),
+            )
+            for section_id, figure_ids in placed.items()
         ),
         evidence=evidence,
     )
@@ -386,11 +389,12 @@ def test_no_module_in_the_package_performs_arithmetic() -> None:
 
 def _arithmetic_in(node: ast.AST, filename: str) -> list[str]:
     """Any arithmetic, banned builtin, ranking key or slice on one node."""
-    return (
-        _binary_operator(node, filename)
-        + _banned_call(node, filename)
-        + _ranking_or_slice(node, filename)
-    )
+    return [
+        *_binary_operator(node, filename),
+        *_augmented_assignment(node, filename),
+        *_banned_call(node, filename),
+        *_ranking_or_slice(node, filename),
+    ]
 
 
 def _binary_operator(node: ast.AST, filename: str) -> list[str]:
@@ -400,6 +404,20 @@ def _binary_operator(node: ast.AST, filename: str) -> list[str]:
     if not isinstance(node.op, _ARITHMETIC_OPERATORS):
         return []
     return [f"{filename}:{node.lineno}: {type(node.op).__name__}"]
+
+
+def _augmented_assignment(node: ast.AST, filename: str) -> list[str]:
+    """`a += b` and its siblings, which `ast.BinOp` does not cover.
+
+    Added after the `BinOp` scan caught a tuple concatenation in this slice's own
+    fix: the gap it revealed was that `+=` was invisible to the scan entirely, so
+    arithmetic written that way would have passed.
+    """
+    if not isinstance(node, ast.AugAssign):
+        return []
+    if not isinstance(node.op, _ARITHMETIC_OPERATORS):
+        return []
+    return [f"{filename}:{node.lineno}: augmented {type(node.op).__name__}"]
 
 
 def _banned_call(node: ast.AST, filename: str) -> list[str]:
@@ -422,3 +440,131 @@ def _ranking_or_slice(node: ast.AST, filename: str) -> list[str]:
     if node.func.id != "sorted":
         return []
     return [f"{filename}:{node.lineno}: sorted(key=)" for kw in node.keywords if kw.arg == "key"]
+
+
+class _Sham:
+    """An object carrying a bundle version and nothing else a bundle needs."""
+
+    bundle_version = "rra006.bundle.v1"
+
+
+def test_a_source_carrying_only_a_version_refuses_rather_than_raising() -> None:
+    """`Constitution V` -- fail closed, not `AttributeError`.
+
+    Classifying on `bundle_version` alone let an incomplete object past
+    validation and into the projection, where reading `figures` raised. A crash
+    is not a governed refusal: the reader gets a traceback's shape instead of a
+    cause and wording.
+    """
+    outcome = projection.project(_request(_OVERVIEW), (_Sham(),))
+
+    assert outcome.refused
+    assert outcome.refusal is not None
+    assert outcome.refusal.cause == refusals.CAUSE_INCOMPATIBLE_SOURCE_SHAPE
+
+
+@pytest.mark.parametrize("missing", ["identity", "figures", "caveats", "evidence"])
+def test_a_bundle_missing_any_declared_member_refuses(missing: str) -> None:
+    """Each member `RenderableBundle` declares is required, not just one of them."""
+    members = {name: () for name in ("identity", "figures", "caveats", "evidence")}
+    del members[missing]
+    sham = type("Partial", (), {**members, "bundle_version": "rra006.bundle.v1"})()
+
+    outcome = projection.project(_request(_OVERVIEW), (sham,))
+
+    assert outcome.refused
+    assert outcome.refusal is not None
+    assert outcome.refusal.cause == refusals.CAUSE_INCOMPATIBLE_SOURCE_SHAPE
+
+
+def test_a_request_naming_metrics_gets_those_and_no_others() -> None:
+    """The reader's own selection, not the view's whole allowlist.
+
+    Reading `metric_allowlist` unconditionally returned every measure the *view*
+    admits. That is wider than what was asked for -- the widening this
+    specification exists to prevent, arriving through the selector rather than
+    through a dropped filter.
+    """
+    bundle = _bundle((_figure("revenue", _EXACT), _figure("units", Decimal("7"))))
+    outcome = projection.project(_request(_OVERVIEW, metrics=("revenue",)), (bundle,))
+
+    assert outcome.projection is not None
+    column = outcome.projection.fields.index("metric")
+    assert tuple(row[column] for row in outcome.projection.rows) == ("revenue",)
+
+
+def test_a_request_naming_no_metric_gets_the_views_own_selection() -> None:
+    """An empty tuple means "the view's selection", never "none"."""
+    bundle = _bundle((_figure("revenue", _EXACT), _figure("units", Decimal("7"))))
+    outcome = projection.project(_request(_OVERVIEW), (bundle,))
+
+    assert outcome.projection is not None
+    column = outcome.projection.fields.index("metric")
+    assert set(row[column] for row in outcome.projection.rows) == {"revenue", "units"}
+
+
+def test_each_projected_figures_family_version_is_carried() -> None:
+    """`FR-139` names *family* beside package, formula, mapping, bundle and view.
+
+    `identity.formula_version` is the **package** formula and is the wrong answer
+    for a derived figure, whose family version `CitedEvidence.formula_version`
+    carries. Reading only the identity omitted the family entirely.
+    """
+    figure = _figure("revenue", _EXACT)
+    evidence = CitedEvidence(
+        citation_id=figure.citation_id,
+        metric="revenue",
+        unit_kind="monetary",
+        formula_version="rra008.comparison.v2",
+        precision=None,
+        inputs=None,
+    )
+    outcome = projection.project(_request(_OVERVIEW), (_bundle((figure,), evidence=(evidence,)),))
+
+    assert outcome.projection is not None
+    versions = outcome.projection.versions
+    assert versions[f"family:{figure.section}"] == "rra008.comparison.v2"
+    assert versions["formula"] != "rra008.comparison.v2", "the package formula is a different fact"
+
+
+def test_two_sections_keep_two_family_versions() -> None:
+    """One `family` key would collapse them into whichever was seen last."""
+    overview = _figure("revenue", _EXACT)
+    basket = CitedFigure(
+        figure_id="fig_basket",
+        citation_id="cit_basket",
+        fact_id="fct_000000000000000000000000",
+        metric="units",
+        unit_kind="count",
+        kind="value",
+        section="basket",
+        label=None,
+        value=Decimal("3"),
+        renderings={LANGUAGE_ENGLISH: "3", LANGUAGE_ARABIC: "٣"},
+    )
+    evidence = (
+        CitedEvidence(
+            citation_id=overview.citation_id,
+            metric="revenue",
+            unit_kind="monetary",
+            formula_version="rra004.formula.v1",
+            precision=None,
+            inputs=None,
+        ),
+        CitedEvidence(
+            citation_id=basket.citation_id,
+            metric="units",
+            unit_kind="count",
+            formula_version="rra008.basket.v2",
+            precision=None,
+            inputs=None,
+        ),
+    )
+    outcome = projection.project(
+        _request(_OVERVIEW), (_bundle((overview, basket), evidence=evidence),)
+    )
+
+    assert outcome.projection is not None
+    versions = outcome.projection.versions
+    assert versions["family:overview"] == "rra004.formula.v1"
+    assert versions["family:basket"] == "rra008.basket.v2"
