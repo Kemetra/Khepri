@@ -2,7 +2,7 @@
 
 **Measured:** 2026-09-09. **Authority:** active `RRA-014` `FR-144`.
 **Slice:** `SV1-08`, the last of `SV1-02`–`SV1-08`.
-**Evidence:** `tests/test_sv108_query_baseline.py` (19 tests).
+**Evidence:** `tests/test_sv108_query_baseline.py` (25 tests).
 
 > **This ledger certifies nothing.** `FR-144` authorizes measurement — "latency and
 > query-shape evidence **may measure execution**" — and that is all this is. It is **not** an
@@ -105,6 +105,14 @@ becomes measurable and must be taken. It is written to fail then, deliberately.
 The real `projection.project` over a real bundle of the shape each view admits. 200 samples per
 view, request and bundle built once outside the loop, nothing warmed or reordered.
 
+**Provenance.** Every row below was produced by `_projection_samples` in
+`tests/test_sv108_query_baseline.py`, and `test_the_projection_latency_is_a_measured_distribution`
+drives that same function over every published view on every run — parametrized across the whole
+registry, not across one representative of each source shape. A figure a reader cannot regenerate
+from committed code is not evidence, so the table's provenance is a test and not a scratch script.
+What the test asserts is the discipline (a distribution was collected; every sample agreed); the
+magnitudes are recorded here and asserted nowhere, because a wall-clock threshold in CI is a flake.
+
 **Environment:** CPython 3.13.12, x86_64 Linux, one shared CI-class container, 2026-09-09.
 Single machine, single run. An order of magnitude, not a tolerance.
 
@@ -166,8 +174,8 @@ a scan cannot find a rule nobody wrote down.
 
 ## 6. How each finding was made able to fail
 
-Nineteen tests, nineteen mutants, each asserted to have applied before its result was believed;
-every source file restored byte-identically afterwards.
+Twenty-five tests, one mutant per distinct guard, each asserted to have applied before its result
+was believed; every source file restored byte-identically afterwards.
 
 | Mutant | Kills |
 | --- | --- |
@@ -178,7 +186,7 @@ every source file restored byte-identically afterwards.
 | `_unknown_view` fires first, so a different cause refuses | the composition test |
 | `import time` / `import sqlalchemy` on the read path | the timing and no-read scans |
 | `lru_cache` / `groupby` / `materialize` / `sample` added | the four prohibition scans |
-| A warm-cache result change across calls | both latency tests and `test_no_result_changes` |
+| A warm-cache result change across calls | all eight latency cases and `test_no_result_changes` |
 | An empty metric allowlist | the eight-view reachability test |
 | A prohibition's test renamed away | `test_every_prohibition_has_a_test` |
 | A new module added to either package | the closed-module-set test |
@@ -186,6 +194,12 @@ every source file restored byte-identically afterwards.
 **One negative control**, because a scan that matches text rather than code proves nothing: adding
 `Sampling, lru_cache, groupby and materialize` to a module **docstring** must leave all four
 prohibition scans green. It does.
+
+One mutant's result was an ordering artefact rather than a survival. The warm-cache mutant left
+`test_no_result_changes` green when the eight latency cases ran first — by then `_SEEN` was already
+warm, so all three of its calls returned the same refused outcome. Re-run in isolation against a
+cold mutant it fails, so the assertion discriminates; what the batch showed was test order, not a
+test that cannot fail.
 
 Two defective mutants were caught and replaced rather than counted. A warm-cache mutant that
 referenced an undefined `_SEEN` raised `NameError`, so its kill measured a crash and not a result

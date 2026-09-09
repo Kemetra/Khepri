@@ -520,7 +520,7 @@ names its requirements, what it delivers, its acceptance, and the one thing most
   views reach a non-empty projection, so no figure is of the null case; a first pass recorded
   `PeriodComparisonView` unreachable, which was the fixture's single-population shape and not the
   product's. Ledger: `docs/superpowers/plans/2026-09-09-sv1-08-baseline-evidence.md`. Evidence:
-  `tests/test_sv108_query_baseline.py`, 19 tests, 19 mutants killed and one negative control.
+  `tests/test_sv108_query_baseline.py`, 25 tests, one mutant per guard killed and one negative control.
 
 - **Risk:** **a measurement that changes what it measures.** `FR-144`'s final clause bars "result
   changes"; a timing harness that warms a path, memoizes a definition lookup, or reorders work is a

@@ -54,6 +54,8 @@ import pathlib
 import statistics
 import time
 
+import pytest
+
 from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore
 from khepri.rca.semantic_queries import ports, queries
@@ -435,18 +437,16 @@ def _assert_measured(view_id: str) -> None:
     assert outcomes[0].kind == projection.KIND_ADMITTED  # type: ignore[attr-defined]
 
 
-def test_the_single_population_projection_latency_is_a_measured_distribution() -> None:
-    """`FR-144` "may measure execution" -- so it is, on the half that runs."""
-    _assert_measured("ExecutiveOverviewView")
+@pytest.mark.parametrize("view_id", sorted(registry.view_ids()))
+def test_the_projection_latency_is_a_measured_distribution(view_id: str) -> None:
+    """`FR-144` "may measure execution" -- so it is, for every published view.
 
-
-def test_the_two_population_projection_latency_is_a_measured_distribution() -> None:
-    """The heavier shape measured too, so the ledger is not one bundle wide.
-
-    `PeriodComparisonView` over a real `CrossVersionBundle` projects twenty rows
-    against the overview's two, which is the span a baseline needs to be one.
+    Parametrized over the whole registry rather than over one representative of
+    each source shape. The ledger records a distribution per view, and evidence a
+    reader cannot regenerate from committed code is not evidence: `_projection_samples`
+    is the function that produced every row of that table.
     """
-    _assert_measured("PeriodComparisonView")
+    _assert_measured(view_id)
 
 
 def _reachable_views() -> dict[str, bool]:
