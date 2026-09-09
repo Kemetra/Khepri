@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 560" role="img" aria-labelledby="title desc">
+  <title id="title">Khepri — governed retail intelligence</title>
+  <desc id="desc">A golden scarab rising over a field of retail data, connecting raw files to reconciled web, PDF, and Excel reports.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#090d12"/>
+      <stop offset="0.48" stop-color="#15120d"/>
+      <stop offset="1" stop-color="#071216"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff8c7"/>
+      <stop offset="0.2" stop-color="#ffd86a"/>
+      <stop offset="0.58" stop-color="#d89b22"/>
+      <stop offset="1" stop-color="#8d4f08"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff0a4"/>
+      <stop offset="0.32" stop-color="#f2bd43"/>
+      <stop offset="0.7" stop-color="#b87113"/>
+      <stop offset="1" stop-color="#ffe17b"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6fe4d3"/>
+      <stop offset="1" stop-color="#168b89"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#d9ad4b" stroke-opacity=".055"/>
+    </pattern>
+    <filter id="sunGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="frame"><rect width="1440" height="560" rx="28"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1440" height="560" fill="url(#night)"/>
+    <rect width="1440" height="560" fill="url(#grid)"/>
+    <circle cx="720" cy="176" r="152" fill="#d99b24" opacity=".12" filter="url(#sunGlow)"/>
+    <circle cx="720" cy="167" r="83" fill="url(#sun)" opacity=".22" filter="url(#sunGlow)"/>
+
+    <!-- Horizon and data constellations -->
+    <path d="M0 430C206 392 348 455 528 426S838 379 1020 419s269 26 420-9v150H0Z" fill="#05090c" opacity=".72"/>
+    <path d="M0 430C206 392 348 455 528 426S838 379 1020 419s269 26 420-9" fill="none" stroke="#bc8429" stroke-opacity=".28"/>
+    <g fill="none" stroke="#4eb9ae" stroke-opacity=".3">
+      <path d="M78 356l67-44 72 27 66-83 80 35 77-88"/>
+      <path d="M1004 230l67 49 71-31 75 64 76-45 76 63"/>
+    </g>
+    <g fill="#6fe4d3">
+      <circle cx="78" cy="356" r="3"/><circle cx="145" cy="312" r="4"/><circle cx="217" cy="339" r="3"/>
+      <circle cx="283" cy="256" r="5"/><circle cx="363" cy="291" r="3"/><circle cx="440" cy="203" r="4"/>
+      <circle cx="1004" cy="230" r="4"/><circle cx="1071" cy="279" r="3"/><circle cx="1142" cy="248" r="5"/>
+      <circle cx="1217" cy="312" r="3"/><circle cx="1293" cy="267" r="4"/><circle cx="1369" cy="330" r="3"/>
+    </g>
+
+    <!-- Solar disc -->
+    <circle cx="720" cy="151" r="70" fill="url(#sun)" stroke="#ffe585" stroke-width="2" filter="url(#softGlow)"/>
+    <circle cx="720" cy="151" r="82" fill="none" stroke="#dba134" stroke-width="1" stroke-opacity=".6"/>
+    <g stroke="#e8b445" stroke-linecap="round" stroke-width="4" opacity=".86">
+      <path d="M720 45V23"/><path d="M667 59l-12-21"/><path d="M773 59l12-21"/>
+      <path d="M630 97l-21-12"/><path d="M810 97l21-12"/>
+    </g>
+
+    <!-- Geometric scarab -->
+    <g stroke="url(#gold)" stroke-linejoin="round" filter="url(#softGlow)">
+      <path d="M720 230c-35 0-62 25-62 64v61c0 38 26 69 62 87 36-18 62-49 62-87v-61c0-39-27-64-62-64Z" fill="#0c1719" stroke-width="6"/>
+      <path d="M720 231v210M661 290c21 3 41 14 59 31 18-17 38-28 59-31M661 345c24 2 43 13 59 28 16-15 35-26 59-28" fill="none" stroke-width="5"/>
+      <path d="M660 267c-67-42-120-20-151 21 15 21 43 31 78 28-45 20-75 50-87 90 54 9 106-7 158-48M780 267c67-42 120-20 151 21-15 21-43 31-78 28 45 20 75 50 87 90-54 9-106-7-158-48" fill="#0a1113" stroke-width="6"/>
+      <path d="M659 293c-36-15-72-12-108 5M657 326c-52 6-92 27-120 61M781 293c36-15 72-12 108 5M783 326c52 6 92 27 120 61" fill="none" stroke-width="3" opacity=".8"/>
+      <path d="M685 240c4-31 18-47 35-47s31 16 35 47" fill="#10191a" stroke-width="5"/>
+      <path d="M696 200l-22-25M744 200l22-25" fill="none" stroke-width="4" stroke-linecap="round"/>
+    </g>
+
+    <!-- Input and output labels -->
+    <g font-family="Inter, Segoe UI, Arial, sans-serif">
+      <g transform="translate(70 120)">
+        <text fill="#8c9da1" font-size="12" font-weight="700" letter-spacing="3">ADMIT</text>
+        <text y="34" fill="#f7e8bd" font-size="23" font-weight="650">CSV / XLSX</text>
+        <text y="61" fill="#8fa2a5" font-size="14">retail data</text>
+        <path d="M0 82h390" stroke="#587073" stroke-opacity=".35"/>
+      </g>
+      <g transform="translate(1110 120)">
+        <text fill="#8c9da1" font-size="12" font-weight="700" letter-spacing="3">DELIVER</text>
+        <text y="34" fill="#f7e8bd" font-size="23" font-weight="650">WEB · PDF · XLSX</text>
+        <text y="61" fill="#8fa2a5" font-size="14">one reconciled truth</text>
+        <path d="M-130 82h390" stroke="#587073" stroke-opacity=".35"/>
+      </g>
+      <g text-anchor="middle">
+        <text x="720" y="492" fill="#f7d777" font-size="44" font-weight="750" letter-spacing="14">KHEPRI</text>
+        <text x="720" y="526" fill="#9eb1b2" font-size="14" font-weight="600" letter-spacing="4">EVIDENCE BEFORE ASSERTION</text>
+      </g>
+    </g>
+
+    <!-- Flow markers -->
+    <g fill="none" stroke="url(#teal)" stroke-width="2" stroke-linecap="round" opacity=".8">
+      <path d="M350 381h116l19-14 20 14h42"/>
+      <path d="M893 381h42l20-14 19 14h116"/>
+    </g>
+    <g fill="#6fe4d3"><circle cx="350" cy="381" r="4"/><circle cx="1090" cy="381" r="4"/></g>
+  </g>
+  <rect x="1" y="1" width="1438" height="558" rx="27" fill="none" stroke="#d5a43e" stroke-opacity=".38" stroke-width="2"/>
+</svg>
