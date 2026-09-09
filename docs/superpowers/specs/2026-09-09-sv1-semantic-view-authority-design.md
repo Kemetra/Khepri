@@ -286,9 +286,11 @@ This design and the resulting authority proposal authorize none of the following
 
 ## 10. Acceptance
 
-`SV1-01` is complete only when one owner-merged pull request adds `RRA-014`, `RCA-006`, and their two
-registry rows; the documents agree on their shared request/result seam; governance validation, Ruff,
-pytest, and CodeScene pass; and the roadmap records `SV1-01` as merged with a `main` SHA and names
-`SV1-02` as the next slice.
+The `SV1-01` authority activation is complete only when one owner-merged pull request adds
+`RRA-014`, `RCA-006`, and their two registry rows; the documents agree on their shared
+request/result seam; and governance validation, Ruff, pytest, and CodeScene pass.
+
+The proposal MUST NOT claim its own future `main` SHA. After merge, a documentation-only follow-up
+records `SV1-01` as merged at the actual `main` SHA and names `SV1-02` as the next slice.
 
 Until that merge, this document is design input only and grants no implementation authority.
