@@ -318,9 +318,14 @@ names its requirements, what it delivers, its acceptance, and the one thing most
   `runtime/comparison_assembly.py` exists as the `C1-06` precedent under `RCA-005`. **Resolve this
   before writing the adapter**: if `RCA-006`'s "no runtime wiring" bars it, the adapter needs scope
   named in an `RCA-006` amendment and this slice ships the Protocol and actions only, with the
-  binding deferred. Raise it; do not decide it in the slice. Second risk: the zero-writes proof
-  written as a before/after row count — that is the pre-read pattern that let two sweeps both attest
-  one purge on `#384`. Assert no write occurred at the write path.
+  binding deferred. Raise it; do not decide it in the slice. **If the binding defers, say what that
+  costs downstream rather than papering over it**: `SV1-07`'s no-concrete-RRA-import composition
+  property and all of `SV1-08` can then only run over a test-local fake port, and both are recorded
+  **NOT EXERCISED**, never passed. `W1-07a` is the precedent — a route absent from the image with
+  seven tests green over a hand-built `ShellServices`. A fake port does not substitute for an absent
+  adapter. Second risk: the zero-writes proof written as a before/after row count — that is the
+  pre-read pattern that let two sweeps both attest one purge on `#384`. Assert no write occurred at
+  the write path.
 
 ### `SV1-05` — Propagation and exact projected values
 
@@ -391,7 +396,10 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 - **Acceptance:** every one of the fourteen properties has a test that fails when the guard is
   removed, proven by mutation rather than asserted; an empty admitted result cannot widen to
   unfiltered data, a nearby dimension, another version or a partial result; the four unavailable
-  conditions are compared against **each other**, not each against a fixture.
+  conditions are compared against **each other**, not each against a fixture. **Conditional on
+  `SV1-04`:** if the runtime adapter deferred, the no-concrete-RRA-import property is asserted
+  against a composition that does not ship, and is recorded NOT EXERCISED with the reason — the
+  other thirteen properties are unaffected, because they hold over the two packages themselves.
 - **Risk:** **a test that cannot fail.** Every finding in the `RCA` slice-1 verification round was
   one. Mutation-test each guard; a mutant that is malformed proves nothing, so verify the mutant
   actually introduces the defect before calling a test weak. And mutation testing cannot find a
@@ -416,7 +424,11 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 - **Acceptance:** the baseline is deterministic enough to be a baseline — report a distribution, not
   one sample; the measurement adds no cache, no pre-aggregation, no materialized view and no
   sampling, asserted by a diff showing zero additions to any read path; results with measurement
-  enabled are byte-identical to results without it.
+  enabled are byte-identical to results without it. **Conditional on `SV1-04`:** if the runtime
+  adapter deferred, there is no shipped composition to measure and this whole slice is recorded NOT
+  EXERCISED rather than passed. A latency figure taken over a test-local fake port measures the
+  fake, and publishing it as the baseline `D1-09` will later optimize against is worse than having
+  none.
 - **Risk:** **a measurement that changes what it measures.** `FR-144`'s final clause bars "result
   changes"; a timing harness that warms a path, memoizes a definition lookup, or reorders work is a
   result change. Second risk: measuring the null case — a view that returns empty for the fixture
@@ -430,10 +442,16 @@ names its requirements, what it delivers, its acceptance, and the one thing most
 
 - **It authorizes no surface.** Both specifications exclude routes, templates and shell assets, so
   nothing here is reachable by a customer. The consumer is `D1`.
-- **`D1` remains authority-blocked and this plan does not unblock it.** No active specification
-  names D1's executive-overview surfaces, decision modules, filters or report workspace;
-  `RRA-014` §Scope and `RCA-006` §Scope both disclaim exactly that ground. That authority is
-  owner-authored, is not in roadmap §17, and is the next thing between `SV1` and `M4`.
+- **`D1` needs authority this plan does not supply, and the gap is narrower than "no specification
+  names those files".** `RCA-005` §Scope **does** govern `src/khepri/runtime/shell_api.py` and
+  `shell_templates/` — that is how the owner settled `C1-07`'s `U1` dependency on 2026-09-08 — so
+  D1's surface *paths* are governed and D1 is not path-blocked. What is absent is **requirement**
+  authority: no active `FR` names an executive overview, decision modules, a report workspace or
+  global filters, and `RCA-005`'s own Exclusions bar "any calculation, aggregation or re-rendering
+  of figures on a workspace surface" and "any product-telemetry event" — which reaches `D1-03`,
+  `D1-04` and `D1-11` directly. `RRA-014` and `RCA-006` add nothing here: both disclaim routes,
+  templates and shell assets. So D1 needs an owner-authored requirement set, not a scope grant; it
+  is not in roadmap §17; and it is the next thing between `SV1` and `M4`.
 - **It decides nothing `RRA-014` or `RCA-006` left open**, with one exception, recorded rather than
   buried: §2 pins the seam's shape, which the specifications leave to implementation. It is written
   here so `SV1-02` can build against it, and it is reviewable before any code exists.
