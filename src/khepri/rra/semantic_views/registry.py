@@ -189,7 +189,9 @@ _PUBLISHED: dict[str, SemanticViewDefinition] = {
             view_id="MetricAvailabilityView",
             view_version="sv1.metric_availability.v1",
             accepted_source_shape=SHAPE_EITHER_BUNDLE,
-            metric_allowlist=_metrics(_CORE, _COMPARISON, _GROWTH, _BASKET, _CONCENTRATION),
+            metric_allowlist=_metrics(
+                _CORE, _COMPARISON, _GROWTH, _BASKET, _CONCENTRATION
+            ),
             dimension_allowlist=facts.SERIES_DIMENSIONS,
             request_filter_allowlist=(),
             fixed_filters=(),
