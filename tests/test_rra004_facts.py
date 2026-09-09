@@ -30,6 +30,7 @@ from khepri.rra.facts import (
     REASON_INCOMPLETE_COVERAGE,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
+    REASON_NEGATIVE_BASE,
     REASON_REPEATED_ROW_SIGNATURE,
     UNIT_COUNT,
     UNIT_MONETARY,
@@ -2136,3 +2137,28 @@ def test_a_repeated_event_key_refuses_the_additive_results() -> None:
         refused = result.refusal(metric)
         assert refused is not None
         assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_gross_margin_refuses_a_negative_matched_revenue() -> None:
+    """`RRA-004`: gross margin refuses when matched revenue is `<= 0`.
+
+    `_add_ratio` guarded `== 0` only, so a net-returns window published
+    `-90 / -200 = 0.4500` as a 45% margin. Against a negative base a percentage
+    misleads — a shrinking loss reads as growth. Cost and profit survive.
+    """
+    from tests.rra_calculation_oracle import (
+        NEGATIVE_MARGIN_DENOMINATOR_ROWS,
+        NEGATIVE_MARGIN_EXPECTED,
+        to_csv,
+    )
+
+    result = _oracle_package(to_csv(NEGATIVE_MARGIN_DENOMINATOR_ROWS))
+
+    assert result.value(METRIC_COST) == str(NEGATIVE_MARGIN_EXPECTED["cost"])
+    assert result.value(METRIC_GROSS_PROFIT) == str(
+        NEGATIVE_MARGIN_EXPECTED["gross_profit"]
+    )
+    assert result.fact(METRIC_GROSS_MARGIN) is None
+    refused = result.refusal(METRIC_GROSS_MARGIN)
+    assert refused is not None
+    assert refused.reason == REASON_NEGATIVE_BASE

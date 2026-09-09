@@ -179,6 +179,22 @@ def test_invalid_storage_coordinates_are_refused(name: str, value: str) -> None:
         RuntimeSettings.from_environment(environment(**{name: value}))
 
 
+def test_the_published_all_zero_master_key_is_refused() -> None:
+    """The 32-zero key shipped in `docker-compose.staging.yml` is not a secret.
+
+    Anyone with the repo can decrypt every object sealed under it. Local
+    fixtures keep that key in `khepri.local`; the production runtime must not.
+    The error names the variable and never the value.
+    """
+    published = base64.b64encode(bytes(32)).decode("ascii")
+
+    with pytest.raises(RuntimeConfigurationError, match="KHEPRI_STORAGE_MASTER_KEY") as caught:
+        RuntimeSettings.from_environment(environment(KHEPRI_STORAGE_MASTER_KEY=published))
+
+    assert "published" in str(caught.value).lower()
+    assert published not in str(caught.value)
+
+
 def test_any_conforming_endpoint_and_region_are_accepted() -> None:
     """No provider is recognised by name and no region is allowlisted.
 
