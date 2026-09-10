@@ -49,13 +49,13 @@ _ARITHMETIC = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.P
 _DECISION_DIR = pathlib.Path(seam.__file__).parent
 
 
-def _decision_modules() -> tuple[tuple[str, ast.Module], ...]:
-    """Every module under `decision/`, parsed. Discovered, never listed.
+def _decision_modules() -> tuple[pytest.param, ...]:
+    """Every module under `decision/`, parsed and named. Discovered, never listed.
 
     A listed set of files would pass while a ninth module quietly computed.
     """
     return tuple(
-        (path.name, ast.parse(path.read_text(encoding="utf-8")))
+        pytest.param(path.name, ast.parse(path.read_text(encoding="utf-8")), id=path.name)
         for path in sorted(_DECISION_DIR.glob("*.py"))
     )
 
@@ -112,7 +112,9 @@ def _request() -> overview.OverviewRequest:
     )
 
 
-def _projection(rows: tuple[tuple[object, ...], ...], *, is_empty: bool = False) -> ports.ViewOutcome:
+def _projection(
+    rows: tuple[tuple[object, ...], ...], *, is_empty: bool = False
+) -> ports.ViewOutcome:
     """An admitted outcome over S-1's published field order."""
     return ports.ViewOutcome(
         kind=ports.KIND_ADMITTED,
@@ -147,13 +149,15 @@ def test_every_view_version_is_a_string_literal_in_the_module() -> None:
     """`FR-160` -- a literal constant, not a call result and not an f-string."""
     tree = ast.parse(pathlib.Path(seam.__file__).read_text(encoding="utf-8"))
     literals = {
-        node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
     for identity in seam.DECISION_VIEWS:
         assert identity.view_version in literals
 
 
-@pytest.mark.parametrize("name,tree", _decision_modules(), ids=lambda v: v if isinstance(v, str) else "")
+@pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_resolves_a_version_at_read_time(name: str, tree: ast.Module) -> None:
     """`FR-160` -- enumeration is the `latest` alias reached by another spelling."""
     called = {
@@ -164,7 +168,7 @@ def test_no_decision_module_resolves_a_version_at_read_time(name: str, tree: ast
     assert not called & set(_REGISTRY_LOOKUPS), name
 
 
-@pytest.mark.parametrize("name,tree", _decision_modules(), ids=lambda v: v if isinstance(v, str) else "")
+@pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_performs_arithmetic(name: str, tree: ast.Module) -> None:
     """`FR-159` -- "whatever the arithmetic's size", so the operator is the test."""
     for node in ast.walk(tree):
@@ -174,7 +178,7 @@ def test_no_decision_module_performs_arithmetic(name: str, tree: ast.Module) -> 
             assert not isinstance(node.op, _ARITHMETIC), f"{name}: {type(node.op).__name__}"
 
 
-@pytest.mark.parametrize("name,tree", _decision_modules(), ids=lambda v: v if isinstance(v, str) else "")
+@pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_derives_a_figure_by_call(name: str, tree: ast.Module) -> None:
     """`FR-159` -- ranking and aggregation arrive as builtins, not as operators.
 
@@ -184,12 +188,16 @@ def test_no_decision_module_derives_a_figure_by_call(name: str, tree: ast.Module
     """
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            name_called = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
-            assert name_called not in _DERIVING_CALLS, f"{name}: {name_called}"
-            assert name_called != "sort", f"{name}: sort"
+            called = (
+                node.func.id
+                if isinstance(node.func, ast.Name)
+                else getattr(node.func, "attr", "")
+            )
+            assert called not in _DERIVING_CALLS, f"{name}: {called}"
+            assert called != "sort", f"{name}: sort"
 
 
-@pytest.mark.parametrize("name,tree", _decision_modules(), ids=lambda v: v if isinstance(v, str) else "")
+@pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_reaches_rra_or_raw_rows(name: str, tree: ast.Module) -> None:
     """`FR-159` "may not read raw rows", and `RCA-006`'s package boundary."""
     barred = ("khepri.rra", "khepri.rca.workspace.store", "khepri.rca.workspace.persistence")
@@ -232,7 +240,9 @@ def test_an_unavailable_read_is_content_free() -> None:
 
 def test_a_refusal_is_carried_intact_for_governed_wording() -> None:
     """`FR-164` -- the surface renders `ViewRefusal.wording`, so it must survive."""
-    refusal = ports.ViewRefusal(cause="unsupported_filter", wording_pairs=(("en", "No."), ("ar", "لا.")))
+    refusal = ports.ViewRefusal(
+        cause="unsupported_filter", wording_pairs=(("en", "No."), ("ar", "لا."))
+    )
     actions, _ = _actions(ports.ViewOutcome(kind=ports.KIND_REFUSED, refusal=refusal))
     reading = overview.read_overview(actions, _request())
     assert reading.status == ports.KIND_REFUSED
