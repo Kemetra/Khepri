@@ -1100,7 +1100,12 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_DISCOUNT,),
-        reason=_unavailable_reason(mapping, SEMANTIC_DISCOUNT),
+        reason=_measured_or_mapped_reason(
+            gapped=totals.gapped_semantics,
+            mapping=mapping,
+            gap_semantic=SEMANTIC_DISCOUNT,
+            mapped_semantic=SEMANTIC_DISCOUNT,
+        ),
     )
     add(
         METRIC_RETURNS,
@@ -1108,7 +1113,12 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_RETURNS,),
-        reason=_unavailable_reason(mapping, SEMANTIC_RETURNS),
+        reason=_measured_or_mapped_reason(
+            gapped=totals.gapped_semantics,
+            mapping=mapping,
+            gap_semantic=SEMANTIC_REVENUE,
+            mapped_semantic=SEMANTIC_RETURNS,
+        ),
     )
 
     # A metric combining two measures is computed over the rows that carry both.
@@ -1861,6 +1871,41 @@ def _matched(left: list, right: list) -> _Matched:
         right=[right[index] for index in kept],
         partial=min(populated) > 0 and len(kept) != max(populated),
     )
+
+
+def _measured_or_mapped_reason(
+    *,
+    gapped: frozenset[str],
+    mapping: RetailMapping,
+    gap_semantic: str,
+    mapped_semantic: str,
+) -> str:
+    """The cause a *measured* headline has, falling back to its mapping's.
+
+    `#431` item 2. Revenue, units and cost answer `incomplete_column_coverage`
+    when their own column has blank cells; discount and returns answered only
+    from the mapping, which knows *absent* and *ambiguous* and nothing about
+    coverage. So a present-but-gapped discount column reported
+    `required_input_unavailable` -- "the file does not contain
+    discount_amount" -- of a column already in the reader's export.
+
+    **Composed with `_unavailable_reason`, not a replacement for it.** `#431`
+    proposed passing `headline_reason` instead, which would have dropped the
+    ambiguity cause: a column named only `discount` states no measure kind, and
+    `ambiguous_mapping` is what tells the reader their *label* is the problem
+    rather than their data. Coverage first because it is the narrower finding;
+    the mapping's answer stands when the column is whole.
+
+    **The two semantics differ for returns, and that is the point.** Returns is
+    derived from admitted return *revenue* -- `RRA-003` admits "no
+    independently mapped return-amount measure" -- so the column whose coverage
+    can refuse it is `revenue`, while the mapping that can call it ambiguous is
+    `returns`. Naming both is what lets `RRA-003`:93 refuse revenue and returns
+    with one cause instead of two.
+    """
+    if gap_semantic in gapped:
+        return REASON_INCOMPLETE_COVERAGE
+    return _unavailable_reason(mapping, mapped_semantic)
 
 
 def _unavailable_reason(mapping: RetailMapping, semantic: str) -> str:
