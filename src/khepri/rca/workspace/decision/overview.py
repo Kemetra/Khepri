@@ -117,8 +117,19 @@ def _admitted(projection: ViewProjection) -> OverviewReading:
 
 
 def _reading(outcome: ViewOutcome) -> OverviewReading:
-    """The outcome as a surface reads it, kept whole in all three kinds."""
-    if outcome.projection is None:
+    """The outcome as a surface reads it, dispatched on the kind it declares.
+
+    Dispatching on `kind` and not on `projection is None` is the fail-closed
+    half, and the difference is not theoretical: `ViewOutcome` is a frozen
+    dataclass with no kind-to-payload validation, so a refused outcome carrying
+    a projection is constructible. Branching on the payload would render its
+    rows under an admitted status and drop the refusal -- showing a customer
+    figures the package refused, which is precisely what §Invariants' "no
+    partial projection" and `FR-164`'s "no surface ... softens a refusal"
+    forbid. An admitted outcome with no projection falls here too, and yields
+    no figures rather than inventing any.
+    """
+    if outcome.kind != KIND_ADMITTED or outcome.projection is None:
         return OverviewReading(status=outcome.kind, refusal=outcome.refusal)
     return _admitted(outcome.projection)
 

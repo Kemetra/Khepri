@@ -60,11 +60,18 @@ _DECISION_DIR = pathlib.Path(seam.__file__).parent
 def _decision_modules() -> tuple[pytest.param, ...]:
     """Every module under `decision/`, parsed and named. Discovered, never listed.
 
-    A listed set of files would pass while a ninth module quietly computed.
+    A listed set of files would pass while a ninth module quietly computed, and
+    `rglob` rather than `glob` for the same reason one level down: a nested
+    subpackage is still a decision read model, and every prohibition here must
+    reach it. The id is the relative path so two `overview.py` cannot collide.
     """
     return tuple(
-        pytest.param(path.name, ast.parse(path.read_text(encoding="utf-8")), id=path.name)
-        for path in sorted(_DECISION_DIR.glob("*.py"))
+        pytest.param(
+            str(path.relative_to(_DECISION_DIR)),
+            ast.parse(path.read_text(encoding="utf-8")),
+            id=str(path.relative_to(_DECISION_DIR)),
+        )
+        for path in sorted(_DECISION_DIR.rglob("*.py"))
     )
 
 
@@ -185,16 +192,42 @@ def test_each_identity_matches_what_the_registry_publishes(identity: seam.ViewId
     assert identity.empty_rule == published.empty_result_rule
 
 
-def test_every_view_version_is_a_string_literal_in_the_module() -> None:
-    """`FR-160` -- a literal constant, not a call result and not an f-string."""
+def _declared_versions() -> tuple[ast.expr, ...]:
+    """The `view_version` argument node of every `ViewIdentity(...)` in `seam.py`.
+
+    The argument node, not the resolved string: `FR-160` wants the version
+    written at the identity, and only the node can tell a literal from a name
+    that happens to hold one.
+    """
     tree = ast.parse(pathlib.Path(seam.__file__).read_text(encoding="utf-8"))
-    literals = {
-        node.value
+    return tuple(
+        keyword.value
         for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    }
-    for identity in seam.DECISION_VIEWS:
-        assert identity.view_version in literals
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "ViewIdentity"
+        for keyword in node.keywords
+        if keyword.arg == "view_version"
+    )
+
+
+def test_every_view_version_argument_is_a_string_literal() -> None:
+    """`FR-160` -- a literal at the identity, not a name, call result or f-string.
+
+    Checking that the version *text* occurs somewhere in the module is too
+    weak: `VERSION = "sv1.executive_overview.v1"` followed by
+    `ViewIdentity(view_version=VERSION, ...)` would satisfy it while moving the
+    pin away from the identity it pins.
+    """
+    declared = _declared_versions()
+    assert len(declared) == len(seam.DECISION_VIEWS)
+    for node in declared:
+        assert isinstance(node, ast.Constant), ast.dump(node)
+        assert isinstance(node.value, str), ast.dump(node)
+
+
+def test_the_declared_versions_are_the_ones_the_identities_carry() -> None:
+    """`FR-160` -- and the literals are the same eight the module exports."""
+    declared = {node.value for node in _declared_versions() if isinstance(node, ast.Constant)}
+    assert declared == {identity.view_version for identity in seam.DECISION_VIEWS}
 
 
 @pytest.mark.parametrize("name,tree", _decision_modules())
@@ -269,6 +302,41 @@ def test_a_refusal_is_carried_intact_for_governed_wording() -> None:
     reading = overview.read_overview(actions, _request())
     assert reading.status == ports.KIND_REFUSED
     assert reading.refusal is refusal
+    assert reading.figures == ()
+
+
+def test_a_refusal_carrying_a_projection_is_still_a_refusal() -> None:
+    """§Invariants -- "no partial projection", and `FR-164`'s no softening.
+
+    `ViewOutcome` is a frozen dataclass with no kind-to-payload validation, so
+    this shape is constructible. A read model that branched on the payload
+    rather than the kind would render these rows under an admitted status and
+    drop the refusal -- showing a customer figures the package refused, which
+    is the whole failure this program exists to prevent.
+    """
+    refusal = ports.ViewRefusal(cause="unsupported_filter")
+    contradictory = ports.ViewOutcome(
+        kind=ports.KIND_REFUSED,
+        refusal=refusal,
+        projection=ports.ViewProjection(
+            view_id=seam.EXECUTIVE_OVERVIEW.view_id,
+            view_version=seam.EXECUTIVE_OVERVIEW.view_version,
+            fields=("metric", "value", "population", "versions"),
+            rows=(("revenue", "700.00", "complete", ()),),
+        ),
+    )
+    actions, _ = _actions(contradictory)
+    reading = overview.read_overview(actions, _request())
+    assert reading.status == ports.KIND_REFUSED
+    assert reading.figures == ()
+    assert reading.refusal is refusal
+
+
+def test_an_admitted_outcome_with_no_projection_invents_no_figure() -> None:
+    """Fail closed: nothing to show is shown as nothing, not as an empty success."""
+    actions, _ = _actions(ports.ViewOutcome(kind=ports.KIND_ADMITTED))
+    reading = overview.read_overview(actions, _request())
+    assert reading.status == ports.KIND_ADMITTED
     assert reading.figures == ()
 
 
