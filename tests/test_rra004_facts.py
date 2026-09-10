@@ -204,8 +204,23 @@ def test_selling_price_and_margin_use_the_same_rows_as_their_pair() -> None:
     `sales_complete_revenue_units` and on no other population, because ASP is a
     *divisor*: dropping a row moves the average rather than the count, and a
     reader cannot detect it from the published figures.
-    `financial_complete_revenue_cost` carries no such clause, so gross margin
-    narrows to the matched rows and discloses that it did.
+    **The margin half was wrong too, and `#431` item 4 caught it.** This
+    docstring used to argue that `financial_complete_revenue_cost` "carries no
+    such clause, so gross margin narrows to the matched rows and discloses that
+    it did". The population's own *definition* is the clause: `RRA-004`:25 makes
+    it "financial rows with complete revenue and extended cost", and its §The
+    metric assignments are exact table assigns cost, gross profit and gross
+    margin to it together. A gapped cost column means that population does not
+    exist over the admitted rows, so all three refuse -- which is what the
+    oracle's `PARTIAL_NULL` case has said all along.
+
+    The contrast with ASP and AOV survives and is sharper for it.
+    `sales_complete_revenue_transactions` *is* the matched rows by definition, so
+    AOV narrowing to them stays inside its assigned population. Narrowing
+    profit and margin **replaces** their assigned population with a different
+    one, which `RRA-004`:50 forbids: derived facts "consume one
+    population-certified aggregate" and "never combine unrelated whole-package
+    totals merely because both exist".
 
     **The ASP half asserted 50.00 and was wrong, which review caught.** The
     second row carries units and no revenue -- eligible and unmatched -- so the
@@ -220,9 +235,10 @@ def test_selling_price_and_margin_use_the_same_rows_as_their_pair() -> None:
         b"date,revenue,units,cogs\n2026-01-05,100.00,2,60.00\n2026-01-06,50.00,1,\n"
     )
     assert margin.value(METRIC_REVENUE) == "150.00"
-    assert margin.value(METRIC_GROSS_PROFIT) == "40.00"
-    assert margin.value(METRIC_GROSS_MARGIN) == "0.4000"
-    assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in margin.caveats
+    assert margin.fact(METRIC_GROSS_PROFIT) is None
+    assert margin.fact(METRIC_GROSS_MARGIN) is None
+    # Nothing was derived over matched rows here, so nothing may say it was.
+    assert CAVEAT_DERIVED_OVER_MATCHED_ROWS not in margin.caveats
 
 
 def test_a_measure_absent_altogether_is_not_a_partial_pairing() -> None:
@@ -2348,3 +2364,77 @@ def test_an_ambiguously_labelled_discount_still_says_the_label_is_the_problem() 
     refused = result.refusal(METRIC_DISCOUNT)
     assert refused is not None
     assert refused.reason == REASON_AMBIGUOUS_MAPPING
+
+
+def test_a_gapped_cost_refuses_the_whole_population_the_oracle_assigns_it() -> None:
+    """`#431` item 4, and the oracle's `PARTIAL_NULL` case, driven through the builder.
+
+    `rra_calculation_oracle.PARTIAL_NULL_EXPECTED` refuses cost, gross profit
+    and gross margin together and publishes revenue and units, because
+    `RRA-004`:25's `financial_complete_revenue_cost` is "financial rows with
+    complete revenue and extended cost" and the assignment table gives all three
+    that one population. Its docstring carried the `_RED` marker for this.
+
+    Production published `gross_profit` `180.00` and `gross_margin` `0.4500`
+    while **refusing the cost they are derived from** -- a profit computed from a
+    figure the same package declines to state. `RRA-004`:50 bars exactly that:
+    derived facts "consume one population-certified aggregate" and "never
+    combine unrelated whole-package totals merely because both exist".
+
+    Revenue and units stand, as they must: `RRA-004`:96 says "Missing cost never
+    suppresses complete revenue", and both columns are whole here.
+    """
+    result = package(
+        b"date,revenue,units,cogs\n"
+        b"2026-03-04,400.00,10,220.00\n"
+        b"2026-03-11,600.00,15,\n"
+    )
+
+    assert result.value(METRIC_REVENUE) == "1000.00"
+    assert result.value(METRIC_UNITS) == "25"
+    assert result.fact(METRIC_COST) is None
+    assert result.fact(METRIC_GROSS_PROFIT) is None
+    assert result.fact(METRIC_GROSS_MARGIN) is None
+
+
+def test_a_gapped_cost_gives_profit_and_margin_the_cause_cost_has() -> None:
+    """One population refusing means one cause, not three.
+
+    Cost already answered `incomplete_column_coverage` through `headline_reason`;
+    profit and margin read `additive_reason`, which defaults to
+    `required_input_unavailable` -- "the file does not contain" a cost column
+    that is present and gapped. The same misdirection `#442` removed from
+    discount and returns.
+    """
+    result = package(
+        b"date,revenue,units,cogs\n"
+        b"2026-03-04,400.00,10,220.00\n"
+        b"2026-03-11,600.00,15,\n"
+    )
+
+    causes = {
+        metric: result.refusal(metric).reason
+        for metric in (METRIC_COST, METRIC_GROSS_PROFIT, METRIC_GROSS_MARGIN)
+    }
+    assert causes == {
+        METRIC_COST: REASON_INCOMPLETE_COVERAGE,
+        METRIC_GROSS_PROFIT: REASON_INCOMPLETE_COVERAGE,
+        METRIC_GROSS_MARGIN: REASON_INCOMPLETE_COVERAGE,
+    }
+
+
+def test_a_matched_row_average_still_discloses_that_it_narrowed() -> None:
+    """The guard: refusing profit and margin must not silence the caveat everywhere.
+
+    `CAVEAT_DERIVED_OVER_MATCHED_ROWS` is still the honest disclosure for AOV
+    and ASP, whose assigned populations (`sales_complete_revenue_transactions`,
+    `sales_complete_revenue_units`) *are* the matched rows. Only the margin
+    pairing stops contributing, because its metrics no longer publish. Killing
+    the caveat outright would trade an over-claim for a silence.
+    """
+    result = package(
+        b"date,revenue,invoice_no\n2026-01-05,100.00,INV-1\n2026-01-06,,INV-2\n"
+    )
+
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "100.00"
+    assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in result.caveats
