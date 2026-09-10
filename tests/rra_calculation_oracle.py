@@ -605,20 +605,34 @@ PARTIAL_NULL_EXPECTED = {
     "gross_profit": None,
     "gross_margin": None,
 }
-"""_RED: production returns cost "220.00", gross_profit "180.00",
-gross_margin "0.4500", against an oracle that refuses all three.
+"""GREEN. Production agrees with all five expectations above.
 
-Empirically confirmed. Production sums the one present cost (220.00) and then
-computes gross profit over the *matched* rows only -- 400.00 - 220.00 = 180.00 --
-and margin 180.00 / 400.00 = 0.4500, disclosing it with the
-`derived_metrics_use_matched_rows` caveat. Revenue "1000.00" and units "25" agree
-with the oracle, as they must: `RRA-004` says "Missing cost never suppresses
-complete revenue", and both of those columns are complete here.
+**Kept with its history rather than reduced to a passing row**, because the
+route matters to the next reader: this case carried a `_RED` marker through two
+separate defects and closing them took two different arguments.
 
-The violated rule is `RRA-004`'s population contract: "Headline revenue, cost,
-units, discounts, and returns have no partial-coverage vocabulary and therefore
-refuse when a required admitted column has gaps." A caveat is not a population. A
-customer reading cost 220.00 beside revenue 1000.00 reads a 78% margin business.
+*Was:* cost "220.00", gross_profit "180.00", gross_margin "0.4500", against an
+oracle refusing all three -- production summed the one present cost and then
+derived the pair over the *matched* rows (400.00 - 220.00 = 180.00, and
+180.00 / 400.00 = 0.4500), disclosing it with the
+`derived_metrics_use_matched_rows` caveat.
+
+*Closed in two parts.* Headline cost came first, under `RRA-004`'s population
+contract: "Headline revenue, cost, units, discounts, and returns have no
+partial-coverage vocabulary and therefore refuse when a required admitted column
+has gaps." That left the sharper half standing -- a `gross_profit` derived from a
+cost the same package **refused to state**. `#431` item 4 closed it on the
+assignment table: `RRA-004`:25 makes `financial_complete_revenue_cost`
+"financial rows with complete revenue and extended cost" and assigns cost, gross
+profit and gross margin to it *together*, so a gapped cost column means the
+assigned population is not there and all three refuse. `RRA-004`:50 forbids the
+alternative outright -- derived facts "consume one population-certified
+aggregate" and "never combine unrelated whole-package totals merely because both
+exist".
+
+**A caveat is not a population**, which is the sentence this case existed to
+prove. Revenue "1000.00" and units "25" always agreed, as they must: "Missing
+cost never suppresses complete revenue", and both columns are complete here.
 """
 
 
