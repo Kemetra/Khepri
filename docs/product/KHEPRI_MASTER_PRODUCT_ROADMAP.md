@@ -1838,8 +1838,8 @@ what changed.*
 
 ### Do not start now
 
-- W1 persistence;
-- C1 comparison;
+- ~~W1 persistence;~~ **corrected in place: the program is merged** — all eleven slices, item 17 and §16's `W1` row. **One prohibition survives and is the reason this line is struck rather than deleted:** `W1-11` content-free repeat-use telemetry stays excluded, needing the same `KHEPRI-DEC-015` amendment as `R8-08`, which `KHEPRI-DEC-034` §2 declines to be a precedent for. Persistence may be built on; `W1-11` may not be started;
+- ~~C1 comparison;~~ **corrected in place: the program is merged** — all eight slices and all four `G4` tasks, items 19–20. Nothing in `C1` is barred any longer, and this bullet is spent. It carries three owner readings forward (the retail-day boundary, the seven-day content horizon against `KHEPRI-DEC-033` §2, and `runtime/shell_assets/` being unnamed by any active artifact), none of which is a prohibition on starting work;
 - ~~D1 dashboard;~~ **corrected in place: `D1-01` is now item 23 and may start.** What stays barred is D1 *implementation* — `D1-02` through `D1-11` — until the owner merges an active specification governing the D1 product-code files. Writing a read model, a KPI module, or a filter surface before then is the prohibition this line still carries;
 - billing;
 - agency;
