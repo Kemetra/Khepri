@@ -2259,3 +2259,92 @@ def test_a_well_signed_return_still_publishes_both_populations() -> None:
 
     assert result.value(METRIC_REVENUE) == "70.00"
     assert result.value(METRIC_RETURNS) == "30.00"
+
+
+def test_a_gapped_discount_states_incomplete_coverage_not_an_absent_column() -> None:
+    """`#431` item 2 -- the defect the revenue case already fixed, still live here.
+
+    `test_a_gapped_column_states_a_cause_the_reader_can_act_on` closed it for
+    revenue; discount kept it.
+
+    Revenue, units and cost route their cause through `headline_reason`, which
+    answers `incomplete_column_coverage` when the mapped column has blank cells.
+    Discount alone still went through `_unavailable_reason`, which knows only
+    *absent* and *ambiguous* -- so a present-but-gapped discount column was
+    reported as `required_input_unavailable`, rendering as "the file does not
+    contain discount_amount" and telling the reader to add a column that is
+    already in their export.
+    """
+    content = (
+        b"date,revenue,units,discount_amount\n"
+        b"2026-01-05,100.00,2,5.00\n"
+        b"2026-01-06,120.00,3,\n"
+    )
+
+    result = package(content)
+
+    refused = result.refusal(METRIC_DISCOUNT)
+    assert refused is not None
+    assert refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_a_violating_return_gives_returns_the_same_cause_as_revenue() -> None:
+    """`RRA-003`:93 refuses two populations, so it must not state two causes.
+
+    `#441` closed the refusal and left this: revenue answered
+    `incomplete_column_coverage` while returns answered
+    `required_input_unavailable` -- "the file does not contain returns" -- of a
+    file whose return row is right there and whose revenue breaks the sign
+    contract. One requirement, one cause.
+
+    Returns is derived from admitted return *revenue*; `RRA-003` admits no
+    independently mapped return-amount measure. So its coverage cause is the
+    revenue column's, which is what the fix reasons from.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    revenue_refused = result.refusal(METRIC_REVENUE)
+    returns_refused = result.refusal(METRIC_RETURNS)
+    assert revenue_refused is not None
+    assert returns_refused is not None
+    assert returns_refused.reason == revenue_refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_an_absent_discount_column_still_says_it_is_absent() -> None:
+    """The guard on the fix above: `incomplete_column_coverage` must not swallow the absent case.
+
+    A column that is genuinely not in the export needs the code whose wording
+    tells the reader to add it. Routing every discount refusal through the
+    coverage cause would trade one piece of false advice for another.
+    """
+    content = b"date,revenue,units\n2026-01-05,100.00,2\n"
+
+    result = package(content)
+
+    refused = result.refusal(METRIC_DISCOUNT)
+    assert refused is not None
+    assert refused.reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_an_ambiguously_labelled_discount_still_says_the_label_is_the_problem() -> None:
+    """The second guard: the ambiguity cause is load-bearing and must survive.
+
+    A column named only `discount` states no measure kind -- rate, percentage,
+    or amount -- so `RRA-003` refuses it rather than summing it as currency, and
+    `ambiguous_mapping` is the cause that tells the reader their *label* is what
+    falls short. `#431` item 2 proposed replacing `_unavailable_reason` outright,
+    which would have dropped this; the fix composes with it instead.
+    """
+    content = b"date,revenue,units,discount\n2026-01-05,100.00,2,5.00\n"
+
+    result = package(content)
+
+    refused = result.refusal(METRIC_DISCOUNT)
+    assert refused is not None
+    assert refused.reason == REASON_AMBIGUOUS_MAPPING
