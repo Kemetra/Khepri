@@ -42,6 +42,14 @@ _DERIVING_CALLS = ("sum", "min", "max", "round", "abs", "sorted")
 #: mechanical.
 _REGISTRY_LOOKUPS = ("published_versions", "published_history", "view_ids", "define_view")
 
+#: `FR-159` "may not read raw rows", and `RCA-006`'s package boundary: the RCA
+#: side calls a Protocol and never imports a concrete RRA implementation.
+_BARRED_IMPORTS = (
+    "khepri.rra",
+    "khepri.rca.workspace.store",
+    "khepri.rca.workspace.persistence",
+)
+
 #: Arithmetic operators. `FR-159` bars sum, average, difference and percentage
 #: alike, and the operator is the smallest thing all four have in common.
 _ARITHMETIC = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
@@ -58,6 +66,38 @@ def _decision_modules() -> tuple[pytest.param, ...]:
         pytest.param(path.name, ast.parse(path.read_text(encoding="utf-8")), id=path.name)
         for path in sorted(_DECISION_DIR.glob("*.py"))
     )
+
+
+def _called_names(tree: ast.Module) -> tuple[str, ...]:
+    """Every name this module calls, by either `f(...)` or `x.f(...)`.
+
+    One collector for three prohibitions. Extracted rather than repeated in
+    each test because CodeScene counts nested blocks per function, and the
+    inline form put a conditional inside a loop in every one of them.
+    """
+    return tuple(
+        node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+    )
+
+
+def _operators(tree: ast.Module) -> tuple[ast.operator, ...]:
+    """Every binary and augmented-assignment operator this module applies."""
+    return tuple(
+        node.op for node in ast.walk(tree) if isinstance(node, ast.BinOp | ast.AugAssign)
+    )
+
+
+def _imported_names(tree: ast.Module) -> tuple[str, ...]:
+    """Every module name this module imports, by either statement form."""
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.append(node.module or "")
+        elif isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+    return tuple(names)
 
 
 class _FakePort:
@@ -160,22 +200,15 @@ def test_every_view_version_is_a_string_literal_in_the_module() -> None:
 @pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_resolves_a_version_at_read_time(name: str, tree: ast.Module) -> None:
     """`FR-160` -- enumeration is the `latest` alias reached by another spelling."""
-    called = {
-        node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-    }
-    assert not called & set(_REGISTRY_LOOKUPS), name
+    for called in _called_names(tree):
+        assert called not in _REGISTRY_LOOKUPS, f"{name}: {called}"
 
 
 @pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_performs_arithmetic(name: str, tree: ast.Module) -> None:
     """`FR-159` -- "whatever the arithmetic's size", so the operator is the test."""
-    for node in ast.walk(tree):
-        if isinstance(node, ast.BinOp):
-            assert not isinstance(node.op, _ARITHMETIC), f"{name}: {type(node.op).__name__}"
-        if isinstance(node, ast.AugAssign):
-            assert not isinstance(node.op, _ARITHMETIC), f"{name}: {type(node.op).__name__}"
+    for operator in _operators(tree):
+        assert not isinstance(operator, _ARITHMETIC), f"{name}: {type(operator).__name__}"
 
 
 @pytest.mark.parametrize("name,tree", _decision_modules())
@@ -186,27 +219,16 @@ def test_no_decision_module_derives_a_figure_by_call(name: str, tree: ast.Module
     identity, so a read model that reorders has replaced a published decision
     with a local one.
     """
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            called = (
-                node.func.id
-                if isinstance(node.func, ast.Name)
-                else getattr(node.func, "attr", "")
-            )
-            assert called not in _DERIVING_CALLS, f"{name}: {called}"
-            assert called != "sort", f"{name}: sort"
+    for called in _called_names(tree):
+        assert called not in _DERIVING_CALLS, f"{name}: {called}"
+        assert called != "sort", f"{name}: sort"
 
 
 @pytest.mark.parametrize("name,tree", _decision_modules())
 def test_no_decision_module_reaches_rra_or_raw_rows(name: str, tree: ast.Module) -> None:
     """`FR-159` "may not read raw rows", and `RCA-006`'s package boundary."""
-    barred = ("khepri.rra", "khepri.rca.workspace.store", "khepri.rca.workspace.persistence")
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module:
-            assert not node.module.startswith(barred), f"{name}: {node.module}"
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                assert not alias.name.startswith(barred), f"{name}: {alias.name}"
+    for imported in _imported_names(tree):
+        assert not imported.startswith(_BARRED_IMPORTS), f"{name}: {imported}"
 
 
 def test_the_request_names_no_metric_so_the_view_selects() -> None:
