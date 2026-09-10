@@ -2162,3 +2162,100 @@ def test_gross_margin_refuses_a_negative_matched_revenue() -> None:
     refused = result.refusal(METRIC_GROSS_MARGIN)
     assert refused is not None
     assert refused.reason == REASON_NEGATIVE_BASE
+
+
+def test_a_positive_return_revenue_refuses_returns_and_the_revenue_population() -> None:
+    """`RRA-003`:93 refuses both, and skipping the row publishes a wrong revenue.
+
+    "A return event with missing event kind or revenue, or with revenue whose
+    sign violates this contract, refuses returns **and the financial revenue
+    population**." A return's revenue is non-positive; `+30.00` on a return row
+    violates that contract.
+
+    `_returns_magnitude` kept only `value <= 0`, so the illegal row was dropped
+    from returns while `_monetary` still summed it into headline revenue. The
+    reader then saw `330.00` -- a figure that includes a reversal as a sale --
+    beside a returns figure that silently excluded it. Neither number is the one
+    the contract admits, and the specification asks for no number at all.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.fact(METRIC_RETURNS) is None
+    assert result.fact(METRIC_REVENUE) is None
+    # The sale-only populations are untouched: the violation is in the financial
+    # revenue population, and `RRA-004`:97 leaves independently proven facts
+    # standing.
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+
+
+def test_a_missing_return_revenue_refuses_the_same_two_populations() -> None:
+    """The other half of `RRA-003`:93, which must not answer differently.
+
+    "Missing event kind or revenue, **or** with revenue whose sign violates this
+    contract" is one requirement with two triggers, so a blank revenue on a
+    return row refuses exactly what a positive one does. This case already
+    reached the refusal through the ordinary gap path; asserted here so the two
+    triggers are pinned together and a later change cannot fix one and drop the
+    other.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.fact(METRIC_RETURNS) is None
+    assert result.fact(METRIC_REVENUE) is None
+
+
+def test_a_violating_return_names_a_cause_the_reader_can_act_on() -> None:
+    """Not `required_input_unavailable`, which would be false and useless here.
+
+    That code renders as "the file does not contain revenue" and tells the
+    reader to add the column. The column is present; one of its rows breaks the
+    sign contract. `additive_reason` defaults to `required_input_unavailable`,
+    so refusing revenue without routing the cause would have published exactly
+    that misdirection -- the defect `test_a_gapped_column_states_a_cause_the_
+    reader_can_act_on` records for the gap case.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_a_well_signed_return_still_publishes_both_populations() -> None:
+    """The guard must refuse the violation and nothing else.
+
+    A negative return revenue is the ordinary admitted case: revenue is the net
+    financial population including the reversal, and returns is its positive
+    magnitude. Asserted so the refusal above cannot be widened into refusing
+    every package that contains a return -- which would be `#326`'s
+    over-refusal direction rather than this one's.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.value(METRIC_REVENUE) == "70.00"
+    assert result.value(METRIC_RETURNS) == "30.00"

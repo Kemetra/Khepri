@@ -705,8 +705,31 @@ def _totals(
     def whole(semantic: str, total: object) -> object:
         return None if semantic in measures.gapped_semantics else total
 
+    # `RRA-003`:93 -- a return row whose revenue is missing or positive "refuses
+    # returns *and* the financial revenue population". Both, and in this
+    # function, for the reason the currency and basis gates are here: the
+    # published figure is the only one anybody reads. `_returns_magnitude` used
+    # to drop the illegal row and leave `_monetary` summing it into the
+    # headline, so the reader saw a reversal counted as a sale beside a returns
+    # figure that silently excluded it -- two wrong numbers where the contract
+    # admits none.
+    #
+    # Carried through `gapped_semantics` rather than `additive_reason` so the
+    # cause reaches *revenue* alone. `additive_reason` is the fall-through for
+    # cost, units and discount too, and a violation in the return population
+    # says nothing about those columns. `incomplete_column_coverage` is the
+    # governed code because the revenue column does not cover a row of the
+    # population it must supply -- and it is the same code the missing-revenue
+    # half of `RRA-003`:93 already reaches through the ordinary gap path, so one
+    # requirement reports one cause. The vocabulary is closed (`RRA-009`), and a
+    # dedicated sign-violation code would be an amendment rather than a slice.
+    returns_violated = _return_revenue_violates_its_contract(measures)
     return _Totals(
-        revenue=whole(SEMANTIC_REVENUE, _monetary(admitted_events, measures.revenue)),
+        revenue=(
+            None
+            if returns_violated
+            else whole(SEMANTIC_REVENUE, _monetary(admitted_events, measures.revenue))
+        ),
         units=whole(SEMANTIC_UNITS, _sum_integer(measures.units)),
         # `RRA-004`:92 -- "Transactions count posted sales only." A return
         # is a posted event and belongs in revenue and units; it is not a
@@ -734,8 +757,12 @@ def _totals(
         # forbids the alternative outright: "No independently mapped
         # return-amount measure is admitted." A return event states its own
         # magnitude, so a separate column is a second answer to one question.
-        returns=_returns_magnitude(admitted_events, measures),
-        gapped_semantics=measures.gapped_semantics,
+        returns=None if returns_violated else _returns_magnitude(admitted_events, measures),
+        gapped_semantics=(
+            measures.gapped_semantics | {SEMANTIC_REVENUE}
+            if returns_violated
+            else measures.gapped_semantics
+        ),
         series_revenue=_monetary(admitted_events, measures.revenue),
         series_units=_sum_integer(measures.units),
     )
@@ -1717,6 +1744,31 @@ def _positive_units(measures: _Measures) -> list:
     ]
 
 
+def _return_revenue_violates_its_contract(measures: _Measures) -> bool:
+    """Whether any admitted return row's revenue breaks `RRA-003`:93.
+
+    "A return event with missing event kind or revenue, or with revenue whose
+    sign violates this contract, refuses returns and the financial revenue
+    population." A return's revenue is non-positive, so a missing or positive
+    value on a return row is that violation.
+
+    **Missing event kind is not checked here, because it cannot reach this
+    point.** `admission._one_kind` raises `EventsRefused` for any kind that is
+    neither a sale nor a return, so `_Measures.event_kinds` is `list[str]` and
+    never carries a blank. Re-checking it would be a branch no input can enter.
+
+    `strict=True`, unlike the filter this replaces. `event_kinds` and `revenue`
+    are built from one frame and cannot differ in length -- but a silent
+    truncation is how that stops being true without a test noticing, and the
+    signature path already pairs them strictly.
+    """
+    return any(
+        value is None or value > 0
+        for value, kind in zip(measures.revenue, measures.event_kinds, strict=True)
+        if kind == EVENT_RETURN
+    )
+
+
 def _returns_magnitude(
     admitted_events: AdmittedEvents,
     measures: _Measures,
@@ -1740,7 +1792,7 @@ def _returns_magnitude(
     """
     magnitudes = [
         value
-        for value, kind in zip(measures.revenue, measures.event_kinds, strict=False)
+        for value, kind in zip(measures.revenue, measures.event_kinds, strict=True)
         if kind == EVENT_RETURN and value is not None and value <= 0
     ]
     if not magnitudes:
