@@ -780,6 +780,59 @@ def _on_attested_basis(total: Decimal | None, attested: bool) -> Decimal | None:
     return total if attested else None
 
 
+def _margin_population_exists(totals: _Totals) -> bool:
+    """Whether `financial_complete_revenue_cost` exists over the admitted rows.
+
+    `RRA-004`:25 defines it as "financial rows with complete revenue and
+    extended cost", and §The metric assignments are exact gives cost, gross
+    profit and gross margin that one population *together*. So a gapped cost
+    column does not narrow the population -- it means the assigned population
+    is not there, and all three refuse.
+
+    This is the rule the oracle's `PARTIAL_NULL` case has stated all along, with
+    a `_RED` marker on production's `gross_profit` `180.00` and `gross_margin`
+    `0.4500`. Those were derived from a cost the same package **refused**, which
+    `RRA-004`:50 bars outright: derived facts "consume one population-certified
+    aggregate" and "never combine unrelated whole-package totals merely because
+    both exist".
+
+    **Both measures, not just cost.** The population is complete revenue *and*
+    extended cost, so a gapped revenue column empties it exactly as a gapped
+    cost column does. Review on `#443` caught this half missing, and the mirror
+    case is the more incoherent of the two: revenue refused, cost published
+    whole at `520.00`, and a profit of `180.00` derived from the matched rows --
+    a reader seeing cost `520.00` beside profit `180.00` infers a revenue of
+    `700.00` that the package declined to state.
+
+    Cost itself still publishes there, and must: `RRA-004`:46 refuses a headline
+    when *its own* column has gaps, and cost's is whole. Only the derived pair
+    depends on both.
+
+    **Not the same question as narrowing AOV or ASP.**
+    `sales_complete_revenue_transactions` *is* the matched rows by definition, so
+    AOV narrowing to them stays inside its assigned population and discloses it
+    with a caveat. Profit and margin have no such population to fall back to.
+    """
+    return not {SEMANTIC_REVENUE, SEMANTIC_COST} & totals.gapped_semantics
+
+
+def _pairings_to_disclose(
+    orders: _Matched,
+    selling: _Matched,
+    margin: _Matched,
+    *,
+    margin_publishes: bool,
+) -> tuple[_Matched, ...]:
+    """The pairings whose narrowing a caveat may still claim.
+
+    `CAVEAT_DERIVED_OVER_MATCHED_ROWS` discloses that a published figure was
+    derived over matched rows. Once profit and margin refuse, the margin pairing
+    has nothing published to disclose, and leaving it in made the package assert
+    a narrowing that did not happen.
+    """
+    return (orders, selling, margin) if margin_publishes else (orders, selling)
+
+
 def _margin_inputs(
     admitted_events: AdmittedEvents,
     margin: _Matched,
@@ -1139,7 +1192,13 @@ def _build(
     # that reconciles against neither the revenue nor the units beside it.
     complete_selling = not _unmatched(sale_revenue, _positive_units(measures))
     margin = _matched(measures.revenue, measures.cost)
-    if any(pairing.partial for pairing in (orders, selling, margin)):
+    margin_publishes = _margin_population_exists(totals)
+    if any(
+        pairing.partial
+        for pairing in _pairings_to_disclose(
+            orders, selling, margin, margin_publishes=margin_publishes
+        )
+    ):
         caveats.append(CAVEAT_DERIVED_OVER_MATCHED_ROWS)
 
     _add_ratio(
@@ -1178,10 +1237,15 @@ def _build(
     margin_revenue, gross_profit = _margin_inputs(
         admitted_events, margin, admitted.contract.basis
     )
-    if repeated_rows:
+    if repeated_rows or not margin_publishes:
         # `_margin_inputs` reads the measure lists rather than the refused
         # totals, so without this the pair published a doubled margin beside the
         # revenue and cost it was derived from -- both of which had refused.
+        #
+        # `not margin_publishes` is `#431` item 4, and it is the same sentence
+        # one condition wider: a gapped cost column refused the cost headline
+        # and left profit and margin publishing over the matched rows, so the
+        # package stated a profit derived from a figure it declined to give.
         margin_revenue, gross_profit = None, None
     add(
         METRIC_GROSS_PROFIT,
@@ -1189,7 +1253,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
-        reason=totals.additive_reason,
+        reason=headline_reason(SEMANTIC_COST),
     )
     _add_ratio(
         add,
@@ -1199,7 +1263,7 @@ def _build(
         unit_kind=UNIT_RATIO,
         precision=RATIO_PRECISION,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
-        unavailable_reason=totals.additive_reason,
+        unavailable_reason=headline_reason(SEMANTIC_COST),
     )
 
     # Ordered to match `SERIES_MEASURES`, and asserted against it below: the
