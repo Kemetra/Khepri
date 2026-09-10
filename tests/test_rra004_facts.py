@@ -2438,3 +2438,29 @@ def test_a_matched_row_average_still_discloses_that_it_narrowed() -> None:
 
     assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "100.00"
     assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in result.caveats
+
+
+def test_a_gapped_revenue_refuses_the_pair_that_needs_it_too() -> None:
+    """The mirror of item 4, caught by review on `#443`.
+
+    `financial_complete_revenue_cost` is complete revenue **and** extended cost,
+    so a gapped revenue column empties the population exactly as a gapped cost
+    column does. The first fix guarded only cost, which left the more incoherent
+    half standing: revenue refused, cost published whole, and a profit derived
+    from the matched rows -- so a reader seeing cost `520.00` beside profit
+    `180.00` infers a revenue of `700.00` the package declined to state.
+
+    **Cost still publishes, and must.** `RRA-004`:46 refuses a headline when
+    *its own* column has gaps; cost's column is whole here. Only the derived
+    pair depends on both measures.
+    """
+    result = package(
+        b"date,revenue,units,cogs\n"
+        b"2026-03-04,400.00,10,220.00\n"
+        b"2026-03-11,,15,300.00\n"
+    )
+
+    assert result.fact(METRIC_REVENUE) is None
+    assert result.value(METRIC_COST) == "520.00"
+    assert result.fact(METRIC_GROSS_PROFIT) is None
+    assert result.fact(METRIC_GROSS_MARGIN) is None

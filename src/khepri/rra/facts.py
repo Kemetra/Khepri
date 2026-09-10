@@ -796,12 +796,24 @@ def _margin_population_exists(totals: _Totals) -> bool:
     aggregate" and "never combine unrelated whole-package totals merely because
     both exist".
 
+    **Both measures, not just cost.** The population is complete revenue *and*
+    extended cost, so a gapped revenue column empties it exactly as a gapped
+    cost column does. Review on `#443` caught this half missing, and the mirror
+    case is the more incoherent of the two: revenue refused, cost published
+    whole at `520.00`, and a profit of `180.00` derived from the matched rows --
+    a reader seeing cost `520.00` beside profit `180.00` infers a revenue of
+    `700.00` that the package declined to state.
+
+    Cost itself still publishes there, and must: `RRA-004`:46 refuses a headline
+    when *its own* column has gaps, and cost's is whole. Only the derived pair
+    depends on both.
+
     **Not the same question as narrowing AOV or ASP.**
     `sales_complete_revenue_transactions` *is* the matched rows by definition, so
     AOV narrowing to them stays inside its assigned population and discloses it
     with a caveat. Profit and margin have no such population to fall back to.
     """
-    return SEMANTIC_COST not in totals.gapped_semantics
+    return not {SEMANTIC_REVENUE, SEMANTIC_COST} & totals.gapped_semantics
 
 
 def _pairings_to_disclose(
