@@ -4,7 +4,9 @@
 `RRA-014` (active), `RCA-006` (active), `RCA-007` (active), `RRA-011` (active), `RRA-012` (active),
 `RCA-005` (active) and `KHEPRI-DEC-015` (active), and decides nothing any of them left open.
 **Roadmap:** `D1-01`, first incomplete item on the critical path (§17 item 23). Its `C1`/`SV1`
-dependency is met on both halves; §16's `D1` row moved to `READY_FOR_PLAN` at `659b342` (`#439`).
+dependency is met on both halves. §16's `D1` row moved to `READY_FOR_PLAN` at `659b342` (`#439`)
+and returns to `BLOCKED` when this note lands, because the next actionable D1 task is then the
+owner-authored authority — the shape `SV1` carried before `SV1-01`.
 **Raised on:** `main` at `659b342`, after `#437` bound the semantic-view projection to the query
 orchestration and made a view over a scoped run return a projection rather than a refusal.
 **Consumed by:** the owner-authored specification that governs the D1 product-code files, and then
@@ -86,7 +88,9 @@ That puts availability and limitation *before* breadth, not after it — the inv
 dashboard, and the whole of Khepri's premise. The order is:
 
 1. **S-1 Executive Overview** — the ten core metrics for one run. First because it is the smallest
-   complete answer, and because `MetricAvailabilityView` can qualify it without another read.
+   complete answer, and because all ten are inside `MetricAvailabilityView`'s 22, so S-6 can qualify
+   every figure on it — which F-4 shows is not true of S-3 or S-4. That qualification is a second
+   request, not a free field on the first (F-3).
 2. **S-6 Exceptions, Caveats, and Refusals** — second, not last. `FR-140` keeps a governed absence
    intact through projection, and a reader who scrolls past the overview without meeting its
    caveats has already formed the conclusion the caveat exists to qualify.
@@ -120,7 +124,7 @@ and this table would be a second truth if it named metrics the registry does not
 | S-4 | `ProductCategoryView` | `sv1.product_category.v1` | single | `revenue_by_product`, `revenue_by_category`, `units_by_product`, `units_by_category` | `product`, `category` | `dimension`, `member`, `metric`, `value`, `population` | `stated_no_rows` |
 | S-5a | `BasketView` | `sv1.basket.v1` | single | `basket_attach_rate`, `basket_items_per_transaction` | `period` | `metric`, `value`, `population`, `versions` | `stated_absence` |
 | S-5b | `ConcentrationView` | `sv1.concentration.v1` | single | `concentration_curve`, `concentration_distinct_values`, `concentration_ranked_values`, `concentration_top_decile_share`, `concentration_top_quartile_share` | `product`, `category` | `dimension`, `metric`, `value`, `population` | `stated_absence` |
-| S-6 | `MetricAvailabilityView` | `sv1.metric_availability.v1` | either | all 22 published metrics | all five | `metric`, `availability`, `reason`, `versions` | `stated_absence` |
+| S-6 | `MetricAvailabilityView` | `sv1.metric_availability.v1` | either | 22 metrics — every one above **except the six series metrics**; see §6 F-4 | all five | `metric`, `availability`, `reason`, `versions` | `stated_absence` |
 | S-9 | `ReportEvidenceView` | `sv1.report_evidence.v1` | either | the 10 core | `period` | `figure`, `evidence`, `provenance`, `absence` | `stated_absence` |
 
 **The two empty rules are not interchangeable and the surface must render them differently.**
@@ -155,7 +159,7 @@ republication is a D1 change, not a transparent one.
 ## 5. The metric card, line by line
 
 §9 lists nine things every customer-visible KPI card must expose. **No single view supplies them,
-and this is the note's second finding** — a card is three projections plus the catalog.
+and this is the note's second finding** — a card is four projections plus the catalog.
 
 | §9 card line | Source | Read |
 |---|---|---|
@@ -235,6 +239,40 @@ not get a period-filtered overview; **it gets a refusal**. The control must be m
 different things wearing one row of the UI, and "no hidden state" is satisfied by
 `EffectiveRequest`, which states requested and definition-fixed filters back.
 
+### F-4. `MetricAvailabilityView` cannot qualify a single figure on S-3 or S-4
+
+Found by reconciling §4's counts rather than by reading the specification, and it is the one
+finding here that changes what a surface can promise.
+
+The source map projects **28 distinct metrics** across S-1…S-5b. `MetricAvailabilityView`
+publishes **22**. The six it does not carry are exactly the series metrics:
+
+```text
+revenue_by_store     units_by_store        <- every figure on S-3
+revenue_by_product   units_by_product      <- every figure on S-4
+revenue_by_category  units_by_category
+```
+
+`registry.py` explains why, and it is deliberate rather than an omission: `_series` composes
+`<measure>_by_<dimension>` over `SERIES_MEASURES` only, because "only those two are aggregated over
+a dimension", and `MetricAvailabilityView` selects whole governed *contracts* rather than series
+compositions. **So S-6 can state availability for every headline, comparison, basket and
+concentration metric, and for none of the breakdown figures.**
+
+`MetricAvailabilityView.dimension_allowlist` is all five dimensions including `store`, `product` and
+`category` — so the view can be *keyed* by the dimension whose metrics it cannot report on, which is
+what makes this easy to miss.
+
+**The consequence for the IA:** S-3 and S-4 cannot show the four-state metric-card status of §5. A
+breakdown figure's only governed qualification is its own projection's `caveats` and
+`population_qualifiers`, plus the `ViewOutcome.kind` of the read that fetched it. A D1 slice must
+not synthesize an availability state for a breakdown figure from the core metric it aggregates —
+that is a derivation, and `FR-138` bars it.
+
+**This is a scope input, not a defect to fix here.** Whether S-6 should reach the series metrics is
+an `RRA-014` question — a changed `metric_allowlist` is a **new view version** by `FR-134`, never an
+edit — and the D1 authority is where the need gets stated.
+
 ### F-3. One surface, two views is the normal case, and the reads are independent
 
 S-5 is two views; S-6 reads a seventh alongside whatever surface it qualifies; a metric card is
@@ -262,7 +300,7 @@ unavailable, never why.
 **4003 µs p50, of which projection is 11.6 µs — about one part in 345**, putting ~2.7 ms in the
 package read, the rebuild and `ReportBundle.of`'s derivation. **`D1-09` must not optimize the
 projection or the registry**, and `FR-144` makes the obvious remedy a governed change rather than a
-local one. A D1 surface issuing three view reads per card (§5) multiplies that source acquisition,
+local one. A D1 surface issuing four view reads per card (§5) multiplies that source acquisition,
 not the projection — so the read model should acquire a run's bundle once per surface if the D1
 authority admits it, and that is an authority question rather than an implementation one.
 
@@ -270,7 +308,7 @@ authority admits it, and that is an authority question rather than an implementa
 
 ## 8. What this note does not touch
 
-- **`D1-02` through `D1-11`.** All eleven sit behind the D1 authority.
+- **`D1-02` through `D1-11`.** All ten sit behind the D1 authority. (`D1-01` is the eleventh D1 task and is this note.)
 - **The `RRA-010` journey-adoption reading.** Open, the owner's, and `U1`'s blocker.
 - **The `KHEPRI-DEC-015` amendment** that `R8-08`, `W1-11` and `T1-07` share.
 - **Issues `#429`, `#431`, `#432`, `#434`**, split out of `#438`'s review round for their own PRs.
@@ -287,7 +325,13 @@ authority admits it, and that is an authority question rather than an implementa
    second-largest thing `D1` promises and its view refuses on the shipping root today. Three
    options are named; the recommendation is to admit the cross-version binding in the D1 authority,
    reusing `comparison_assembly.py`. **This note decides none of them.**
-3. **`D1-07`'s "global period filter" is not a filter** (§6, F-2). No published view accepts one,
+3. **S-6 cannot qualify any breakdown figure** (§6, F-4). `MetricAvailabilityView` publishes 22 of
+   the 28 metrics the source map projects, omitting exactly the six series metrics that S-3 and S-4
+   are made of. Extending it is an `RRA-014` change and a **new view version** under `FR-134`, so
+   the D1 authority should state whether the Exceptions surface is expected to cover breakdowns.
+   Until then, S-3 and S-4 carry only their own projection's caveats — and no slice may synthesize
+   a breakdown's availability from the core metric it aggregates.
+4. **`D1-07`'s "global period filter" is not a filter** (§6, F-2). No published view accepts one,
    and `FR-137` refuses rather than ignores an unsupported parameter. The D1 authority should name
    the period control as a source selector so a later slice does not build a filter bar that
    refuses every request it makes.
