@@ -521,6 +521,12 @@ names its requirements, what it delivers, its acceptance, and the one thing most
   `PeriodComparisonView` unreachable, which was the fixture's single-population shape and not the
   product's. Ledger: `docs/superpowers/plans/2026-09-09-sv1-08-baseline-evidence.md`. Evidence:
   `tests/test_sv108_query_baseline.py`, 25 tests, one mutant per guard killed and one negative control.
+- **SUPERSEDED the same day.** `RCA-007` was drafted, proposed and merged, and the composition slice
+  shipped `src/khepri/runtime/semantic_view_adapter.py` under it. The end-to-end baseline is now
+  **MEASURED** -- ledger §3a: p50 4003 µs composed against 11.6 µs for the projection alone, so
+  projection is about 0.3% of a request and source acquisition is the cost. `SV1-07`'s composition
+  property is exercised over the shipping root. Both tests that asserted the adapter's absence
+  failed on that merge exactly as written and were replaced.
 
 - **Risk:** **a measurement that changes what it measures.** `FR-144`'s final clause bars "result
   changes"; a timing harness that warms a path, memoizes a definition lookup, or reorders work is a

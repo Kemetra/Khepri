@@ -44,6 +44,7 @@ from khepri.rca.semantic_queries import ports, queries
 from khepri.rca.workspace.audit import OBJECT_VERSION
 from khepri.rca.workspace.revocation import RevokedObject, SqlRevocationLedger
 from khepri.rra import definitions, facts
+from khepri.rra.persistence import SqlFactPackageRepository
 from khepri.rra.semantic_views import (
     compatibility,
     contracts,
@@ -52,6 +53,7 @@ from khepri.rra.semantic_views import (
     refusals,
     registry,
 )
+from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
 from tests.c106_support import completed_pair
 from tests.test_sv104_query_orchestration import _FakePort, _rra_imports, _SpyReader
 from tests.test_sv105_propagation import _EXACT, _bundle, _figure
@@ -296,26 +298,47 @@ def test_property_no_concrete_rra_import() -> None:
     assert offenders == []
 
 
-def test_the_composition_property_is_not_exercised() -> None:
-    """NOT EXERCISED: no-concrete-RRA-import over a shipping composition root.
+def test_the_composition_property_is_now_exercised_over_a_shipping_root() -> None:
+    """Formerly NOT EXERCISED. `RCA-007` shipped the adapter, so this drives it.
 
-    `SV1-04` resolved the scope question against the adapter: `RCA-006` §Scope
-    governs no runtime wiring, `RCA-005` §Scope names only `shell_api.py` and
-    `shell_templates/`, and Constitution IV requires the owner to merge an
-    amendment before a slice widens a runtime boundary. So
-    `src/khepri/runtime/semantic_view_adapter.py` does not exist and there is
-    nothing to drive.
+    The old version of this test asserted the adapter's *absence* so that the day
+    it shipped the test would fail and force the property to be exercised rather
+    than left quietly unproven. `RCA-007` merged, the adapter shipped, and it
+    failed exactly as written. This is what replaced it.
 
-    This test asserts the *absence*, so the day the adapter ships it fails and
-    forces the property to be exercised properly. A fake port standing in for it
-    would be `W1-07a` again: seven tests green over a hand-built `ShellServices`
-    for a route absent from the image.
+    What the property asks is that `khepri.rca` reaches no concrete `khepri.rra`
+    implementation. `test_property_no_concrete_rra_import` asserts that
+    statically over the package. What could not be asserted before is that the
+    property still holds when something real is bound to the port -- so here the
+    real adapter, the real store and the real isolation door answer one request
+    end to end, and the static scan is re-run afterwards over the same package.
+    A projection comes back and the import boundary is untouched, which is the
+    whole claim.
     """
-    adapter = pathlib.Path(queries.__file__).parent.parent.parent / "runtime"
-    assert not (adapter / "semantic_view_adapter.py").exists(), (
-        "the adapter now ships, so the composition property is exercisable and "
-        "must be exercised: drive it end to end and delete this test"
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    actions = queries.SemanticQueryActions(
+        isolation=IsolationService(j.w.organizations, SqlAccountStore(j.w.factory)),
+        sources=j.w.store,
+        port=SemanticViewAdapter(SqlFactPackageRepository(j.w.factory)),
     )
+
+    outcome = actions.request(
+        queries.SemanticQueryRequest(
+            actor=queries.SemanticQueryActor(account_id=who.account_id),
+            organization_id=who.organization_id,
+            view=ports.SemanticViewRequest(
+                view_id="ExecutiveOverviewView",
+                view_version="sv1.executive_overview.v1",
+            ),
+            source_ids=(pair.subject_run.run_id,),
+        )
+    )
+
+    assert outcome.kind == ports.KIND_ADMITTED
+    assert outcome.projection is not None
+    assert _rra_imports(pathlib.Path(queries.__file__).read_text(encoding="utf-8")) == []
 
 
 def test_property_registry_extent() -> None:

@@ -638,6 +638,31 @@ class SqlFactPackageRepository:
             row = database.scalar(statement)
             return None if row is None else _package_from_row(row)
 
+    def get_owned_package(
+        self,
+        package_digest: str,
+        owner_id: str,
+    ) -> FactPackageRecord | None:
+        """One published package by digest, under one organization's opaque scope.
+
+        The read `RCA-007` §Scope names, and the only one that answers a
+        *historical* run: every other package read here is session-scoped, and a
+        run read back in organization scope has no session to name. Keyed on the
+        digest the run recorded, so it returns the package that run was derived
+        from or nothing at all.
+
+        `owner_id` is required rather than optional. `RCA-006` `FR-146` makes a
+        cross-scope source indistinguishable from an absent one, and an optional
+        scope is an unscoped read one forgotten argument away.
+        """
+        statement = select(FactPackageRow).where(
+            FactPackageRow.package_digest == package_digest,
+            FactPackageRow.owner_id == owner_id,
+        )
+        with self._factory() as database:
+            row = database.scalars(statement).first()
+            return None if row is None else _package_from_row(row)
+
     def get_package_for_session(
         self,
         session_id: str,

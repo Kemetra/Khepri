@@ -345,6 +345,12 @@ class FactPackageRepository(Protocol):
         scope: SessionScope,
     ) -> FactPackageRecord | None: ...
 
+    def get_owned_package(
+        self,
+        package_digest: str,
+        owner_id: str,
+    ) -> FactPackageRecord | None: ...
+
     def get_package_for_session(
         self,
         session_id: str,

@@ -59,7 +59,9 @@ import pytest
 from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore
 from khepri.rca.semantic_queries import ports, queries
+from khepri.rra.persistence import SqlFactPackageRepository
 from khepri.rra.semantic_views import contracts, projection, refusals, registry
+from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
 from tests.c105_support import _bundle as _c105_bundle
 from tests.c105_support import build_comparison_request
 from tests.c106_support import completed_pair
@@ -378,17 +380,21 @@ def test_the_projection_half_issues_no_read_at_all() -> None:
     assert offenders == [], f"the projection half can reach a source: {offenders}"
 
 
-def test_the_shipped_halves_do_not_compose_so_there_is_no_end_to_end_path() -> None:
-    """NOT EXERCISED, proven. The real halves refuse each other, every time.
+def test_the_raw_halves_still_need_the_adapter_between_them() -> None:
+    """Formerly the NOT EXERCISED marker. `RCA-007` shipped; this is what remains true.
 
-    No fake anywhere: the real isolation door, the real workspace store, the real
-    `SemanticQueryActions` and the real `project`. `SemanticQueryActions` loads
-    `AnalysisRun` rows and `project` admits a `RenderableBundle`, so the source
-    shape is unrecognized and the request refuses. An end-to-end latency figure
-    would therefore be a figure for the refusal path.
+    Before `RCA-007` this test recorded why no end-to-end baseline existed: the
+    real halves, composed by hand with no fake anywhere, refused each other,
+    because `SemanticQueryActions` loads `AnalysisRun` rows and `project` admits
+    a `RenderableBundle`.
 
-    This test fails the day an adapter builds a bundle from a run -- which is the
-    day the end-to-end baseline becomes measurable and must be taken.
+    That refusal is still the correct behaviour and is asserted here still --
+    what changed is what it *means*. It no longer records an absence; it records
+    that the adapter is load-bearing rather than decorative. Wire the projection
+    module straight into the port, as this does, and every request refuses; wire
+    `SemanticViewAdapter` in, as `test_the_composed_path_projects_end_to_end`
+    does, and it projects. The end-to-end baseline is measured over the composed
+    path, not over this one.
     """
     j = journey()
     who = member(j.w)
@@ -400,6 +406,25 @@ def test_the_shipped_halves_do_not_compose_so_there_is_no_end_to_end_path() -> N
     assert reader.reads == [(pair.subject_run.run_id, who.owner_id)]
     assert outcome.kind == projection.KIND_REFUSED
     assert outcome.refusal == refusals.ViewRefusal(refusals.CAUSE_INCOMPATIBLE_SOURCE_SHAPE)
+
+
+def test_the_composed_path_projects_end_to_end() -> None:
+    """`RCA-007`'s adapter closes the gap `SV1-08` measured.
+
+    The same request as above, with the shipped adapter in the port's place
+    instead of the bare projection module. This is the path the end-to-end
+    figures in the ledger are measured over.
+    """
+    j = journey()
+    who = member(j.w)
+    pair = completed_pair(j, who)
+    adapter = SemanticViewAdapter(SqlFactPackageRepository(j.w.factory))
+
+    outcome = _actions(j, adapter, j.w.store).request(_query(who, pair.subject_run.run_id))
+
+    assert outcome.kind == ports.KIND_ADMITTED
+    assert outcome.projection is not None
+    assert outcome.projection.rows
 
 
 def _projection_samples(view_id: str) -> tuple[list[int], tuple[object, ...]]:

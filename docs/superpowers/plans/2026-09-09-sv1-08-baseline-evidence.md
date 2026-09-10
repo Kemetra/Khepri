@@ -20,14 +20,16 @@
 | --- | --- | --- |
 | Query shape | **MEASURED** | The orchestration's shape is shipped behaviour and does not depend on any fake. |
 | Projection-half latency | **MEASURED** | The real `project` over real bundles, both admitted source shapes. |
-| End-to-end latency | **NOT EXERCISED** | The two shipped halves do not compose. §3. |
+| End-to-end latency | **MEASURED** (2026-09-09, after `RCA-007`) | §3a. Was NOT EXERCISED; the adapter shipped. |
 | The four prohibitions | **HELD** | Scanned over both packages; this slice adds no source module. §5. |
 
 The allocation plan made this slice conditional: "if the runtime adapter deferred, there is no
 shipped composition to measure and this whole slice is recorded NOT EXERCISED rather than passed."
-The condition holds and the end-to-end baseline is recorded NOT EXERCISED. The rest is not, because
-it does not depend on the composition — and §3 shows the reason for the deferral is sharper than
-the plan assumed, which is itself the most useful thing this slice found.
+The condition held *when this ledger was first written* and the end-to-end baseline was recorded
+NOT EXERCISED on those grounds. `RCA-007` was proposed and merged the same day and the adapter
+shipped, so that entry is now historical and §3a carries the measurement. Everything else here
+never depended on the composition — and §3 remains the record of why the deferral was sharper than
+the plan assumed, which is what led to `RCA-007` being written at all.
 
 ---
 
@@ -64,7 +66,11 @@ shape, and the table above is the whole of it.
 
 ---
 
-## 3. End-to-end latency — NOT EXERCISED, and the reason is not the one anticipated
+## 3. End-to-end latency — why it was NOT EXERCISED
+
+> **Superseded the same day by §3a.** `RCA-007` was merged and the adapter shipped, so the
+> measurement this section said must be taken "the day an adapter makes the halves meet" is taken
+> in §3a. This section is kept as the record of the gap and how it was found.
 
 `SV1-04` resolved the runtime adapter's scope question against building one: `RCA-006` §Scope
 governs no runtime wiring, so nothing in the image binds the RRA half to the RCA half. The plan
@@ -97,6 +103,44 @@ Three consequences worth recording:
 
 That test fails the day an adapter makes the halves meet — which is the day the end-to-end baseline
 becomes measurable and must be taken. It is written to fail then, deliberately.
+
+---
+
+## 3a. End-to-end latency — MEASURED, after `RCA-007`
+
+§3 recorded this NOT EXERCISED because the two halves refused each other. `RCA-007` was merged the
+same day and shipped `src/khepri/runtime/semantic_view_adapter.py`, so the measurement §3 said must
+be taken the day the halves meet is taken here.
+
+`test_the_shipped_halves_do_not_compose_so_there_is_no_end_to_end_path` failed on that merge exactly
+as it was written to, and is replaced by two tests: one asserting the bare halves still refuse
+(the adapter is load-bearing, not decorative) and one driving the composed path.
+
+**Composed path**, real isolation door, real workspace store, real adapter, real projection.
+`ExecutiveOverviewView` over one completed run, 5 rows. 200 samples, same machine and date as §4.
+
+| Path | min | p50 | p90 | max |
+| --- | ---: | ---: | ---: | ---: |
+| Admitted projection, end to end | 3735 µs | **4003 µs** | 4468 µs | 6686 µs |
+| Uniform unavailable (absent source) | 1157 µs | 1331 µs | 1466 µs | 1956 µs |
+
+**The prediction in §4 held, and the ratio is larger than "orders of magnitude" implied.** §4 said
+projection "is not a cost centre" and that whatever the absent adapter did would dominate it. It
+does: projection is 11.6 µs at p50 and the composed request is 4003 µs, so **the projection is
+about 0.3% of the work** — roughly one part in 345. The 1331 µs miss path is authorization plus
+the
+scoped run read alone, which puts the remaining ~2.7 ms in the package read, the rebuild, and
+`ReportBundle.of`'s derivation.
+
+**Where `D1-09` should and should not optimize.** Not the projection, and not the view registry:
+neither moves the number. The cost is source acquisition — three scoped reads and one derivation
+per
+request. `FR-144` still bars caching, pre-aggregation, materialized views and sampling from *this*
+path, so any change there is a governed one, and `KHEPRI-DEC-032`'s note stands: a persisted
+projection is an `RRA-004`/`RRA-006` change, not a local optimization.
+
+**This is still not a certification.** Same caveat as the header: `FR-144` measurement, one machine,
+one run, no approved workload. A figure to know the shape of the cost by, not a tolerance.
 
 ---
 
@@ -213,14 +257,21 @@ was checked, the leak found, and every mutant that ran after it re-run on a clea
 
 One thing, and it is not this slice's to take:
 
-**`SV1-08`'s end-to-end baseline and `SV1-07`'s composition property both stay NOT EXERCISED until
-an owner-merged `RCA-006` amendment names a runtime adapter path.** `RCA-006` §Scope governs no
+**RESOLVED the same day.** `RCA-007` was drafted, proposed and merged, and the composition slice
+shipped under it. `SV1-08`'s end-to-end baseline is measured in §3a and `SV1-07`'s composition
+property is exercised over the shipping root. The paragraph below is kept as the record of what was
+outstanding and why.
+
+~~**`SV1-08`'s end-to-end baseline and `SV1-07`'s composition property both stay NOT EXERCISED until
+an owner-merged `RCA-006` amendment names a runtime adapter path.**~~ `RCA-006` §Scope governs no
 runtime wiring; `RCA-005` §Scope names only `shell_api.py` and `shell_templates/`, so
 `runtime/comparison_assembly.py` is an unnamed-path precedent rather than an authorization; and
 `R7-01` is a design note that is not in the registry. Article IV forbids widening the runtime
 boundary without an owner-merged artifact, so the amendment is the gate.
 
-What that amendment would need to say is now more specific than "wire the port": it must name a
-path that **constructs a `RenderableBundle` from an `AnalysisRun`**, because §3 shows that is the
-real gap. Until it exists, `SV1-01`–`SV1-08` deliver a complete, tested, governed semantic-view
-capability that nothing in the running image can call.
+What that amendment needed to say was more specific than "wire the port": it had to name a path
+that **constructs a `RenderableBundle` from an `AnalysisRun`**, because §3 shows that is the real
+gap. `RCA-007` says exactly that and is merged; `src/khepri/runtime/semantic_view_adapter.py`
+ships, and a semantic view over an organization-scoped run reaches a real projection. The sentence
+that stood here — that `SV1-01`–`SV1-08` deliver a capability nothing in the running image can call
+— was true for about forty minutes.
