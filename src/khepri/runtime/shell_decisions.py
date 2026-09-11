@@ -48,7 +48,7 @@ from typing import Any
 from jinja2 import Environment
 
 from khepri.rca.workspace.decision.card import CardsReading
-from khepri.rra.rendering.wording import metric_business_name
+from khepri.rra.rendering.wording import caveat_message, metric_business_name
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 
 __all__ = [
@@ -77,12 +77,14 @@ DECISION_COPY = {
         "lede": "Governed figures for one completed analysis.",
         "unavailable": "Part of this view is unavailable.",
         "no_rows": "This analysis published no figures.",
+        "caveats_label": "Caveats",
     },
     "ar": {
         "title": "القرارات",
         "lede": "أرقام محوكمة لتحليل مكتمل واحد.",
         "unavailable": "جزء من هذا العرض غير متاح.",
         "no_rows": "لم ينشر هذا التحليل أي أرقام.",
+        "caveats_label": "تحفظات",
     },
 }
 
@@ -107,7 +109,6 @@ class _CardView:
     status: str
     availability: object | None
     reason: object | None
-    caveats: tuple[object, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +120,14 @@ class _DecisionView:
     """
 
     cards: tuple[_CardView, ...] = field(default_factory=tuple)
+    #: The projection's caveats as governed prose, rendered once.
+    #:
+    #: Once and not per card, because that is what they are: a `StatedCaveat`
+    #: names a *section*, never a metric, so attaching one to an individual
+    #: figure would assert an attribution the data does not carry. They qualify
+    #: the reading, every card's status already says `caveated`, and `FR-161` is
+    #: satisfied by their being on the surface that carries the figures.
+    caveats: tuple[str, ...] = field(default_factory=tuple)
     refusal: str | None = None
     unavailable: bool = False
     empty: bool = False
@@ -135,8 +144,19 @@ def _named(card: Any, language: str) -> _CardView:
         status=card.status,
         availability=card.availability,
         reason=card.reason,
-        caveats=card.caveats,
     )
+
+
+def _caveat_prose(reading: CardsReading, language: str) -> tuple[str, ...]:
+    """The reading's caveats as governed prose, in the page language.
+
+    `caveat_message` and not the code: `FR-164`'s discipline for refusals is the
+    same one a caveat needs, and a code in front of a customer qualifies
+    nothing. Read from each card because every card carries the projection's
+    caveat tuple; the first is representative and the set is the projection's.
+    """
+    codes = reading.cards[0].caveats if reading.cards else ()
+    return tuple(caveat_message(getattr(code, "code", code), language) for code in codes)
 
 
 def _refusal_text(reading: CardsReading, language: str) -> str | None:
@@ -155,6 +175,7 @@ def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
     """The reading as one page in one language. Labels and words, no figures."""
     return _DecisionView(
         cards=tuple(_named(card, language) for card in reading.cards),
+        caveats=_caveat_prose(reading, language),
         refusal=_refusal_text(reading, language),
         unavailable=reading.status == "unavailable",
         empty=reading.empty_rule is not None,

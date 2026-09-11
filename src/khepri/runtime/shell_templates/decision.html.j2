@@ -40,6 +40,18 @@
   <p class="decision-empty" role="note">{{ decision.no_rows }}</p>
   {% endif %}
 
+  {#
+    FR-161: the caveats that qualify these figures, on the surface that carries
+    them. Rendered once because a StatedCaveat names a section and not a metric.
+  #}
+  {% if view.caveats %}
+  <ul class="decision-caveats" aria-label="{{ decision.caveats_label }}">
+    {% for caveat in view.caveats %}
+    <li class="decision-caveat">{{ caveat }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
   {% if view.cards %}
   <ul class="decision-cards">
     {% for card in view.cards %}

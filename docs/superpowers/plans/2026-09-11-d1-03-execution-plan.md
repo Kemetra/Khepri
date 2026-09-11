@@ -6,7 +6,15 @@
 
 **Deliverable:** `decision/card.py` (the `FR-162` card contract and its four-status selection),
 `runtime/shell_decisions.py` + `shell_templates/decision.html.j2` (the first decision surface),
-and the `decisions` collaborator on `ShellServices`.
+and `offers_decisions`, the `FR-046` predicate its route will need.
+
+> **Amended during GREEN, and the amendment is the record.** This plan first said the slice ships
+> the route and a `decisions` field on `ShellServices`. Neither shipped: a decision route needs the
+> session and membership resolution `shell_comparison.py` reaches through `_RouteCall`, and driving
+> it needs the `W1-04b` journey harness. An HTTP surface no test drives would be worse than a
+> deferred one, and question 4 below leaves it unreachable in a deployment regardless. `D1-04`
+> ships it, driven. The `FR-164` step below is likewise corrected: the wording is
+> `ViewRefusal.wording`, not `refusal_message` — see §The refusal catalog.
 
 ---
 
@@ -50,11 +58,20 @@ any deployment that passes `decisions`, which today is the tests.
 
 ```text
 src/khepri/rca/workspace/decision/card.py    NEW  the FR-162 contract, status selection
-src/khepri/runtime/shell_decisions.py        NEW  offers_decisions, add_decision_routes
+src/khepri/runtime/shell_decisions.py        NEW  view assembly, render, offers_decisions
 src/khepri/runtime/shell_templates/decision.html.j2   NEW
-src/khepri/runtime/shell_api.py              EDIT `decisions` field + route declaration
 tests/test_d103_metric_card.py               NEW
+tests/test_r807_shell_quality.py             EDIT _UNROUTED_TEMPLATES, removed by D1-04
 ```
+
+## The refusal catalog
+
+`FR-164` means **`RRA-014`'s** governed bilingual wording, which travels on `ViewRefusal.wording`
+— which is why `D1-02` kept the refusal whole instead of flattening it to a message. It is *not*
+`refusal_message`: that catalog serves the `section` and `result` tiers and knows nothing of a
+view's causes, so reaching for it raises `KeyError` on a cause like `unsupported_filter`. Caveats
+take the parallel path through `caveat_message`, for the same reason a code in front of a customer
+qualifies nothing.
 
 ---
 
@@ -76,8 +93,8 @@ tests/test_d103_metric_card.py               NEW
     `None`, the reading reports the surface unreachable, and **a test fails if
     `PeriodComparisonView` ever becomes reachable** without that assertion being removed
     deliberately: the shape predicate still refuses a single-population bundle for it.
-  - **`FR-164` — a refusal renders governed bilingual wording**, from `refusal_message`, never an
-    invented string, in both languages.
+  - **`FR-164` — a refusal renders governed bilingual wording**, from `ViewRefusal.wording`, never
+    an invented string, in both languages. Caveats likewise, through `caveat_message`.
   - **`FR-171` — parity.** Every card present in English is present in Arabic, with a governed
     label in each, and the same status.
   - **`FR-161`** — availability and caveats are on the surface carrying the figure.
@@ -88,13 +105,14 @@ tests/test_d103_metric_card.py               NEW
 
 ### GREEN
 
-- [ ] `card.py`, `shell_decisions.py`, `decision.html.j2`, the `shell_api.py` edit.
+- [ ] `card.py`, `shell_decisions.py`, `decision.html.j2`. No `shell_api.py` edit — see the
+      amendment above.
 
 ### Gates
 
 - [ ] `uv run khepri-gov validate`, `uv run ruff check .`, `uv run pytest`.
-- [ ] Every new file 10.00 in CodeScene; **`shell_api.py` must not decline** — the edit is a
-      field and a list entry, nothing more.
+- [ ] Every new file 10.00 in CodeScene; **`test_r807_shell_quality.py` must not decline** — the
+      edit is one named constant and one term in an existing assertion.
 
 ---
 

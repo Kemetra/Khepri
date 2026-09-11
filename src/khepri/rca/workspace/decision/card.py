@@ -135,19 +135,28 @@ def card_status(
 
     The order is the fail-closed one. A refusal outranks everything because it
     is a statement about the request. An unavailable figure outranks a caveated
-    one because a caveat qualifies a value that exists. `partial` and a non-empty
-    caveat tuple both mean caveated, which is `D1-01` §5's mapping.
+    one because a caveat qualifies a value that exists.
 
-    `if caveats` is a truth test on a tuple and not `len(caveats)`: `FR-159`
-    bars counting, and the distinction is the requirement rather than a style.
+    **Verified is the narrow state, and it is affirmative.** It requires the
+    governed availability to *say* `available`; an absent availability is not a
+    quiet yes. S-6 can independently answer unavailable (`FR-165`), and when it
+    does this side knows the figure but not whether the claim is allowed --
+    which is the one thing `FR-161` says must be reachable beside it. Calling
+    that verified would let the surface assert more than the governance
+    supports, so everything admitted and unaffirmed is caveated instead: shown,
+    and shown as qualified.
+
+    `if not caveats` is a truth test on a tuple and not `len(caveats)`:
+    `FR-159` bars counting, and the distinction is the requirement rather than
+    a style.
     """
     if kind == KIND_REFUSED:
         return STATUS_REFUSED
     if kind != KIND_ADMITTED or availability == AVAILABILITY_UNAVAILABLE:
         return STATUS_UNAVAILABLE
-    if caveats or availability == AVAILABILITY_PARTIAL:
-        return STATUS_CAVEATED
-    return STATUS_VERIFIED
+    if availability == AVAILABILITY_AVAILABLE and not caveats:
+        return STATUS_VERIFIED
+    return STATUS_CAVEATED
 
 
 def _cells(projection: ViewProjection) -> tuple[dict[str, object], ...]:

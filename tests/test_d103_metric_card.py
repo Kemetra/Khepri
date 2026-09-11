@@ -23,13 +23,14 @@ from __future__ import annotations
 
 import ast
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
 from khepri.rca.semantic_queries import ports
 from khepri.rca.workspace.decision import card, seam
 from khepri.rra import definitions
-from khepri.rra.rendering.wording import metric_business_name
+from khepri.rra.rendering.wording import caveat_message, metric_business_name
 from khepri.rra.semantic_views import compatibility, registry
 from khepri.runtime import shell_decisions
 
@@ -144,7 +145,9 @@ def test_the_card_exposes_every_fr162_line() -> None:
         (ports.KIND_ADMITTED, definitions.PARTIAL, (), card.STATUS_CAVEATED),
         (ports.KIND_ADMITTED, definitions.AVAILABLE, ("c",), card.STATUS_CAVEATED),
         (ports.KIND_ADMITTED, definitions.AVAILABLE, (), card.STATUS_VERIFIED),
-        (ports.KIND_ADMITTED, None, (), card.STATUS_VERIFIED),
+        # An absent availability is not a quiet yes: S-6 did not affirm, so the
+        # card may not claim verified.
+        (ports.KIND_ADMITTED, None, (), card.STATUS_CAVEATED),
     ],
 )
 def test_the_four_statuses_are_selected_not_derived(
@@ -184,6 +187,9 @@ def test_an_unavailable_availability_read_still_renders_the_figures() -> None:
     reading = card.read_cards(_actions(outcomes), _request())
     assert reading.cards[0].value == "700.00"
     assert reading.cards[0].availability is None
+    # The figure survives; the claim does not get promoted. Governance never
+    # answered, so `verified` would assert more than it supports.
+    assert reading.cards[0].status == card.STATUS_CAVEATED
 
 
 def test_a_refusal_carrying_a_projection_is_still_a_refusal() -> None:
@@ -276,6 +282,30 @@ def test_a_refusal_shows_governed_wording_and_no_figure(language: str) -> None:
     assert view.cards == ()
     assert view.refusal == refusal.wording[language]
     assert view.refusal != refusal.cause
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_caveat_is_rendered_as_governed_prose(language: str) -> None:
+    """`FR-161` -- a caveated figure shows what qualifies it, in customer words.
+
+    Rendered once rather than per card: a `StatedCaveat` names a section and
+    never a metric, so attaching one to an individual figure would assert an
+    attribution the data does not carry.
+    """
+    caveat = SimpleNamespace(code="currency_not_declared", section=None)
+    reading = card.read_cards(
+        _actions(
+            {
+                seam.EXECUTIVE_OVERVIEW.view_id: _overview(
+                    (("revenue", "7", "c", ()),), caveats=(caveat,)
+                )
+            }
+        ),
+        _request(),
+    )
+    view = shell_decisions.decision_view(reading, language=language)
+    assert view.caveats == (caveat_message("currency_not_declared", language),)
+    assert reading.cards[0].status == card.STATUS_CAVEATED
 
 
 def test_both_languages_carry_the_same_cards_and_statuses() -> None:
