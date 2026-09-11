@@ -54,6 +54,7 @@ from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 __all__ = [
     "COMPARISON_UNREACHABLE",
     "DECISION_COPY",
+    "DecisionFrame",
     "decision_view",
     "offers_decisions",
     "render_decisions",
@@ -163,34 +164,43 @@ def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
     )
 
 
-def render_decisions(
-    environment: Environment,
-    reading: CardsReading,
-    *,
-    language: str,
-    organization_id: str,
-    prefix: str,
-) -> str:
-    """The decision surface's body, under `RCA-002`'s frame.
+@dataclass(frozen=True, slots=True)
+class DecisionFrame:
+    """Where one render is addressed: page language, organization, shell prefix.
 
-    `prefix` is a parameter and not an import: this module may not import
+    Grouped rather than passed flat, for the reason `ShellRendering`'s own
+    docstring gives: spelling those out cost this module the identical CodeScene
+    finding at the identical score -- Excess Number of Function Arguments, 9.69.
+    They travel together on every call and have no meaning apart.
+
+    `prefix` is carried and not imported: this module may not import
     `shell_api`, which is where the shell's one prefix lives.
     """
+
+    language: str
+    organization_id: str
+    prefix: str
+
+
+def render_decisions(
+    environment: Environment, reading: CardsReading, frame: DecisionFrame
+) -> str:
+    """The decision surface's body, under `RCA-002`'s frame."""
     return environment.get_template("decision.html.j2").render(
-        language=language,
-        direction=DIRECTIONS[language],
-        copy=SHELL_COPY[language],
-        decision=DECISION_COPY[language],
-        assets=f"{prefix}/assets",
-        prefix=prefix,
-        alternate="ar" if language == "en" else "en",
-        surface_path=f"/{organization_id}/decisions",
+        language=frame.language,
+        direction=DIRECTIONS[frame.language],
+        copy=SHELL_COPY[frame.language],
+        decision=DECISION_COPY[frame.language],
+        assets=f"{frame.prefix}/assets",
+        prefix=frame.prefix,
+        alternate="ar" if frame.language == "en" else "en",
+        surface_path=f"/{frame.organization_id}/decisions",
         language_switch=True,
-        organization_id=organization_id,
+        organization_id=frame.organization_id,
         organization_name=None,
         tail=None,
         # The frame's destination list. Empty here because this render path has
         # no organization frame to read; the route slice passes the real one.
         destinations=(),
-        view=decision_view(reading, language=language),
+        view=decision_view(reading, language=frame.language),
     )

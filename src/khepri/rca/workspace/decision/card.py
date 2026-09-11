@@ -157,6 +157,26 @@ def _cells(projection: ViewProjection) -> tuple[dict[str, object], ...]:
     )
 
 
+def _admitted_projection(outcome: ViewOutcome | None) -> ViewProjection | None:
+    """The projection an admitted outcome carries, or `None` for any other answer.
+
+    One test per line rather than one compound conditional: CodeScene reads the
+    compound form as a Complex Conditional, and the three cases are genuinely
+    different -- no read, a read that was not admitted, and an admitted read
+    with nothing on it.
+
+    This is also where the rule carried from `D1-02` lives, in one place for
+    both reads: the kind decides, never the payload. `ViewOutcome` has no
+    kind-to-payload validation, so a refused outcome carrying a projection is
+    constructible and must not be mistaken for an admitted one.
+    """
+    if outcome is None:
+        return None
+    if outcome.kind != KIND_ADMITTED:
+        return None
+    return outcome.projection
+
+
 def _qualifiers(outcome: ViewOutcome | None) -> dict[str, dict[str, object]]:
     """S-6's availability and reason per metric, or nothing it could not supply.
 
@@ -164,9 +184,10 @@ def _qualifiers(outcome: ViewOutcome | None) -> dict[str, dict[str, object]]:
     does the figures still render -- unqualified, never hidden and never given a
     status invented to fill the gap.
     """
-    if outcome is None or outcome.kind != KIND_ADMITTED or outcome.projection is None:
+    projection = _admitted_projection(outcome)
+    if projection is None:
         return {}
-    return {str(cell["metric"]): cell for cell in _cells(outcome.projection)}
+    return {str(cell["metric"]): cell for cell in _cells(projection)}
 
 
 def _card(
@@ -211,10 +232,11 @@ def read_cards(actions: SemanticQueryActions, request: CardsRequest) -> CardsRea
     kind-to-payload validation, so the rule travels with the shape.
     """
     overview = read(actions, _spec(request, EXECUTIVE_OVERVIEW))
-    if overview.kind != KIND_ADMITTED or overview.projection is None:
+    projection = _admitted_projection(overview)
+    if projection is None:
         return CardsReading(status=overview.kind, refusal=overview.refusal)
     qualifiers = _qualifiers(read(actions, _spec(request, METRIC_AVAILABILITY)))
-    return _admitted(overview.projection, qualifiers)
+    return _admitted(projection, qualifiers)
 
 
 def _spec(request: CardsRequest, identity: object) -> DecisionRead:
