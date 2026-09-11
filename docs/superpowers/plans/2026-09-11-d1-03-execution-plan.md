@@ -46,11 +46,15 @@ which `RCA-008` §Scope does not name and whose neighbourhood §Exclusions guard
 the query orchestration or the composition root"). No active specification claims `wiring.py`,
 so whether it is D1's to edit is **an owner question, raised and not decided**.
 
-The consequence is bounded and has precedent: `decisions` joins `ShellServices` as an optional
-collaborator beside `comparisons`, `pins` and `deletion`, each of which documents that "a
-deployment without it declares no route, so the address is unknown rather than refused
-differently (`FR-046`)". The surface is therefore complete, driven and tested — and reachable in
-any deployment that passes `decisions`, which today is the tests.
+The consequence is bounded, and the shape it will take has precedent: when `D1-04` ships the
+route, `decisions` joins `ShellServices` as an optional collaborator beside `comparisons`, `pins`
+and `deletion`, each of which documents that "a deployment without it declares no route, so the
+address is unknown rather than refused differently (`FR-046`)". **That field is not in this
+slice** — only `offers_decisions`, the predicate that route will read, which is asserted now.
+
+So what ships here is the read model, the view assembly and the template: complete, driven and
+tested through `render_decisions`, and reachable by no deployment at all until both the route and
+the `wiring.py` answer exist. The plan said otherwise in its first draft; see the amendment above.
 
 ---
 
