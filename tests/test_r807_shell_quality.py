@@ -76,6 +76,22 @@ _LAYOUT_TEMPLATES = {"shell.html.j2"}
 #: Reachable only by POST, so the GET-driven browser cases cannot visit it.
 _POST_ONLY_TEMPLATES = {"invitation_issued.html.j2"}
 
+#: Shipped ahead of its route and therefore not yet visitable (`D1-03`).
+#:
+#: `RCA-008`'s decision surface ships its read model, its view assembly and its
+#: template before the route that serves them: the route needs the session and
+#: membership resolution `shell_comparison.py` reaches through `_RouteCall`, and
+#: an HTTP surface no test drives would be worse than a deferred one. The
+#: template is driven directly by `test_d103_metric_card` meanwhile, because
+#: `FR-170` requires the unreachable Period Comparison surface be *visibly*
+#: held open and a template nothing renders cannot show that.
+#:
+#: **This set is removed by `D1-04`, not amended by it.** The moment the route
+#: exists the template gains an address, and the equality below then fails until
+#: it moves into `SHELL_SURFACES` with one -- which is the point of naming it
+#: here rather than loosening the assertion.
+_UNROUTED_TEMPLATES = {"decision.html.j2"}
+
 
 @dataclass
 class _Context:
@@ -329,7 +345,9 @@ def test_every_shell_template_is_measured() -> None:
 
     assert templates, "no shell templates found, so this test proves nothing"
     measured = {f"{surface}.html.j2" for surface in SHELL_SURFACES}
-    assert templates == measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES
+    assert templates == (
+        measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES | _UNROUTED_TEMPLATES
+    )
 
 
 @pytest.mark.browser
