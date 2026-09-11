@@ -96,13 +96,31 @@ def _actions(port: _ScriptedPort) -> SemanticQueryActions:
     return SemanticQueryActions(_FakeIsolation(), _FakeSources(), port)
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Published:
+    """What a scripted projection publishes besides its rows.
+
+    Grouped rather than spelled as two more parameters, for the reason
+    `DecisionRead` and `DecisionFrame` are: the flat form carries five arguments
+    and CodeScene reads a fifth as an Excess Number of Function Arguments. This
+    programme has paid that finding four times now, the fourth here.
+    """
+
+    caveats: tuple[object, ...] = ()
+    is_empty: bool = False
+
+
+#: A projection that publishes nothing besides its rows. A module-level
+#: singleton rather than a call in the default, which `B008` bars: it is frozen,
+#: so the one instance cannot pick up a caller's qualification.
+_PUBLISHES_NOTHING = _Published()
+
+
 def _projection(
     view: seam.ViewIdentity,
     fields: tuple[str, ...],
     rows: tuple[tuple[object, ...], ...],
-    *,
-    caveats: tuple[object, ...] = (),
-    is_empty: bool = False,
+    published: _Published = _PUBLISHES_NOTHING,
 ) -> ports.ViewOutcome:
     return ports.ViewOutcome(
         kind=ports.KIND_ADMITTED,
@@ -111,8 +129,8 @@ def _projection(
             view_version=view.view_version,
             fields=fields,
             rows=rows,
-            caveats=caveats,
-            is_empty=is_empty,
+            caveats=published.caveats,
+            is_empty=published.is_empty,
         ),
     )
 
@@ -202,7 +220,7 @@ def test_the_breakdowns_report_both_governed_empty_rules() -> None:
     """`FR-163` -- S-3 and S-4 state no rows; S-5's two views state absence."""
     rules = {}
     for reader, view, fields in _BREAKDOWNS:
-        reading = _read(reader, view, _projection(view, fields, (), is_empty=True))
+        reading = _read(reader, view, _projection(view, fields, (), _Published(is_empty=True)))
         rules[view.view_id] = reading.empty_rule
     assert rules[seam.BRANCH_PERFORMANCE.view_id] == seam.EMPTY_STATED_NO_ROWS
     assert rules[seam.PRODUCT_CATEGORY.view_id] == seam.EMPTY_STATED_NO_ROWS
@@ -216,7 +234,7 @@ def test_a_store_filter_that_matched_nothing_is_not_a_refusal() -> None:
     reading = _read(
         breakdowns.read_branches,
         seam.BRANCH_PERFORMANCE,
-        _projection(seam.BRANCH_PERFORMANCE, _BRANCH_FIELDS, (), is_empty=True),
+        _projection(seam.BRANCH_PERFORMANCE, _BRANCH_FIELDS, (), _Published(is_empty=True)),
         filters=(("store", "store-z"),),
     )
     assert reading.status == ports.KIND_ADMITTED
@@ -361,7 +379,10 @@ def test_the_limits_surface_collects_caveats_without_reading_anything_again() ->
         (
             "branches",
             _projection(
-                seam.BRANCH_PERFORMANCE, _BRANCH_FIELDS, (), caveats=("currency_not_declared",)
+                seam.BRANCH_PERFORMANCE,
+                _BRANCH_FIELDS,
+                (),
+                _Published(caveats=("currency_not_declared",)),
             ),
         ),
     )
@@ -476,25 +497,19 @@ def _identifiers(tree: ast.Module) -> set[str]:
 
 
 def _literals(tree: ast.Module) -> set[str]:
-    """Every string constant that is not a docstring.
+    """Every string constant in the tree.
 
-    Docstrings are excluded because these modules must be able to *explain* the
-    requirement they are scanned for without the explanation failing the scan.
+    The **tree** and not the file text, so the module under scan can explain the
+    requirement it is scanned for in prose without the explanation tripping it:
+    a comment is not in the tree at all, and a docstring reaches here as one
+    constant holding the whole document, which no one-word governed term can
+    equal. A first pass excluded docstrings by identity and scored a cyclomatic
+    9 against a threshold of 9 for machinery that could never change an answer.
     """
-    documented = set()
-    for node in ast.walk(tree):
-        body = getattr(node, "body", None)
-        if not isinstance(body, list) or not body:
-            continue
-        first = body[0]
-        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
-            documented.add(id(first.value))
     return {
         node.value
         for node in ast.walk(tree)
-        if isinstance(node, ast.Constant)
-        and isinstance(node.value, str)
-        and id(node) not in documented
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
 
 
