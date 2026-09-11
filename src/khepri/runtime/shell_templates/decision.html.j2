@@ -1,0 +1,62 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ decision.title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  RCA-008 FR-161: a claim is presented only where the reader can also reach
+  whether it is allowed to be made, so a card's status, availability, reason and
+  caveats sit in the same row as its value and never on a terminal page.
+
+  Nothing here computes. Every value, population and status arrived selected in
+  the read model, and every label and refusal message is the governed catalog's.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ decision.title }}</h1>
+  <p class="lede">{{ decision.lede }}</p>
+
+  {#
+    FR-170: the Period Comparison source is not reachable, and this says so
+    rather than rendering an empty tab. The slice that makes the source
+    reachable removes this, not the slice that shipped the surface.
+  #}
+  {% if view.comparison_unreachable %}
+  <p class="decision-unreachable" role="note">{{ view.comparison_unreachable }}</p>
+  {% endif %}
+
+  {# FR-164: the governed message, never the bare cause code. #}
+  {% if view.refusal %}
+  <p class="decision-refusal" role="alert">{{ view.refusal }}</p>
+  {% endif %}
+
+  {# FR-165: the unavailable outcome is content-free; it says that, and no why. #}
+  {% if view.unavailable %}
+  <p class="decision-unavailable" role="note">{{ decision.unavailable }}</p>
+  {% endif %}
+
+  {#
+    FR-163: an admitted projection that published nothing is a different finding
+    from a refusal, and says so in its own words.
+  #}
+  {% if view.empty %}
+  <p class="decision-empty" role="note">{{ decision.no_rows }}</p>
+  {% endif %}
+
+  {% if view.cards %}
+  <ul class="decision-cards">
+    {% for card in view.cards %}
+    <li class="decision-card" data-status="{{ card.status }}">
+      <span class="decision-label">{{ card.label }}</span>
+      <span class="decision-value">{{ card.value }}</span>
+      <span class="decision-status">{{ card.status }}</span>
+      <span class="decision-population">{{ card.population }}</span>
+      {% if card.availability %}
+      <span class="decision-availability">{{ card.availability }}</span>
+      {% endif %}
+      {% if card.reason %}
+      <span class="decision-reason">{{ card.reason }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

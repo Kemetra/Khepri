@@ -199,7 +199,9 @@ def test_a_refusal_carrying_a_projection_is_still_a_refusal() -> None:
             rows=(("revenue", "700.00", "complete", ()),),
         ),
     )
-    reading = card.read_cards(_actions({seam.EXECUTIVE_OVERVIEW.view_id: contradictory}), _request())
+    reading = card.read_cards(
+        _actions({seam.EXECUTIVE_OVERVIEW.view_id: contradictory}), _request()
+    )
     assert reading.status == ports.KIND_REFUSED
     assert reading.cards == ()
     assert reading.refusal is refusal
@@ -259,15 +261,21 @@ def test_every_card_is_named_from_the_governed_catalog(language: str) -> None:
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_a_refusal_shows_governed_wording_and_no_figure(language: str) -> None:
     """`FR-164` -- never an invented string, and never a nearby substitution."""
-    refusal = ports.ViewRefusal(cause="unsupported_filter")
+    refusal = ports.ViewRefusal(
+        cause="unsupported_filter",
+        wording_pairs=(
+            ("en", "That filter is not supported."),
+            ("ar", "هذا المرشح غير مدعوم."),
+        ),
+    )
     outcome = ports.ViewOutcome(kind=ports.KIND_REFUSED, refusal=refusal)
     view = shell_decisions.decision_view(
         card.read_cards(_actions({seam.EXECUTIVE_OVERVIEW.view_id: outcome}), _request()),
         language=language,
     )
     assert view.cards == ()
-    assert view.refusal
-    assert view.refusal != "unsupported_filter"
+    assert view.refusal == refusal.wording[language]
+    assert view.refusal != refusal.cause
 
 
 def test_both_languages_carry_the_same_cards_and_statuses() -> None:
@@ -285,14 +293,18 @@ def test_both_languages_carry_the_same_cards_and_statuses() -> None:
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_the_template_renders_the_unreachable_comparison_visibly(language: str) -> None:
     """`FR-170` -- the surface says it, rather than showing an empty tab."""
-    from khepri.runtime.shell_api import shell_environment
+    from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
 
     reading = card.read_cards(
         _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", "c", ()),))}),
         _request(),
     )
     body = shell_decisions.render_decisions(
-        shell_environment(), reading, language=language, organization_id="org-1"
+        shell_environment(),
+        reading,
+        language=language,
+        organization_id="org-1",
+        prefix=SHELL_PREFIX,
     )
     assert shell_decisions.COMPARISON_UNREACHABLE[language] in body
 
