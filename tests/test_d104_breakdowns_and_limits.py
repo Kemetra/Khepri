@@ -21,6 +21,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import pathlib
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -77,22 +78,28 @@ class _ScriptedPort:
 
 
 class _FakeIsolation:
+    """One owner id for any pair; scoping is not what the read-model cases test."""
+
     def resolve_scope(self, account_id: str, organization_id: str) -> str:
         """One owner id; scoping is not what the read-model cases are testing."""
         return f"owner-of-{organization_id}"
 
 
 class _FakeSources:
+    """A source reader that always finds the run, so the port decides every answer."""
+
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> object:
         """A source the fake port never inspects."""
         return object()
 
 
 def _port(outcomes: dict[str, ports.ViewOutcome | None]) -> _ScriptedPort:
+    """A port scripted per view, kept so a case can read back what was asked."""
     return _ScriptedPort(outcomes)
 
 
 def _actions(port: _ScriptedPort) -> SemanticQueryActions:
+    """The real orchestration over a fake door and a scripted port."""
     return SemanticQueryActions(_FakeIsolation(), _FakeSources(), port)
 
 
@@ -122,6 +129,7 @@ def _projection(
     rows: tuple[tuple[object, ...], ...],
     published: _Published = _PUBLISHES_NOTHING,
 ) -> ports.ViewOutcome:
+    """An admitted outcome carrying one view's rows in its published field order."""
     return ports.ViewOutcome(
         kind=ports.KIND_ADMITTED,
         projection=ports.ViewProjection(
@@ -136,6 +144,7 @@ def _projection(
 
 
 def _request(**kw: object) -> breakdowns.BreakdownRequest:
+    """One member asking over one run; `filters` travels in the keywords."""
     return breakdowns.BreakdownRequest(
         organization_id="org-1", account_id="acct-1", source_id="run-1", **kw  # type: ignore[arg-type]
     )
@@ -144,6 +153,7 @@ def _request(**kw: object) -> breakdowns.BreakdownRequest:
 def _read(
     reader: object, view: seam.ViewIdentity, outcome: ports.ViewOutcome | None, **kw: object
 ) -> breakdowns.BreakdownReading:
+    """One breakdown read against a port scripted to answer that view alone."""
     port = _port({view.view_id: outcome})
     return reader(_actions(port), _request(**kw))  # type: ignore[operator]
 
@@ -342,12 +352,14 @@ def test_the_breakdown_module_names_no_availability_at_all() -> None:
 
 
 def _limits_request(**kw: object) -> limits.LimitsRequest:
+    """One S-6 request; what the page already fetched travels as `gathered`."""
     return limits.LimitsRequest(
         organization_id="org-1", account_id="acct-1", source_id="run-1", **kw  # type: ignore[arg-type]
     )
 
 
 def _availability(rows: tuple[tuple[object, ...], ...]) -> ports.ViewOutcome:
+    """S-6's own view, admitted, in its published field order."""
     return _projection(seam.METRIC_AVAILABILITY, _AVAILABILITY_FIELDS, rows)
 
 
@@ -488,10 +500,12 @@ def test_the_dispatch_rule_has_exactly_one_definition() -> None:
 
 
 def _tree(module: object) -> ast.Module:
+    """The module's own source as a tree, read from where it was imported from."""
     return ast.parse(pathlib.Path(module.__file__).read_text(encoding="utf-8"))  # type: ignore[attr-defined]
 
 
 def _identifiers(tree: ast.Module) -> set[str]:
+    """Every name and attribute the module reads, whatever it was imported as."""
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     return names | {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
 
@@ -529,26 +543,34 @@ def test_the_new_read_models_derive_nothing(module: object) -> None:
 
 
 class _Context:
+    """A resolved actor in one organization, as `ActorResolver` answers one."""
+
     def __init__(self, organization_id: str | None = "org-acme") -> None:
+        """One owner of `org-acme` unless the case names another scope."""
         self.account_id = "acct-1"
         self.organization_id = organization_id
         self.role = "owner"
 
     @property
     def is_owner(self) -> bool:
+        """Owner everywhere; the decision surface is a read and never asks."""
         return True
 
 
 class _StubResolver:
+    """The scope door, answering one context or raising what the case supplies."""
+
     def __init__(
         self, context: _Context | None = None, raises: Exception | None = None
     ) -> None:
+        """Hold the one context this resolver answers with, or what it raises."""
         self._context = context or _Context()
         self._raises = raises
 
     def for_request(
         self, token: str, *, organization_id: str | None = None, now: object = None
     ) -> _Context:
+        """The session's context, or the failure this case was built to drive."""
         if self._raises is not None:
             raise self._raises
         return self._context
@@ -556,11 +578,15 @@ class _StubResolver:
     def require_owner(
         self, token: str, *, organization_id: str, now: object = None
     ) -> _Context:  # pragma: no cover
+        """Never reached: nothing on this surface is owner-gated."""
         raise AssertionError("the decision surface is a read")
 
 
 class _StubOrganizations:
+    """One membership, so the frame resolves rather than the chooser rendering."""
+
     def organizations_for_account(self, account_id: str) -> list[Organization]:
+        """The one organization every case in this file acts in."""
         return [
             Organization._from_storage(
                 organization_id="org-acme", name="Acme", created_at=NOW
@@ -572,6 +598,7 @@ class _StubDecisions:
     """One admitted overview and one governed availability, for any request."""
 
     def request(self, asked: object) -> ports.ViewOutcome:
+        """S-6's governed four-state for its own view, and S-1's figures otherwise."""
         if asked.view.view_id == seam.METRIC_AVAILABILITY.view_id:  # type: ignore[attr-defined]
             return _availability((("revenue", card.AVAILABILITY_AVAILABLE, None, ()),))
         return _projection(
@@ -580,6 +607,7 @@ class _StubDecisions:
 
 
 def _shell(*, decisions: object | None, raises: Exception | None = None) -> TestClient:
+    """A shell wired with the decision collaborator the case asks for, and a session."""
     app = FastAPI()
     add_shell_routes(
         app,
@@ -596,6 +624,7 @@ def _shell(*, decisions: object | None, raises: Exception | None = None) -> Test
 
 
 def _address(organization: str = "org-acme", language: str = "en") -> str:
+    """The decision surface's address for one completed run."""
     return f"{SHELL_PREFIX}/{language}/{organization}/decisions/run-a"
 
 
@@ -631,6 +660,70 @@ def test_an_unresolvable_session_gets_the_uniform_refusal() -> None:
     """`FR-050` -- one surface absorbs every cause a reader must not tell apart."""
     body = _shell(decisions=_StubDecisions(), raises=ScopeAccessDenied()).get(_address()).text
     assert "700.00" not in body
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_language_control_points_at_an_address_the_route_serves(language: str) -> None:
+    """`FR-054` scenario 11 / `FR-171` -- the switch keeps the surface, run and all.
+
+    Review on `#448` found `DecisionFrame.source_id` defaulting to `""`, which
+    rendered the control pointing at `/{organization}/decisions/` -- an address
+    `add_decision_routes` does not serve. Following the link is the assertion:
+    a tail that drops the run answers `unavailable` and shows no figure.
+    """
+    client = _shell(decisions=_StubDecisions())
+    body = client.get(_address(language=language)).text
+    href = re.search(r'class="frame-language"\s+href="([^"]+)"', body)
+    assert href is not None, "the decision surface rendered no language control"
+    switched = client.get(href.group(1))
+    assert switched.status_code == 200
+    assert "700.00" in switched.text
+    assert shell_decisions.DECISION_COPY["ar" if language == "en" else "en"]["title"] in (
+        switched.text
+    )
+
+
+def test_a_decision_frame_must_name_the_run_it_renders() -> None:
+    """Review on `#448`: the frameless render path carried the same defect.
+
+    `DecisionFrame.source_id` had a default of `""`, so `render_decisions` could
+    emit the language control beside a tail with no run on it. Requiring the
+    field removes the state instead of hiding the control in it -- this surface
+    renders exactly one completed run, so a frame naming none was never valid.
+    """
+    from khepri.runtime.shell_api import shell_environment
+
+    with pytest.raises(TypeError):
+        shell_decisions.DecisionFrame(  # type: ignore[call-arg]
+            language="en", organization_id="org-acme", prefix=SHELL_PREFIX
+        )
+
+    body = shell_decisions.render_decisions(
+        shell_environment(),
+        card.read_cards(
+            _actions(
+                _port(
+                    {
+                        seam.EXECUTIVE_OVERVIEW.view_id: _projection(
+                            seam.EXECUTIVE_OVERVIEW, _OVERVIEW_FIELDS, (("revenue", "7", "c", ()),)
+                        )
+                    }
+                )
+            ),
+            card.CardsRequest(
+                organization_id="org-acme", account_id="acct-1", source_id="run-a"
+            ),
+        ),
+        shell_decisions.DecisionFrame(
+            language="en",
+            organization_id="org-acme",
+            prefix=SHELL_PREFIX,
+            source_id="run-a",
+        ),
+    )
+    href = re.search(r'class="frame-language"\s+href="([^"]+)"', body)
+    assert href is not None
+    assert href.group(1).endswith("/org-acme/decisions/run-a")
 
 
 def test_the_period_comparison_source_is_still_unreachable() -> None:

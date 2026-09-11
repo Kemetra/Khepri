@@ -333,7 +333,10 @@ def test_the_template_renders_the_unreachable_comparison_visibly(language: str) 
         shell_environment(),
         reading,
         shell_decisions.DecisionFrame(
-            language=language, organization_id="org-1", prefix=SHELL_PREFIX
+            language=language,
+            organization_id="org-1",
+            prefix=SHELL_PREFIX,
+            source_id="run-1",
         ),
     )
     assert shell_decisions.COMPARISON_UNREACHABLE[language] in body

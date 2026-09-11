@@ -217,15 +217,20 @@ class DecisionFrame:
     `prefix` is carried and not imported: this module may not import
     `shell_api`, which is where the shell's one prefix lives.
 
-    `source_id` is empty on this path and named on the route's, because this
-    path renders no frame: with no destinations to mark current and no language
-    control to keep a tail for, there is no run for the address to name.
+    **`source_id` has no default, and review on `#448` is why.** It defaulted to
+    `""`, which made `surface_path` `/{organization}/decisions/` while the frame
+    still rendered its language control -- a link to an address `add_decision_routes`
+    does not serve, because the route requires a run segment. `FR-054`
+    scenario 11 asks that switching language keep the surface, and a control
+    pointing at an unserved address keeps nothing. Requiring the field removes
+    the state rather than hiding the control in it: this surface always renders
+    exactly one completed run, so a frame that names none was never valid.
     """
 
     language: str
     organization_id: str
     prefix: str
-    source_id: str = ""
+    source_id: str
 
 
 def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:
