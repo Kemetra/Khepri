@@ -382,6 +382,29 @@ def test_the_limits_surface_carries_a_gathered_refusal_whole() -> None:
     assert reading.surfaces[0].refusal is refusal
 
 
+def test_a_gathered_refusal_leaks_none_of_its_projections_caveats() -> None:
+    """The kind decides on this side too: a refused read qualified no figure.
+
+    `ViewOutcome` admits a refusal that also carries a projection, and reporting
+    that projection's caveats here would qualify figures no reader was shown.
+    """
+    refused = ports.ViewOutcome(
+        kind=ports.KIND_REFUSED,
+        refusal=ports.ViewRefusal(cause="unsupported_filter"),
+        projection=ports.ViewProjection(
+            view_id=seam.BRANCH_PERFORMANCE.view_id,
+            view_version=seam.BRANCH_PERFORMANCE.view_version,
+            fields=_BRANCH_FIELDS,
+            caveats=("currency_not_declared",),
+        ),
+    )
+    port = _port({seam.METRIC_AVAILABILITY.view_id: _availability(())})
+    reading = limits.read_limits(
+        _actions(port), _limits_request(gathered=(("branches", refused),))
+    )
+    assert reading.surfaces[0].caveats == ()
+
+
 def test_a_gathered_unavailable_surface_says_nothing_about_why() -> None:
     """`FR-165` -- content-free, on the surface that exists to report limits."""
     gathered = (("basket", ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE)),)

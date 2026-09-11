@@ -31,7 +31,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from khepri.rca.semantic_queries.ports import SemanticViewRequest, ViewOutcome
+from khepri.rca.semantic_queries.ports import (
+    KIND_ADMITTED,
+    SemanticViewRequest,
+    ViewOutcome,
+    ViewProjection,
+)
 from khepri.rca.semantic_queries.queries import (
     SemanticQueryActions,
     SemanticQueryActor,
@@ -52,6 +57,7 @@ __all__ = [
     "REPORT_EVIDENCE",
     "DecisionRead",
     "ViewIdentity",
+    "admitted_projection",
     "read",
 ]
 
@@ -184,3 +190,29 @@ def read(actions: SemanticQueryActions, spec: DecisionRead) -> ViewOutcome:
             source_ids=spec.source_ids,
         )
     )
+
+
+def admitted_projection(outcome: ViewOutcome | None) -> ViewProjection | None:
+    """The projection an admitted outcome carries, or `None` for any other answer.
+
+    **The kind decides, never the payload.** `ViewOutcome` is a frozen dataclass
+    with no kind-to-payload validation, so a refused outcome carrying a
+    projection is constructible -- and a reader that branched on
+    `projection is None` would render its rows under an admitted status and drop
+    the refusal, showing a customer figures the package refused. That is what
+    `RCA-008` §Invariants' "no partial projection" and `FR-164`'s "no surface ...
+    softens a refusal" forbid, and review on `#446` found it in the first read
+    model written.
+
+    Here rather than in a read model because four of them now depend on it, and
+    because the rule is a property of the outcome contract rather than of any one
+    surface. One test per line rather than one compound conditional: CodeScene
+    reads the compound form as a Complex Conditional, and the three cases are
+    genuinely different -- no read, a read that was not admitted, and an admitted
+    read with nothing on it.
+    """
+    if outcome is None:
+        return None
+    if outcome.kind != KIND_ADMITTED:
+        return None
+    return outcome.projection

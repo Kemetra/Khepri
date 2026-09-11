@@ -27,7 +27,12 @@ from khepri.rca.semantic_queries.ports import (
     ViewRefusal,
 )
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
-from khepri.rca.workspace.decision.seam import EXECUTIVE_OVERVIEW, DecisionRead, read
+from khepri.rca.workspace.decision.seam import (
+    EXECUTIVE_OVERVIEW,
+    DecisionRead,
+    admitted_projection,
+    read,
+)
 
 __all__ = ["OverviewFigure", "OverviewReading", "OverviewRequest", "read_overview"]
 
@@ -128,10 +133,15 @@ def _reading(outcome: ViewOutcome) -> OverviewReading:
     partial projection" and `FR-164`'s "no surface ... softens a refusal"
     forbid. An admitted outcome with no projection falls here too, and yields
     no figures rather than inventing any.
+
+    The test itself is `seam.admitted_projection`'s, because `D1-04` gave four
+    more read models the same obligation and one definition of a fail-closed
+    rule is worth more than four correct copies of it.
     """
-    if outcome.kind != KIND_ADMITTED or outcome.projection is None:
+    projection = admitted_projection(outcome)
+    if projection is None:
         return OverviewReading(status=outcome.kind, refusal=outcome.refusal)
-    return _admitted(outcome.projection)
+    return _admitted(projection)
 
 
 def read_overview(actions: SemanticQueryActions, request: OverviewRequest) -> OverviewReading:
