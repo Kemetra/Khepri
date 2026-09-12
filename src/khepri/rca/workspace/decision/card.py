@@ -6,12 +6,14 @@ travel together -- "a claim is presented only where the reader can also reach
 whether it is allowed to be made".
 
 **A card is four projections plus the catalog**, which `D1-01` §5 found and this
-module does not re-derive. Two of the four are reachable today: S-1 supplies the
+module does not re-derive. Three of the four are reachable: S-1 supplies the
 value, population, versions and caveats; S-6 supplies the governed availability
-and reason. The other two are named and absent -- the comparison because
-`FR-170` holds its source open, the evidence action because `D1-05` builds it.
-**Named rather than omitted**, so a later slice fills a line that already exists
-instead of discovering one that does not.
+and reason; S-9 supplies `FR-162`'s evidence action, which `D1-05` added to the
+line `D1-03` named and left empty. The fourth is still named and absent -- the
+comparison, because `FR-170` holds its source open. **Named rather than
+omitted**, so a later slice fills a line that already exists instead of
+discovering one that does not; the evidence line is that argument having now
+been paid off once.
 
 **The label is not here.** `khepri.rca` may not import `khepri.rra`, and a metric
 name is `RRA-011`'s catalog. The card carries the governed metric *code* and the
@@ -33,11 +35,18 @@ from khepri.rca.semantic_queries.ports import (
     KIND_ADMITTED,
     KIND_REFUSED,
     KIND_UNAVAILABLE,
+    EffectiveRequest,
     ViewOutcome,
     ViewProjection,
     ViewRefusal,
 )
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
+from khepri.rca.workspace.decision.evidence import (
+    EvidenceAction,
+    EvidenceReading,
+    EvidenceRequest,
+    read_evidence,
+)
 from khepri.rca.workspace.decision.seam import (
     EXECUTIVE_OVERVIEW,
     METRIC_AVAILABILITY,
@@ -82,10 +91,18 @@ STATUS_UNAVAILABLE = KIND_UNAVAILABLE
 class MetricCard:
     """One figure and everything `FR-162` requires beside it.
 
-    `comparison` and `evidence` are always `None` today and are fields anyway:
-    `FR-162` names them, `FR-170` explains the first, and `D1-05` fills the
-    second. A card that omitted them would let a later slice add a line the
-    contract already required, which is how a required line goes missing.
+    `comparison` is always `None` today and is a field anyway: `FR-162` names
+    it, `FR-170` explains why its source is unreachable, and a card that omitted
+    it would let a later slice add a line the contract already required, which is
+    how a required line goes missing.
+
+    **`evidence` was the other one and `D1-05` filled it.** It is `FR-162`'s
+    evidence action -- what opening this figure's drawer shows -- and it carries
+    the governed codes rather than their prose, because `khepri.rca` may not
+    import `khepri.rra` and a citation's *meaning* is `RRA-011`'s catalog. The
+    field was named and empty for one slice, which is the whole argument for
+    naming it: filling it changed a type and touched no caller that had learned
+    to live without it.
     """
 
     metric: str
@@ -97,7 +114,7 @@ class MetricCard:
     reason: object | None = None
     caveats: tuple[object, ...] = field(default_factory=tuple)
     comparison: None = None
-    evidence: None = None
+    evidence: EvidenceAction | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +124,13 @@ class CardsReading:
     `comparison_unreachable` is `FR-170` stated in the data rather than in the
     template: the surface must say the Period Comparison source is unreachable,
     and a flag the read model sets is harder to drop than a paragraph.
+
+    `effective` is `FR-137`'s "what actually applied, requested and
+    definition-fixed alike", for the S-1 read these cards came from. `FR-162`
+    requires a card expose "the effective filters and period", and the filters a
+    card states are the ones that applied to *its own* figure -- which is why
+    this is here and not on `EvidenceReading`, whose effective request is the
+    drawer's read rather than the figure's.
     """
 
     status: str
@@ -114,6 +138,17 @@ class CardsReading:
     refusal: ViewRefusal | None = None
     empty_rule: str | None = None
     comparison_unreachable: bool = True
+    effective: EffectiveRequest | None = None
+    #: The surface's one S-9 read, kept whole.
+    #:
+    #: Each card already carries its own `EvidenceAction`, so this is not for
+    #: them: it is for the figures that are **not** cards. `FR-161` requires the
+    #: drawer be reachable from every figure on S-3, S-4 and S-5 too, and those
+    #: rows name series metrics no card names. A surface that re-read S-9 for
+    #: them would read one view twice for one page, which `FR-168` bars as a
+    #: cache and `FR-135` bars as a second truth. So the reading travels here,
+    #: and every figure on the page selects from the one read.
+    evidence: EvidenceReading | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,12 +216,16 @@ def _qualifiers(outcome: ViewOutcome | None) -> dict[str, dict[str, object]]:
 
 
 def _card(
-    cell: dict[str, object], qualifier: dict[str, object], caveats: tuple[object, ...]
+    cell: dict[str, object],
+    qualifier: dict[str, object],
+    caveats: tuple[object, ...],
+    evidence: EvidenceReading,
 ) -> MetricCard:
-    """One admitted figure, qualified by what S-6 published about it."""
+    """One admitted figure, qualified by what S-6 and S-9 published about it."""
     availability = qualifier.get("availability")
+    metric = str(cell["metric"])
     return MetricCard(
-        metric=str(cell["metric"]),
+        metric=metric,
         value=cell["value"],
         population=cell["population"],
         versions=cell["versions"],
@@ -194,22 +233,28 @@ def _card(
         availability=availability,
         reason=qualifier.get("reason"),
         caveats=caveats,
+        evidence=evidence.for_metric(metric),
     )
 
 
 def _admitted(
-    projection: ViewProjection, qualifiers: dict[str, dict[str, object]]
+    overview: ViewOutcome,
+    projection: ViewProjection,
+    qualifiers: dict[str, dict[str, object]],
+    evidence: EvidenceReading,
 ) -> CardsReading:
     """The S-1 projection as cards, in the projection's own order."""
     caveats = projection.caveats
     cards = tuple(
-        _card(cell, qualifiers.get(str(cell["metric"]), {}), caveats)
+        _card(cell, qualifiers.get(str(cell["metric"]), {}), caveats, evidence)
         for cell in _cells(projection)
     )
     return CardsReading(
         status=KIND_ADMITTED,
         cards=cards,
         empty_rule=EXECUTIVE_OVERVIEW.empty_rule if projection.is_empty else None,
+        effective=overview.effective,
+        evidence=evidence,
     )
 
 
@@ -220,13 +265,30 @@ def read_cards(actions: SemanticQueryActions, request: CardsRequest) -> CardsRea
     `D1-02`, where branching on `projection is None` would have rendered a
     refused outcome's rows under an admitted status. `ViewOutcome` still has no
     kind-to-payload validation, so the rule travels with the shape.
+
+    **S-9 is read once for the whole surface, not once per card.** `FR-168` bars
+    a cache and `FR-135` bars a second truth, and ten reads of one view over one
+    run would be both. Each card selects its own entries from what that one read
+    returned.
     """
     overview = read(actions, _spec(request, EXECUTIVE_OVERVIEW))
     projection = admitted_projection(overview)
     if projection is None:
         return CardsReading(status=overview.kind, refusal=overview.refusal)
     qualifiers = _qualifiers(read(actions, _spec(request, METRIC_AVAILABILITY)))
-    return _admitted(projection, qualifiers)
+    return _admitted(overview, projection, qualifiers, _evidence(actions, request))
+
+
+def _evidence(actions: SemanticQueryActions, request: CardsRequest) -> EvidenceReading:
+    """S-9 for this run, once. Independently authorized, so it may miss alone."""
+    return read_evidence(
+        actions,
+        EvidenceRequest(
+            organization_id=request.organization_id,
+            account_id=request.account_id,
+            source_id=request.source_id,
+        ),
+    )
 
 
 def _spec(request: CardsRequest, identity: object) -> DecisionRead:
