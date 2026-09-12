@@ -2,39 +2,38 @@
 
 Authority: active `RCA-008` `FR-159`, `FR-161`, `FR-162`, `FR-164`, `FR-171`.
 
-The read model is driven through a fake port, as `D1-02`'s, `D1-03`'s and
-`D1-04`'s were: what is under test is the selection. **Two cases are driven
-through the real projector instead**, and deliberately -- `ReportEvidenceView`
-publishes a `provenance` and an `absence` column that `RRA-014`'s
-`_FIELD_READERS` gives no reader, so both project as stated absences, and the
-drawer reads provenance from the evidence records instead. A hand-built
-projection could assert the drawer's behaviour but not that fact about the view,
-and the day `RRA-014` gives those columns readers this module needs to be looked
-at rather than to keep silently double-sourcing.
+The read model is driven through the scripted port in `d105_support`, as
+`D1-02`'s, `D1-03`'s and `D1-04`'s were: what is under test is the *selection*.
+**Two cases are driven through the real projector instead**, and deliberately --
+`ReportEvidenceView` publishes a `provenance` and an `absence` column that
+`RRA-014`'s `_FIELD_READERS` gives no reader, so both project as stated
+absences, and the drawer reads provenance from the evidence records instead. A
+hand-built projection could assert the drawer's behaviour but not that fact
+about the view, and the day `RRA-014` gives those columns readers this module
+needs to be looked at rather than to keep silently double-sourcing.
 
 **The drawer is asserted to be a disclosure and not an address** (`FR-161`: not
 "deferred to a terminal page"), which is a negative about the route table rather
 than about the template, because a template can only fail to link to a page that
 exists.
+
+The four breakdown surfaces this drawer also hangs from are
+`test_d105_decision_sections.py`: what a read model selects and what a page
+renders are different subjects, which is the seam CodeScene named when both were
+one file.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import re
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from khepri.rca.organizations import Organization
 from khepri.rca.semantic_queries import ports
-from khepri.rca.semantic_queries.queries import SemanticQueryActions
-from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.decision import card, evidence, seam
-from khepri.rra import definitions as facts_definitions
 from khepri.rra import facts
 from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
@@ -48,14 +47,8 @@ from khepri.rra.bundle import (
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.semantic_views import compatibility, projection, registry
 from khepri.runtime import shell_decisions
-from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
-
-LANGUAGES = ("en", "ar")
-NOW = datetime(2026, 9, 12, tzinfo=UTC)
-
-_EVIDENCE_FIELDS = ("figure", "evidence", "provenance", "absence")
-_OVERVIEW_FIELDS = ("metric", "value", "population", "versions")
-_AVAILABILITY_FIELDS = ("metric", "availability", "reason", "versions")
+from khepri.runtime.shell_api import add_shell_routes
+from tests import d105_support as support
 
 #: Every line `FR-162` requires a card expose "directly or through one action",
 #: as the template marks them. `comparison` is absent on purpose: the
@@ -77,101 +70,10 @@ _FR162_LINES = (
 )
 
 
-# --- the scripted port, as the three slices before this one built it ---------
-
-
-class _ScriptedPort:
-    """Answers per `view_id`, so one read can miss while the others admit."""
-
-    def __init__(self, outcomes: dict[str, ports.ViewOutcome | None]) -> None:
-        """Answer each view with what it was scripted to answer."""
-        self.outcomes = outcomes
-        self.requests: list[ports.SemanticViewRequest] = []
-
-    def project(
-        self, request: ports.SemanticViewRequest, sources: tuple[object, ...]
-    ) -> ports.ViewOutcome | None:
-        """Record the request verbatim, and answer as scripted."""
-        self.requests.append(request)
-        return self.outcomes.get(request.view_id)
-
-
-class _FakeIsolation:
-    """One owner id for any pair; scoping is not what these cases test."""
-
-    def resolve_scope(self, account_id: str, organization_id: str) -> str:
-        """One owner id, so the port decides every answer."""
-        return f"owner-of-{organization_id}"
-
-
-class _FakeSources:
-    """A source reader that always finds the run."""
-
-    def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> object:
-        """A source the fake port never inspects."""
-        return object()
-
-
-def _actions(port: _ScriptedPort) -> SemanticQueryActions:
-    """The real orchestration over a fake door and a scripted port."""
-    return SemanticQueryActions(_FakeIsolation(), _FakeSources(), port)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _Record:
-    """One cited evidence record as the port publishes it.
-
-    A local shape rather than `CitedEvidence` because the read model is
-    `khepri.rca`'s and may not import `khepri.rra`: a test that handed it the
-    real record would assert an import the module is forbidden to make.
-    """
-
-    citation_id: str
-    metric: str
-    unit_kind: object = "monetary"
-    formula_version: object = "rra004.formula.v1"
-    precision: object | None = 2
-    inputs: object | None = ("fct_a",)
-    provenance: object | None = (("subject", "v1"),)
-
-
-#: A complete record and one stating all three governed absences.
-_STATED = _Record(citation_id="cit_revenue", metric="revenue")
-_UNSTATED = _Record(
-    citation_id="cit_gross_profit",
-    metric="gross_profit",
-    precision=None,
-    inputs=None,
-    provenance=None,
-)
-
-#: The absences `_UNSTATED` states, in the order `RRA-014` states them.
-_UNSTATED_ABSENCES = (
-    ("cit_gross_profit", "precision"),
-    ("cit_gross_profit", "inputs"),
-    ("cit_gross_profit", "provenance"),
-)
-
-
-def _evidence_outcome(
-    records: tuple[_Record, ...] = (_STATED,),
-    absences: tuple[tuple[str, str], ...] = (),
-) -> ports.ViewOutcome:
-    """An admitted S-9 outcome carrying rows, records and stated absences."""
-    return ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=seam.REPORT_EVIDENCE.view_id,
-            view_version=seam.REPORT_EVIDENCE.view_version,
-            fields=_EVIDENCE_FIELDS,
-            rows=tuple(
-                (f"fig_{record.metric}", record.citation_id, None, None)
-                for record in records
-            ),
-            evidence=records,
-            evidence_absences=absences,  # type: ignore[arg-type]
-        ),
-        effective=ports.EffectiveRequest(dimensions=("period",)),
+def _both_records() -> ports.ViewOutcome:
+    """One complete record and one stating all three governed absences."""
+    return support.evidence_outcome(
+        (support.STATED, support.UNSTATED), support.UNSTATED_ABSENCES
     )
 
 
@@ -184,8 +86,8 @@ def _request() -> evidence.EvidenceRequest:
 
 def _read(outcome: ports.ViewOutcome | None) -> evidence.EvidenceReading:
     """One S-9 read against a port scripted to answer that view alone."""
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: outcome})
-    return evidence.read_evidence(_actions(port), _request())
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: outcome})
+    return evidence.read_evidence(support.actions(port), _request())
 
 
 # --- FR-160: S-9 is read at its literal version, and no other view ----------
@@ -200,16 +102,16 @@ def test_the_evidence_version_is_a_literal_the_registry_still_publishes() -> Non
 
 def test_the_drawer_reads_only_the_evidence_view() -> None:
     """`FR-160` -- named exactly, and no second view fetched to fill anything in."""
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _evidence_outcome()})
-    evidence.read_evidence(_actions(port), _request())
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: support.evidence_outcome()})
+    evidence.read_evidence(support.actions(port), _request())
     assert [asked.view_id for asked in port.requests] == [seam.REPORT_EVIDENCE.view_id]
     assert port.requests[0].view_version == seam.REPORT_EVIDENCE.view_version
 
 
 def test_the_evidence_read_names_no_metric_so_the_view_selects() -> None:
     """`FR-135` -- an empty selection asks for the definition's published one."""
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _evidence_outcome()})
-    evidence.read_evidence(_actions(port), _request())
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: support.evidence_outcome()})
+    evidence.read_evidence(support.actions(port), _request())
     assert port.requests[0].metrics == ()
     assert port.requests[0].dimensions == ()
 
@@ -220,8 +122,8 @@ def test_the_evidence_read_names_no_metric_so_the_view_selects() -> None:
 def test_the_evidence_request_carries_no_filter_because_the_view_admits_none() -> None:
     """`FR-137` -- a forwarded filter would refuse every figure the drawer opened on."""
     assert registry.define_view(seam.REPORT_EVIDENCE.view_id).request_filter_allowlist == ()
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _evidence_outcome()})
-    evidence.read_evidence(_actions(port), _request())
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: support.evidence_outcome()})
+    evidence.read_evidence(support.actions(port), _request())
     assert port.requests[0].filters == ()
 
 
@@ -236,7 +138,7 @@ def test_the_evidence_request_has_no_filters_field_to_forward() -> None:
 
 def test_an_entry_carries_what_the_record_states_and_nothing_it_does_not() -> None:
     """`FR-159` -- select and pass through. Precision is the record's, not re-derived."""
-    entry = _read(_evidence_outcome()).entries[0]
+    entry = _read(support.evidence_outcome()).entries[0]
     assert entry.citation == "cit_revenue"
     assert entry.metric == "revenue"
     assert entry.unit_kind == "monetary"
@@ -247,7 +149,7 @@ def test_an_entry_carries_what_the_record_states_and_nothing_it_does_not() -> No
 
 def test_an_entry_names_the_figures_its_citation_appears_against() -> None:
     """The view's own rows, grouped by citation. Layout, not derivation."""
-    entry = _read(_evidence_outcome()).entries[0]
+    entry = _read(support.evidence_outcome()).entries[0]
     assert entry.figures == ("fig_revenue",)
 
 
@@ -268,7 +170,7 @@ def test_the_evidence_reading_keeps_no_effective_request_of_its_own() -> None:
 
 def test_a_governed_absence_is_named_against_its_own_citation() -> None:
     """`FR-140` -- "the record says there is none", carried to the reader as that."""
-    reading = _read(_evidence_outcome((_STATED, _UNSTATED), _UNSTATED_ABSENCES))
+    reading = _read(_both_records())
     absent = {entry.metric: entry.absences for entry in reading.entries}
     assert absent["gross_profit"] == ("precision", "inputs", "provenance")
     assert absent["revenue"] == ()
@@ -276,7 +178,7 @@ def test_a_governed_absence_is_named_against_its_own_citation() -> None:
 
 def test_an_absence_leaves_the_reading_admitted_and_unrefused() -> None:
     """`D1-01` §4 -- every view's `required_evidence` is `()`, so this is data."""
-    reading = _read(_evidence_outcome((_UNSTATED,), _UNSTATED_ABSENCES))
+    reading = _read(support.evidence_outcome((support.UNSTATED,), support.UNSTATED_ABSENCES))
     assert reading.status == ports.KIND_ADMITTED
     assert reading.refusal is None
     assert reading.entries[0].absences
@@ -284,7 +186,7 @@ def test_an_absence_leaves_the_reading_admitted_and_unrefused() -> None:
 
 def test_an_empty_evidence_projection_states_absence_rather_than_no_rows() -> None:
     """`FR-163` -- S-9's governed rule is `stated_absence`, and it says so."""
-    outcome = _evidence_outcome(())
+    outcome = support.evidence_outcome(())
     empty = dataclasses.replace(outcome.projection, is_empty=True)  # type: ignore[arg-type]
     reading = _read(dataclasses.replace(outcome, projection=empty))
     assert reading.empty_rule == seam.EMPTY_STATED_ABSENCE
@@ -412,7 +314,7 @@ def test_a_refused_outcome_carrying_a_projection_is_still_refused() -> None:
     """The kind decides, never the payload -- carried from `#446`."""
     refusal = ports.ViewRefusal(cause="view_incompatible_source_shape")
     outcome = dataclasses.replace(
-        _evidence_outcome(), kind=ports.KIND_REFUSED, refusal=refusal
+        support.evidence_outcome(), kind=ports.KIND_REFUSED, refusal=refusal
     )
     reading = _read(outcome)
     assert reading.status == ports.KIND_REFUSED
@@ -423,57 +325,26 @@ def test_a_refused_outcome_carrying_a_projection_is_still_refused() -> None:
 # --- FR-162: the card's evidence action -------------------------------------
 
 
-def _availability(rows: tuple[tuple[object, ...], ...]) -> ports.ViewOutcome:
-    """S-6's governed four-state for the metrics a case names."""
-    return ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=seam.METRIC_AVAILABILITY.view_id,
-            view_version=seam.METRIC_AVAILABILITY.view_version,
-            fields=_AVAILABILITY_FIELDS,
-            rows=rows,
-        ),
-    )
-
-
-def _overview(caveats: tuple[object, ...] = ()) -> ports.ViewOutcome:
-    """S-1 publishing two figures, qualified by whatever caveats a case supplies."""
-    return ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=seam.EXECUTIVE_OVERVIEW.view_id,
-            view_version=seam.EXECUTIVE_OVERVIEW.view_version,
-            fields=_OVERVIEW_FIELDS,
-            rows=(
-                ("revenue", "700.00", "complete", ()),
-                ("gross_profit", "120.00", "complete", ()),
-            ),
-            caveats=caveats,
-        ),
-        effective=ports.EffectiveRequest(dimensions=("period",)),
-    )
-
-
 def _cards(evidence_outcome: ports.ViewOutcome | None, **kw: object) -> card.CardsReading:
     """One S-1 read with S-6 and S-9 beside it, each scripted independently."""
-    port = _ScriptedPort(
+    port = support.ScriptedPort(
         {
-            seam.EXECUTIVE_OVERVIEW.view_id: _overview(**kw),  # type: ignore[arg-type]
-            seam.METRIC_AVAILABILITY.view_id: _availability(
+            seam.EXECUTIVE_OVERVIEW.view_id: support.overview(**kw),  # type: ignore[arg-type]
+            seam.METRIC_AVAILABILITY.view_id: support.availability(
                 (("revenue", card.AVAILABILITY_AVAILABLE, None, ()),)
             ),
             seam.REPORT_EVIDENCE.view_id: evidence_outcome,
         }
     )
     return card.read_cards(
-        _actions(port),
+        support.actions(port),
         card.CardsRequest(organization_id="org-1", account_id="acct-1", source_id="run-1"),
     )
 
 
 def test_a_card_carries_the_evidence_action_for_its_own_metric() -> None:
     """`FR-162` -- "an evidence action", which `D1-03` named and left empty."""
-    reading = _cards(_evidence_outcome((_STATED, _UNSTATED), _UNSTATED_ABSENCES))
+    reading = _cards(_both_records())
     actions = {one.metric: one.evidence for one in reading.cards}
     assert actions["revenue"].entries[0].citation == "cit_revenue"
     assert actions["gross_profit"].entries[0].citation == "cit_gross_profit"
@@ -481,7 +352,7 @@ def test_a_card_carries_the_evidence_action_for_its_own_metric() -> None:
 
 def test_a_card_whose_metric_the_evidence_view_did_not_cite_says_so() -> None:
     """An action with no entries, never an entry borrowed from another metric."""
-    reading = _cards(_evidence_outcome((_STATED,)))
+    reading = _cards(support.evidence_outcome((support.STATED,)))
     actions = {one.metric: one.evidence for one in reading.cards}
     assert actions["gross_profit"].entries == ()
     assert actions["gross_profit"].unavailable is False
@@ -497,62 +368,19 @@ def test_an_unavailable_evidence_read_leaves_every_card_rendered() -> None:
 
 def test_the_cards_carry_the_effective_request_their_own_figures_applied() -> None:
     """`FR-137`/`FR-162` -- the filter line states what applied to *this* view."""
-    reading = _cards(_evidence_outcome())
+    reading = _cards(support.evidence_outcome())
     assert reading.effective is not None
     assert reading.effective.dimensions == ("period",)
 
 
 def test_the_caveat_count_cannot_reach_the_status_selection() -> None:
     """`FR-162` requires a count; `FR-159` bars a derived figure. Both hold."""
-    one = _cards(_evidence_outcome(), caveats=("caveat_a",))
-    three = _cards(_evidence_outcome(), caveats=("caveat_a", "caveat_b", "caveat_c"))
+    one = _cards(support.evidence_outcome(), caveats=("caveat_a",))
+    three = _cards(support.evidence_outcome(), caveats=("caveat_a", "caveat_b", "caveat_c"))
     assert {card_.status for card_ in one.cards} == {card_.status for card_ in three.cards}
 
 
 # --- the surface: the drawer is a disclosure, not an address ----------------
-
-
-class _Context:
-    """A resolved actor in one organization, as `ActorResolver` answers one."""
-
-    def __init__(self, organization_id: str | None = "org-acme") -> None:
-        """One owner of `org-acme` unless the case names another scope."""
-        self.account_id = "acct-1"
-        self.organization_id = organization_id
-        self.role = "owner"
-
-    @property
-    def is_owner(self) -> bool:
-        """Owner everywhere; the decision surface is a read and never asks."""
-        return True
-
-
-class _StubResolver:
-    """The scope door, answering one context."""
-
-    def for_request(
-        self, token: str, *, organization_id: str | None = None, now: object = None
-    ) -> _Context:
-        """The session's context."""
-        return _Context()
-
-    def require_owner(
-        self, token: str, *, organization_id: str, now: object = None
-    ) -> _Context:  # pragma: no cover
-        """Never reached: nothing on this surface is owner-gated."""
-        raise AssertionError("the decision surface is a read")
-
-
-class _StubOrganizations:
-    """One membership, so the frame resolves rather than the chooser rendering."""
-
-    def organizations_for_account(self, account_id: str) -> list[Organization]:
-        """The one organization every case in this file acts in."""
-        return [
-            Organization._from_storage(
-                organization_id="org-acme", name="Acme", created_at=NOW
-            )
-        ]
 
 
 class _StubDecisions:
@@ -568,44 +396,26 @@ class _StubDecisions:
         """Each view answered as itself; `FR-165` makes them independent."""
         view_id = asked.view.view_id  # type: ignore[attr-defined]
         if view_id == seam.METRIC_AVAILABILITY.view_id:
-            return _availability((("revenue", card.AVAILABILITY_AVAILABLE, None, ()),))
+            return support.availability((("revenue", card.AVAILABILITY_AVAILABLE, None, ()),))
         if view_id == seam.REPORT_EVIDENCE.view_id:
-            return _evidence_outcome((_STATED, _UNSTATED), _UNSTATED_ABSENCES)
+            return _both_records()
         if view_id == seam.EXECUTIVE_OVERVIEW.view_id:
-            return _overview()
+            return support.overview()
         return ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE)
 
 
 def _app() -> FastAPI:
-    """A shell wired with the decision collaborator."""
+    """A shell wired with the S-1 collaborator these cases script."""
     app = FastAPI()
     add_shell_routes(
-        app,
-        services=ShellServices(
-            resolver=_StubResolver(),
-            organizations=_StubOrganizations(),
-            decisions=_StubDecisions(),
-        ),
-        clock=lambda: NOW,
+        app, services=support.services(_StubDecisions()), clock=lambda: support.NOW
     )
     return app
 
 
-def _client(app: FastAPI) -> TestClient:
-    """That shell with a session cookie on it."""
-    client = TestClient(app, base_url="https://testserver")
-    client.cookies.set(SESSION_COOKIE, "a-session-token")
-    return client
-
-
-def _address(language: str = "en") -> str:
-    """The decision surface's address for one completed run."""
-    return f"{SHELL_PREFIX}/{language}/org-acme/decisions/run-a"
-
-
 def _page(language: str = "en") -> str:
     """The rendered decision surface in one language."""
-    return _client(_app()).get(_address(language)).text
+    return support.client(_StubDecisions()).get(support.address(language)).text
 
 
 def test_the_drawer_has_no_address_of_its_own() -> None:
@@ -642,7 +452,7 @@ def test_a_stated_absence_renders_as_data_rather_than_as_a_refusal() -> None:
     assert 'class="decision-refusal"' not in body
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
+@pytest.mark.parametrize("language", support.LANGUAGES)
 def test_the_drawer_states_no_less_in_one_language_than_the_other(language: str) -> None:
     """`FR-171` -- same drawers, same entries, same absences in both."""
     body = _page(language)
@@ -668,14 +478,14 @@ def test_the_absence_literals_are_the_ones_rra014_states() -> None:
         projection.ABSENCE_INPUTS,
         projection.ABSENCE_PROVENANCE,
     }
-    for language in LANGUAGES:
+    for language in support.LANGUAGES:
         assert set(shell_decisions.ABSENCE_WORDING[language]) == stated
 
 
 def test_the_unit_literals_are_the_ones_rra004_states() -> None:
     """The three governed unit kinds, keyed by the constants themselves."""
     stated = {facts.UNIT_MONETARY, facts.UNIT_COUNT, facts.UNIT_RATIO}
-    for language in LANGUAGES:
+    for language in support.LANGUAGES:
         assert set(shell_decisions.UNIT_WORDING[language]) == stated
 
 
@@ -700,284 +510,3 @@ def test_the_period_the_drawer_states_is_the_run_the_surface_names() -> None:
     assert re.search(r'data-line="period"[^>]*>\s*run-a', _page()) is not None
 
 
-# --- the surfaces the drawer has to hang from -------------------------------
-#
-# `D1-04` shipped `breakdowns.py`, `limits.py` and the route, and rendered none
-# of them: the template carried S-1's cards and nothing else. `D1-05`'s
-# acceptance is that the drawer is reachable from every figure on S-1, S-3, S-4
-# and S-5, so the three missing surfaces are built here. `FR-163`'s "the two
-# governed empty rules render distinguishably" is `D1-04`'s own acceptance
-# criterion finally driven through a rendered page rather than a read model.
-
-_BRANCH_FIELDS = ("store", "metric", "value", "population")
-_PRODUCT_FIELDS = ("dimension", "member", "metric", "value", "population")
-_BASKET_FIELDS = ("metric", "value", "population", "versions")
-_CONCENTRATION_FIELDS = ("dimension", "metric", "value", "population")
-
-#: Every section this surface renders, and the empty rule each one's view states.
-_SECTIONS = (
-    (shell_decisions.SECTION_BRANCHES, seam.BRANCH_PERFORMANCE),
-    (shell_decisions.SECTION_PRODUCTS, seam.PRODUCT_CATEGORY),
-    (shell_decisions.SECTION_BASKET, seam.BASKET),
-    (shell_decisions.SECTION_CONCENTRATION, seam.CONCENTRATION),
-)
-
-_UNAVAILABLE = ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE)
-
-
-def _breakdown(
-    view: seam.ViewIdentity,
-    fields: tuple[str, ...],
-    rows: tuple[tuple[object, ...], ...],
-    is_empty: bool = False,
-) -> ports.ViewOutcome:
-    """An admitted breakdown outcome in its own view's published field order."""
-    return ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=view.view_id,
-            view_version=view.view_version,
-            fields=fields,
-            rows=rows,
-            is_empty=is_empty,
-        ),
-    )
-
-
-def _full_surface() -> dict[str, ports.ViewOutcome]:
-    """Every view this surface reads, each admitted with figures on it."""
-    return {
-        seam.EXECUTIVE_OVERVIEW.view_id: _overview(),
-        seam.METRIC_AVAILABILITY.view_id: _availability(
-            (("revenue", card.AVAILABILITY_AVAILABLE, None, ()),)
-        ),
-        seam.REPORT_EVIDENCE.view_id: _evidence_outcome(
-            (_STATED, _UNSTATED), _UNSTATED_ABSENCES
-        ),
-        seam.BRANCH_PERFORMANCE.view_id: _breakdown(
-            seam.BRANCH_PERFORMANCE,
-            _BRANCH_FIELDS,
-            (("store-a", "revenue_by_store", "700.00", "complete"),),
-        ),
-        seam.PRODUCT_CATEGORY.view_id: _breakdown(
-            seam.PRODUCT_CATEGORY,
-            _PRODUCT_FIELDS,
-            (("category", "drinks", "revenue_by_category", "120.00", "complete"),),
-        ),
-        seam.BASKET.view_id: _breakdown(
-            seam.BASKET,
-            _BASKET_FIELDS,
-            (("basket_attach_rate", "0.25", "complete", ()),),
-        ),
-        seam.CONCENTRATION.view_id: _breakdown(
-            seam.CONCENTRATION,
-            _CONCENTRATION_FIELDS,
-            (("product", "concentration_top_decile_share", "0.60", "complete"),),
-        ),
-    }
-
-
-class _SurfaceDecisions:
-    """Every view scripted independently, recording what the surface asked for."""
-
-    def __init__(self, outcomes: dict[str, ports.ViewOutcome]) -> None:
-        """Hold the scripted answers, and the log the isolation cases read back."""
-        self.outcomes = outcomes
-        self.asked: list[str] = []
-
-    def request(self, asked: object) -> ports.ViewOutcome:
-        """Answer as scripted; a view with no script is content-free unavailable."""
-        view_id = asked.view.view_id  # type: ignore[attr-defined]
-        self.asked.append(view_id)
-        return self.outcomes.get(view_id, _UNAVAILABLE)
-
-
-def _surface(outcomes: dict[str, ports.ViewOutcome]) -> _SurfaceDecisions:
-    """A decision collaborator scripted for one page."""
-    return _SurfaceDecisions(outcomes)
-
-
-def _rendered(decisions: _SurfaceDecisions, language: str = "en") -> str:
-    """That page, rendered through the route in one language."""
-    app = FastAPI()
-    add_shell_routes(
-        app,
-        services=ShellServices(
-            resolver=_StubResolver(),
-            organizations=_StubOrganizations(),
-            decisions=decisions,
-        ),
-        clock=lambda: NOW,
-    )
-    client = TestClient(app, base_url="https://testserver")
-    client.cookies.set(SESSION_COOKIE, "a-session-token")
-    return client.get(f"{SHELL_PREFIX}/{language}/org-acme/decisions/run-a").text
-
-
-@pytest.mark.parametrize("section,view", _SECTIONS)
-def test_the_surface_renders_a_section_for_every_governed_breakdown(
-    section: str, view: seam.ViewIdentity
-) -> None:
-    """`D1-04`'s read models reach a reader at last: S-3, S-4, S-5a and S-5b."""
-    body = _rendered(_surface(_full_surface()))
-    assert shell_decisions.SECTION_COPY["en"][section] in body
-    assert f'data-section="{section}"' in body
-
-
-def test_the_governed_availability_is_reachable_beside_the_figure_it_qualifies() -> None:
-    """S-6 under `FR-161`, which is why it is not a section of its own.
-
-    "Availability, caveats and refusals are reachable from the surface carrying
-    the figure they qualify and are **not deferred to a terminal page**." So S-6
-    renders *distributed*: the four-state sits in the card's own row, and each
-    section states its own caveats and refusal. A consolidated limits section
-    would be a second read of `MetricAvailabilityView` on a page whose cards
-    already carry it -- the duplication `FR-168` and `FR-135` both bar.
-    """
-    body = _rendered(_surface(_full_surface()))
-    cards = re.findall(r'<li class="decision-card".*?</li>', body, flags=re.S)
-    qualified = [one for one in cards if card.AVAILABILITY_AVAILABLE in one]
-    assert qualified, "no card carried the governed availability beside its figure"
-
-
-def test_the_availability_view_is_read_once_for_the_whole_surface() -> None:
-    """`FR-168`/`FR-135` -- one read of S-6, however many figures it qualifies."""
-    decisions = _surface(_full_surface())
-    _rendered(decisions)
-    assert decisions.asked.count(seam.METRIC_AVAILABILITY.view_id) == 1
-
-
-def test_the_two_governed_empty_rules_render_distinguishably_on_one_page() -> None:
-    """`FR-163`, and `D1-04`'s own acceptance criterion driven through a page.
-
-    A store filter naming a store with no sales is `stated_no_rows` and is not a
-    refused measure; a source that published no basket value states absence. A
-    surface rendering both as an empty table would misstate the customer's data.
-    """
-    outcomes = _full_surface()
-    outcomes[seam.BRANCH_PERFORMANCE.view_id] = _breakdown(
-        seam.BRANCH_PERFORMANCE, _BRANCH_FIELDS, (), is_empty=True
-    )
-    outcomes[seam.BASKET.view_id] = _breakdown(
-        seam.BASKET, _BASKET_FIELDS, (), is_empty=True
-    )
-    body = _rendered(_surface(outcomes))
-    no_rows = shell_decisions.EMPTY_WORDING["en"][seam.EMPTY_STATED_NO_ROWS]
-    absence = shell_decisions.EMPTY_WORDING["en"][seam.EMPTY_STATED_ABSENCE]
-    assert no_rows != absence
-    assert no_rows in body
-    assert absence in body
-
-
-def test_every_breakdown_figure_can_reach_its_own_drawer() -> None:
-    """`FR-161` -- reachable from the surface carrying the figure, on all four."""
-    body = _rendered(_surface(_full_surface()))
-    # Two cards on S-1 and one row in each of the four breakdowns.
-    assert body.count('class="decision-drawer"') == 6
-
-
-def test_a_breakdown_row_carries_no_four_state_availability() -> None:
-    """`FR-167`, negatively -- and no surface may synthesize one either."""
-    body = _rendered(_surface(_full_surface()))
-    rows = re.findall(r'<li class="decision-row".*?</li>', body, flags=re.S)
-    assert rows
-    assert not [row for row in rows if "decision-availability" in row]
-
-
-def test_the_basket_surface_renders_the_half_that_answered() -> None:
-    """`FR-165` -- one surface, two reads, and neither ordering privileged."""
-    outcomes = _full_surface()
-    outcomes.pop(seam.CONCENTRATION.view_id)
-    body = _rendered(_surface(outcomes))
-    assert "0.25" in body
-    assert shell_decisions.DECISION_COPY["en"]["unavailable"] in body
-
-
-def test_a_refused_breakdown_shows_the_governed_wording_and_no_figure() -> None:
-    """`FR-164` -- `RRA-014`'s own bilingual wording, never an invented sentence."""
-    outcomes = _full_surface()
-    outcomes[seam.PRODUCT_CATEGORY.view_id] = ports.ViewOutcome(
-        kind=ports.KIND_REFUSED,
-        refusal=ports.ViewRefusal(
-            cause="view_unsupported_filter",
-            wording_pairs=(("en", "That filter is not supported."), ("ar", "غير مدعوم.")),
-        ),
-    )
-    body = _rendered(_surface(outcomes))
-    assert "That filter is not supported." in body
-    assert "drinks" not in body
-
-
-def test_a_drawer_with_no_evidence_read_behind_it_says_unavailable_not_absent() -> None:
-    """`FR-165` -- and the difference between "none was cited" and "we did not look".
-
-    `read_cards` returns before reading S-9 when S-1 is refused, so a page can
-    carry breakdown figures with no evidence reading behind them at all. A drawer
-    that then claimed the analysis cited no evidence would be asserting something
-    the page never checked; the content-free unavailable is the true answer.
-    """
-    outcomes = _full_surface()
-    outcomes[seam.EXECUTIVE_OVERVIEW.view_id] = ports.ViewOutcome(
-        kind=ports.KIND_REFUSED,
-        refusal=ports.ViewRefusal(
-            cause="view_incompatible_source_shape",
-            wording_pairs=(("en", "That source is the wrong shape."), ("ar", "شكل غير صالح.")),
-        ),
-    )
-    decisions = _surface(outcomes)
-    body = _rendered(decisions)
-    assert decisions.asked.count(seam.REPORT_EVIDENCE.view_id) == 0
-    assert shell_decisions.DECISION_COPY["en"]["evidence_unavailable"] in body
-    assert shell_decisions.DECISION_COPY["en"]["evidence_absent"] not in body
-
-
-def test_the_evidence_view_is_read_once_for_the_whole_surface() -> None:
-    """`FR-168` -- no cache, and one read rather than one per figure."""
-    decisions = _surface(_full_surface())
-    _rendered(decisions)
-    assert decisions.asked.count(seam.REPORT_EVIDENCE.view_id) == 1
-
-
-@pytest.mark.parametrize("language", LANGUAGES)
-def test_the_sections_state_the_same_thing_in_both_languages(language: str) -> None:
-    """`FR-171` -- same sections, same rows, same drawers in both."""
-    body = _rendered(_surface(_full_surface()), language)
-    assert body.count('class="decision-drawer"') == 6
-    assert body.count('class="decision-row"') == 4
-    for section, _view in _SECTIONS:
-        assert shell_decisions.SECTION_COPY[language][section] in body
-
-
-def test_every_section_heading_exists_in_both_governed_languages() -> None:
-    """`FR-171` -- a heading present in one language and absent in the other is a gap."""
-    assert set(shell_decisions.SECTION_COPY["en"]) == set(
-        shell_decisions.SECTION_COPY["ar"]
-    )
-    assert set(shell_decisions.EMPTY_WORDING["en"]) == set(
-        shell_decisions.EMPTY_WORDING["ar"]
-    )
-
-
-def test_every_breakdown_metric_is_one_the_catalog_can_define() -> None:
-    """The drawer reads `RRA-011` for every figure, so every figure must be in it.
-
-    `describe_metric` raises `UnknownCode` rather than falling back, and a raw
-    code is never a fallback either -- so a view publishing a metric the catalog
-    does not admit would reach a customer as a 500 rather than as a surface. The
-    contract already holds; this is the check that keeps it holding, in the same
-    spirit as pinning a literal and asserting it against its source.
-    """
-    for _section, view in _SECTIONS:
-        published = registry.define_view(view.view_id)
-        for metric in published.metric_allowlist:
-            assert facts_definitions.admits_metric(metric), (
-                f"{view.view_id} publishes {metric!r}, which `RRA-011` cannot define"
-            )
-            assert facts_definitions.describe_metric(metric, "en")
-            assert facts_definitions.describe_metric(metric, "ar")
-
-
-def test_the_empty_wording_covers_exactly_the_two_governed_rules() -> None:
-    """`FR-163` -- two rules, two sentences, and no third invented here."""
-    governed = {seam.EMPTY_STATED_NO_ROWS, seam.EMPTY_STATED_ABSENCE}
-    assert set(shell_decisions.EMPTY_WORDING["en"]) == governed

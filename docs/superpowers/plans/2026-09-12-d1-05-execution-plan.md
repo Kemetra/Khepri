@@ -126,8 +126,18 @@ src/khepri/rca/workspace/decision/evidence.py       NEW   S-9 figure half
 src/khepri/rca/workspace/decision/card.py           EDIT  evidence: EvidenceAction | None
 src/khepri/runtime/shell_decisions.py               EDIT  definition half, sections, drawer view
 src/khepri/runtime/shell_templates/decision.html.j2 EDIT  drawer + S-3/S-4/S-5/S-6 sections
-tests/test_d105_evidence_drawer.py                  NEW
+tests/d105_support.py                               NEW   the harness both files share
+tests/test_d105_evidence_drawer.py                  NEW   S-9, the card action, the drawer
+tests/test_d105_decision_sections.py                NEW   the four rendered breakdowns
 ```
+
+**Three test files and not one, because CodeScene said so and it was right.** One file carrying
+both subjects scored 8.03 — `Lines of Code in a Single File`, and critically `Low Cohesion`. The
+seam it pointed at is real: what a read model *selects* and what a page *renders* are different
+subjects with different failure modes, and the fixtures they share are exactly the ones the
+support module now holds. `<slice>_support.py` is this repository's existing convention
+(`w104_support.py`, `c105_support.py`, `w110_support.py`). The split moved no assertion and lost
+no case: 5401 before, 5401 after.
 
 **`shell_assets/workspace.css` is not in that list, and the first draft of this plan had it
 there.** The file carries no `decision-` rule at all: `D1-03` and `D1-04` shipped the surface with
