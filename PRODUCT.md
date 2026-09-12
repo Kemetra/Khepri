@@ -36,8 +36,10 @@ rather than approximated.** A neighboring BI product presents whatever the query
 declines to answer where its facts do not support an answer, keeps that refusal visible in the place
 the answer would have appeared, and makes the reason and evidence reachable from the claim.
 
-Facts are deterministic and versioned. Templates, controllers, dashboards, APIs, semantic views, and
-AI may select and present facts; **they may not recalculate them**.
+Facts are deterministic and versioned. Report surfaces reproduce the fact-package bundle
+(`RRA-006`). The decision workspace projects pinned semantic views (`RCA-008`). Templates,
+controllers, dashboards, APIs, and AI may select and present those facts; they may not introduce a
+second arithmetic.
 
 ## Operating Context
 
@@ -87,9 +89,12 @@ contains `FND`, `RRA`, and `RCA` only. The programs `W1`, `T1`, `G2`, `G3`, and 
 registry entries** — they are roadmap programs, not registered authority, so no M3 slice is
 admissible on them and any design work against them is direction only.
 
-Explicitly undecided product facts: retention clock cardinality; tombstone fields; whether deletion
-is owner-only in the shipped sense; the customer-facing trust-state vocabulary and its counting
-grammar; and the primary navigation label set (see the conflict below).
+Deletion is owner-only (`RCA-005` FR-123). Decision-workspace trust states are verified, caveated,
+refused, and unavailable (`RCA-008` FR-162). Landing Proven / Caveated / Withheld blocks are
+labelled specimens (`RCA-004` FR-084), not a second customer vocabulary.
+
+Explicitly undecided product facts: retention clock cardinality; tombstone fields; the counting
+grammar of trust states; and the primary navigation label set (see the conflict below).
 
 ## Brand Commitments
 

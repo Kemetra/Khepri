@@ -20,5 +20,8 @@ Khepri uses minimal single-owner governance. Read `governance/CONSTITUTION.md` a
 - If parallel slices add sibling Alembic migrations, the second to merge re-points its
   `down_revision`. If squash-merging detaches a stacked branch, replay it with
   `git rebase --onto origin/main <old-base>` instead of merging.
+- For adversarial review of a slice, program, plan, spec, or product claim, load
+  `.grok/skills/khepri-adversarial-review/SKILL.md` before reviewing. Ordinary
+  code review, CodeScene, and pytest are not substitutes.
 
 Repository-local instructions override broader defaults when they are more restrictive.

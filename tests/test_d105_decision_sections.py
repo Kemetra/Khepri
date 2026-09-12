@@ -124,10 +124,12 @@ def test_the_governed_availability_is_reachable_beside_the_figure_it_qualifies()
     would be a second read of `MetricAvailabilityView` on a page whose cards
     already carry it -- the duplication `FR-168` and `FR-135` both bar.
     """
-    body = _rendered(_surface(_full_surface()))
-    cards = re.findall(r'<li class="decision-card".*?</li>', body, flags=re.S)
-    qualified = [one for one in cards if card.AVAILABILITY_AVAILABLE in one]
-    assert qualified, "no card carried the governed availability beside its figure"
+    for language in ("en", "ar"):
+        body = _rendered(_surface(_full_surface()), language=language)
+        cards = re.findall(r'<li class="decision-card".*?</li>', body, flags=re.S)
+        label = shell_decisions.DECISION_COPY[language]["availability_available"]
+        qualified = [one for one in cards if label in one]
+        assert qualified, f"no card carried availability {label!r} in {language}"
 
 
 def test_the_availability_view_is_read_once_for_the_whole_surface() -> None:

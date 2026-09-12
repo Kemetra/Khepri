@@ -574,7 +574,10 @@ class SqlWorkspaceRecordStore(PinReads):
                 version.sealed_at = now
         return True
 
-    def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
+    def get_analysis_run(self, run_id: str, owner_id: str) -> AnalysisRun | None:
+        """One live run under this scope, or `None`. Omitted or empty scope is a miss."""
+        if not owner_id:
+            return None
         with reading(self._factory) as database:
             row = database.get(AnalysisRunRow, run_id)
             if not _live_in(row, owner_id):

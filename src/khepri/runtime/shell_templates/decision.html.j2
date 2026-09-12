@@ -69,10 +69,10 @@
     <li class="decision-card" data-status="{{ card.status }}">
       <span class="decision-label" data-line="label">{{ card.label }}</span>
       <span class="decision-value" data-line="value">{{ card.value }}</span>
-      <span class="decision-status" data-line="status">{{ card.status }}</span>
+      <span class="decision-status" data-line="status">{{ card.status_label }}</span>
       <span class="decision-population" data-line="population">{{ card.population }}</span>
-      {% if card.availability %}
-      <span class="decision-availability">{{ card.availability }}</span>
+      {% if card.availability_label %}
+      <span class="decision-availability">{{ card.availability_label }}</span>
       {% endif %}
       {% if card.reason %}
       <span class="decision-reason">{{ card.reason }}</span>

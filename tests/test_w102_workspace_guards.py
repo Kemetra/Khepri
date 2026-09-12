@@ -428,7 +428,7 @@ def test_the_column_accepts_every_state_the_domain_publishes(
             )
         )
 
-    read = store.get_analysis_run(f"run_{state}")
+    read = store.get_analysis_run(f"run_{state}", scope)
     assert read is not None
     assert read.state == state
 

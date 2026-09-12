@@ -306,8 +306,8 @@ def test_a_tombstoned_run_is_absent_from_every_live_read(factory: sessionmaker) 
         row.retention_state = RETENTION_TOMBSTONED
         row.retention_changed_at = LATER
 
-    assert store.get_analysis_run(deleted.run_id) is None
-    assert store.get_analysis_run(kept.run_id) == kept
+    assert store.get_analysis_run(deleted.run_id, scope) is None
+    assert store.get_analysis_run(kept.run_id, scope) == kept
     assert [r.run_id for r in store.analysis_runs_for_scope(scope)] == [kept.run_id]
 
 
