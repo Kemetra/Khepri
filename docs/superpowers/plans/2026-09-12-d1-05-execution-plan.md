@@ -84,8 +84,19 @@ No new route. No new `ShellServices` field. No persistence change.
    equal `define_metric(code)`'s, in both `en` and `ar`, rather than a string the drawer coins.
 3. **An unknown code refuses.** `UnknownCode` reaches the surface as `FR-164`'s worded refusal in
    the page language, and the drawer does not render.
-4. **The drawer is reachable from every figure on S-1, S-3, S-4, S-5, in one action** — asserted per
-   surface, not per figure-type.
+4. **The drawer is reachable from every figure on the surfaces that render**, asserted over the
+   route rather than by a standalone render.
+
+   **Corrected after implementation, and the correction is the point.** This step first said "S-1,
+   S-3, S-4, S-5". Only **S-1 renders today**: `D1-04` shipped `breakdowns.py` and `limits.py` as
+   read models, and `_respond` calls `read_cards` alone — no route renders S-3, S-4, S-5 or S-6, and
+   no template for them exists. So there was exactly one include point to build, and the other three
+   could only have been satisfied by *inventing* the surfaces, which would build what no slice
+   authorized and pre-empt `D1-06`.
+
+   `D1-05` therefore closes S-1's reachability and **hands S-3/S-4/S-5 forward to the slice that
+   renders them**. That slice adds the include beside its own figures; the drawer, its copy and its
+   stylesheet rules are already built and need no further authority.
 5. **The drawer has no route.** Assert no path matching `.../evidence` is in the app's route table,
    which is `FR-161` from the deployment side.
 6. **`required_evidence` is still `()` for all eight views.** An extent assertion over the registry,
@@ -111,3 +122,9 @@ CodeScene pre-flight against a freshly fetched `origin/main`.
   of `D1-05`…`D1-10`.
 - **No chart grammar, navigation, or accessibility programme** — `U1-03`/`-05`/`-06`/`-07`'s, and
   they need their own authority.
+- **No S-3/S-4/S-5 surface.** Those read models exist and nothing renders them; building a template
+  to host a drawer would be building the surface. `D1-06` onward.
+- **One evidence read per card, and it is named rather than hidden.** `FR-161` wants the evidence at
+  each figure and `FR-168` bars the instruments that would fold the reads together. `D1-09` measures
+  acquisition and may coalesce *within* a request — never between them. `drawers_for`'s docstring
+  states the count so that slice finds it recorded.

@@ -37,7 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from khepri.rca.semantic_queries.ports import ViewRefusal
+from khepri.rca.semantic_queries.ports import ViewProjection, ViewRefusal
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.workspace.decision.seam import (
     REPORT_EVIDENCE,
@@ -134,6 +134,11 @@ def _definition(
     )
 
 
+#: What `ReportEvidenceView` publishes. Named here so a projection carrying some
+#: other view's fields is detected rather than indexed into.
+_EVIDENCE_FIELDS = ("figure", "evidence", "provenance", "absence")
+
+
 def _item(cell: dict[str, object]) -> EvidenceItem:
     """One evidence row, named by the view's published field order."""
     return EvidenceItem(
@@ -141,6 +146,31 @@ def _item(cell: dict[str, object]) -> EvidenceItem:
         evidence=cell["evidence"],
         provenance=cell["provenance"],
         absence=cell["absence"],
+    )
+
+
+def _items(projection: ViewProjection) -> tuple[EvidenceItem, ...]:
+    """This view's rows, or none at all when the projection is not this view's.
+
+    **An admitted outcome can carry another view's projection.** `ViewOutcome`
+    performs no kind-to-payload validation -- which `admitted_projection`
+    already records one level up -- and nothing validates `fields` against the
+    `view_id` either. A reader that indexed by name would raise on the missing
+    key, and a reader that indexed by *position* would be worse: it would render
+    another view's values under this view's labels, which is the silent version
+    of the same defect.
+
+    So the fields are checked before the rows are read, and a disagreement
+    yields no items rather than an exception. The outcome stays admitted,
+    because it was: the view answered, and what it answered with is not this
+    view's shape to render. Review on `#449` found this through
+    `test_r807_shell_quality`, whose stub answers every view alike.
+    """
+    if tuple(projection.fields) != _EVIDENCE_FIELDS:
+        return ()
+    return tuple(
+        _item(dict(zip(projection.fields, row, strict=True)))
+        for row in projection.rows
     )
 
 
@@ -174,9 +204,6 @@ def read_drawer(
     return DrawerReading(
         status=outcome.kind,
         definition=definition,
-        items=tuple(
-            _item(dict(zip(projection.fields, row, strict=True)))
-            for row in projection.rows
-        ),
+        items=_items(projection),
         absences=projection.evidence_absences,
     )

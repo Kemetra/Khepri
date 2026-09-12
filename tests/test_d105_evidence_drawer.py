@@ -374,3 +374,199 @@ def test_the_drawer_markup_carries_no_route_of_its_own() -> None:
 
     assert "/decisions/" not in html
     assert "<a " not in html
+
+
+# --- Reachability: the drawer beside the figure, over the real route ---------
+
+
+class _StubResolver:
+    """A session that resolves to one member of one organization."""
+
+    def __init__(self, raises: Exception | None = None) -> None:
+        """Resolve to `org-acme`, or raise what the case asked for."""
+        self._raises = raises
+
+    def for_request(
+        self, token: str, *, organization_id: str | None = None, now: object = None
+    ) -> object:
+        """The member this session names."""
+        if self._raises is not None:
+            raise self._raises
+        return _Member()
+
+
+class _Member:
+    """One member of one organization."""
+
+    account_id = "acct-1"
+    organization_id = "org-acme"
+    role = "owner"
+    is_owner = True
+
+
+class _StubOrganizations:
+    """The one organization the frame lists."""
+
+    def organizations_for_account(self, account_id: str) -> list[object]:
+        """No organizations: the frame renders, the destinations do not matter here."""
+        return []
+
+
+class _StubDecisions:
+    """S-1's figures, and the evidence view the drawer reads."""
+
+    def request(self, asked: object) -> ports.ViewOutcome:
+        """Two metrics on the overview, and one evidence row per drawer read."""
+        view_id = asked.view.view_id  # type: ignore[attr-defined]
+        if view_id == seam.REPORT_EVIDENCE.view_id:
+            return _projection(
+                (("revenue", "invoice-1", "pkg-1", ""),),
+                absences=("no_provenance",),
+            )
+        return ports.ViewOutcome(
+            kind=ports.KIND_ADMITTED,
+            projection=ports.ViewProjection(
+                view_id=seam.EXECUTIVE_OVERVIEW.view_id,
+                view_version=seam.EXECUTIVE_OVERVIEW.view_version,
+                fields=("metric", "value", "population", "versions"),
+                rows=(
+                    ("revenue", "700.00", "complete", ()),
+                    ("units", "12", "complete", ()),
+                ),
+            ),
+        )
+
+
+def _route_body(language: str = "en") -> str:
+    """The decision surface as the route renders it, for one member."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from khepri.rca.session_cookie import SESSION_COOKIE
+    from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+
+    app = FastAPI()
+    add_shell_routes(
+        app,
+        services=ShellServices(
+            resolver=_StubResolver(),
+            organizations=_StubOrganizations(),
+            decisions=_StubDecisions(),
+        ),
+        clock=lambda: __import__("datetime").datetime(
+            2026, 9, 12, tzinfo=__import__("datetime").UTC
+        ),
+    )
+    client = TestClient(app, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE, "a-session-token")
+    return client.get(
+        f"{SHELL_PREFIX}/{language}/org-acme/decisions/run-a"
+    ).text
+
+
+def test_every_card_on_the_surface_carries_its_own_drawer() -> None:
+    """`FR-161` -- the evidence is reachable from the figure, in one action.
+
+    Driven over the route rather than by rendering the drawer alone: what is
+    under test is that a reader who reaches the surface can reach the evidence,
+    which a standalone render cannot show.
+    """
+    body = _route_body()
+
+    assert body.count('class="decision-drawer"') == 2
+
+
+def test_the_drawer_on_the_surface_carries_the_governed_definition() -> None:
+    """The definition half survives the route, not only the direct render."""
+    body = _route_body()
+
+    assert definitions.describe_metric("revenue", "en") in body
+
+
+def test_the_surface_states_an_absence_without_calling_it_a_refusal() -> None:
+    """The central assertion, end to end through the route."""
+    body = _route_body()
+
+    assert "drawer-absence" in body
+    assert "drawer-refusal" not in body
+
+
+# --- A projection whose fields are not this view's ---------------------------
+
+
+def test_a_projection_with_foreign_fields_yields_no_items() -> None:
+    """The payload can disagree with what was asked, and a reader may not trust it.
+
+    `admitted_projection` already records that `ViewOutcome` carries no
+    kind-to-payload validation. The same hole exists one level down: an admitted
+    outcome can carry a projection whose `fields` are some *other* view's, and a
+    reader that indexed by name would raise -- or, worse, would render another
+    view's values under this view's labels.
+
+    Found by `test_r807_shell_quality`, whose stub answers every view with the
+    overview projection. That is a legitimate input, so the drawer reports no
+    items rather than raising.
+    """
+    outcome = ports.ViewOutcome(
+        kind=ports.KIND_ADMITTED,
+        projection=ports.ViewProjection(
+            view_id=seam.REPORT_EVIDENCE.view_id,
+            view_version=seam.REPORT_EVIDENCE.view_version,
+            fields=("metric", "value", "population", "versions"),
+            rows=(("revenue", "700.00", "complete", ()),),
+        ),
+    )
+
+    reading = _read(outcome)
+
+    assert reading.status == ports.KIND_ADMITTED
+    assert reading.items == ()
+    assert reading.definition is not None
+
+
+def test_the_frameless_render_path_supplies_every_key_the_template_reads() -> None:
+    """`shell_environment` is `StrictUndefined`, so a key one path sets and the
+    other forgets raises rather than rendering a blank.
+
+    `decision_context` exists to stop exactly that -- "two places assembling a
+    template context is how a key goes missing from one of them" -- and adding
+    `drawers` to the route alone broke the frameless path, which `D1-03`'s
+    `FR-170` cases drive. So the default lives in the shared context and this
+    asserts the frameless path renders at all.
+    """
+    from khepri.rca.workspace.decision import card
+    from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
+
+    port = _ScriptedPort(
+        {
+            seam.EXECUTIVE_OVERVIEW.view_id: ports.ViewOutcome(
+                kind=ports.KIND_ADMITTED,
+                projection=ports.ViewProjection(
+                    view_id=seam.EXECUTIVE_OVERVIEW.view_id,
+                    view_version=seam.EXECUTIVE_OVERVIEW.view_version,
+                    fields=("metric", "value", "population", "versions"),
+                    rows=(("revenue", "700.00", "complete", ()),),
+                ),
+            )
+        }
+    )
+    reading = card.read_cards(
+        _actions(port),
+        card.CardsRequest(
+            organization_id="org-acme", account_id="acct-1", source_id="run-a"
+        ),
+    )
+
+    body = shell_decisions.render_decisions(
+        shell_environment(),
+        reading,
+        shell_decisions.DecisionFrame(
+            language="en",
+            organization_id="org-acme",
+            prefix=SHELL_PREFIX,
+            source_id="run-a",
+        ),
+    )
+
+    assert "700.00" in body
+    assert "decision-drawer" not in body

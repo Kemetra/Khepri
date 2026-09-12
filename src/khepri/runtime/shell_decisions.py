@@ -65,8 +65,13 @@ from jinja2 import Environment
 
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, read_cards
-from khepri.rca.workspace.decision.evidence import DrawerReading
+from khepri.rca.workspace.decision.evidence import (
+    DrawerReading,
+    DrawerRequest,
+    read_drawer,
+)
 from khepri.rra.rendering.wording import caveat_message, metric_business_name
+from khepri.runtime.metric_definitions import CatalogDefinitions
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
 from khepri.runtime.shell_invitations import ShellRendering
@@ -292,6 +297,14 @@ def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:
     """
     return {
         "decision": DECISION_COPY[language],
+        "drawer_copy": DRAWER_COPY[language],
+        # Empty by default, and named here rather than in each caller for the
+        # reason this function exists: the environment is `StrictUndefined`, so a
+        # key one render path sets and the other forgets is an exception at the
+        # second path rather than a blank. The frameless path renders no drawers
+        # -- it has no actions to read them through -- and says so by passing
+        # none, which the template reads as "no evidence beside these figures".
+        "drawers": {},
         "view": decision_view(reading, language=language),
     }
 
@@ -418,11 +431,27 @@ def _respond(call: _RouteCall) -> Response:
             source_id=call.source_id,
         ),
     )
-    return _page(call, context, language, reading)
+    drawers = drawers_for(
+        call.services.decisions,
+        reading,
+        request=DrawerRequest(
+            organization_id=context.organization_id,
+            account_id=context.account_id,
+            source_id=call.source_id,
+            metric="",
+            language=language,
+        ),
+        language=language,
+    )
+    return _page(call, context, language, reading, drawers)
 
 
 def _page(
-    call: _RouteCall, context: Any, language: str, reading: CardsReading
+    call: _RouteCall,
+    context: Any,
+    language: str,
+    reading: CardsReading,
+    drawers: tuple[tuple[str, Any], ...] = (),
 ) -> Response:
     """The surface inside `RCA-002`'s organization frame.
 
@@ -448,6 +477,9 @@ def _page(
             **frame,
             "surface_path": decision_tail(context.organization_id, call.source_id),
             **decision_context(reading, language),
+            # After `decision_context`, deliberately: the route has real drawers
+            # and overrides the empty default above.
+            "drawers": dict(drawers),
         },
     )
 
@@ -505,4 +537,52 @@ def render_drawer(
         copy=DRAWER_COPY[language],
         drawer=reading,
         view=drawer_view(reading, language=language),
+    )
+
+
+#: The catalog adapter this surface reads definitions through. Constructed here
+#: rather than carried on `ShellServices` because it holds no state, binds no
+#: connection and varies with nothing: a deployment cannot have a different one.
+#: `offers_decisions` already gates the surface, so an optional field would gate
+#: nothing a second time -- and every optional field is one more that
+#: `build_shell_services` must remember to wire (`#448`).
+_DEFINITIONS = CatalogDefinitions()
+
+
+def drawers_for(
+    actions: Any, reading: CardsReading, *, request: DrawerRequest, language: str
+) -> tuple[tuple[str, _DrawerView], ...]:
+    """One drawer per card on the surface, in the order the cards were published.
+
+    **One read per card, and that count is deliberate rather than incidental.**
+    `FR-161` requires the evidence be reachable from each figure in one action,
+    and `FR-168` bars the instruments that would fold these into fewer reads --
+    no cache, no pre-aggregation, no materialized view. `D1-09` is the slice that
+    measures acquisition and may coalesce *within* one request; it may not keep
+    anything between requests. The count is stated here so that slice finds it
+    named rather than having to discover it.
+
+    Ordered pairs and not a mapping, for `ViewRefusal.wording`'s reason: the
+    order the drawers are rendered in is the order the view published its cards,
+    and a mapping's iteration order is an implementation detail.
+    """
+    return tuple(
+        (
+            card.metric,
+            drawer_view(
+                read_drawer(
+                    actions,
+                    DrawerRequest(
+                        organization_id=request.organization_id,
+                        account_id=request.account_id,
+                        source_id=request.source_id,
+                        metric=card.metric,
+                        language=language,
+                    ),
+                    definitions=_DEFINITIONS,
+                ),
+                language=language,
+            ),
+        )
+        for card in reading.cards
     )
