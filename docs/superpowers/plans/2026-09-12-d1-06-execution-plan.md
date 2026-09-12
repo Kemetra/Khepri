@@ -1,16 +1,19 @@
-# `D1-06` — S-7, the return path that carries no figure (S-8 is owner-blocked)
+# `D1-06` — the slice has no deliverable: S-7 already ships, S-8 is owner-blocked
 
 > **Execution plan.** Parent: the allocation plan at
 > `docs/superpowers/plans/2026-09-10-d1-02-10-decision-workspace-allocation-plan.md`, refined at
 > `docs/superpowers/plans/2026-09-12-d1-06-10-planning-refinement.md`.
 > **Authority:** active `RCA-008` — `FR-159`, `FR-161`, `FR-165`.
 
-**Deliverable:** S-7 (Recent Analyses and Comparisons) as a new read model under
-`rca/workspace/decision/`. It derives no figure and performs no semantic-view read.
+**Deliverable: none. This slice writes no product code, and the finding is the output.**
 
-> **S-8 is not in this deliverable, and the reason is a specification conflict this slice cannot
-> settle.** See §S-8 is owner-blocked below. `D1-06` ships S-7; the S-8 half is filed for the
-> owner rather than worked around.
+| Half | State | Why |
+|---|---|---|
+| **S-7** Recent Analyses and Comparisons | **Already ships** | Built by `W1-09` on `RCA-005`'s Overview — `shell_api.py:486`–`:490`, `overview.html.j2:84`–`:110`, four test modules |
+| **S-8** Navigable Report Workspace | **Owner-blocked** | Two active specifications claim the surface; and its `RRA-006` bundle read does not exist |
+
+Building either would create a **second definition** of something that exists or is barred. The
+two sections below are the evidence; §What the owner is being asked is the ask.
 
 ---
 
@@ -47,24 +50,32 @@ the `RRA-011` catalog; only figures may not. S-7 and S-8 are return paths.
 
 **The failure mode this creates.** A plan that reaches for a view read has misread the slice, and
 the resulting code would be a `FR-159` violation dressed as compliance — a figure derived on a
-surface whose whole purpose is navigation. The acceptance below asserts the *absence* of a view
-read by module, not merely the correctness of one.
+surface whose whole purpose is navigation. **This is what made the slice's real state visible:**
+asking "which view does S-7 read?" and finding the answer is *none* is what prompted asking who
+already reads its records, which is how the finished Overview surface was found.
 
 ---
 
 ## What already exists, verified rather than assumed
 
 `memberships_for_organization` is absent and each shell slice finds a missing list read
-(`[[khepri-rca-store-has-no-list-reads]]`). **S-7 is the exception; S-8 is not.** Each row below
-was read in source rather than inferred from a name:
+(`[[khepri-rca-store-has-no-list-reads]]`). **This slice found the opposite for S-7 — not a missing
+read but an entire finished surface** — and the recurring defect for S-8. Each row was read in
+source rather than inferred from a name:
 
-| Need | Exists today | Where |
+| Need | State | Where |
 |---|---|---|
-| S-7: pinned objects for a scope | **Yes** — `pins_for_scope(owner_id)` | `rca/workspace/pins.py:211` |
-| S-7: recency for a scope | **Yes** — `recent_activity(owner_id, *, limit=5)` | `rca/workspace/pins.py:233` |
-| S-7: the presented shape | **Yes** — `RecentItem`, `WorkspacePin` | `rca/workspace/pins.py:62`, `:44` |
+| S-7: pinned objects for a scope | **Read exists** — `pins_for_scope(owner_id)` | `rca/workspace/pins.py:211` |
+| S-7: recency for a scope | **Read exists** — `recent_activity(owner_id, *, limit=5)` | `rca/workspace/pins.py:233` |
+| S-7: the presented shape | **Exists** — `RecentItem`, `WorkspacePin` | `rca/workspace/pins.py:62`, `:44` |
+| S-7: **the surface itself** | **Already built and rendering** | `shell_api.py:486`–`:490`, `overview.html.j2:84`–`:110` |
+| S-7: **its tests** | **Already covered** | four `test_w109_*.py` modules |
 | S-8: the surface | Exists, but is **`RCA-005`'s** — see §S-8 is owner-blocked | `shell_api.py:609` |
-| S-8: the `RRA-006` bundle read | **No** — `SqlRunReportStore` exposes link-table reads only | `rca/workspace/run_reports.py:89`–`:153` |
+| S-8: the `RRA-006` bundle read | **Absent** — `SqlRunReportStore` exposes link-table reads only | `rca/workspace/run_reports.py:89`–`:153` |
+
+**The middle two rows are why this slice ships nothing**, and they were found only by asking who
+*calls* the reads rather than whether the reads exist. A plan that stopped at "the reads exist"
+would have built `decision/recent.py` on top of a finished surface.
 
 **The last row is the recurring defect, and it was nearly missed.** An earlier draft of this plan
 listed only S-7's three reads, checked `run_reports.py` for `class` definitions rather than for
@@ -74,7 +85,8 @@ one a read of the run↔report *link table*, and none returning a report bundle.
 list is not checking a read.
 
 **No new store method is required for S-7, and none may be added:** `pins.py` and `store.py` are
-`RCA-005` source paths, which §Exclusions bars this slice from editing.
+`RCA-005` source paths, which §Exclusions bars this slice from editing. This holds for any future
+revisit too, which is why it is kept.
 
 **`RecentItem` carries no count and no rank**, by its own docstring — recency is an ordering over
 records that exist, and frequency would need a record of each visit, which `KHEPRI-DEC-034` §2
@@ -99,6 +111,52 @@ question rather than widening the diff — this is the shape
 
 The acceptance asserts this **by path**, so the constraint is checked mechanically rather than by
 the author's care.
+
+---
+
+## S-7 already ships, and building it again is the defect `FR-118` names
+
+**`D1-06`'s S-7 half was allocated as new work. It is not new work — it shipped under `W1-09`.**
+
+`shell_api.py`:483–490, on `RCA-005`'s Overview, already reads **both** of S-7's sources and
+renders them:
+
+```python
+if offers_pins(services):
+    view = replace(
+        view,
+        pinned=marked_rows(services.pins.pins_for_scope(owner_id)),
+        recent=marked_rows(services.pins.recent_activity(owner_id)),
+    )
+```
+
+`overview.html.j2`:84–110 renders both regions with their own governed empty states
+(`copy.pinned_empty`, `copy.recent_empty`), and the code comment at `:483` records the `FR-046`
+posture: "a deployment without pins renders Overview exactly as before". Coverage exists in
+`test_w109_pins.py`, `test_w109_recent_activity.py`, `test_w109_routes.py` and
+`test_w109_surface.py`.
+
+**So a `decision/recent.py` would be the second list `FR-118` bars by name** — "There is no reports
+index and **no second list of the same objects**" — and a second definition of the recency view
+whose single definition is `FR-129`'s, implemented in `pins.py:233`.
+
+**Why the allocation plan did not see this.** `RCA-008`'s nine-surfaces table lists "Recent
+Analyses and Comparisons" as a D1 surface, and the table is correct about what the surface *is*.
+What no document checked is whether the surface already existed **under another specification's
+authority** — `W1-09` built it on `RCA-005`'s Overview, and `RCA-005`'s own `FR-128`/`FR-129`
+authorize it there. This is
+`[[khepri-status-tables-drift-because-dod-never-touches-them]]` in a new shape: not a stale status
+row, but a *forward* allocation that no merged slice ever reconciled.
+
+**Two constraints confirmed while checking, kept because they bind whoever revisits this.**
+
+- **`sorted` is barred in every decision module** (`_DERIVING_CALLS`, `test_d102_decision_seam`),
+  because `FR-134` makes output order part of view identity. S-7 never needed it: `recent_activity`
+  returns "most recent first" ordered in SQL, and the read model passes through.
+- **`khepri.rca.workspace.store` and `.persistence` are barred imports** in that same scan. The
+  existing code takes the store by injection (`services.pins`, guarded by `offers_pins`), which is
+  the seam any future work here uses — not a fresh Protocol, which would be the second definition
+  `[[khepri-r8-shell-must-use-commercial-api-pattern]]` records.
 
 ---
 
@@ -191,59 +249,67 @@ rather than as a consolidated limits page.
 
 ## Execution
 
-Plan-then-RED-then-GREEN in one PR, per `[[khepri-one-pr-per-slice]]`.
+**There is no RED and no GREEN. The slice writes no product code**, so the
+plan-then-RED-then-GREEN shape of `[[khepri-one-pr-per-slice]]` does not apply: there is nothing to
+make fail, because the behaviour S-7 asks for already passes under `W1-09`'s four test modules and
+the behaviour S-8 asks for is barred until the owner rules.
 
-1. **Plan commit** — this document.
-2. **RED** — the tests below, failing because the read model and the refactor do not exist.
-   Check each RED test's surface and exception type against the tier matrix before making it
-   green (`[[khepri-red-tests-can-contradict-the-tier-matrix]]`).
-3. **GREEN** — `decision/recent.py` (S-7's read model) and the S-8 refactor.
+**Writing a RED test here would be the error, not the discipline.** A test asserting
+`decision/recent.py` exists would be a test demanding the second list `FR-118` refuses; making it
+green would ship the defect. `[[khepri-a-race-test-must-hook-the-surviving-seam]]` — a test pinned
+to work that should not happen is scaffolding at best.
 
-**Verification before any completion claim** — evidence, not assertion:
+**What was verified, and how:**
 
 ```
-uv run khepri-gov validate
-uv run ruff check .
-uv run pytest                      # the FULL suite, not the targeted file
+uv run khepri-gov validate     Governance validation passed.
 ```
 
-The full suite is not optional here: S-8 is a refactor of a surface other suites already exercise,
-and `[[khepri-run-the-full-suite-before-believing-a-targeted-one]]` records that changing an
-existing surface breaks suites you never opened while the targeted file stays green.
+No `ruff` or `pytest` run is claimed, because no source file changed. The full suite's state is
+`main`'s, unchanged by this branch.
 
-Pre-flight CodeScene against a **fetched** `origin/main`
-(`[[khepri-fetch-before-codescene-preflight]]`), and note that extracting helpers *raises* the
-module mean rather than lowering it (`[[khepri-codescene-measures-complexity-not-length]]`).
+---
+
+## What the owner is being asked
+
+Three decisions, none of which this slice may take for itself
+(`[[khepri-never-delete-the-clause-that-gates-your-change]]`):
+
+1. **S-8's surface conflict.** Amend `RCA-008` to admit the specific `RCA-005` edit S-8 needs, or
+   reassign S-8 to a slice under `RCA-005`'s authority, or rule that it needs its own artifact.
+   Note that `FR-118` bars a second reports index independently of which authority owns the file,
+   so "build it beside" is not among the options.
+2. **S-7's allocation.** `RCA-008`'s nine-surfaces table allocates a surface that `W1-09` already
+   built under `RCA-005`. Confirm S-7 is **satisfied by the existing Overview regions** and strike
+   it from `D1-06`, or state what the D1 surface must do that Overview's does not — in which case
+   it needs an amendment naming the difference, because `FR-118` bars a duplicate.
+3. **`D1-06`'s status.** With both halves resolved as above, `D1-06` has no remaining scope. It
+   should be closed as satisfied-and-blocked rather than left open as an implementable task, so
+   `D1-07` — which is parallel-safe and blocked only by `D1-04` — is the next actionable slice.
 
 ---
 
 ## Acceptance
 
-**For S-7, which this slice ships:**
+**This document's own acceptance, since it ships no code:** each claim above is a citation to a
+file and line that was read, not inferred. The load-bearing ones, for a reviewer to re-check:
 
-1. **S-7 reads records for structure and derives no figure.** Asserted as the *absence* of a
-   semantic-view read in the S-7 module — by import and by call, not by inspecting output values.
-   A scan asserting absence carries its own emptiness assertion
-   (`[[khepri-guards-that-cannot-see-the-new-surface]]`).
-2. **A record read that is unavailable degrades that region only**, with the unavailable outcome
-   content-free per `FR-165`. S-7's two reads are `pins_for_scope` and `recent_activity`, so this
-   is two cases — pins-unavailable and recency-unavailable — not one
-   (`[[khepri-redundant-guards-need-separate-evidence]]`).
-3. **No file under `RCA-005`'s paths is modified, asserted by path.** This is the acceptance the
-   S-8 finding was caught by, and it stays even though S-8 is deferred: S-7 reads `pins.py` and
-   must not edit it.
-4. **S-7 orders by the `occurred_at` its records already carry**, with no count, rank, score or
-   frequency anywhere on the path — `FR-129` MUST-retain-nothing, and `KHEPRI-DEC-034` §2.
-5. **S-7 writes nothing.** `FR-129`: "A view that writes a row to answer 'what was recent' is
-   product telemetry and is excluded by this specification, whatever it is named." Asserted as no
-   write on the path, not as the absence of a named table
-   (`[[khepri-guards-that-cannot-see-the-new-surface]]`).
+| Claim | Where |
+|---|---|
+| S-7's two reads already run on Overview | `shell_api.py:486`–`:490` |
+| S-7 already renders, with governed empty states | `overview.html.j2:84`–`:110` |
+| S-7 is already covered | `test_w109_{pins,recent_activity,routes,surface}.py` |
+| The Analyses surface is `RCA-005`'s | `RCA-005`:33 |
+| `RCA-008` may not edit it | `RCA-008` §Exclusions, line 152 |
+| A second index is barred outright | `RCA-005` `FR-118` |
+| The `RRA-006` bundle read is absent | `run_reports.py:89`–`:153`, link-table reads only |
+| `sorted` is barred in decision modules | `test_d102_decision_seam.py:38` |
 
-**For S-8, which it does not:**
-
-6. **No second report surface is created** — asserted by the route table
-   (`[[khepri-a-hand-wired-fixture-hides-an-unwired-deployment]]`). This holds as a *negative*:
-   this slice adds no report address, and `FR-118` bars one until the owner rules.
+**If S-7 is later ruled to need a D1 surface anyway**, these bind it: the recency source stays
+`pins.py:233` (one definition, `FR-129`); the bound stays the store's `limit` parameter, passed
+through and never derived locally; and the read model writes nothing, asserted as no write on the
+path rather than as the absence of a named table
+(`[[khepri-guards-that-cannot-see-the-new-surface]]`).
 
 ---
 
