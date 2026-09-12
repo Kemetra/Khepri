@@ -1,0 +1,71 @@
+{#
+  RCA-008 FR-161: the evidence drawer. Reachable from a figure in one action and
+  never a page of its own, which is why this template declares no link and no
+  address -- it is included beside the figure it qualifies.
+
+  Two authorities, kept apart in the markup as they are in the read model: the
+  definition half is RRA-011's catalog, the figure half is one
+  ReportEvidenceView projection. A reader can tell which said what.
+
+  Nothing here computes. Every value and wording arrived selected.
+#}
+<div class="decision-drawer" data-status="{{ drawer.status }}" role="group"
+     aria-label="{{ copy.drawer_label }}">
+
+  {#
+    The definition half. FR-159 admits it because it is structure, not a figure:
+    the code, the governed contract version that computes it, and the catalog's
+    own bilingual description.
+  #}
+  {% if view.definition %}
+  <dl class="drawer-definition">
+    <dt class="drawer-term">{{ copy.definition_label }}</dt>
+    <dd class="drawer-description">{{ view.definition.description }}</dd>
+    <dt class="drawer-term">{{ copy.formula_label }}</dt>
+    <dd class="drawer-formula">{{ view.definition.formula_version }}</dd>
+  </dl>
+  {% endif %}
+
+  {# FR-164: the governed message, never the bare cause code. #}
+  {% if view.refusal %}
+  <p class="drawer-refusal" role="alert">{{ view.refusal }}</p>
+  {% endif %}
+
+  {# FR-165: the unavailable outcome is content-free; it says that, and no why. #}
+  {% if view.unavailable %}
+  <p class="drawer-unavailable" role="note">{{ copy.unavailable }}</p>
+  {% endif %}
+
+  {#
+    The figure half. One row per cited document, in the view's published field
+    order.
+  #}
+  {% if view.items %}
+  <ul class="drawer-items">
+    {% for item in view.items %}
+    <li class="drawer-item">
+      <span class="drawer-figure">{{ item.figure }}</span>
+      <span class="drawer-evidence">{{ item.evidence }}</span>
+      {% if item.provenance %}
+      <span class="drawer-provenance">{{ item.provenance }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {#
+    The absences. D1-01 §4: every view's required_evidence is () at v1, so an
+    absence is DATA on an admitted projection and never a refusal -- FR-141
+    would make a required-but-absent code a refusal cause, and none is required.
+    It states what the record says is missing, in its own slot, beside whatever
+    figures the projection did carry.
+  #}
+  {% if view.absences %}
+  <ul class="drawer-absences" aria-label="{{ copy.absences_label }}">
+    {% for absence in view.absences %}
+    <li class="drawer-absence">{{ absence }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

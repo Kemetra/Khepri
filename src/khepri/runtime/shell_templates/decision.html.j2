@@ -66,6 +66,16 @@
       {% if card.reason %}
       <span class="decision-reason">{{ card.reason }}</span>
       {% endif %}
+      {#
+        D1-05, FR-161: the evidence drawer, beside the figure it qualifies and
+        never on a page of its own. Included here rather than linked, so the
+        claim and whether it is allowed to be made arrive together.
+      #}
+      {% if drawers and drawers.get(card.metric) %}
+      {% with view = drawers.get(card.metric), copy = drawer_copy, drawer = drawers.get(card.metric) %}
+      {% include "decision_drawer.html.j2" %}
+      {% endwith %}
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

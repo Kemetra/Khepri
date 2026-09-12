@@ -329,3 +329,83 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- D1-05: the evidence drawer -------------------------------------------
+ *
+ * Decision-surface rules only, which is the whole of what `RCA-008` §Scope
+ * claims in this sheet. Nothing here is a chart, a navigation pattern or a
+ * visual-regression baseline -- those stay `U1-03`, `U1-05`, `U1-06` and
+ * `U1-07`'s and need their own authority.
+ *
+ * Logical properties throughout (`margin-block`, `padding-inline`,
+ * `border-inline-start`), so the drawer mirrors under RTL without a second
+ * rule. `FR-171` makes Arabic and English equal surfaces, not one and its
+ * translation. */
+
+.decision-drawer {
+  margin-block-start: var(--space-3, 0.75rem);
+  padding-inline-start: var(--space-3, 0.75rem);
+  border-inline-start: 2px solid var(--line-subtle);
+}
+
+.drawer-definition {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  margin: 0;
+}
+
+.drawer-term {
+  color: var(--muted);
+}
+
+/* The governed contract version is an ASCII identifier, so it keeps LTR order
+ * inside an RTL page for the reason `.change-transition` above does. */
+.drawer-formula {
+  direction: ltr;
+  unicode-bidi: isolate;
+  margin: 0;
+}
+
+.drawer-description {
+  margin: 0;
+}
+
+.drawer-items,
+.drawer-absences {
+  list-style: none;
+  margin-block: var(--space-2, 0.5rem);
+  padding: 0;
+}
+
+.drawer-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  min-height: 44px;
+  align-items: center;
+}
+
+.drawer-provenance {
+  color: var(--muted);
+}
+
+/* An absence is a *statement*, not a failure, and is styled as one: it carries
+ * the muted treatment the other stated findings carry and never the refusal's.
+ * `D1-01` §4 -- every view's `required_evidence` is `()` at v1, so an absence
+ * arrives as data on an admitted projection. Painting it as an error would say
+ * in CSS what `FR-141` forbids the read model from saying in code. */
+.drawer-absence {
+  color: var(--muted);
+}
+
+.drawer-refusal,
+.drawer-unavailable {
+  margin-block: var(--space-2, 0.5rem);
+}
+
+@media (max-width: 40rem) {
+  .drawer-definition {
+    grid-template-columns: 1fr;
+  }
+}
