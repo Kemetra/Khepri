@@ -1,75 +1,155 @@
-# `D1-05` — The evidence drawer, its two authorities, and the absence that is not a refusal
+# `D1-05` — The evidence drawer, and the three surfaces it has to hang from
 
-**Slice:** `D1-05` under active `RCA-008`. **Requirements:** `FR-159`, `FR-161`, `FR-162`
-(evidence action), `FR-164`.
+> **Execution plan** (the `W1-09` tier). Parent: the allocation plan at
+> `docs/superpowers/plans/2026-09-10-d1-02-10-decision-workspace-allocation-plan.md`.
+> **Authority:** active `RCA-008` — `FR-159`, `FR-161`, `FR-162`, `FR-164`, and `FR-171` for the
+> parity the drawer's new wording owes.
 
-**Blocked by:** `D1-04`, merged at `a65df40` (`#448`). Nothing else.
-
----
-
-## What `D1-04` handed forward, verbatim
-
-- **`evidence_absences` already reaches a read model.** `breakdowns.py:111` carries the field and
-  `:158` copies it off the projection. This slice does not invent the channel; it renders it.
-- **`REPORT_EVIDENCE` is already in the seam.** `seam.py:125` publishes the identity with
-  `empty_rule=EMPTY_STATED_ABSENCE`, and the source-map test asserts `DECISION_VIEWS` equals what
-  the registry publishes. A ninth view cannot be invented here.
-- **`admitted_projection` has one definition**, in `seam.py`, imported by `overview.py` and
-  `card.py`. The drawer's read uses it rather than repeating the fail-closed dispatch.
-- **The route exists and the built image declares it.** `_shell_decisions` wires
-  `ShellServices.decisions`, and `test_the_built_image_wires_every_optional_field` now derives its
-  population from `dataclasses.fields(ShellServices)`. **If this slice needs a new optional
-  collaborator, the fix is to wire it in `build_shell_services` — never to add a
-  `deliberately_unwired` entry to make that test pass.**
+**Deliverable:** `decision/evidence.py` (S-9's figure half), `MetricCard.evidence` filled with the
+action `D1-03` named and left empty, the drawer rendered **inline on the surface carrying the
+figure and nowhere else**, and the S-3/S-4/S-5 sections the drawer has to be reachable from.
 
 ---
 
-## Five decisions, taken from precedent rather than assumed
+## What `D1-03` handed forward, verbatim
 
-**1. `required_evidence` stays `()`. This slice does not tighten it.**
-Verified on `main`: all eight registry entries are `required_evidence=()`. `FR-141` makes a
-required-but-absent evidence code a *refusal cause*, so populating that tuple would convert an
-ordinary absence into a refused view. `D1-01` §4 already established the v1 emptiness is deliberate
-and not an oversight for D1 to correct. **Absences arrive as `ViewProjection.evidence_absences` —
-data on an admitted projection — and render as data.** A test asserts an absence does not produce a
-`ViewRefusal`.
+> "`comparison` and `evidence` are always `None` today and are fields anyway: `FR-162` names them,
+> `FR-170` explains the first, and `D1-05` fills the second. A card that omitted them would let a
+> later slice add a line the contract already required, which is how a required line goes missing."
 
-**2. The definition half comes from `khepri.rra.definitions`, read per code, never cached.**
-`define_metric(code)` and `describe_metric(code, language)` are the accessors; `UnknownCode` is
-raised rather than returning the code itself, which is the fail-closed behaviour `RRA-011` requires.
-`FR-159` admits this because a definition is structure, not a figure. The drawer holds no copy of
-the catalog: a second copy is the second-truth `FR-135` bars.
+That is discharged here. `comparison` is **not**, and cannot be: `FR-170`'s source is still
+unreachable and the successor composition artifact is the owner's, not this slice's.
 
-**3. The two halves arrive by different routes and are not merged into one record.**
-The figure half is a `REPORT_EVIDENCE` projection through the seam; the definition half is a catalog
-lookup. This is `limits.py`'s shape from `D1-04`, for its reason: a flattened record would have to
-invent a field name for at least one half, and a reader could no longer tell which authority said
-what. **The drawer's read model carries both, each named by its own source.**
+---
 
-**4. The drawer is never a page of its own (`FR-161`).**
-It is reachable from every figure on S-1, S-3, S-4 and S-5 in one action, and has no route. This is
-why the slice adds no route and no `ShellServices` field: it extends surfaces that already exist.
+## The thing this plan found before writing a line, and why it changes the slice
 
-**5. An unknown metric code is a refusal, not a blank drawer.**
-`UnknownCode` propagates as `FR-164`'s refusal path, worded from the governed catalog in the page
-language. A drawer that opened empty on an unrecognized code would be indistinguishable from a
-metric with no evidence — the `[[an-unevaluated-proof-reports-as-a-passed-one]]` shape.
+`D1-05`'s acceptance in the allocation plan reads: "the drawer is reachable from every figure on
+**S-1, S-3, S-4 and S-5** and is never a page of its own (`FR-161`)."
+
+**Three of those four surfaces do not exist.** `D1-04` shipped `breakdowns.py` and `limits.py` as
+read models and shipped the route, and `decision.html.j2` renders S-1's cards and nothing else —
+no branch table, no product table, no basket, no concentration, no limits. The sequencing table
+says `D1-04` ships a surface, and `D1-04`'s own acceptance says "the two empty rules render
+differently **on the same surface**"; what merged asserts both rules on `BreakdownReading`, at the
+read-model level, and renders neither.
+
+So `D1-05` cannot meet its own acceptance by building a drawer. A drawer reachable from S-1's ten
+cards while three read models sit behind no surface at all is **this branch's recurring defect
+exactly** — the half-closed guard, for the third time: `decisions` unwired while `deletion` and
+`pins` were named; the omitted run refused while the empty one built; and now an evidence action on
+the surface that exists while the three that were supposed to exist have none.
+
+**This slice therefore renders S-3, S-4, S-5a, S-5b and S-6 as well.** That is not scope this plan
+is taking; it is `D1-04`'s surface half, which `D1-05`'s acceptance depends on and which no later
+slice is allocated. It is inside `RCA-008` §Scope (`shell_templates/`, `shell_api.py`) and needs no
+new read model — `read_branches`, `read_products`, `read_basket_surface` and `read_limits` are
+merged, tested, and called by nothing.
+
+**If this slice has to be halved**, the split is after Step 3: `evidence.py` plus the card action
+plus the drawer on S-1 is a complete, mergeable change, and the breakdown sections are the second
+half. The halves are not reordered — a section rendered without a drawer would ship a figure whose
+claim the reader cannot reach, which is the `FR-161` failure this slice exists to close.
+
+---
+
+## Seven decisions, taken from what the code says rather than assumed
+
+**1. Which half of the drawer lives in `khepri.rca`, and which in the shell?**
+The figure half only. `khepri.rca` may not import `khepri.rra`, so `evidence.py` carries governed
+codes and the shell names them — `card.py` settled this and `shell_decisions.py` already imports
+`metric_business_name` and `caveat_message`. The **definition** half — business name,
+`describe_metric`, `define_metric(code).formula_version` — is read in `shell_decisions.py` from
+`RRA-011`'s catalog, which `FR-159` admits in as many words: "Structure and navigation may come
+from `RCA-005` records and the `RRA-011` catalog; figures may not."
+
+**2. What is the join key between a card and its evidence, given the view publishes no `metric`
+column?**
+`ReportEvidenceView`'s `output_field_order` is `("figure", "evidence", "provenance", "absence")`
+and names no metric, so its **rows** cannot be joined to a card. Its `projection.evidence` records
+can: `CitedEvidence` carries `citation_id`, `metric`, `unit_kind`, `formula_version`, `precision`,
+`inputs` and `provenance`. The drawer is keyed by **metric**, off the records, and the rows supply
+the figure identifiers the records are cited by. Both are parts of one projection, so `FR-159` is
+satisfied either way; the records are simply the part that states a metric.
+
+**3. `provenance` and `absence` project as `None` on this view, and this slice does not fix that.**
+`projection._FIELD_READERS` maps `figure` → `figure_id` and `evidence` → `citation_id` and has no
+reader for the other two, so `_unstated` returns `None` for both — "a field no member of
+`RenderableBundle` states — an absence, not a blank." That is `RRA-014`'s projection and
+§Exclusions bars this specification from touching it. The drawer therefore reads provenance from
+`CitedEvidence.provenance` and absences from `ViewProjection.evidence_absences`, and **a test
+asserts the two columns are stated absences** so that the day `RRA-014` gives them readers, the
+assertion fails and this module is looked at rather than silently double-sourced.
+
+**4. `evidence_absences` is pairs, not strings, and the annotation on this side says otherwise.**
+`projection._evidence_absences` returns `tuple[tuple[str, str], ...]` — `(citation_id, one of
+precision | inputs | provenance)` — and the adapter hands `RRA-014`'s outcome back unchanged, so
+that is what arrives. `khepri.rca.semantic_queries.ports.ViewProjection.evidence_absences` is
+annotated `tuple[str, ...]`, which is narrower than what flows through it. **This slice does not
+correct the annotation**: `ports.py` is `RCA-006`'s and §Exclusions bars editing it. It models the
+pair correctly on its own type and asserts the real shape against the real projector, which is
+where an annotation that drifted from its data becomes visible. *Raised for the owner in
+§For the owner.*
+
+**5. A drawer is a disclosure, never an address.** `FR-161`: "reachable from the surface carrying
+the figure they qualify and **not deferred to a terminal page**." So the drawer is a `<details>`
+beside its figure, rendered in the same response, and **this slice declares no route**. Asserted
+negatively against the app's route table: the count of decision addresses is unchanged by this
+slice, and `SHELL_SURFACES` gains no entry.
+
+**6. `FR-162` requires a count, and `FR-159` bars deriving figures. Both hold.**
+`card_status` deliberately uses `if not caveats` rather than `len(caveats)`, and that is about
+*status selection*: a status counted would be a figure. The drawer's caveat count is not a status
+and not a measurement of the customer's data — it is how many qualifications are displayed beside
+one figure, which `FR-162` names outright. It is rendered, and a test asserts the status of a card
+with three caveats equals the status of a card with one, so the count can never reach the
+selection.
+
+**7. What supplies "effective filters and period"?**
+`ViewOutcome.effective` — `EffectiveRequest(dimensions, requested_filters, fixed_filters)`, which
+`FR-137` defines as "what actually applied, requested and definition-fixed alike". Every read model
+merged so far drops it. **`CardsReading` keeps it, and the first draft of this plan put it on
+`EvidenceReading` instead, which was wrong**: the filters a *card* states are the ones that applied
+to the card's own figure, and that is S-1's read rather than S-9's. Keeping both would have put two
+effective requests on one surface with one of them rendered, which is the second truth `FR-135`
+bars — so `EvidenceReading` carries none and a test asserts the field is absent from it. The
+**period** is on neither and must not be invented: `FR-166` makes the period a *source selector*,
+so the period the drawer states is the run the surface is addressed by — `CardsRequest.source_id`,
+already structure, passed to `decision_context` because a reading does not know its own address.
 
 ---
 
 ## Files
 
-```
-src/khepri/rca/workspace/decision/
-    evidence.py                              # NEW - the drawer's read model, both halves
-src/khepri/runtime/
-    shell_templates/decision_*.html.j2       # drawer markup, reachable from each figure
-    shell_assets/workspace.css               # decision-surface drawer rules only
-tests/
-    test_d105_evidence_drawer.py             # NEW
+```text
+src/khepri/rca/workspace/decision/evidence.py       NEW   S-9 figure half
+src/khepri/rca/workspace/decision/card.py           EDIT  evidence: EvidenceAction | None
+src/khepri/runtime/shell_decisions.py               EDIT  definition half, sections, drawer view
+src/khepri/runtime/shell_templates/decision.html.j2 EDIT  drawer + S-3/S-4/S-5/S-6 sections
+tests/d105_support.py                               NEW   the harness both files share
+tests/test_d105_evidence_drawer.py                  NEW   S-9, the card action, the drawer
+tests/test_d105_decision_sections.py                NEW   the four rendered breakdowns
 ```
 
-No new route. No new `ShellServices` field. No persistence change.
+**Three test files and not one, because CodeScene said so and it was right.** One file carrying
+both subjects scored 8.03 — `Lines of Code in a Single File`, and critically `Low Cohesion`. The
+seam it pointed at is real: what a read model *selects* and what a page *renders* are different
+subjects with different failure modes, and the fixtures they share are exactly the ones the
+support module now holds. `<slice>_support.py` is this repository's existing convention
+(`w104_support.py`, `c105_support.py`, `w110_support.py`). The split moved no assertion and lost
+no case: 5401 before, 5401 after.
+
+**`shell_assets/workspace.css` is not in that list, and the first draft of this plan had it
+there.** The file carries no `decision-` rule at all: `D1-03` and `D1-04` shipped the surface with
+no stylesheet of its own, and the allocation plan assigns those rules to `D1-03`, `D1-08` and
+`D1-10`. Styling the drawer while the cards it hangs from have nothing would be the same half-done
+shape this slice exists to close, one level down. `<details>` is operable unstyled, which the
+browser run confirms at both viewports in both directions.
+
+No new `ShellServices` field is expected: `services.decisions` is one `SemanticQueryActions` and
+every read in this slice goes through it. **Rule 11 still applies** — if that turns out to be
+wrong, the collaborator reaches `build_shell_services` in the same commit, and
+`test_the_built_image_wires_every_optional_field` fails until it does.
 
 ---
 
@@ -77,72 +157,89 @@ No new route. No new `ShellServices` field. No persistence change.
 
 ### RED
 
-1. **An evidence absence renders as data, not as a refusal.** Project a `REPORT_EVIDENCE` outcome
-   whose `evidence_absences` is non-empty; assert the drawer renders the absence and that the read
-   model is an admitted projection, not a `ViewRefusal`. *This is the slice's central assertion.*
-2. **The definition half comes from the catalog.** Assert the rendered description equals
-   `describe_metric(code, language)` and the formula version equals
-   `define_metric(code).formula_version`, in both `en` and `ar`, rather than a string the drawer
-   coins. Two accessors because they answer different questions: `define_metric` returns the code
-   and its governed contract version and no localized prose at all.
-3. **An unknown code refuses.** `UnknownCode` reaches the surface as `FR-164`'s worded refusal in
-   the page language, and the drawer does not render.
-4. **The drawer is reachable from every figure on the surfaces that render**, asserted over the
-   route rather than by a standalone render.
-
-   **Corrected after implementation, and the correction is the point.** This step first said "S-1,
-   S-3, S-4, S-5". Only **S-1 renders today**: `D1-04` shipped `breakdowns.py` and `limits.py` as
-   read models, and `_respond` calls `read_cards` alone — no route renders S-3, S-4, S-5 or S-6, and
-   no template for them exists. So there was exactly one include point to build, and the other three
-   could only have been satisfied by *inventing* the surfaces, which would build what no slice
-   authorized and pre-empt `D1-06`.
-
-   `D1-05` therefore closes S-1's reachability and **hands S-3/S-4/S-5 forward to the slice that
-   renders them**. That slice adds the include beside its own figures; the drawer, its copy and its
-   stylesheet rules are already built and need no further authority.
-5. **The drawer has no route.** Assert no path matching `.../evidence` is in the app's route table,
-   which is `FR-161` from the deployment side.
-6. **`required_evidence` is still `()` for all eight views.** An extent assertion over the registry,
-   so a later slice cannot quietly populate it and convert absences into refusals.
+- [ ] `tests/test_d105_evidence_drawer.py`, failing because `evidence.py` does not exist:
+  - **`FR-160` — S-9 is read at its literal version**, `sv1.report_evidence.v1`, asserted against
+    the registry, and `read_evidence` reads that view and no other.
+  - **`FR-137` — the evidence request carries no filters.** `ReportEvidenceView`'s
+    `request_filter_allowlist` is `()`, so a drawer that forwarded the surface's filters would
+    refuse every figure it was opened on. Asserted through a recording port: the request's
+    `filters` is empty even when the surface's is not.
+  - **The join is by metric, off the records.** An entry exists for each `CitedEvidence.metric`,
+    carrying its citation, unit kind, formula version, precision, inputs and provenance.
+  - **`FR-140` — an absence is data, not a refusal.** A record stating `precision=None` yields an
+    entry whose absences name `precision` against that citation, on an **admitted** reading, and
+    the reading's status is admitted. Asserted positively and negatively: no `ViewRefusal` is
+    constructed anywhere on the absence path.
+  - **The view's `provenance` and `absence` columns are stated absences.** Driven against the real
+    `projection.project`, so the assertion breaks if `RRA-014` ever gives them readers.
+  - **`evidence_absences` arrives as `(citation, kind)` pairs**, asserted against the real
+    projector rather than a hand-built projection.
+  - **`FR-165` — S-9 answers unavailable independently.** The cards still render; the drawer says
+    that part is unavailable and says nothing more.
+  - **The dispatch rule** — a refused outcome carrying a projection is refused, and the drawer
+    shows no entry from it.
+  - **`FR-162` — the card exposes every line the requirement names**, through the action:
+    label, value with unit, status, population, formula and contract version, effective filters,
+    the period as the run, the evidence action, and the caveat count. Asserted as a set against
+    the requirement's own list so a dropped line fails rather than goes unnoticed.
+  - **The count cannot reach the status**: one caveat and three caveats select the same status.
+  - **`FR-161`, negatively — the drawer is not an address.** The app's route table gains nothing;
+    the drawer's markup is in the decision response itself; opening it needs no second request.
+  - **`FR-161` over four surfaces** — every rendered figure on S-1, S-3, S-4 and S-5 carries its
+    drawer, asserted by parsing the rendered page rather than by counting template lines.
+  - **`FR-163` on the surface at last** — S-3's `stated_no_rows` and S-5's `stated_absence` render
+    as distinguishable text on one page, which is `D1-04`'s acceptance criterion finally driven.
+  - **`FR-171`** — every string this slice adds exists in both languages, and the Arabic page
+    states no less than the English one: same drawer count, same entry count, same absences.
+  - **Isolation** — a session whose organization disagrees with the address gets the uniform
+    unavailable surface, drawer and sections included.
 
 ### GREEN
 
-Build `evidence.py`: a read model holding the figure half (a `REPORT_EVIDENCE` projection via
-`admitted_projection`) and the definition half (catalog lookups), each named by its source. Wire the
-drawer into **`decision.html.j2` — S-1, the only decision surface that renders**; see step 4 for why
-S-3/S-4/S-5 have no template to wire it into. Add drawer rules to `workspace.css`.
+- [ ] `decision/evidence.py`: `EvidenceEntry`, `EvidenceReading`, `EvidenceRequest`,
+      `read_evidence`. Keys by metric off the records, groups absences by citation, computes
+      nothing, and keeps no effective request of its own.
+- [ ] `decision/card.py`: `evidence: EvidenceAction | None = None`, `CardsReading.effective` from
+      the S-1 outcome, and `read_cards` reading S-9 **once for the surface** — `FR-168` bars a cache
+      and ten reads of one view over one run would be one. The type stops being `None` and starts
+      being a value.
+- [ ] `shell_decisions.py`: the definition half from `RRA-011`'s catalog, a `_DrawerView`, the
+      S-3/S-4/S-5/S-6 section views, and the bilingual wording the drawer's new lines need in
+      `DECISION_COPY`.
+- [ ] `decision.html.j2`: a `<details>` drawer beside every figure, and the four sections.
 
 ### Gates
 
-`ruff check src/ tests/`; full `pytest` (not targeted — `[[run-the-full-suite-before-believing-a-targeted-one]]`);
-CodeScene pre-flight against a freshly fetched `origin/main`.
+- [ ] `uv run khepri-gov validate`, `uv run ruff check .`, `uv run pytest`.
+- [ ] Browser cases driven directly against the container's headless shell, because a shell surface
+      changed and `pytest -m browser` skips here — `playwright.chromium.launch()` raises on the
+      pinned build and the case skips itself rather than failing. Driven with an explicit
+      `executable_path`, both viewports and both languages: direction, one `h1`, no horizontal
+      overflow **before or after the drawer is opened**, and every governed target at 44px.
+- [ ] Every new file 10.00 in CodeScene; no tracked hotspot declines. `shell_decisions.py` is the
+      risk: it gains four section views and a drawer view, and it has already paid the Excess
+      Number of Function Arguments finding once. Every new helper takes a value object, and no
+      conditional carries two logical operators.
+
+---
+
+## For the owner
+
+**`ports.ViewProjection.evidence_absences` is annotated `tuple[str, ...]` and carries
+`tuple[tuple[str, str], ...]`.** `RRA-014`'s projector builds the pairs, the adapter passes the
+outcome through unchanged, and `RCA-006`'s port declares the narrower type. Nothing is broken at
+runtime and nothing type-checks the difference, which is why it has survived four slices.
+`D1-04`'s `BreakdownReading.evidence_absences` copied the narrow annotation and would read a pair
+as a string the day anything renders it. §Exclusions bars this slice from editing either module, so
+it is stated here rather than fixed: it needs `RCA-006`'s authority, or a one-line amendment.
 
 ---
 
 ## Not in this slice
 
-- **The `FR-170` unreachability assertion stays standing.** `D1-03` shipped it; only the slice that
-  makes the Period Comparison source reachable removes it, and per the allocation plan that is none
-  of `D1-05`…`D1-10`.
-- **No chart grammar, navigation, or accessibility programme** — `U1-03`/`-05`/`-06`/`-07`'s, and
-  they need their own authority.
-- **No S-3/S-4/S-5 surface.** Those read models exist and nothing renders them; building a template
-  to host a drawer would be building the surface. `D1-06` onward.
-- **One evidence read for the surface, not one per card — corrected in review on `#449`.**
-
-  The first implementation read `ReportEvidenceView` once per card. It is a **per-run citation
-  table**: it names ten metrics in its allowlist, `DecisionRead` sends none (the published-selection
-  contract `seam.py` records, since `FR-135` forbids retyping a metric code), so every read returns
-  the run's whole table — the same table, N times.
-
-  **And nothing published could have narrowed it.** The overview publishes
-  `("metric", "value", "population", "versions")`; the evidence view publishes `figure` (a
-  `figure_id`) and `evidence` (a `citation_id`). Neither carries the other's key, so a per-card
-  drawer could only have been built by inventing an attribution the views do not publish — putting
-  one metric's citations under another metric's label, which fails silently rather than loudly.
-
-  So the surface reads once and states the run's evidence. `FR-161` holds: the drawer sits inside
-  the surface carrying the figures and is never a page of its own. `FR-168` is better served —
-  one acquisition rather than N. `DrawerRequest.metric` stays optional for the surface that *does*
-  name one figure (`D1-06`'s metric detail), which states that metric's definition beside the same
-  table.
+- **The comparison line on the card.** `FR-170`'s source is unreachable and the successor
+  composition artifact is the owner's decision (`RCA-008` §The open question).
+- **The source selector and the three real filters** — `D1-07`'s, and the drawer states the
+  effective filters it was given rather than offering any.
+- **S-7 and S-8** — `D1-06`'s.
+- **Any change to `RRA-014`'s projection**, including giving `provenance` and `absence` readers.

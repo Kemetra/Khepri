@@ -32,6 +32,17 @@ step lists for surfaces that do not exist are not.
 
 **Requirements:** `FR-159`, `FR-161`, `FR-165`. **Blocked by:** `D1-05`.
 
+> **Scope reduced, and by an open reading rather than a ruling.** This document was written when
+> `D1-05` was expected to defer S-3, S-4 and S-5 to this slice, on the reading that building a
+> surface to host a drawer is building the surface. The `D1-05` implementation that shipped took the
+> opposite reading and built the three breakdown sections, so what remains here is S-7 and S-8 --
+> the navigable report workspace, which was always this slice's own.
+>
+> **The reading is the owner's to settle, not this document's.** `RCA-008` §Scope names
+> `src/khepri/rca/workspace/decision/` and the decision templates, which covers the sections either
+> way; what is unsettled is whether one slice may build a surface it was allocated only to attach
+> to. It is recorded here so the next slice finds the question rather than the assumption.
+
 - **S-8 is refactored, not built.** The existing report page becomes navigable; a slice that builds
   a second report surface has created the two-definitions problem the repository fails closed on.
 - Reads the `RRA-006` report bundle and `RCA-005` analysis detail — two authorities, and `FR-165`

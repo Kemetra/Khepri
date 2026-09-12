@@ -1,687 +1,512 @@
-"""`D1-05` -- the evidence drawer, its two authorities, and the absence that is not a refusal.
+"""`D1-05` -- S-9's figure half, the card's evidence action, and the drawer.
 
-Authority: active `RCA-008` `FR-159`, `FR-161`, `FR-162` (evidence action), `FR-164`.
+Authority: active `RCA-008` `FR-159`, `FR-161`, `FR-162`, `FR-164`, `FR-171`.
 
-The read model is driven through a fake port, as `D1-02`, `D1-03` and `D1-04`
-were: what is under test is the *selection and attribution*, and a real
-projection would put a pipeline between the inputs and the choice.
+The read model is driven through the scripted port in `d105_support`, as
+`D1-02`'s, `D1-03`'s and `D1-04`'s were: what is under test is the *selection*.
+**Two cases are driven through the real projector instead**, and deliberately --
+`ReportEvidenceView` publishes a `provenance` and an `absence` column that
+`RRA-014`'s `_FIELD_READERS` gives no reader, so both project as stated
+absences, and the drawer reads provenance from the evidence records instead. A
+hand-built projection could assert the drawer's behaviour but not that fact
+about the view, and the day `RRA-014` gives those columns readers this module
+needs to be looked at rather than to keep silently double-sourcing.
 
-**The central assertion is negative.** An evidence absence is data on an admitted
-projection and may never present as a view refusal. `D1-01` section 4 established
-that every view's `required_evidence` is `()` at v1 deliberately, and `FR-141`
-makes a required-but-absent code a refusal *cause* -- so a slice that populated
-that tuple would convert ordinary absences into refused views. The registry
-extent assertion below exists so that cannot happen quietly.
+**The drawer is asserted to be a disclosure and not an address** (`FR-161`: not
+"deferred to a terminal page"), which is a negative about the route table rather
+than about the template, because a template can only fail to link to a page that
+exists.
+
+The four breakdown surfaces this drawer also hangs from are
+`test_d105_decision_sections.py`: what a read model selects and what a page
+renders are different subjects, which is the seam CodeScene named when both were
+one file.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import re
+from decimal import Decimal
 
 import pytest
+from fastapi import FastAPI
 
 from khepri.rca.semantic_queries import ports
-from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.workspace.decision import card, evidence, seam
-from khepri.rra import definitions
-from khepri.rra.semantic_views import registry
+from khepri.rra import facts
+from khepri.rra.bundle import (
+    NARRATIVE_OMITTED,
+    SECTION_PRESENT,
+    BundleIdentity,
+    CitedEvidence,
+    CitedFigure,
+    ReportBundle,
+    Section,
+)
+from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.semantic_views import compatibility, projection, registry
 from khepri.runtime import shell_decisions
-from khepri.runtime.metric_definitions import CatalogDefinitions
+from khepri.runtime.shell_api import add_shell_routes
+from tests import d105_support as support
 
-LANGUAGES = ("en", "ar")
-
-_EVIDENCE_FIELDS = ("figure", "evidence", "provenance", "absence")
-
-
-class _ScriptedPort:
-    """Answers per `view_id`, recording what was asked verbatim."""
-
-    def __init__(self, outcomes: dict[str, ports.ViewOutcome | None]) -> None:
-        """Answer each view with what it was scripted to answer."""
-        self.outcomes = outcomes
-        self.requests: list[ports.SemanticViewRequest] = []
-
-    def project(
-        self, request: ports.SemanticViewRequest, sources: tuple[object, ...]
-    ) -> ports.ViewOutcome | None:
-        """Record the request verbatim, and answer as scripted."""
-        self.requests.append(request)
-        return self.outcomes.get(request.view_id)
-
-
-class _FakeIsolation:
-    """One owner id for any pair; scoping is not what these cases test."""
-
-    def resolve_scope(self, account_id: str, organization_id: str) -> str:
-        """One owner id; scoping is not what the read-model cases are testing."""
-        return f"owner-of-{organization_id}"
+#: Every line `FR-162` requires a card expose "directly or through one action",
+#: as the template marks them. `comparison` is absent on purpose: the
+#: requirement says "comparison **only when compatible**", and `FR-170`'s source
+#: is unreachable, so a comparison line here would be the invented figure
+#: `FR-164` forbids rather than the requirement met.
+_FR162_LINES = (
+    "label",
+    "value",
+    "unit",
+    "status",
+    "population",
+    "formula",
+    "versions",
+    "filters",
+    "period",
+    "evidence",
+    "caveats",
+)
 
 
-class _FakeSources:
-    """A source reader that always finds the run, so the port decides every answer."""
-
-    def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> object:
-        """A source the fake port never inspects."""
-        return object()
-
-
-def _actions(port: _ScriptedPort) -> SemanticQueryActions:
-    """The real orchestration over a fake door and a scripted port."""
-    return SemanticQueryActions(_FakeIsolation(), _FakeSources(), port)
-
-
-def _projection(
-    rows: tuple[tuple[object, ...], ...],
-    absences: tuple[str, ...] = (),
-) -> ports.ViewOutcome:
-    """An admitted evidence outcome in the view's published field order."""
-    return ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=seam.REPORT_EVIDENCE.view_id,
-            view_version=seam.REPORT_EVIDENCE.view_version,
-            fields=_EVIDENCE_FIELDS,
-            rows=rows,
-            evidence_absences=absences,
-        ),
+def _both_records() -> ports.ViewOutcome:
+    """One complete record and one stating all three governed absences."""
+    return support.evidence_outcome(
+        (support.STATED, support.UNSTATED), support.UNSTATED_ABSENCES
     )
 
 
-def _request(metric: str = "revenue", language: str = "en") -> evidence.DrawerRequest:
-    """One member opening the drawer on one figure of one run."""
-    return evidence.DrawerRequest(
-        organization_id="org-1",
-        account_id="acct-1",
-        source_id="run-1",
-        metric=metric,
-        language=language,
+def _request() -> evidence.EvidenceRequest:
+    """One member asking for one run's evidence."""
+    return evidence.EvidenceRequest(
+        organization_id="org-1", account_id="acct-1", source_id="run-1"
     )
 
 
-def _catalog() -> CatalogDefinitions:
-    """The real catalog adapter, bound where the composition root binds it.
-
-    Real rather than a fake: what these cases assert is that the drawer reports
-    the governed catalog's own answer, and a fake would let the module coin a
-    wording while the test still passed.
-    """
-    return CatalogDefinitions()
+def _read(outcome: ports.ViewOutcome | None) -> evidence.EvidenceReading:
+    """One S-9 read against a port scripted to answer that view alone."""
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: outcome})
+    return evidence.read_evidence(support.actions(port), _request())
 
 
-def _read(outcome: ports.ViewOutcome | None, **kw: object) -> evidence.DrawerReading:
-    """One drawer read against a port scripted to answer the evidence view alone."""
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: outcome})
-    return evidence.read_drawer(
-        _actions(port),
-        _request(**kw),  # type: ignore[arg-type]
-        definitions=_catalog(),
-    )
+# --- FR-160: S-9 is read at its literal version, and no other view ----------
 
 
-# --- The central assertion: an absence is data, never a refusal ---------------
+def test_the_evidence_version_is_a_literal_the_registry_still_publishes() -> None:
+    """`FR-160` -- pinned here, asserted against the registry there."""
+    published = registry.define_view(seam.REPORT_EVIDENCE.view_id)
+    assert published.view_version == seam.REPORT_EVIDENCE.view_version
+    assert published.empty_result_rule == seam.REPORT_EVIDENCE.empty_rule
 
 
-def test_an_evidence_absence_renders_as_data_and_not_as_a_refusal() -> None:
-    """`FR-141` and `D1-01` section 4 -- the absence is on an *admitted* projection.
-
-    A reader that mapped `evidence_absences` onto a refusal would tell a customer
-    the view refused when the governed answer is that the record says there is
-    none.
-    """
-    reading = _read(_projection((), absences=("no_source_document",)))
-
-    assert reading.status == ports.KIND_ADMITTED
-    assert reading.refusal is None
-    assert reading.absences == ("no_source_document",)
-
-
-def test_an_absence_does_not_suppress_the_figures_beside_it() -> None:
-    """An absence qualifies the drawer; it does not empty it."""
-    reading = _read(
-        _projection(
-            (("revenue", "invoice-1", "pkg-1", ""),), absences=("no_provenance",)
-        )
-    )
-
-    assert reading.absences == ("no_provenance",)
-    assert len(reading.items) == 1
-
-
-# --- The definition half comes from the catalog, in both languages ------------
-
-
-@pytest.mark.parametrize("language", LANGUAGES)
-def test_the_definition_half_is_the_governed_catalog_entry(language: str) -> None:
-    """`FR-159` admits the definition because it is structure, not a figure."""
-    reading = _read(_projection(()), metric="revenue", language=language)
-
-    expected = definitions.define_metric("revenue")
-    assert reading.definition is not None
-    assert reading.definition.code == "revenue"
-    assert reading.definition.formula_version == expected.formula_version
-    assert reading.definition.description == definitions.describe_metric(
-        "revenue", language
-    )
-
-
-# --- An unknown code refuses, rather than opening an empty drawer -------------
-
-
-def test_an_unknown_metric_code_refuses_rather_than_opening_empty() -> None:
-    """`FR-164` -- a blank drawer is indistinguishable from having no evidence."""
-    with pytest.raises(definitions.UnknownCode):
-        _read(_projection(()), metric="not-a-metric")
-
-
-# --- The two halves stay attributed to their own authority --------------------
-
-
-def test_the_two_halves_are_not_merged_into_one_record() -> None:
-    """Two authorities, named separately, as `limits.py` keeps them.
-
-    A flattened record would have to invent a field name for at least one half,
-    and a reader could no longer tell which authority published what.
-    """
-    reading = _read(_projection((("revenue", "invoice-1", "pkg-1", ""),)))
-
-    assert reading.definition is not None
-    assert dataclasses.is_dataclass(reading.definition)
-    assert reading.items and dataclasses.is_dataclass(reading.items[0])
-    shared = set(dataclasses.asdict(reading.definition)) & set(
-        dataclasses.asdict(reading.items[0])
-    )
-    assert shared == set()
-
-
-# --- FR-160: its own view, at its own literal version, and nothing else -------
-
-
-def test_the_drawer_reads_only_the_evidence_view_at_its_pinned_version() -> None:
-    """`FR-160` -- named exactly, with no second view fetched to fill anything in."""
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _projection(())})
-    evidence.read_drawer(_actions(port), _request(), definitions=_catalog())
-
+def test_the_drawer_reads_only_the_evidence_view() -> None:
+    """`FR-160` -- named exactly, and no second view fetched to fill anything in."""
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: support.evidence_outcome()})
+    evidence.read_evidence(support.actions(port), _request())
     assert [asked.view_id for asked in port.requests] == [seam.REPORT_EVIDENCE.view_id]
     assert port.requests[0].view_version == seam.REPORT_EVIDENCE.view_version
 
 
-def test_the_drawer_sends_no_filter_the_view_does_not_admit() -> None:
-    """The view's `request_filter_allowlist` is empty, so nothing may be sent."""
-    port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _projection(())})
-    evidence.read_drawer(_actions(port), _request(), definitions=_catalog())
+def test_the_evidence_read_names_no_metric_so_the_view_selects() -> None:
+    """`FR-135` -- an empty selection asks for the definition's published one."""
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: support.evidence_outcome()})
+    evidence.read_evidence(support.actions(port), _request())
+    assert port.requests[0].metrics == ()
+    assert port.requests[0].dimensions == ()
 
+
+# --- FR-137: this view admits no filter, so the drawer sends none ------------
+
+
+def test_the_evidence_request_carries_no_filter_because_the_view_admits_none() -> None:
+    """`FR-137` -- a forwarded filter would refuse every figure the drawer opened on."""
+    assert registry.define_view(seam.REPORT_EVIDENCE.view_id).request_filter_allowlist == ()
+    port = support.ScriptedPort({seam.REPORT_EVIDENCE.view_id: support.evidence_outcome()})
+    evidence.read_evidence(support.actions(port), _request())
     assert port.requests[0].filters == ()
 
 
-# --- The kind decides, never the payload -------------------------------------
+def test_the_evidence_request_has_no_filters_field_to_forward() -> None:
+    """The absence is on the type, so no caller can supply one to be dropped."""
+    named = {field.name for field in dataclasses.fields(evidence.EvidenceRequest)}
+    assert "filters" not in named
 
 
-def test_a_refused_outcome_reports_its_refusal_and_no_items() -> None:
-    """`admitted_projection`'s rule, at this surface: a refusal shows no rows."""
-    refusal = ports.ViewRefusal(
-        cause="incompatible_shape",
-        wording_pairs=(("en", "This view cannot read that source."), ("ar", "-")),
+# --- FR-159: the entries are the projection's, grouped for layout -----------
+
+
+def test_an_entry_carries_what_the_record_states_and_nothing_it_does_not() -> None:
+    """`FR-159` -- select and pass through. Precision is the record's, not re-derived."""
+    entry = _read(support.evidence_outcome()).entries[0]
+    assert entry.citation == "cit_revenue"
+    assert entry.metric == "revenue"
+    assert entry.unit_kind == "monetary"
+    assert entry.precision == 2
+    assert entry.inputs == ("fct_a",)
+    assert entry.provenance == (("subject", "v1"),)
+
+
+def test_an_entry_names_the_figures_its_citation_appears_against() -> None:
+    """The view's own rows, grouped by citation. Layout, not derivation."""
+    entry = _read(support.evidence_outcome()).entries[0]
+    assert entry.figures == ("fig_revenue",)
+
+
+def test_the_evidence_reading_keeps_no_effective_request_of_its_own() -> None:
+    """The filters a card states are the ones that applied to its own figure.
+
+    `FR-162` requires a card expose "the effective filters and period", and the
+    card's figure is S-1's. Keeping S-9's applied request here as well would put
+    two effective requests on one surface with one of them rendered, which is the
+    second truth `FR-135` bars.
+    """
+    named = {field.name for field in dataclasses.fields(evidence.EvidenceReading)}
+    assert "effective" not in named
+
+
+# --- FR-140: an absence is data on an admitted reading, never a refusal ------
+
+
+def test_a_governed_absence_is_named_against_its_own_citation() -> None:
+    """`FR-140` -- "the record says there is none", carried to the reader as that."""
+    reading = _read(_both_records())
+    absent = {entry.metric: entry.absences for entry in reading.entries}
+    assert absent["gross_profit"] == ("precision", "inputs", "provenance")
+    assert absent["revenue"] == ()
+
+
+def test_an_absence_leaves_the_reading_admitted_and_unrefused() -> None:
+    """`D1-01` §4 -- every view's `required_evidence` is `()`, so this is data."""
+    reading = _read(support.evidence_outcome((support.UNSTATED,), support.UNSTATED_ABSENCES))
+    assert reading.status == ports.KIND_ADMITTED
+    assert reading.refusal is None
+    assert reading.entries[0].absences
+
+
+def test_an_empty_evidence_projection_states_absence_rather_than_no_rows() -> None:
+    """`FR-163` -- S-9's governed rule is `stated_absence`, and it says so."""
+    outcome = support.evidence_outcome(())
+    empty = dataclasses.replace(outcome.projection, is_empty=True)  # type: ignore[arg-type]
+    reading = _read(dataclasses.replace(outcome, projection=empty))
+    assert reading.empty_rule == seam.EMPTY_STATED_ABSENCE
+
+
+# --- the two cases driven through the real projector ------------------------
+
+
+def _bundle(evidence_records: tuple[CitedEvidence, ...]) -> ReportBundle:
+    """One single-population bundle carrying one figure per evidence record."""
+    figures = tuple(
+        CitedFigure(
+            figure_id=f"fig_{record.metric}",
+            citation_id=record.citation_id,
+            fact_id="fct_000000000000000000000000",
+            metric=record.metric,
+            unit_kind="monetary",
+            kind="value",
+            section="overview",
+            label=None,
+            value=Decimal("500.50"),
+            renderings={LANGUAGE_ENGLISH: "500.50", LANGUAGE_ARABIC: "٥٠٠٫٥٠"},
+        )
+        for record in evidence_records
     )
-    outcome = ports.ViewOutcome(
-        kind=ports.KIND_REFUSED,
-        refusal=refusal,
-        projection=ports.ViewProjection(
-            view_id=seam.REPORT_EVIDENCE.view_id,
-            view_version=seam.REPORT_EVIDENCE.view_version,
-            fields=_EVIDENCE_FIELDS,
-            rows=(("revenue", "invoice-1", "pkg-1", ""),),
+    return ReportBundle(
+        identity=BundleIdentity(
+            package_version="rra004.package.v1",
+            formula_version="rra004.formula.v1",
+            mapping_version="rra004.mapping.v1",
+            narrative_version="rra005.narrative.v1",
+            profile_digest="0" * 64,
+            source_sha256_hex="1" * 64,
+            monetary_precision=2,
+            row_count=3,
         ),
+        figures=figures,
+        caveats=(),
+        narrative_state=NARRATIVE_OMITTED,
+        sections=(
+            Section(
+                section_id="overview",
+                state=SECTION_PRESENT,
+                reason=None,
+                figure_ids=tuple(figure.figure_id for figure in figures),
+                chart=None,
+            ),
+        ),
+        evidence=evidence_records,
     )
 
-    reading = _read(outcome)
 
-    assert reading.status == ports.KIND_REFUSED
-    assert reading.refusal is refusal
-    assert reading.items == ()
+def _projected(records: tuple[CitedEvidence, ...]) -> object:
+    """`ReportEvidenceView` over a real bundle, through `RRA-014`'s own projector."""
+    definition = registry.define_view(seam.REPORT_EVIDENCE.view_id)
+    request = compatibility.SemanticViewRequest(
+        view_id=definition.view_id,
+        view_version=definition.view_version,
+        metrics=(),
+        dimensions=(),
+        filters=(),
+    )
+    return projection.project(request, (_bundle(records),)).projection
 
 
-def test_an_unavailable_read_says_nothing_about_why() -> None:
-    """`FR-165` -- the unavailable outcome is content-free."""
-    reading = _read(ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE))
+def _cited(citation_id: str, metric: str, *, complete: bool) -> CitedEvidence:
+    """One real evidence record, either fully stated or stating its absences."""
+    return CitedEvidence(
+        citation_id=citation_id,
+        metric=metric,
+        unit_kind="monetary",
+        formula_version="rra004.formula.v1",
+        precision=2 if complete else None,
+        inputs=("fct_a",) if complete else None,
+        provenance=(("subject", "v1"),) if complete else None,
+    )
 
+
+def test_the_views_provenance_and_absence_columns_are_stated_absences() -> None:
+    """Why the drawer reads the records instead of the rows.
+
+    `_FIELD_READERS` gives `figure` and `evidence` readers and gives these two
+    none, so `_unstated` answers both -- "a field no member of `RenderableBundle`
+    states, an absence and not a blank". `RCA-008` §Exclusions bars this
+    specification from changing that, so this asserts the fact rather than fixing
+    it: the day `RRA-014` publishes readers for them, this fails and `evidence.py`
+    is looked at rather than left double-sourcing one figure.
+    """
+    projected = _projected((_cited("cit_revenue", "revenue", complete=True),))
+    named = dict(zip(projected.fields, projected.rows[0], strict=True))  # type: ignore[attr-defined]
+    assert named["figure"] == "fig_revenue"
+    assert named["evidence"] == "cit_revenue"
+    assert named["provenance"] is None
+    assert named["absence"] is None
+
+
+def test_a_governed_absence_arrives_as_a_citation_and_kind_pair() -> None:
+    """`evidence_absences` is pairs, whatever `ports.ViewProjection` annotates.
+
+    `RRA-014` builds `(citation_id, one of precision | inputs | provenance)` and
+    the adapter hands the outcome back unchanged, while `RCA-006`'s port declares
+    `tuple[str, ...]`. §Exclusions bars this slice from editing either module, so
+    the shape is asserted where it is produced and modelled correctly here.
+    """
+    projected = _projected((_cited("cit_gross_profit", "gross_profit", complete=False),))
+    assert set(projected.evidence_absences) == {  # type: ignore[attr-defined]
+        ("cit_gross_profit", "precision"),
+        ("cit_gross_profit", "inputs"),
+        ("cit_gross_profit", "provenance"),
+    }
+
+
+# --- FR-165 and the dispatch rule -------------------------------------------
+
+
+def test_the_drawer_can_answer_unavailable_on_its_own() -> None:
+    """`FR-165` -- content-free, and the cards beside it still render."""
+    reading = _read(None)
     assert reading.status == ports.KIND_UNAVAILABLE
-    assert reading.items == ()
+    assert reading.entries == ()
     assert reading.refusal is None
 
 
-# --- The extent assertion that keeps absences from becoming refusals ---------
-
-
-def test_every_published_view_still_requires_no_evidence() -> None:
-    """`D1-01` section 4 -- `required_evidence` is `()` across the whole registry.
-
-    Derived from what the registry publishes rather than from a list here, so a
-    later slice that populates one entry fails this rather than silently
-    converting that view's ordinary absences into `FR-141` refusals.
-    """
-    view_ids = registry.view_ids()
-    assert view_ids, "no published views -- this guard is reading the wrong registry"
-
-    populated = tuple(
-        sorted(
-            view_id
-            for view_id in view_ids
-            if registry.define_view(view_id).required_evidence != ()
-        )
+def test_a_refused_outcome_carrying_a_projection_is_still_refused() -> None:
+    """The kind decides, never the payload -- carried from `#446`."""
+    refusal = ports.ViewRefusal(cause="view_incompatible_source_shape")
+    outcome = dataclasses.replace(
+        support.evidence_outcome(), kind=ports.KIND_REFUSED, refusal=refusal
     )
-    assert populated == (), (
-        f"{populated} now require evidence, which makes an absent code an FR-141 "
-        f"refusal cause -- ordinary evidence absences would present as refused views"
+    reading = _read(outcome)
+    assert reading.status == ports.KIND_REFUSED
+    assert reading.entries == ()
+    assert reading.refusal is refusal
+
+
+# --- FR-162: the card's evidence action -------------------------------------
+
+
+def _cards(evidence_outcome: ports.ViewOutcome | None, **kw: object) -> card.CardsReading:
+    """One S-1 read with S-6 and S-9 beside it, each scripted independently."""
+    port = support.ScriptedPort(
+        {
+            seam.EXECUTIVE_OVERVIEW.view_id: support.overview(**kw),  # type: ignore[arg-type]
+            seam.METRIC_AVAILABILITY.view_id: support.availability(
+                (("revenue", card.AVAILABILITY_AVAILABLE, None, ()),)
+            ),
+            seam.REPORT_EVIDENCE.view_id: evidence_outcome,
+        }
     )
-
-
-# --- The package boundary that forced the injection --------------------------
-
-
-def test_the_drawer_module_imports_no_rra_module() -> None:
-    """`R7-01` section 3 -- a bridge inside `khepri.rca` makes every RCA test
-    transitively depend on RRA, and `RCA-006`'s boundary bars it outright.
-
-    The catalog lives in `khepri.rra.definitions`, so the drawer declares a
-    Protocol and the composition root binds the adapter -- `ports.py`'s rule,
-    "the consumer owns the Protocol; the composition root binds the
-    implementation". Asserted here as well as by the repo-wide scan because this
-    module is the one that wanted the import.
-    """
-    import ast
-    import pathlib
-
-    source = pathlib.Path(evidence.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-
-    imported: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module:
-            imported.append(node.module)
-        elif isinstance(node, ast.Import):
-            imported.extend(alias.name for alias in node.names)
-
-    assert imported, "no imports parsed -- this guard is reading the wrong module"
-    offenders = [name for name in imported if name.startswith("khepri.rra")]
-    assert offenders == [], offenders
-
-
-# --- The rendered drawer: FR-161 and FR-171 ----------------------------------
-
-
-def _drawer_html(
-    outcome: ports.ViewOutcome | None, language: str = "en", metric: str = "revenue"
-) -> str:
-    """One drawer rendered on its own, in one language."""
-    from khepri.runtime.shell_api import shell_environment
-
-    reading = _read(outcome, language=language, metric=metric)
-    return shell_decisions.render_drawer(
-        shell_environment(), reading, language=language
+    return card.read_cards(
+        support.actions(port),
+        card.CardsRequest(organization_id="org-1", account_id="acct-1", source_id="run-1"),
     )
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
-def test_the_rendered_drawer_shows_the_governed_definition(language: str) -> None:
-    """`FR-159` -- the definition reaches the reader, as the catalog worded it."""
-    html = _drawer_html(_projection(()), language=language)
-
-    assert definitions.describe_metric("revenue", language) in html
-    assert definitions.define_metric("revenue").formula_version in html
-
-
-def test_the_rendered_drawer_states_an_absence_without_calling_it_a_refusal() -> None:
-    """The central assertion, at the rendering layer.
-
-    An absence must reach the reader as its own statement. A template that put
-    it in the refusal slot would tell a customer the view refused.
-    """
-    html = _drawer_html(_projection((), absences=("no_source_document",)))
-
-    assert "drawer-absence" in html
-    assert "drawer-refusal" not in html
+def test_a_card_carries_the_evidence_action_for_its_own_metric() -> None:
+    """`FR-162` -- "an evidence action", which `D1-03` named and left empty."""
+    reading = _cards(_both_records())
+    actions = {one.metric: one.evidence for one in reading.cards}
+    assert actions["revenue"].entries[0].citation == "cit_revenue"
+    assert actions["gross_profit"].entries[0].citation == "cit_gross_profit"
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
-def test_the_drawer_states_its_absence_label_in_both_languages(language: str) -> None:
-    """`FR-171` -- a surface may not state less in one language than the other."""
-    html = _drawer_html(_projection((), absences=("no_source_document",)), language)
-
-    assert shell_decisions.DRAWER_COPY[language]["absences_label"] in html
-
-
-def test_a_refused_drawer_shows_the_governed_wording_and_no_rows() -> None:
-    """`FR-164` -- the governed message, never the bare cause code."""
-    refusal = ports.ViewRefusal(
-        cause="incompatible_shape",
-        wording_pairs=(("en", "This view cannot read that source."), ("ar", "-")),
-    )
-    html = _drawer_html(
-        ports.ViewOutcome(kind=ports.KIND_REFUSED, refusal=refusal)
-    )
-
-    assert "This view cannot read that source." in html
-    assert "incompatible_shape" not in html
+def test_a_card_whose_metric_the_evidence_view_did_not_cite_says_so() -> None:
+    """An action with no entries, never an entry borrowed from another metric."""
+    reading = _cards(support.evidence_outcome((support.STATED,)))
+    actions = {one.metric: one.evidence for one in reading.cards}
+    assert actions["gross_profit"].entries == ()
+    assert actions["gross_profit"].unavailable is False
 
 
-def test_the_drawer_markup_carries_no_route_of_its_own() -> None:
-    """`FR-161` -- reachable from a figure in one action, never a page.
-
-    A drawer that rendered a link to its own address would be a page by another
-    spelling, whatever the route table says.
-    """
-    html = _drawer_html(_projection((("revenue", "invoice-1", "pkg-1", ""),)))
-
-    assert "/decisions/" not in html
-    assert "<a " not in html
+def test_an_unavailable_evidence_read_leaves_every_card_rendered() -> None:
+    """`FR-165` -- partial success. The figures stay; the drawer says it is missing."""
+    reading = _cards(None)
+    assert len(reading.cards) == 2
+    assert all(one.evidence.unavailable for one in reading.cards)
+    assert all(one.evidence.entries == () for one in reading.cards)
 
 
-# --- Reachability: the drawer beside the figure, over the real route ---------
+def test_the_cards_carry_the_effective_request_their_own_figures_applied() -> None:
+    """`FR-137`/`FR-162` -- the filter line states what applied to *this* view."""
+    reading = _cards(support.evidence_outcome())
+    assert reading.effective is not None
+    assert reading.effective.dimensions == ("period",)
 
 
-class _StubResolver:
-    """A session that resolves to one member of one organization."""
-
-    def __init__(self, raises: Exception | None = None) -> None:
-        """Resolve to `org-acme`, or raise what the case asked for."""
-        self._raises = raises
-
-    def for_request(
-        self, token: str, *, organization_id: str | None = None, now: object = None
-    ) -> object:
-        """The member this session names."""
-        if self._raises is not None:
-            raise self._raises
-        return _Member()
+def test_the_caveat_count_cannot_reach_the_status_selection() -> None:
+    """`FR-162` requires a count; `FR-159` bars a derived figure. Both hold."""
+    one = _cards(support.evidence_outcome(), caveats=("caveat_a",))
+    three = _cards(support.evidence_outcome(), caveats=("caveat_a", "caveat_b", "caveat_c"))
+    assert {card_.status for card_ in one.cards} == {card_.status for card_ in three.cards}
 
 
-class _Member:
-    """One member of one organization."""
-
-    account_id = "acct-1"
-    organization_id = "org-acme"
-    role = "owner"
-    is_owner = True
-
-
-class _StubOrganizations:
-    """The one organization the frame lists."""
-
-    def organizations_for_account(self, account_id: str) -> list[object]:
-        """No organizations: the frame renders, the destinations do not matter here."""
-        return []
+# --- the surface: the drawer is a disclosure, not an address ----------------
 
 
 class _StubDecisions:
-    """S-1's figures, and the evidence view the drawer reads."""
+    """S-1, S-6 and S-9 only, so these cases measure the cards and their drawers.
+
+    Every other view answers the content-free unavailable outcome rather than
+    S-1's rows: a stub that answered uniformly would give the breakdown sections
+    figures they were never scripted, and the drawer counts below would be
+    measuring the stub. The sections have their own cases further down.
+    """
 
     def request(self, asked: object) -> ports.ViewOutcome:
-        """Two metrics on the overview, and one evidence row per drawer read."""
+        """Each view answered as itself; `FR-165` makes them independent."""
         view_id = asked.view.view_id  # type: ignore[attr-defined]
+        if view_id == seam.METRIC_AVAILABILITY.view_id:
+            return support.availability((("revenue", card.AVAILABILITY_AVAILABLE, None, ()),))
         if view_id == seam.REPORT_EVIDENCE.view_id:
-            # Several rows, as the real view returns: `ReportEvidenceView` names
-            # ten metrics in its allowlist and `DecisionRead` sends no metric, so
-            # every read of it answers with the run's whole citation table. A
-            # one-row stub hid that (review on `#449`).
-            return _projection(
-                (
-                    ("fig-1", "cite-1", "pkg-1", ""),
-                    ("fig-2", "cite-2", "pkg-1", ""),
-                    ("fig-3", "cite-3", "pkg-1", ""),
-                ),
-                absences=("no_provenance",),
-            )
-        return ports.ViewOutcome(
-            kind=ports.KIND_ADMITTED,
-            projection=ports.ViewProjection(
-                view_id=seam.EXECUTIVE_OVERVIEW.view_id,
-                view_version=seam.EXECUTIVE_OVERVIEW.view_version,
-                fields=("metric", "value", "population", "versions"),
-                rows=(
-                    ("revenue", "700.00", "complete", ()),
-                    ("units", "12", "complete", ()),
-                ),
-            ),
-        )
+            return _both_records()
+        if view_id == seam.EXECUTIVE_OVERVIEW.view_id:
+            return support.overview()
+        return ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE)
 
 
-def _route_body(language: str = "en") -> str:
-    """The decision surface as the route renders it, for one member."""
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from khepri.rca.session_cookie import SESSION_COOKIE
-    from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
-
+def _app() -> FastAPI:
+    """A shell wired with the S-1 collaborator these cases script."""
     app = FastAPI()
     add_shell_routes(
-        app,
-        services=ShellServices(
-            resolver=_StubResolver(),
-            organizations=_StubOrganizations(),
-            decisions=_StubDecisions(),
-        ),
-        clock=lambda: __import__("datetime").datetime(
-            2026, 9, 12, tzinfo=__import__("datetime").UTC
-        ),
+        app, services=support.services(_StubDecisions()), clock=lambda: support.NOW
     )
-    client = TestClient(app, base_url="https://testserver")
-    client.cookies.set(SESSION_COOKIE, "a-session-token")
-    return client.get(
-        f"{SHELL_PREFIX}/{language}/org-acme/decisions/run-a"
-    ).text
+    return app
 
 
-def test_the_surface_carries_the_evidence_beside_its_figures() -> None:
-    """`FR-161` -- the evidence is reachable from the surface, in one action.
+def _page(language: str = "en") -> str:
+    """The rendered decision surface in one language."""
+    return support.client(_StubDecisions()).get(support.address(language)).text
 
-    Driven over the route rather than by rendering the drawer alone: what is
-    under test is that a reader who reaches the surface can reach the evidence,
-    which a standalone render cannot show.
 
-    **One drawer and not one per card.** This case first asserted two, one under
-    each card. `ReportEvidenceView` publishes `figure_id` and `citation_id` and
-    no metric, so per-card drawers claimed an attribution the view does not
-    publish -- see `test_the_surface_reads_the_evidence_table_once_for_the_run`.
+def test_the_drawer_has_no_address_of_its_own() -> None:
+    """`FR-161` -- reachable from the surface carrying the figure, never deferred."""
+    paths = {getattr(route, "path", "") for route in _app().routes}
+    assert not [path for path in paths if "evidence" in path]
+    assert len([path for path in paths if "decisions" in path]) == 1
+
+
+def test_the_drawer_arrives_in_the_same_response_as_the_figure() -> None:
+    """A disclosure and not a link: opening it needs no second request."""
+    body = _page()
+    assert "cit_revenue" in body
+    assert body.count('class="decision-drawer"') == 2
+
+
+@pytest.mark.parametrize("line", _FR162_LINES)
+def test_every_line_fr162_requires_is_on_the_card_or_in_its_drawer(line: str) -> None:
+    """`FR-162` -- asserted against the requirement's own list, so a drop fails."""
+    assert f'data-line="{line}"' in _page()
+
+
+def test_no_comparison_line_is_rendered_while_its_source_is_unreachable() -> None:
+    """`FR-162` says "comparison only when compatible"; `FR-170` says it is not."""
+    body = _page()
+    assert 'data-line="comparison"' not in body
+    assert shell_decisions.COMPARISON_UNREACHABLE["en"] in body
+
+
+def test_a_stated_absence_renders_as_data_rather_than_as_a_refusal() -> None:
+    """`FR-140`/`FR-164` -- the record said there is none, and the drawer says that."""
+    body = _page()
+    assert 'class="decision-absence"' in body
+    assert 'class="decision-refusal"' not in body
+
+
+@pytest.mark.parametrize("language", support.LANGUAGES)
+def test_the_drawer_states_no_less_in_one_language_than_the_other(language: str) -> None:
+    """`FR-171` -- same drawers, same entries, same absences in both."""
+    body = _page(language)
+    assert body.count('class="decision-drawer"') == 2
+    assert body.count('class="decision-absence"') == _page("en").count(
+        'class="decision-absence"'
+    )
+
+
+def test_the_absence_literals_are_the_ones_rra014_states() -> None:
+    """Pinned in the shell, asserted against the source here.
+
+    `RCA-007`'s
+    `test_the_adapter_is_the_only_runtime_module_reaching_the_projection` makes
+    `semantic_view_adapter.py` the one runtime module that may import the
+    semantic-view package, because a second one is what a second composition
+    root would look like. So the three absence kinds are literals in
+    `shell_decisions.py` and this asserts them, exactly as `D1-03` asserts the
+    availability literals against `khepri.rra.definitions`.
     """
-    body = _route_body()
-
-    assert body.count('class="decision-drawer"') == 1
-    assert "cite-1" in body
-
-
-def test_the_surface_drawer_states_no_metric_definition() -> None:
-    """The run's evidence carries no one metric's definition, and says so by absence.
-
-    `DrawerRequest.metric` is empty on this path, so `read_drawer` states no
-    definition. Naming one would attach a single metric's meaning to a citation
-    table covering the whole run. The definition half is for a surface that
-    names one figure, which is `D1-06`'s metric detail rather than this one.
-    """
-    body = _route_body()
-
-    assert definitions.describe_metric("revenue", "en") not in body
-    assert "drawer-definition" not in body
+    stated = {
+        projection.ABSENCE_PRECISION,
+        projection.ABSENCE_INPUTS,
+        projection.ABSENCE_PROVENANCE,
+    }
+    for language in support.LANGUAGES:
+        assert set(shell_decisions.ABSENCE_WORDING[language]) == stated
 
 
-def test_the_surface_states_an_absence_without_calling_it_a_refusal() -> None:
-    """The central assertion, end to end through the route."""
-    body = _route_body()
-
-    assert "drawer-absence" in body
-    assert "drawer-refusal" not in body
-
-
-# --- A projection whose fields are not this view's ---------------------------
+def test_the_unit_literals_are_the_ones_rra004_states() -> None:
+    """The three governed unit kinds, keyed by the constants themselves."""
+    stated = {facts.UNIT_MONETARY, facts.UNIT_COUNT, facts.UNIT_RATIO}
+    for language in support.LANGUAGES:
+        assert set(shell_decisions.UNIT_WORDING[language]) == stated
 
 
-def test_a_projection_with_foreign_fields_yields_no_items() -> None:
-    """The payload can disagree with what was asked, and a reader may not trust it.
-
-    `admitted_projection` already records that `ViewOutcome` carries no
-    kind-to-payload validation. The same hole exists one level down: an admitted
-    outcome can carry a projection whose `fields` are some *other* view's, and a
-    reader that indexed by name would raise -- or, worse, would render another
-    view's values under this view's labels.
-
-    Found by `test_r807_shell_quality`, whose stub answers every view with the
-    overview projection. That is a legitimate input, so the drawer reports no
-    items rather than raising.
-    """
-    outcome = ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=seam.REPORT_EVIDENCE.view_id,
-            view_version=seam.REPORT_EVIDENCE.view_version,
-            fields=("metric", "value", "population", "versions"),
-            rows=(("revenue", "700.00", "complete", ()),),
-        ),
+def test_every_string_the_drawer_adds_exists_in_both_governed_languages() -> None:
+    """`FR-171` -- a key present in one language and absent in the other is a gap."""
+    assert set(shell_decisions.DECISION_COPY["en"]) == set(
+        shell_decisions.DECISION_COPY["ar"]
     )
 
-    reading = _read(outcome)
 
-    assert reading.status == ports.KIND_ADMITTED
-    assert reading.items == ()
-    assert reading.definition is not None
-
-
-def test_the_frameless_render_path_supplies_every_key_the_template_reads() -> None:
-    """`shell_environment` is `StrictUndefined`, so a key one path sets and the
-    other forgets raises rather than rendering a blank.
-
-    `decision_context` exists to stop exactly that -- "two places assembling a
-    template context is how a key goes missing from one of them" -- and adding
-    `drawers` to the route alone broke the frameless path, which `D1-03`'s
-    `FR-170` cases drive. So the default lives in the shared context and this
-    asserts the frameless path renders at all.
-    """
-    from khepri.rca.workspace.decision import card
-    from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
-
-    port = _ScriptedPort(
-        {
-            seam.EXECUTIVE_OVERVIEW.view_id: ports.ViewOutcome(
-                kind=ports.KIND_ADMITTED,
-                projection=ports.ViewProjection(
-                    view_id=seam.EXECUTIVE_OVERVIEW.view_id,
-                    view_version=seam.EXECUTIVE_OVERVIEW.view_version,
-                    fields=("metric", "value", "population", "versions"),
-                    rows=(("revenue", "700.00", "complete", ()),),
-                ),
-            )
-        }
-    )
-    reading = card.read_cards(
-        _actions(port),
-        card.CardsRequest(
-            organization_id="org-acme", account_id="acct-1", source_id="run-a"
-        ),
-    )
-
-    body = shell_decisions.render_decisions(
-        shell_environment(),
-        reading,
-        shell_decisions.DecisionFrame(
-            language="en",
-            organization_id="org-acme",
-            prefix=SHELL_PREFIX,
-            source_id="run-a",
-        ),
-    )
-
-    assert "700.00" in body
-    assert "decision-drawer" not in body
+def test_an_unavailable_drawer_says_that_and_says_nothing_more() -> None:
+    """`FR-165` -- the unavailable outcome is content-free."""
+    reading = _cards(None)
+    view = shell_decisions.decision_view(reading, language="en")
+    drawers = [one.drawer for one in view.cards]
+    assert all(one.unavailable for one in drawers)
+    assert all(one.entries == () for one in drawers)
 
 
-# --- The evidence view is per run, not per metric ----------------------------
+def test_the_period_the_drawer_states_is_the_run_the_surface_names() -> None:
+    """`FR-166` -- the period is a source selector, so the run is the period."""
+    assert re.search(r'data-line="period"[^>]*>\s*run-a', _page()) is not None
 
 
-def test_the_surface_reads_the_evidence_table_once_for_the_run() -> None:
-    """`ReportEvidenceView` publishes no metric, so it cannot answer per figure.
-
-    The view names ten metrics in its allowlist and `DecisionRead` sends none --
-    deliberately: `FR-135` forbids retyping a metric code, and `seam.py` records
-    that an empty selection asks for the definition's own. So every read returns
-    the run's whole citation table.
-
-    **And nothing published can narrow it.** The overview publishes
-    `("metric", "value", "population", "versions")`; this view publishes `figure`
-    (a `figure_id`) and `evidence` (a `citation_id`). Neither carries the
-    other's key, so a per-card drawer could only have been built by inventing an
-    attribution the views do not publish -- which would put one metric's
-    citations under another metric's label.
-
-    Review on `#449` found the first draft reading this view once per card. The
-    surface reads it once and states it as the run's evidence.
-    """
-    port = _ScriptedPort(
-        {
-            seam.REPORT_EVIDENCE.view_id: _projection(()),
-            seam.EXECUTIVE_OVERVIEW.view_id: ports.ViewOutcome(
-                kind=ports.KIND_ADMITTED,
-                projection=ports.ViewProjection(
-                    view_id=seam.EXECUTIVE_OVERVIEW.view_id,
-                    view_version=seam.EXECUTIVE_OVERVIEW.view_version,
-                    fields=("metric", "value", "population", "versions"),
-                    rows=(
-                        ("revenue", "700.00", "complete", ()),
-                        ("units", "12", "complete", ()),
-                        ("cost", "300.00", "complete", ()),
-                    ),
-                ),
-            ),
-        }
-    )
-    reading = card.read_cards(
-        _actions(port),
-        card.CardsRequest(
-            organization_id="org-1", account_id="acct-1", source_id="run-1"
-        ),
-    )
-
-    shell_decisions.drawer_for(
-        _actions(port),
-        reading,
-        request=evidence.DrawerRequest(
-            organization_id="org-1",
-            account_id="acct-1",
-            source_id="run-1",
-            language="en",
-        ),
-        language="en",
-    )
-
-    assert len(reading.cards) == 3, "three cards, so a per-card read would be three"
-    asked = [r.view_id for r in port.requests if r.view_id == seam.REPORT_EVIDENCE.view_id]
-    assert len(asked) == 1, asked
-
-
-def test_the_surface_renders_one_drawer_for_the_run() -> None:
-    """One citation table, one drawer -- not one per card claiming to be its own."""
-    body = _route_body()
-
-    assert body.count('class="decision-drawer"') == 1
-
-
-def test_an_absence_on_a_foreign_projection_is_not_forwarded() -> None:
-    """The shape check gates the absences as it gates the rows (`#449` review).
-
-    A projection whose fields are some other view's yields no items; forwarding
-    its `evidence_absences` would state, under this view's labels, what some
-    other view said was missing.
-    """
-    outcome = ports.ViewOutcome(
-        kind=ports.KIND_ADMITTED,
-        projection=ports.ViewProjection(
-            view_id=seam.REPORT_EVIDENCE.view_id,
-            view_version=seam.REPORT_EVIDENCE.view_version,
-            fields=("metric", "value", "population", "versions"),
-            rows=(("revenue", "700.00", "complete", ()),),
-            evidence_absences=("no_provenance",),
-        ),
-    )
-
-    reading = _read(outcome)
-
-    assert reading.items == ()
-    assert reading.absences == ()
