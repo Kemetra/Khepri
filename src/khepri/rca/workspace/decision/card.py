@@ -139,6 +139,16 @@ class CardsReading:
     empty_rule: str | None = None
     comparison_unreachable: bool = True
     effective: EffectiveRequest | None = None
+    #: The surface's one S-9 read, kept whole.
+    #:
+    #: Each card already carries its own `EvidenceAction`, so this is not for
+    #: them: it is for the figures that are **not** cards. `FR-161` requires the
+    #: drawer be reachable from every figure on S-3, S-4 and S-5 too, and those
+    #: rows name series metrics no card names. A surface that re-read S-9 for
+    #: them would read one view twice for one page, which `FR-168` bars as a
+    #: cache and `FR-135` bars as a second truth. So the reading travels here,
+    #: and every figure on the page selects from the one read.
+    evidence: EvidenceReading | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +254,7 @@ def _admitted(
         cards=cards,
         empty_rule=EXECUTIVE_OVERVIEW.empty_rule if projection.is_empty else None,
         effective=overview.effective,
+        evidence=evidence,
     )
 
 

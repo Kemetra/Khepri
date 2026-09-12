@@ -714,22 +714,21 @@ def test_a_decision_frame_must_name_the_run_it_renders() -> None:
             language="en", organization_id="", prefix=SHELL_PREFIX, source_id="run-a"
         )
 
+    reading = card.read_cards(
+        _actions(
+            _port(
+                {
+                    seam.EXECUTIVE_OVERVIEW.view_id: _projection(
+                        seam.EXECUTIVE_OVERVIEW, _OVERVIEW_FIELDS, (("revenue", "7", "c", ()),)
+                    )
+                }
+            )
+        ),
+        card.CardsRequest(organization_id="org-acme", account_id="acct-1", source_id="run-a"),
+    )
     body = shell_decisions.render_decisions(
         shell_environment(),
-        card.read_cards(
-            _actions(
-                _port(
-                    {
-                        seam.EXECUTIVE_OVERVIEW.view_id: _projection(
-                            seam.EXECUTIVE_OVERVIEW, _OVERVIEW_FIELDS, (("revenue", "7", "c", ()),)
-                        )
-                    }
-                )
-            ),
-            card.CardsRequest(
-                organization_id="org-acme", account_id="acct-1", source_id="run-a"
-            ),
-        ),
+        shell_decisions.DecisionReadings(cards=reading),
         shell_decisions.DecisionFrame(
             language="en",
             organization_id="org-acme",

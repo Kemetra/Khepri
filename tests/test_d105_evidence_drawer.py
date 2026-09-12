@@ -34,6 +34,7 @@ from khepri.rca.semantic_queries import ports
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.decision import card, evidence, seam
+from khepri.rra import definitions as facts_definitions
 from khepri.rra import facts
 from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
@@ -555,7 +556,13 @@ class _StubOrganizations:
 
 
 class _StubDecisions:
-    """S-1, S-6 and S-9 for any request, so the surface has a drawer to render."""
+    """S-1, S-6 and S-9 only, so these cases measure the cards and their drawers.
+
+    Every other view answers the content-free unavailable outcome rather than
+    S-1's rows: a stub that answered uniformly would give the breakdown sections
+    figures they were never scripted, and the drawer counts below would be
+    measuring the stub. The sections have their own cases further down.
+    """
 
     def request(self, asked: object) -> ports.ViewOutcome:
         """Each view answered as itself; `FR-165` makes them independent."""
@@ -564,7 +571,9 @@ class _StubDecisions:
             return _availability((("revenue", card.AVAILABILITY_AVAILABLE, None, ()),))
         if view_id == seam.REPORT_EVIDENCE.view_id:
             return _evidence_outcome((_STATED, _UNSTATED), _UNSTATED_ABSENCES)
-        return _overview()
+        if view_id == seam.EXECUTIVE_OVERVIEW.view_id:
+            return _overview()
+        return ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE)
 
 
 def _app() -> FastAPI:
@@ -815,11 +824,27 @@ def test_the_surface_renders_a_section_for_every_governed_breakdown(
     assert f'data-section="{section}"' in body
 
 
-def test_the_limits_section_names_the_governed_availability_of_each_metric() -> None:
-    """S-6 -- `FR-161`'s "whether the claim is allowed", on the surface making it."""
+def test_the_governed_availability_is_reachable_beside_the_figure_it_qualifies() -> None:
+    """S-6 under `FR-161`, which is why it is not a section of its own.
+
+    "Availability, caveats and refusals are reachable from the surface carrying
+    the figure they qualify and are **not deferred to a terminal page**." So S-6
+    renders *distributed*: the four-state sits in the card's own row, and each
+    section states its own caveats and refusal. A consolidated limits section
+    would be a second read of `MetricAvailabilityView` on a page whose cards
+    already carry it -- the duplication `FR-168` and `FR-135` both bar.
+    """
     body = _rendered(_surface(_full_surface()))
-    assert f'data-section="{shell_decisions.SECTION_LIMITS}"' in body
-    assert card.AVAILABILITY_AVAILABLE in body
+    cards = re.findall(r'<li class="decision-card".*?</li>', body, flags=re.S)
+    qualified = [one for one in cards if card.AVAILABILITY_AVAILABLE in one]
+    assert qualified, "no card carried the governed availability beside its figure"
+
+
+def test_the_availability_view_is_read_once_for_the_whole_surface() -> None:
+    """`FR-168`/`FR-135` -- one read of S-6, however many figures it qualifies."""
+    decisions = _surface(_full_surface())
+    _rendered(decisions)
+    assert decisions.asked.count(seam.METRIC_AVAILABILITY.view_id) == 1
 
 
 def test_the_two_governed_empty_rules_render_distinguishably_on_one_page() -> None:
@@ -883,6 +908,29 @@ def test_a_refused_breakdown_shows_the_governed_wording_and_no_figure() -> None:
     assert "drinks" not in body
 
 
+def test_a_drawer_with_no_evidence_read_behind_it_says_unavailable_not_absent() -> None:
+    """`FR-165` -- and the difference between "none was cited" and "we did not look".
+
+    `read_cards` returns before reading S-9 when S-1 is refused, so a page can
+    carry breakdown figures with no evidence reading behind them at all. A drawer
+    that then claimed the analysis cited no evidence would be asserting something
+    the page never checked; the content-free unavailable is the true answer.
+    """
+    outcomes = _full_surface()
+    outcomes[seam.EXECUTIVE_OVERVIEW.view_id] = ports.ViewOutcome(
+        kind=ports.KIND_REFUSED,
+        refusal=ports.ViewRefusal(
+            cause="view_incompatible_source_shape",
+            wording_pairs=(("en", "That source is the wrong shape."), ("ar", "شكل غير صالح.")),
+        ),
+    )
+    decisions = _surface(outcomes)
+    body = _rendered(decisions)
+    assert decisions.asked.count(seam.REPORT_EVIDENCE.view_id) == 0
+    assert shell_decisions.DECISION_COPY["en"]["evidence_unavailable"] in body
+    assert shell_decisions.DECISION_COPY["en"]["evidence_absent"] not in body
+
+
 def test_the_evidence_view_is_read_once_for_the_whole_surface() -> None:
     """`FR-168` -- no cache, and one read rather than one per figure."""
     decisions = _surface(_full_surface())
@@ -908,6 +956,25 @@ def test_every_section_heading_exists_in_both_governed_languages() -> None:
     assert set(shell_decisions.EMPTY_WORDING["en"]) == set(
         shell_decisions.EMPTY_WORDING["ar"]
     )
+
+
+def test_every_breakdown_metric_is_one_the_catalog_can_define() -> None:
+    """The drawer reads `RRA-011` for every figure, so every figure must be in it.
+
+    `describe_metric` raises `UnknownCode` rather than falling back, and a raw
+    code is never a fallback either -- so a view publishing a metric the catalog
+    does not admit would reach a customer as a 500 rather than as a surface. The
+    contract already holds; this is the check that keeps it holding, in the same
+    spirit as pinning a literal and asserting it against its source.
+    """
+    for _section, view in _SECTIONS:
+        published = registry.define_view(view.view_id)
+        for metric in published.metric_allowlist:
+            assert facts_definitions.admits_metric(metric), (
+                f"{view.view_id} publishes {metric!r}, which `RRA-011` cannot define"
+            )
+            assert facts_definitions.describe_metric(metric, "en")
+            assert facts_definitions.describe_metric(metric, "ar")
 
 
 def test_the_empty_wording_covers_exactly_the_two_governed_rules() -> None:

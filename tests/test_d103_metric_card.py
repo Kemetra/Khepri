@@ -331,7 +331,7 @@ def test_the_template_renders_the_unreachable_comparison_visibly(language: str) 
     )
     body = shell_decisions.render_decisions(
         shell_environment(),
-        reading,
+        shell_decisions.DecisionReadings(cards=reading),
         shell_decisions.DecisionFrame(
             language=language,
             organization_id="org-1",

@@ -64,11 +64,31 @@ from fastapi import FastAPI, Response
 from jinja2 import Environment
 
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.rca.workspace.decision.breakdowns import (
+    BasketSurface,
+    BreakdownReading,
+    BreakdownRequest,
+    read_basket_surface,
+    read_branches,
+    read_products,
+)
 from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, read_cards
-from khepri.rca.workspace.decision.evidence import EvidenceAction, EvidenceEntry
+from khepri.rca.workspace.decision.evidence import (
+    EvidenceAction,
+    EvidenceEntry,
+    EvidenceReading,
+)
+from khepri.rca.workspace.decision.seam import (
+    EMPTY_STATED_ABSENCE,
+    EMPTY_STATED_NO_ROWS,
+)
 from khepri.rra import definitions
 from khepri.rra.facts import UNIT_COUNT, UNIT_MONETARY, UNIT_RATIO
-from khepri.rra.rendering.wording import caveat_message, metric_business_name
+from khepri.rra.rendering.wording import (
+    business_metric_name,
+    caveat_message,
+    metric_business_name,
+)
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
 from khepri.runtime.shell_invitations import ShellRendering
@@ -77,13 +97,34 @@ __all__ = [
     "ABSENCE_WORDING",
     "COMPARISON_UNREACHABLE",
     "DECISION_COPY",
+    "EMPTY_WORDING",
+    "SECTION_BASKET",
+    "SECTION_BRANCHES",
+    "SECTION_CONCENTRATION",
+    "SECTION_COPY",
+    "SECTION_PRODUCTS",
     "UNIT_WORDING",
     "DecisionFrame",
+    "DecisionReadings",
     "add_decision_routes",
+    "decision_sections",
     "decision_view",
     "offers_decisions",
+    "read_surface",
     "render_decisions",
 ]
+
+#: S-3. One section key per breakdown, stable and not a heading: the heading is
+#: language-dependent and this is what the template and its tests address.
+SECTION_BRANCHES = "branches"
+#: S-4.
+SECTION_PRODUCTS = "products"
+#: S-5a.
+SECTION_BASKET = "basket"
+#: S-5b. A section of its own because `FR-165` makes it an independent read:
+#: Basket may be admitted while Concentration is unavailable, and one surface
+#: that failed whole would be the partial projection `RCA-008` §Invariants bars.
+SECTION_CONCENTRATION = "concentration"
 
 #: `FR-170`. The Period Comparison source is a two-population bundle and the
 #: shipping composition builds one population per run, so the surface is promised
@@ -127,6 +168,41 @@ ABSENCE_WORDING = {
         "precision": "لم يذكر المصدر الدقة.",
         "inputs": "لم يذكر المصدر المدخلات.",
         "provenance": "لم يذكر المصدر مصدر البيانات.",
+    },
+}
+
+#: The four breakdown headings. Coined here and not read from a catalog because
+#: a section is this surface's own structure rather than a governed figure --
+#: `FR-159` admits structure, and there is no governed vocabulary for "Branches".
+SECTION_COPY = {
+    "en": {
+        SECTION_BRANCHES: "By branch",
+        SECTION_PRODUCTS: "By product and category",
+        SECTION_BASKET: "Basket",
+        SECTION_CONCENTRATION: "Concentration",
+    },
+    "ar": {
+        SECTION_BRANCHES: "حسب الفرع",
+        SECTION_PRODUCTS: "حسب المنتج والفئة",
+        SECTION_BASKET: "سلة الشراء",
+        SECTION_CONCENTRATION: "التركز",
+    },
+}
+
+#: `FR-163`: "the two governed empty rules render distinguishably". They are
+#: different findings with different remedies -- a store filter naming a store
+#: with no sales is not a refused measure -- and a surface rendering both as an
+#: empty table would misstate the customer's data. Keyed by `seam`'s own
+#: constants, so a third rule cannot be invented here and a renamed one is an
+#: import error rather than a missing sentence.
+EMPTY_WORDING = {
+    "en": {
+        EMPTY_STATED_NO_ROWS: "Nothing matched this request.",
+        EMPTY_STATED_ABSENCE: "The source published no value for this.",
+    },
+    "ar": {
+        EMPTY_STATED_NO_ROWS: "لا يوجد ما يطابق هذا الطلب.",
+        EMPTY_STATED_ABSENCE: "لم ينشر المصدر أي قيمة لهذا.",
     },
 }
 
@@ -437,8 +513,184 @@ class DecisionFrame:
             raise ValueError("DecisionFrame.organization_id must name an organization")
 
 
+@dataclass(frozen=True, slots=True)
+class _RowView:
+    """One breakdown row as the template reads it.
+
+    `cells` keeps the row's own published field order, which is how `FR-167`
+    holds through the render as well as through the read: a row named by its
+    view's own fields cannot carry a four-state availability, because no
+    breakdown view publishes one.
+
+    `label` is the governed business name or `None`. `business_metric_name`
+    returns `None` rather than the raw code when the row's own dimension cell
+    names the figure -- a series metric like `revenue_by_store` is named by its
+    `store` cell -- and "the raw code is never a fallback: returning it would
+    quietly expose an internal identifier on a customer surface".
+    """
+
+    cells: tuple[tuple[str, object], ...]
+    label: str | None = None
+    drawer: _DrawerView | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _SectionView:
+    """One breakdown surface: its figures, and everything qualifying them.
+
+    `refusal`, `empty` and `unavailable` are three different answers and the
+    template renders three different things. `FR-163` separates the two empty
+    rules, `FR-164` gives a refusal its governed wording, and `FR-165` makes an
+    unavailable read content-free -- so a section that collapsed them would be
+    misstating the customer's data in whichever direction it collapsed.
+    """
+
+    section: str
+    heading: str
+    rows: tuple[_RowView, ...] = field(default_factory=tuple)
+    caveats: tuple[str, ...] = field(default_factory=tuple)
+    refusal: str | None = None
+    empty: str | None = None
+    unavailable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionReadings:
+    """Every read one decision page performs, gathered before it renders.
+
+    Each view is read exactly once for the page. `FR-168` bars a cache and
+    `FR-135` bars a second truth, and a surface that re-read S-9 per figure or
+    S-6 per card would be both -- which is also why the evidence reading travels
+    on `CardsReading` rather than being fetched again for the breakdown rows.
+
+    The breakdowns default to `None` so the frameless render path, which exists
+    for the template to be driven directly, can render the cards alone.
+    """
+
+    cards: CardsReading
+    branches: BreakdownReading | None = None
+    products: BreakdownReading | None = None
+    basket: BasketSurface | None = None
+
+
+def _section(
+    section: str,
+    reading: BreakdownReading | None,
+    language: str,
+    evidence: EvidenceReading | None,
+) -> _SectionView | None:
+    """One breakdown as one section, or `None` when this page did not read it."""
+    if reading is None:
+        return None
+    return _SectionView(
+        section=section,
+        heading=SECTION_COPY[language][section],
+        rows=tuple(_row(row, language, evidence) for row in reading.rows),
+        caveats=_caveat_codes(reading.caveats, language),
+        refusal=_wording_of(reading.refusal, language),
+        empty=EMPTY_WORDING[language].get(reading.empty_rule or ""),
+        unavailable=reading.status == "unavailable",
+    )
+
+
+def _row(row: Any, language: str, evidence: EvidenceReading | None) -> _RowView:
+    """One row, named by its own view's fields and carrying its own drawer."""
+    metric = str(row.values.get("metric", ""))
+    return _RowView(
+        cells=row.cells,
+        label=business_metric_name(metric, language),
+        drawer=_drawer(metric, _action_for(evidence, metric), language),
+    )
+
+
+def _action_for(evidence: EvidenceReading | None, metric: str) -> EvidenceAction:
+    """This metric's slice of the page's one S-9 read, or the content-free miss.
+
+    **`None` here is unavailable and not an absence**, which is the distinction
+    this function exists for. `read_cards` returns before reading S-9 when S-1 is
+    refused, so a page can render breakdown figures with no evidence reading
+    behind them at all -- and a drawer that then said "this analysis cited no
+    evidence for this figure" would be asserting something the page never
+    checked. `FR-165`'s content-free unavailable is the true answer: a part is
+    missing, and the surface may not say why.
+    """
+    if evidence is None:
+        return EvidenceAction(metric=metric, unavailable=True)
+    return evidence.for_metric(metric)
+
+
+def _caveat_codes(caveats: tuple[object, ...], language: str) -> tuple[str, ...]:
+    """Governed prose for each caveat code, never the code itself (`FR-164`)."""
+    return tuple(caveat_message(getattr(code, "code", code), language) for code in caveats)
+
+
+def _wording_of(refusal: Any, language: str) -> str | None:
+    """`RRA-014`'s own wording for a refusal, or `None` when there was none."""
+    if refusal is None:
+        return None
+    return refusal.wording.get(language)
+
+
+def decision_sections(
+    readings: DecisionReadings, language: str
+) -> tuple[_SectionView, ...]:
+    """S-3, S-4, S-5a and S-5b, in `D1-01`'s narrative order.
+
+    Four sections and not three: `FR-165` makes Basket and Concentration
+    independent reads, so one may be admitted while the other is unavailable and
+    the page renders partial success rather than failing whole.
+    """
+    basket = readings.basket
+    built = (
+        _section(SECTION_BRANCHES, readings.branches, language, readings.cards.evidence),
+        _section(SECTION_PRODUCTS, readings.products, language, readings.cards.evidence),
+        _section(
+            SECTION_BASKET,
+            basket.basket if basket else None,
+            language,
+            readings.cards.evidence,
+        ),
+        _section(
+            SECTION_CONCENTRATION,
+            basket.concentration if basket else None,
+            language,
+            readings.cards.evidence,
+        ),
+    )
+    return tuple(section for section in built if section is not None)
+
+
+def read_surface(actions: Any, request: CardsRequest) -> DecisionReadings:
+    """Every read this page performs, each view exactly once.
+
+    Seven reads and seven views: S-1 and S-6 and S-9 through `read_cards`, then
+    S-3, S-4 and S-5's two. Each is independently authorized and can
+    independently answer unavailable (`FR-165`), which is what lets the page
+    render partial success rather than failing whole.
+
+    **S-6 is not read again here**, and that is `FR-161` rather than an omission.
+    "Availability, caveats and refusals are reachable from the surface carrying
+    the figure they qualify and are not deferred to a terminal page", so S-6
+    renders distributed -- the four-state in the card's own row, each section's
+    caveats and refusal in that section. A consolidated limits section would
+    read `MetricAvailabilityView` a second time for a page whose cards already
+    carry it, which `FR-168` bars as a cache and `FR-135` as a second truth.
+    """
+    breakdown = BreakdownRequest(
+        organization_id=request.organization_id,
+        account_id=request.account_id,
+        source_id=request.source_id,
+    )
+    return DecisionReadings(
+        cards=read_cards(actions, request),
+        branches=read_branches(actions, breakdown),
+        products=read_products(actions, breakdown),
+        basket=read_basket_surface(actions, breakdown),
+    )
+
+
 def decision_context(
-    reading: CardsReading, language: str, source_id: str
+    readings: DecisionReadings, language: str, source_id: str
 ) -> dict[str, Any]:
     """The three keys this surface adds to `RCA-002`'s frame, in one place.
 
@@ -456,12 +708,13 @@ def decision_context(
     return {
         "decision": DECISION_COPY[language],
         "period": source_id,
-        "view": decision_view(reading, language=language),
+        "view": decision_view(readings.cards, language=language),
+        "sections": decision_sections(readings, language),
     }
 
 
 def render_decisions(
-    environment: Environment, reading: CardsReading, frame: DecisionFrame
+    environment: Environment, readings: DecisionReadings, frame: DecisionFrame
 ) -> str:
     """The decision surface's body, without the shell's frame around it.
 
@@ -483,7 +736,7 @@ def render_decisions(
         # The frame's destination list. Empty here because this render path has
         # no organization frame to read; the route passes the real one.
         destinations=(),
-        **decision_context(reading, frame.language, frame.source_id),
+        **decision_context(readings, frame.language, frame.source_id),
     )
 
 
@@ -574,7 +827,7 @@ def _respond(call: _RouteCall) -> Response:
     context = _member_or_none(call)
     if context is None:
         return call.rendering.unavailable(call.rendering.environment, language=language)
-    reading = read_cards(
+    readings = read_surface(
         call.services.decisions,
         CardsRequest(
             organization_id=context.organization_id,
@@ -582,11 +835,11 @@ def _respond(call: _RouteCall) -> Response:
             source_id=call.source_id,
         ),
     )
-    return _page(call, context, language, reading)
+    return _page(call, context, language, readings)
 
 
 def _page(
-    call: _RouteCall, context: Any, language: str, reading: CardsReading
+    call: _RouteCall, context: Any, language: str, readings: DecisionReadings
 ) -> Response:
     """The surface inside `RCA-002`'s organization frame.
 
@@ -611,6 +864,6 @@ def _page(
         **{
             **frame,
             "surface_path": decision_tail(context.organization_id, call.source_id),
-            **decision_context(reading, language, call.source_id),
+            **decision_context(readings, language, call.source_id),
         },
     )
