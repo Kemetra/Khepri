@@ -242,9 +242,20 @@ class DecisionFrame:
         this frame, and the route's `{source}` segment cannot arrive empty. The
         guard is here so the invariant lives on the type rather than in that
         argument, which holds only while both remain true.
+
+        **`organization_id` is checked beside it for the same reason**, because
+        the invariant is the *address* and not the run: an empty organization
+        yields `//decisions/{run}`, which the router 404s identically, and the
+        argument for guarding it is word-for-word the one above. Closing one
+        half of an invariant is the shape this branch has now been caught by
+        twice -- `decisions` unwired while `deletion` and `pins` were named, and
+        the omitted run refused while the empty one built -- which is what
+        `test_the_built_image_wires_every_optional_field` exists to stop.
         """
         if not self.source_id:
             raise ValueError("DecisionFrame.source_id must name a run")
+        if not self.organization_id:
+            raise ValueError("DecisionFrame.organization_id must name an organization")
 
 
 def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:

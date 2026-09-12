@@ -707,6 +707,13 @@ def test_a_decision_frame_must_name_the_run_it_renders() -> None:
             language="en", organization_id="org-acme", prefix=SHELL_PREFIX, source_id=""
         )
 
+    # And the organization half of the same address: `//decisions/run-a` is 404ed
+    # for the same reason, so guarding only the run would close half an invariant.
+    with pytest.raises(ValueError):
+        shell_decisions.DecisionFrame(
+            language="en", organization_id="", prefix=SHELL_PREFIX, source_id="run-a"
+        )
+
     body = shell_decisions.render_decisions(
         shell_environment(),
         card.read_cards(
