@@ -141,15 +141,43 @@ tests/test_r807_shell_quality.py                 EDIT  _UNROUTED_TEMPLATES remov
 
 ---
 
-## The two things this slice still cannot reach
+## `wiring.py` — the question, and the owner's answer
 
-- **`wiring.py`.** `D1-03` question 4 stands unanswered: `ShellServices` is constructed in
-  `src/khepri/runtime/wiring.py`, which `RCA-008` §Scope does not name and whose neighbourhood
-  §Exclusions guards. The route now exists, is declared when the collaborator is wired, and is
-  driven by tests — and **no shipping deployment reaches it** until that owner question is
-  answered. The gap moved from "no route" to "a route nothing wires", which is smaller and is
-  still a gap.
-- **The frame link.** Decision 6 above.
+This plan shipped saying the composition root was out of reach: `ShellServices` is constructed in
+`src/khepri/runtime/wiring.py`, which `RCA-008` §Scope does not name, so whether it was `D1`'s to
+edit was raised as an owner question and left open — on `#447`, in this plan, and in
+`shell_decisions.py`'s docstring.
+
+**The owner answered it by wiring it** (`387c21c`, after review on `#448`): `_shell_decisions`
+composes `SemanticQueryActions` from the caller's own `IsolationService` and record store, and
+`build_shell_services` passes it as `decisions`. So the decision route is in the built image, and
+the surface is reachable by a deployment rather than only by a test.
+
+**The reading that settles it, for the slices after this one.** §Scope not naming a file is not
+the same as §Exclusions barring it. §Exclusions names `RCA-001`, `RCA-002`, `RCA-005`, `RCA-006`,
+`RCA-007`, `RRA-011`, `RRA-012` and `RRA-014` source paths; `wiring.py` is named by neither, and
+the alternative to editing it was shipping a capability no customer could reach. Decisions 5 and 6
+above are **not** loosened by this: `shell_invitations.py` and `shell_frame.py` are `RCA-002`'s,
+named explicitly, and stay out of bounds.
+
+**What the failure actually was, and it is worth naming.** Every `D1-04` test built
+`SemanticQueryActions` by hand, so the route table they exercised was the test's and never the
+deployment's — a route test can prove a route works *once wired* and cannot prove anything wires
+it. Six green checks and the whole suite passed over the gap. `W1-07a` shipped the same defect for
+`deletion` (`#382`) and `W1-09` nearly shipped it for `pins`, and both left comments inside
+`build_shell_services` one line above where `decisions=` belonged.
+
+The guard that came with the fix is the part that outlives this slice:
+`test_the_built_image_wires_every_optional_field` derives its population from
+`dataclasses.fields(ShellServices)`, so **the next optional field is covered without anyone
+remembering to cover it** — a test naming `decisions` would have guarded `decisions` and left
+field #11 open, which is how this recurred three times.
+
+## The one thing this slice still cannot reach
+
+- **The frame link.** Decision 6 above: `organization_frame`'s destinations live in
+  `shell_frame.py`, which §Exclusions names as `RCA-002`'s. The decision surface is reachable by
+  address and not by navigation until an authority that owns the frame says otherwise.
 
 ## Not in this slice
 
