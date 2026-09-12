@@ -689,3 +689,228 @@ def test_an_unavailable_drawer_says_that_and_says_nothing_more() -> None:
 def test_the_period_the_drawer_states_is_the_run_the_surface_names() -> None:
     """`FR-166` -- the period is a source selector, so the run is the period."""
     assert re.search(r'data-line="period"[^>]*>\s*run-a', _page()) is not None
+
+
+# --- the surfaces the drawer has to hang from -------------------------------
+#
+# `D1-04` shipped `breakdowns.py`, `limits.py` and the route, and rendered none
+# of them: the template carried S-1's cards and nothing else. `D1-05`'s
+# acceptance is that the drawer is reachable from every figure on S-1, S-3, S-4
+# and S-5, so the three missing surfaces are built here. `FR-163`'s "the two
+# governed empty rules render distinguishably" is `D1-04`'s own acceptance
+# criterion finally driven through a rendered page rather than a read model.
+
+_BRANCH_FIELDS = ("store", "metric", "value", "population")
+_PRODUCT_FIELDS = ("dimension", "member", "metric", "value", "population")
+_BASKET_FIELDS = ("metric", "value", "population", "versions")
+_CONCENTRATION_FIELDS = ("dimension", "metric", "value", "population")
+
+#: Every section this surface renders, and the empty rule each one's view states.
+_SECTIONS = (
+    (shell_decisions.SECTION_BRANCHES, seam.BRANCH_PERFORMANCE),
+    (shell_decisions.SECTION_PRODUCTS, seam.PRODUCT_CATEGORY),
+    (shell_decisions.SECTION_BASKET, seam.BASKET),
+    (shell_decisions.SECTION_CONCENTRATION, seam.CONCENTRATION),
+)
+
+_UNAVAILABLE = ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE)
+
+
+def _breakdown(
+    view: seam.ViewIdentity,
+    fields: tuple[str, ...],
+    rows: tuple[tuple[object, ...], ...],
+    is_empty: bool = False,
+) -> ports.ViewOutcome:
+    """An admitted breakdown outcome in its own view's published field order."""
+    return ports.ViewOutcome(
+        kind=ports.KIND_ADMITTED,
+        projection=ports.ViewProjection(
+            view_id=view.view_id,
+            view_version=view.view_version,
+            fields=fields,
+            rows=rows,
+            is_empty=is_empty,
+        ),
+    )
+
+
+def _full_surface() -> dict[str, ports.ViewOutcome]:
+    """Every view this surface reads, each admitted with figures on it."""
+    return {
+        seam.EXECUTIVE_OVERVIEW.view_id: _overview(),
+        seam.METRIC_AVAILABILITY.view_id: _availability(
+            (("revenue", card.AVAILABILITY_AVAILABLE, None, ()),)
+        ),
+        seam.REPORT_EVIDENCE.view_id: _evidence_outcome(
+            (_STATED, _UNSTATED), _UNSTATED_ABSENCES
+        ),
+        seam.BRANCH_PERFORMANCE.view_id: _breakdown(
+            seam.BRANCH_PERFORMANCE,
+            _BRANCH_FIELDS,
+            (("store-a", "revenue_by_store", "700.00", "complete"),),
+        ),
+        seam.PRODUCT_CATEGORY.view_id: _breakdown(
+            seam.PRODUCT_CATEGORY,
+            _PRODUCT_FIELDS,
+            (("category", "drinks", "revenue_by_category", "120.00", "complete"),),
+        ),
+        seam.BASKET.view_id: _breakdown(
+            seam.BASKET,
+            _BASKET_FIELDS,
+            (("basket_attach_rate", "0.25", "complete", ()),),
+        ),
+        seam.CONCENTRATION.view_id: _breakdown(
+            seam.CONCENTRATION,
+            _CONCENTRATION_FIELDS,
+            (("product", "concentration_top_decile_share", "0.60", "complete"),),
+        ),
+    }
+
+
+class _SurfaceDecisions:
+    """Every view scripted independently, recording what the surface asked for."""
+
+    def __init__(self, outcomes: dict[str, ports.ViewOutcome]) -> None:
+        """Hold the scripted answers, and the log the isolation cases read back."""
+        self.outcomes = outcomes
+        self.asked: list[str] = []
+
+    def request(self, asked: object) -> ports.ViewOutcome:
+        """Answer as scripted; a view with no script is content-free unavailable."""
+        view_id = asked.view.view_id  # type: ignore[attr-defined]
+        self.asked.append(view_id)
+        return self.outcomes.get(view_id, _UNAVAILABLE)
+
+
+def _surface(outcomes: dict[str, ports.ViewOutcome]) -> _SurfaceDecisions:
+    """A decision collaborator scripted for one page."""
+    return _SurfaceDecisions(outcomes)
+
+
+def _rendered(decisions: _SurfaceDecisions, language: str = "en") -> str:
+    """That page, rendered through the route in one language."""
+    app = FastAPI()
+    add_shell_routes(
+        app,
+        services=ShellServices(
+            resolver=_StubResolver(),
+            organizations=_StubOrganizations(),
+            decisions=decisions,
+        ),
+        clock=lambda: NOW,
+    )
+    client = TestClient(app, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE, "a-session-token")
+    return client.get(f"{SHELL_PREFIX}/{language}/org-acme/decisions/run-a").text
+
+
+@pytest.mark.parametrize("section,view", _SECTIONS)
+def test_the_surface_renders_a_section_for_every_governed_breakdown(
+    section: str, view: seam.ViewIdentity
+) -> None:
+    """`D1-04`'s read models reach a reader at last: S-3, S-4, S-5a and S-5b."""
+    body = _rendered(_surface(_full_surface()))
+    assert shell_decisions.SECTION_COPY["en"][section] in body
+    assert f'data-section="{section}"' in body
+
+
+def test_the_limits_section_names_the_governed_availability_of_each_metric() -> None:
+    """S-6 -- `FR-161`'s "whether the claim is allowed", on the surface making it."""
+    body = _rendered(_surface(_full_surface()))
+    assert f'data-section="{shell_decisions.SECTION_LIMITS}"' in body
+    assert card.AVAILABILITY_AVAILABLE in body
+
+
+def test_the_two_governed_empty_rules_render_distinguishably_on_one_page() -> None:
+    """`FR-163`, and `D1-04`'s own acceptance criterion driven through a page.
+
+    A store filter naming a store with no sales is `stated_no_rows` and is not a
+    refused measure; a source that published no basket value states absence. A
+    surface rendering both as an empty table would misstate the customer's data.
+    """
+    outcomes = _full_surface()
+    outcomes[seam.BRANCH_PERFORMANCE.view_id] = _breakdown(
+        seam.BRANCH_PERFORMANCE, _BRANCH_FIELDS, (), is_empty=True
+    )
+    outcomes[seam.BASKET.view_id] = _breakdown(
+        seam.BASKET, _BASKET_FIELDS, (), is_empty=True
+    )
+    body = _rendered(_surface(outcomes))
+    no_rows = shell_decisions.EMPTY_WORDING["en"][seam.EMPTY_STATED_NO_ROWS]
+    absence = shell_decisions.EMPTY_WORDING["en"][seam.EMPTY_STATED_ABSENCE]
+    assert no_rows != absence
+    assert no_rows in body
+    assert absence in body
+
+
+def test_every_breakdown_figure_can_reach_its_own_drawer() -> None:
+    """`FR-161` -- reachable from the surface carrying the figure, on all four."""
+    body = _rendered(_surface(_full_surface()))
+    # Two cards on S-1 and one row in each of the four breakdowns.
+    assert body.count('class="decision-drawer"') == 6
+
+
+def test_a_breakdown_row_carries_no_four_state_availability() -> None:
+    """`FR-167`, negatively -- and no surface may synthesize one either."""
+    body = _rendered(_surface(_full_surface()))
+    rows = re.findall(r'<li class="decision-row".*?</li>', body, flags=re.S)
+    assert rows
+    assert not [row for row in rows if "decision-availability" in row]
+
+
+def test_the_basket_surface_renders_the_half_that_answered() -> None:
+    """`FR-165` -- one surface, two reads, and neither ordering privileged."""
+    outcomes = _full_surface()
+    outcomes.pop(seam.CONCENTRATION.view_id)
+    body = _rendered(_surface(outcomes))
+    assert "0.25" in body
+    assert shell_decisions.DECISION_COPY["en"]["unavailable"] in body
+
+
+def test_a_refused_breakdown_shows_the_governed_wording_and_no_figure() -> None:
+    """`FR-164` -- `RRA-014`'s own bilingual wording, never an invented sentence."""
+    outcomes = _full_surface()
+    outcomes[seam.PRODUCT_CATEGORY.view_id] = ports.ViewOutcome(
+        kind=ports.KIND_REFUSED,
+        refusal=ports.ViewRefusal(
+            cause="view_unsupported_filter",
+            wording_pairs=(("en", "That filter is not supported."), ("ar", "غير مدعوم.")),
+        ),
+    )
+    body = _rendered(_surface(outcomes))
+    assert "That filter is not supported." in body
+    assert "drinks" not in body
+
+
+def test_the_evidence_view_is_read_once_for_the_whole_surface() -> None:
+    """`FR-168` -- no cache, and one read rather than one per figure."""
+    decisions = _surface(_full_surface())
+    _rendered(decisions)
+    assert decisions.asked.count(seam.REPORT_EVIDENCE.view_id) == 1
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_sections_state_the_same_thing_in_both_languages(language: str) -> None:
+    """`FR-171` -- same sections, same rows, same drawers in both."""
+    body = _rendered(_surface(_full_surface()), language)
+    assert body.count('class="decision-drawer"') == 6
+    assert body.count('class="decision-row"') == 4
+    for section, _view in _SECTIONS:
+        assert shell_decisions.SECTION_COPY[language][section] in body
+
+
+def test_every_section_heading_exists_in_both_governed_languages() -> None:
+    """`FR-171` -- a heading present in one language and absent in the other is a gap."""
+    assert set(shell_decisions.SECTION_COPY["en"]) == set(
+        shell_decisions.SECTION_COPY["ar"]
+    )
+    assert set(shell_decisions.EMPTY_WORDING["en"]) == set(
+        shell_decisions.EMPTY_WORDING["ar"]
+    )
+
+
+def test_the_empty_wording_covers_exactly_the_two_governed_rules() -> None:
+    """`FR-163` -- two rules, two sentences, and no third invented here."""
+    governed = {seam.EMPTY_STATED_NO_ROWS, seam.EMPTY_STATED_ABSENCE}
+    assert set(shell_decisions.EMPTY_WORDING["en"]) == governed
