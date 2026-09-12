@@ -25,6 +25,7 @@ from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.workspace.decision import evidence, seam
 from khepri.rra import definitions
 from khepri.rra.semantic_views import registry
+from khepri.runtime.metric_definitions import CatalogDefinitions
 
 LANGUAGES = ("en", "ar")
 
@@ -96,10 +97,24 @@ def _request(metric: str = "revenue", language: str = "en") -> evidence.DrawerRe
     )
 
 
+def _catalog() -> CatalogDefinitions:
+    """The real catalog adapter, bound where the composition root binds it.
+
+    Real rather than a fake: what these cases assert is that the drawer reports
+    the governed catalog's own answer, and a fake would let the module coin a
+    wording while the test still passed.
+    """
+    return CatalogDefinitions()
+
+
 def _read(outcome: ports.ViewOutcome | None, **kw: object) -> evidence.DrawerReading:
     """One drawer read against a port scripted to answer the evidence view alone."""
     port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: outcome})
-    return evidence.read_drawer(_actions(port), _request(**kw))  # type: ignore[arg-type]
+    return evidence.read_drawer(
+        _actions(port),
+        _request(**kw),  # type: ignore[arg-type]
+        definitions=_catalog(),
+    )
 
 
 # --- The central assertion: an absence is data, never a refusal ---------------
@@ -183,7 +198,7 @@ def test_the_two_halves_are_not_merged_into_one_record() -> None:
 def test_the_drawer_reads_only_the_evidence_view_at_its_pinned_version() -> None:
     """`FR-160` -- named exactly, with no second view fetched to fill anything in."""
     port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _projection(())})
-    evidence.read_drawer(_actions(port), _request())
+    evidence.read_drawer(_actions(port), _request(), definitions=_catalog())
 
     assert [asked.view_id for asked in port.requests] == [seam.REPORT_EVIDENCE.view_id]
     assert port.requests[0].view_version == seam.REPORT_EVIDENCE.view_version
@@ -192,7 +207,7 @@ def test_the_drawer_reads_only_the_evidence_view_at_its_pinned_version() -> None
 def test_the_drawer_sends_no_filter_the_view_does_not_admit() -> None:
     """The view's `request_filter_allowlist` is empty, so nothing may be sent."""
     port = _ScriptedPort({seam.REPORT_EVIDENCE.view_id: _projection(())})
-    evidence.read_drawer(_actions(port), _request())
+    evidence.read_drawer(_actions(port), _request(), definitions=_catalog())
 
     assert port.requests[0].filters == ()
 
@@ -257,3 +272,34 @@ def test_every_published_view_still_requires_no_evidence() -> None:
         f"{populated} now require evidence, which makes an absent code an FR-141 "
         f"refusal cause -- ordinary evidence absences would present as refused views"
     )
+
+
+# --- The package boundary that forced the injection --------------------------
+
+
+def test_the_drawer_module_imports_no_rra_module() -> None:
+    """`R7-01` section 3 -- a bridge inside `khepri.rca` makes every RCA test
+    transitively depend on RRA, and `RCA-006`'s boundary bars it outright.
+
+    The catalog lives in `khepri.rra.definitions`, so the drawer declares a
+    Protocol and the composition root binds the adapter -- `ports.py`'s rule,
+    "the consumer owns the Protocol; the composition root binds the
+    implementation". Asserted here as well as by the repo-wide scan because this
+    module is the one that wanted the import.
+    """
+    import ast
+    import pathlib
+
+    source = pathlib.Path(evidence.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    imported: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.append(node.module)
+        elif isinstance(node, ast.Import):
+            imported.extend(alias.name for alias in node.names)
+
+    assert imported, "no imports parsed -- this guard is reading the wrong module"
+    offenders = [name for name in imported if name.startswith("khepri.rra")]
+    assert offenders == [], offenders
