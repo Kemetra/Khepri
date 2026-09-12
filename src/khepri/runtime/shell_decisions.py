@@ -65,6 +65,7 @@ from jinja2 import Environment
 
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, read_cards
+from khepri.rca.workspace.decision.evidence import DrawerReading
 from khepri.rra.rendering.wording import caveat_message, metric_business_name
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
@@ -73,11 +74,14 @@ from khepri.runtime.shell_invitations import ShellRendering
 __all__ = [
     "COMPARISON_UNREACHABLE",
     "DECISION_COPY",
+    "DRAWER_COPY",
     "DecisionFrame",
     "add_decision_routes",
     "decision_view",
+    "drawer_view",
     "offers_decisions",
     "render_decisions",
+    "render_drawer",
 ]
 
 #: `FR-170`. The Period Comparison source is a two-population bundle and the
@@ -105,6 +109,26 @@ DECISION_COPY = {
         "unavailable": "جزء من هذا العرض غير متاح.",
         "no_rows": "لم ينشر هذا التحليل أي أرقام.",
         "caveats_label": "تحفظات",
+    },
+}
+
+#: `D1-05`'s own wording, beside `DECISION_COPY` for its reason: one surface's
+#: strings, changed with it. Both languages, because `FR-171` admits no surface
+#: that states less in one -- the drawer's labels are as governed as its figures.
+DRAWER_COPY = {
+    "en": {
+        "drawer_label": "Evidence",
+        "definition_label": "What this measures",
+        "formula_label": "Governed contract",
+        "absences_label": "Not recorded",
+        "unavailable": "This evidence is unavailable.",
+    },
+    "ar": {
+        "drawer_label": "الأدلة",
+        "definition_label": "ما يقيسه هذا",
+        "formula_label": "العقد المحوكم",
+        "absences_label": "غير مسجل",
+        "unavailable": "هذه الأدلة غير متاحة.",
     },
 }
 
@@ -425,4 +449,60 @@ def _page(
             "surface_path": decision_tail(context.organization_id, call.source_id),
             **decision_context(reading, language),
         },
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _DrawerView:
+    """One rendered evidence drawer.
+
+    `refusal` is the governed message or `None`, never the bare cause code
+    (`FR-164`). `absences` is deliberately its own field and not folded into
+    `refusal`: an absence is data on an admitted projection, and the two reach
+    the reader through different slots in the template for that reason.
+    """
+
+    status: str
+    definition: object | None = None
+    items: tuple[object, ...] = field(default_factory=tuple)
+    absences: tuple[str, ...] = field(default_factory=tuple)
+    refusal: str | None = None
+    unavailable: bool = False
+
+
+def drawer_view(reading: DrawerReading, *, language: str) -> _DrawerView:
+    """The drawer reading as one rendered surface in one language.
+
+    The two halves stay separate, as they are in the read model: nothing here
+    merges the catalog's definition into an evidence row, so the markup can
+    attribute each to the authority that published it.
+    """
+    return _DrawerView(
+        status=reading.status,
+        definition=reading.definition,
+        items=reading.items,
+        absences=reading.absences,
+        refusal=(
+            None if reading.refusal is None else reading.refusal.wording.get(language)
+        ),
+        unavailable=reading.status == "unavailable",
+    )
+
+
+def render_drawer(
+    environment: Environment, reading: DrawerReading, *, language: str
+) -> str:
+    """The drawer's markup, rendered on its own.
+
+    Frameless and address-free by construction (`FR-161`): the drawer is included
+    beside the figure it qualifies, so it takes no `DecisionFrame` and emits no
+    link. A drawer that rendered its own address would be a page by another
+    spelling, whatever the route table says.
+    """
+    return environment.get_template("decision_drawer.html.j2").render(
+        language=language,
+        direction=DIRECTIONS[language],
+        copy=DRAWER_COPY[language],
+        drawer=reading,
+        view=drawer_view(reading, language=language),
     )

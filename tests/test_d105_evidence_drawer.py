@@ -25,6 +25,7 @@ from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.workspace.decision import evidence, seam
 from khepri.rra import definitions
 from khepri.rra.semantic_views import registry
+from khepri.runtime import shell_decisions
 from khepri.runtime.metric_definitions import CatalogDefinitions
 
 LANGUAGES = ("en", "ar")
@@ -303,3 +304,73 @@ def test_the_drawer_module_imports_no_rra_module() -> None:
     assert imported, "no imports parsed -- this guard is reading the wrong module"
     offenders = [name for name in imported if name.startswith("khepri.rra")]
     assert offenders == [], offenders
+
+
+# --- The rendered drawer: FR-161 and FR-171 ----------------------------------
+
+
+def _drawer_html(
+    outcome: ports.ViewOutcome | None, language: str = "en", metric: str = "revenue"
+) -> str:
+    """One drawer rendered on its own, in one language."""
+    from khepri.runtime.shell_api import shell_environment
+
+    reading = _read(outcome, language=language, metric=metric)
+    return shell_decisions.render_drawer(
+        shell_environment(), reading, language=language
+    )
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_rendered_drawer_shows_the_governed_definition(language: str) -> None:
+    """`FR-159` -- the definition reaches the reader, as the catalog worded it."""
+    html = _drawer_html(_projection(()), language=language)
+
+    assert definitions.describe_metric("revenue", language) in html
+    assert definitions.define_metric("revenue").formula_version in html
+
+
+def test_the_rendered_drawer_states_an_absence_without_calling_it_a_refusal() -> None:
+    """The central assertion, at the rendering layer.
+
+    An absence must reach the reader as its own statement. A template that put
+    it in the refusal slot would tell a customer the view refused.
+    """
+    html = _drawer_html(_projection((), absences=("no_source_document",)))
+
+    assert "drawer-absence" in html
+    assert "drawer-refusal" not in html
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_drawer_states_its_absence_label_in_both_languages(language: str) -> None:
+    """`FR-171` -- a surface may not state less in one language than the other."""
+    html = _drawer_html(_projection((), absences=("no_source_document",)), language)
+
+    assert shell_decisions.DRAWER_COPY[language]["absences_label"] in html
+
+
+def test_a_refused_drawer_shows_the_governed_wording_and_no_rows() -> None:
+    """`FR-164` -- the governed message, never the bare cause code."""
+    refusal = ports.ViewRefusal(
+        cause="incompatible_shape",
+        wording_pairs=(("en", "This view cannot read that source."), ("ar", "-")),
+    )
+    html = _drawer_html(
+        ports.ViewOutcome(kind=ports.KIND_REFUSED, refusal=refusal)
+    )
+
+    assert "This view cannot read that source." in html
+    assert "incompatible_shape" not in html
+
+
+def test_the_drawer_markup_carries_no_route_of_its_own() -> None:
+    """`FR-161` -- reachable from a figure in one action, never a page.
+
+    A drawer that rendered a link to its own address would be a page by another
+    spelling, whatever the route table says.
+    """
+    html = _drawer_html(_projection((("revenue", "invoice-1", "pkg-1", ""),)))
+
+    assert "/decisions/" not in html
+    assert "<a " not in html
