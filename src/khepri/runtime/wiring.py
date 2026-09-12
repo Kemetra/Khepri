@@ -27,6 +27,7 @@ from khepri.rca.lifecycle import AccountRetentionSweeper, LifecycleService, Memb
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.recovery_security import RecoverySecurityEventSweeper, RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
+from khepri.rca.semantic_queries import queries as semantic_queries
 from khepri.rca.session_persistence import SqlSessionStore as SqlCommercialSessionStore
 from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
 from khepri.rca.session_retention import SessionRetentionSweeper
@@ -105,6 +106,7 @@ from khepri.runtime.retention_sweep import (
     RetentionSweeper,
     build_retention_sweeper,
 )
+from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
@@ -622,6 +624,31 @@ def _shell_invitations(stack: RuntimeStack) -> ShellInvitations:
     return ShellInvitations(store=store, service=RcaInvitationService(store))
 
 
+def _shell_decisions(
+    stack: RuntimeStack,
+    isolation: IsolationService,
+    sources: SqlWorkspaceRecordStore,
+) -> semantic_queries.SemanticQueryActions:
+    """The semantic-query seam the decision surfaces read (`RCA-008` `FR-159`).
+
+    Composed here for the reason the `pins` and `deletion` comments below record from `#382`:
+    without the field, `offers_decisions` omits the route and the capability is absent from the
+    deployed image while every route test passes over a hand-wired `ShellServices`. Review on
+    `#448` found exactly that, a third time.
+
+    **The caller's `IsolationService` and record store, not second ones.** `build_shell_services`
+    already holds both, and its own docstring gives the reason: a second construction site is how
+    the shell and the API come to disagree about who an actor is. `FR-145` resolves the actor
+    before the first source read, so the door this resolves through must be the door the
+    surrounding surfaces resolve through.
+    """
+    return semantic_queries.SemanticQueryActions(
+        isolation=isolation,
+        sources=sources,
+        port=SemanticViewAdapter(SqlFactPackageRepository(stack.factory)),
+    )
+
+
 def build_shell_services(
     stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY
 ) -> ShellServices | None:
@@ -638,6 +665,12 @@ def build_shell_services(
     # One store, bound to a name because two fields share it: the surfaces read through `records`
     # and `W1-09`'s pins write through the same object. See the `pins=` comment below.
     records = SqlWorkspaceRecordStore(stack.factory)
+    # One door, bound to a name because three fields resolve through it: `isolation`, and
+    # the semantic-query seam below. A second `IsolationService` would be a second
+    # definition of who an actor is -- this function's docstring gives the reason.
+    isolation = IsolationService(
+        SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
+    )
     return ShellServices(
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
@@ -650,9 +683,7 @@ def build_shell_services(
         # the same isolation door they write under, so the shell shows exactly the rows the
         # actions recorded and no second reading of the scope exists.
         records=records,
-        isolation=IsolationService(
-            SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
-        ),
+        isolation=isolation,
         # `W1-06`: the Passport is read from the provenance the run retained at completion
         # (`KHEPRI-DEC-033` §2); the links and the jobs' sessions serve the artifact handoff, read
         # per scope rather than per run so the spine's cost does not grow with its rows.
@@ -694,6 +725,9 @@ def build_shell_services(
         # inside `set_retention_state` on this very class. A second `SqlWorkspaceRecordStore` over
         # the same factory would work and would be a second object holding one definition.
         comparisons=build_comparison_actions(stack, workbooks=comparisons),
+        # `D1-04`: the decision route (`RCA-008` `FR-159`). See `_shell_decisions` for why
+        # this is composed there and why it reuses the door and the store above.
+        decisions=_shell_decisions(stack, isolation, records),
     )
 
 
