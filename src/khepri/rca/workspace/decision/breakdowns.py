@@ -27,8 +27,13 @@ refuses an unsupported filter *before* projection and `FR-166` says a parameter 
 view's `request_filter_allowlist` does not name "does not get it ignored; it gets
 a refusal". A reader that filtered the filters would hold a second copy of the
 allowlist and would drop exactly what the requirement says must refuse. Which
-controls a surface *offers* is `D1-07`'s; that what is asked for is asked for is
-this module's.
+controls a surface *offers*, and which view each pair is *routed to*, is
+`D1-07`'s (`controls.py`, which holds the one copy of the allowlist); that what
+is asked for is asked for is this module's.
+
+`D1-07` added `effective` for the consequence of that routing: two sections of
+one page can be built over different populations, so each states its own applied
+request from its own outcome rather than the page stating one for all of them.
 
 **Both governed empty rules meet here.** S-3 and S-4 are the only surfaces whose
 rule is `stated_no_rows`; S-5's two views state absence. `FR-163`: a store filter
@@ -40,7 +45,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from khepri.rca.semantic_queries.ports import KIND_ADMITTED, ViewProjection, ViewRefusal
+from khepri.rca.semantic_queries.ports import (
+    KIND_ADMITTED,
+    EffectiveRequest,
+    ViewProjection,
+    ViewRefusal,
+)
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.workspace.decision.seam import (
     BASKET,
@@ -101,6 +111,13 @@ class BreakdownReading:
     `refusal` carries `ViewRefusal` whole rather than a flattened message, so the
     surface renders `FR-164`'s governed bilingual wording in the page language
     instead of inventing a string.
+
+    `effective` is `FR-137`'s applied request as the outcome states it, and
+    `D1-07` is why it is here. Filters are routed per view, so two sections of
+    one page can be built over different populations -- `ConcentrationView`
+    admits `product` and `BasketView` admits nothing -- and `FR-161` requires the
+    qualification sit on the surface carrying the figure. Read from the outcome
+    and never from a copy the surface keeps, which is `FR-166`'s own wording.
     """
 
     view_id: str
@@ -111,6 +128,7 @@ class BreakdownReading:
     evidence_absences: tuple[str, ...] = field(default_factory=tuple)
     refusal: ViewRefusal | None = None
     empty_rule: str | None = None
+    effective: EffectiveRequest | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +165,11 @@ def _row(fields: tuple[str, ...], row: tuple[object, ...]) -> BreakdownRow:
     return BreakdownRow(cells=tuple(zip(fields, row, strict=True)))
 
 
-def _admitted(identity: ViewIdentity, projection: ViewProjection) -> BreakdownReading:
+def _admitted(
+    identity: ViewIdentity,
+    projection: ViewProjection,
+    effective: EffectiveRequest | None,
+) -> BreakdownReading:
     """An admitted projection, in source order, with its absence rule if empty."""
     return BreakdownReading(
         view_id=identity.view_id,
@@ -157,6 +179,7 @@ def _admitted(identity: ViewIdentity, projection: ViewProjection) -> BreakdownRe
         population_qualifiers=projection.population_qualifiers,
         evidence_absences=projection.evidence_absences,
         empty_rule=identity.empty_rule if projection.is_empty else None,
+        effective=effective,
     )
 
 
@@ -183,7 +206,7 @@ def _read_breakdown(
         return BreakdownReading(
             view_id=identity.view_id, status=outcome.kind, refusal=outcome.refusal
         )
-    return _admitted(identity, projection)
+    return _admitted(identity, projection, outcome.effective)
 
 
 def read_branches(

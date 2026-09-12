@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from jinja2 import Environment
 
 from khepri.rca.session_cookie import CommercialSessionCookie
@@ -68,19 +68,32 @@ from khepri.rca.workspace.decision.breakdowns import (
     BasketSurface,
     BreakdownReading,
     BreakdownRequest,
-    read_basket_surface,
+    read_basket,
     read_branches,
+    read_concentration,
     read_products,
 )
 from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, read_cards
+from khepri.rca.workspace.decision.controls import (
+    ControlSelection,
+    SourceOption,
+    routed_to,
+    selection_from,
+    unroutable,
+)
 from khepri.rca.workspace.decision.evidence import (
     EvidenceAction,
     EvidenceEntry,
     EvidenceReading,
 )
 from khepri.rca.workspace.decision.seam import (
+    BASKET,
+    BRANCH_PERFORMANCE,
+    CONCENTRATION,
     EMPTY_STATED_ABSENCE,
     EMPTY_STATED_NO_ROWS,
+    PRODUCT_CATEGORY,
+    ViewIdentity,
 )
 from khepri.rra import definitions
 from khepri.rra.facts import UNIT_COUNT, UNIT_MONETARY, UNIT_RATIO
@@ -88,6 +101,12 @@ from khepri.rra.rendering.wording import (
     business_metric_name,
     caveat_message,
     metric_business_name,
+)
+from khepri.runtime.shell_controls import (
+    controls_view,
+    inbound_parameters,
+    selection_query,
+    source_options,
 )
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
@@ -104,9 +123,11 @@ __all__ = [
     "SECTION_COPY",
     "SECTION_PRODUCTS",
     "UNIT_WORDING",
+    "DecisionControls",
     "DecisionFrame",
     "DecisionReadings",
     "add_decision_routes",
+    "applied_filters",
     "decision_sections",
     "decision_view",
     "offers_decisions",
@@ -406,15 +427,19 @@ def _entry(entry: EvidenceEntry, language: str) -> _EntryView:
     )
 
 
-def _effective_filters(reading: CardsReading) -> tuple[str, ...]:
+def applied_filters(effective: Any) -> tuple[str, ...]:
     """`FR-137`'s applied filters, requested and definition-fixed alike.
 
     Both halves, because the requirement names both and a surface showing only
     what the reader asked for would hide the ones the view itself applies. The
     order is the effective request's own; nothing here sorts or dedupes, because
     a filter stated twice by two mechanisms is two statements.
+
+    **It takes the `EffectiveRequest` and not a reading**, because `D1-07` made
+    it serve two callers: the cards' drawer and each breakdown section, which
+    carry different effective requests once filters are routed per view. One
+    definition of what "applied" reads like, used by every region that states it.
     """
-    effective = reading.effective
     if effective is None:
         return ()
     applied = tuple(effective.requested_filters) + tuple(effective.fixed_filters)
@@ -449,7 +474,7 @@ def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
     """The reading as one page in one language. Labels and words, no figures."""
     return _DecisionView(
         cards=tuple(_named(card, language) for card in reading.cards),
-        filters=_effective_filters(reading),
+        filters=applied_filters(reading.effective),
         caveats=_caveat_prose(reading, language),
         refusal=_refusal_text(reading, language),
         unavailable=reading.status == "unavailable",
@@ -543,6 +568,14 @@ class _SectionView:
     rules, `FR-164` gives a refusal its governed wording, and `FR-165` makes an
     unavailable read content-free -- so a section that collapsed them would be
     misstating the customer's data in whichever direction it collapsed.
+
+    `filters` is this section's own applied request (`FR-137`), read from its
+    own outcome. `D1-07` routes a filter only to the views whose definitions
+    admit it, so two sections of one page can stand over different populations
+    -- `ConcentrationView` admits `product` and `BasketView` admits nothing --
+    and `FR-161` puts the qualification on the surface carrying the figure. A
+    page-level filter line would state one population for all four and be wrong
+    for at least one of them.
     """
 
     section: str
@@ -552,6 +585,7 @@ class _SectionView:
     refusal: str | None = None
     empty: str | None = None
     unavailable: bool = False
+    filters: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -565,12 +599,22 @@ class DecisionReadings:
 
     The breakdowns default to `None` so the frameless render path, which exists
     for the template to be driven directly, can render the cards alone.
+
+    `unsupported` is `D1-07`'s, and it is a read rather than a computed message.
+    A parameter no published view admits routes to no view, and a page that
+    stopped there would render clean and unfiltered for a request it never
+    honored -- the silent discard `FR-137` refuses, reached by another spelling.
+    So the pair is sent to a view that must refuse it, and what renders is
+    `RRA-014`'s own governed wording rather than a string this module invents
+    (`FR-164`). `None` when the reader asked for nothing unsupported, which is
+    every request the controls themselves can compose.
     """
 
     cards: CardsReading
     branches: BreakdownReading | None = None
     products: BreakdownReading | None = None
     basket: BasketSurface | None = None
+    unsupported: BreakdownReading | None = None
 
 
 def _section(
@@ -590,6 +634,7 @@ def _section(
         refusal=_wording_of(reading.refusal, language),
         empty=EMPTY_WORDING[language].get(reading.empty_rule or ""),
         unavailable=reading.status == "unavailable",
+        filters=applied_filters(reading.effective),
     )
 
 
@@ -660,13 +705,29 @@ def decision_sections(
     return tuple(section for section in built if section is not None)
 
 
-def read_surface(actions: Any, request: CardsRequest) -> DecisionReadings:
+def read_surface(
+    actions: Any, request: CardsRequest, *, selection: ControlSelection
+) -> DecisionReadings:
     """Every read this page performs, each view exactly once.
 
     Seven reads and seven views: S-1 and S-6 and S-9 through `read_cards`, then
     S-3, S-4 and S-5's two. Each is independently authorized and can
     independently answer unavailable (`FR-165`), which is what lets the page
     render partial success rather than failing whole.
+
+    **`selection` is keyword-only and has no default**, because a defaulted
+    filter channel is how this ships unfed a second time: `D1-04` built
+    `BreakdownRequest.filters` and this function constructed it with three
+    arguments, so the channel existed and carried nothing until `D1-07` found it.
+    A caller that forgets it now fails rather than quietly rendering the
+    unfiltered page.
+
+    **Each view is sent what its own definition admits** (`controls.routed_to`),
+    which is why S-5's two halves are built separately here rather than from one
+    request: `ConcentrationView` admits `product` and `BasketView` admits
+    nothing, and one shared request would refuse Basket every time a reader
+    filtered by product. Each reading carries its own `effective`, so a section
+    built without a filter states that beside its own figures (`FR-161`).
 
     **S-6 is not read again here**, and that is `FR-161` rather than an omission.
     "Availability, caveats and refusals are reachable from the surface carrying
@@ -676,23 +737,58 @@ def read_surface(actions: Any, request: CardsRequest) -> DecisionReadings:
     read `MetricAvailabilityView` a second time for a page whose cards already
     carry it, which `FR-168` bars as a cache and `FR-135` as a second truth.
     """
-    breakdown = BreakdownRequest(
-        organization_id=request.organization_id,
-        account_id=request.account_id,
-        source_id=request.source_id,
-    )
+    def routed(identity: ViewIdentity) -> BreakdownRequest:
+        """This view's request, carrying what its own definition admits."""
+        return BreakdownRequest(
+            organization_id=request.organization_id,
+            account_id=request.account_id,
+            source_id=request.source_id,
+            filters=routed_to(identity, selection),
+        )
+
     return DecisionReadings(
         cards=read_cards(actions, request),
-        branches=read_branches(actions, breakdown),
-        products=read_products(actions, breakdown),
-        basket=read_basket_surface(actions, breakdown),
+        branches=read_branches(actions, routed(BRANCH_PERFORMANCE)),
+        products=read_products(actions, routed(PRODUCT_CATEGORY)),
+        basket=BasketSurface(
+            basket=read_basket(actions, routed(BASKET)),
+            concentration=read_concentration(actions, routed(CONCENTRATION)),
+        ),
+        unsupported=_unsupported_read(actions, request, selection),
+    )
+
+
+def _unsupported_read(
+    actions: Any, request: CardsRequest, selection: ControlSelection
+) -> BreakdownReading | None:
+    """The refusal a parameter no view admits must earn, or `None`.
+
+    One extra read and only when the reader asked for something unroutable, so
+    an ordinary request performs exactly the seven the page always did -- this
+    adds no read to the path `FR-168` governs.
+
+    `BRANCH_PERFORMANCE` carries it because a view must actually be named to be
+    read; which one is immaterial, since the request refuses on the parameter
+    before projection and every view refuses it identically (`FR-137`).
+    """
+    asked = unroutable(selection)
+    if not asked:
+        return None
+    return read_branches(
+        actions,
+        BreakdownRequest(
+            organization_id=request.organization_id,
+            account_id=request.account_id,
+            source_id=request.source_id,
+            filters=asked,
+        ),
     )
 
 
 def decision_context(
-    readings: DecisionReadings, language: str, source_id: str
+    readings: DecisionReadings, language: str, controls: DecisionControls
 ) -> dict[str, Any]:
-    """The three keys this surface adds to `RCA-002`'s frame, in one place.
+    """The keys this surface adds to `RCA-002`'s frame, in one place.
 
     Both render paths use it -- the frameless one below and the route's, which
     hands the rest to `ShellRendering.render` so the security headers keep one
@@ -702,19 +798,46 @@ def decision_context(
     **`period` is the run, and that is `FR-166` rather than a shortcut.**
     `FR-162` requires a card expose "the effective filters and period"; the
     period is "a source selector, choosing a completed run", so the period this
-    surface states is the run it is addressed by. It arrives as an argument and
+    surface states is the run it is addressed by. It arrives on `controls` and
     not from the reading because a reading does not know its own address.
+
+    `unsupported` is the governed wording for a parameter no view admits, so the
+    page states the refusal it earned rather than rendering as though the filter
+    had never been asked for (`FR-137`, `FR-164`).
     """
     return {
         "decision": DECISION_COPY[language],
-        "period": source_id,
+        "period": controls.selection.source_id,
         "view": decision_view(readings.cards, language=language),
         "sections": decision_sections(readings, language),
+        "controls": controls_view(controls.selection, controls.sources, language),
+        "unsupported": _wording_of(
+            readings.unsupported.refusal if readings.unsupported else None, language
+        ),
     }
 
 
+@dataclass(frozen=True, slots=True)
+class DecisionControls:
+    """What this request chose, and what it could have chosen.
+
+    Grouped for the reason `DecisionFrame` and `_RouteCall` are: these travel
+    together through every render path and spelling them flat is the Excess
+    Number of Function Arguments finding this module has already paid for.
+
+    `sources` is empty when the deployment wires no record reader, which
+    `FR-165` makes a degraded control rather than a failed page.
+    """
+
+    selection: ControlSelection
+    sources: tuple[SourceOption, ...] = ()
+
+
 def render_decisions(
-    environment: Environment, readings: DecisionReadings, frame: DecisionFrame
+    environment: Environment,
+    readings: DecisionReadings,
+    frame: DecisionFrame,
+    controls: DecisionControls,
 ) -> str:
     """The decision surface's body, without the shell's frame around it.
 
@@ -729,25 +852,40 @@ def render_decisions(
         assets=f"{frame.prefix}/assets",
         prefix=frame.prefix,
         alternate="ar" if frame.language == "en" else "en",
-        surface_path=decision_tail(frame.organization_id, frame.source_id),
+        surface_path=decision_tail(
+            frame.organization_id, frame.source_id, controls.selection
+        ),
         language_switch=True,
         organization_id=frame.organization_id,
         organization_name=None,
         # The frame's destination list. Empty here because this render path has
         # no organization frame to read; the route passes the real one.
         destinations=(),
-        **decision_context(readings, frame.language, frame.source_id),
+        **decision_context(readings, frame.language, controls),
     )
 
 
-def decision_tail(organization_id: str, source_id: str) -> str:
-    """This surface's address below the language segment.
+def decision_tail(
+    organization_id: str, source_id: str, selection: ControlSelection | None = None
+) -> str:
+    """This surface's address below the language segment, filters included.
 
     The run is a path segment rather than a query parameter because `FR-166`
     makes the period a **source selector** -- choosing a completed run -- and not
     a view filter. `/analyses/{run_id}` already spells a chosen run this way.
+
+    **The filters are in the tail because the language switch is built from it.**
+    `shell.html.j2` renders the alternate language as
+    `{prefix}/{alternate}{surface_path}`, so a tail without the query string
+    would drop every applied filter the moment a reader switched to Arabic --
+    applied state lost on the most ordinary action, with `FR-169` barring the
+    remembered state that would otherwise mask it. `selection` defaults to `None`
+    so the address of an unfiltered surface is unchanged.
     """
-    return f"/{organization_id}/decisions/{source_id}"
+    tail = f"/{organization_id}/decisions/{source_id}"
+    if selection is None:
+        return tail
+    return tail + selection_query(selection)
 
 
 @dataclass(frozen=True, slots=True)
@@ -765,6 +903,7 @@ class _RouteCall:
     organization: str
     session: str | None
     source_id: str
+    parameters: tuple[tuple[str, str], ...] = ()
 
 
 def add_decision_routes(
@@ -784,12 +923,25 @@ def add_decision_routes(
         language: str,
         organization: str,
         source: str,
+        request: Request,
         session: CommercialSessionCookie = None,
     ) -> Response:
-        """One completed run's decision surface, in the language the address names."""
+        """One completed run's decision surface, in the language the address names.
+
+        Every query parameter is read and none is declared: a declared one would
+        be silently dropped when it did not match, and `FR-137` requires the
+        opposite. What each view is sent is `controls.routed_to`'s.
+        """
         return _respond(
             _RouteCall(
-                services, rendering, clock, language, organization, session, source
+                services,
+                rendering,
+                clock,
+                language,
+                organization,
+                session,
+                source,
+                inbound_parameters(request.query_params),
             )
         )
 
@@ -822,11 +974,15 @@ def _member_or_none(call: _RouteCall) -> Any:
 
 
 def _respond(call: _RouteCall) -> Response:
-    """Resolve the member, read the cards, render. Nothing else happens here."""
+    """Resolve the member, read the surface, render. Nothing else happens here."""
     language = call.rendering.language_of(call.language)
     context = _member_or_none(call)
     if context is None:
         return call.rendering.unavailable(call.rendering.environment, language=language)
+    controls = DecisionControls(
+        selection=selection_from(call.source_id, call.parameters),
+        sources=_sources_for(call, context),
+    )
     readings = read_surface(
         call.services.decisions,
         CardsRequest(
@@ -834,13 +990,74 @@ def _respond(call: _RouteCall) -> Response:
             account_id=context.account_id,
             source_id=call.source_id,
         ),
+        selection=controls.selection,
     )
-    return _page(call, context, language, readings)
+    return _page(
+        call,
+        _Resolved(
+            context=context,
+            language=language,
+            readings=readings,
+            controls=controls,
+        ),
+    )
 
 
-def _page(
-    call: _RouteCall, context: Any, language: str, readings: DecisionReadings
-) -> Response:
+def _sources_for(call: _RouteCall, context: Any) -> tuple[SourceOption, ...]:
+    """The completed runs this reader may select, through the existing scope door.
+
+    `resolve_scope` and not a second scope path: `FR-166` makes the workspace
+    "the organization scope resolved before any read", and `RCA-001`'s bridge is
+    the one definition of which opaque `owner_id` a commercial identity reaches.
+    `_workspace_reads` already resolves it this way for the record surfaces.
+
+    **An absent or unreadable record store degrades this control alone**
+    (`FR-165`): the page renders with no selector rather than failing whole, and
+    says nothing about why -- the unavailable outcome is content-free.
+
+    **The read is probed for, not assumed**, and the full suite is why. A
+    `records` collaborator wired for the surfaces that need only a history read
+    does not necessarily carry `analysis_runs_for_scope`, and asserting the
+    field is not `None` let an `AttributeError` reach the page -- six failures
+    in `test_r807_shell_quality`, on a decision surface that had rendered fine
+    until this slice asked its services for one more thing. `FR-165` makes a
+    reader that cannot answer a degraded control, never a failed page.
+    """
+    records = getattr(call.services, "records", None)
+    isolation = getattr(call.services, "isolation", None)
+    reader = getattr(records, "analysis_runs_for_scope", None)
+    if isolation is None or reader is None:
+        return ()
+    try:
+        owner_id = isolation.resolve_scope(context.account_id, context.organization_id)
+        runs = reader(owner_id)
+    except PermissionError:
+        return ()
+    return source_options(runs, call.source_id)
+
+
+@dataclass(frozen=True, slots=True)
+class _Resolved:
+    """One resolved request: who is asking, in what language, and what it read.
+
+    Grouped for the reason `DecisionRead`, `ShellRendering`, `DecisionFrame` and
+    `_RouteCall` are each grouped -- CodeScene admits four arguments and `D1-07`
+    made `_page` carry five. The pre-flight named it before this shipped
+    (Excess Number of Function Arguments, `_page`, 5), which is the fifth time
+    this programme has paid for the flat form.
+
+    These four are one thing: the context, the language, the readings and the
+    controls are all products of resolving one request, and none has meaning
+    without the others.
+    """
+
+    context: Any
+    language: str
+    readings: DecisionReadings
+    controls: DecisionControls
+
+
+def _page(call: _RouteCall, resolved: _Resolved) -> Response:
     """The surface inside `RCA-002`'s organization frame.
 
     `organization_frame` is *called* and not edited: `RCA-008` §Exclusions bars
@@ -849,6 +1066,7 @@ def _page(
     this surface existing.
     """
     rendering = call.rendering
+    context = resolved.context
     frame = organization_frame(
         call.services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
@@ -858,12 +1076,14 @@ def _page(
     return rendering.render(
         rendering.environment,
         "decision.html.j2",
-        language=language,
+        language=resolved.language,
         status_code=200,
         organization_id=context.organization_id,
         **{
             **frame,
-            "surface_path": decision_tail(context.organization_id, call.source_id),
-            **decision_context(readings, language, call.source_id),
+            "surface_path": decision_tail(
+                context.organization_id, call.source_id, resolved.controls.selection
+            ),
+            **decision_context(resolved.readings, resolved.language, resolved.controls),
         },
     )

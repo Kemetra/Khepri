@@ -33,7 +33,7 @@ from khepri.rca.organizations import Organization
 from khepri.rca.semantic_queries import ports
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.session_cookie import SESSION_COOKIE
-from khepri.rca.workspace.decision import breakdowns, card, limits, seam
+from khepri.rca.workspace.decision import breakdowns, card, controls, limits, seam
 from khepri.rra.semantic_views import registry
 from khepri.runtime import shell_decisions
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
@@ -734,6 +734,11 @@ def test_a_decision_frame_must_name_the_run_it_renders() -> None:
             organization_id="org-acme",
             prefix=SHELL_PREFIX,
             source_id="run-a",
+        ),
+        # `D1-07`: this path renders no controls beyond the run it is addressed
+        # by, so the selection carries the source and no filter.
+        shell_decisions.DecisionControls(
+            selection=controls.ControlSelection(source_id="run-a")
         ),
     )
     href = re.search(r'class="frame-language"\s+href="([^"]+)"', body)
