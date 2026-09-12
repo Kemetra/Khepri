@@ -108,9 +108,14 @@ selection.
 **7. What supplies "effective filters and period"?**
 `ViewOutcome.effective` — `EffectiveRequest(dimensions, requested_filters, fixed_filters)`, which
 `FR-137` defines as "what actually applied, requested and definition-fixed alike". Every read model
-merged so far drops it. `EvidenceReading` keeps it. The **period** is not on it and must not be
-invented: `FR-166` makes the period a *source selector*, so the period the drawer states is the
-run the surface is addressed by — `CardsRequest.source_id`, already structure.
+merged so far drops it. **`CardsReading` keeps it, and the first draft of this plan put it on
+`EvidenceReading` instead, which was wrong**: the filters a *card* states are the ones that applied
+to the card's own figure, and that is S-1's read rather than S-9's. Keeping both would have put two
+effective requests on one surface with one of them rendered, which is the second truth `FR-135`
+bars — so `EvidenceReading` carries none and a test asserts the field is absent from it. The
+**period** is on neither and must not be invented: `FR-166` makes the period a *source selector*,
+so the period the drawer states is the run the surface is addressed by — `CardsRequest.source_id`,
+already structure, passed to `decision_context` because a reading does not know its own address.
 
 ---
 
@@ -121,9 +126,15 @@ src/khepri/rca/workspace/decision/evidence.py       NEW   S-9 figure half
 src/khepri/rca/workspace/decision/card.py           EDIT  evidence: EvidenceAction | None
 src/khepri/runtime/shell_decisions.py               EDIT  definition half, sections, drawer view
 src/khepri/runtime/shell_templates/decision.html.j2 EDIT  drawer + S-3/S-4/S-5/S-6 sections
-src/khepri/runtime/shell_assets/workspace.css       EDIT  drawer and table rules only
 tests/test_d105_evidence_drawer.py                  NEW
 ```
+
+**`shell_assets/workspace.css` is not in that list, and the first draft of this plan had it
+there.** The file carries no `decision-` rule at all: `D1-03` and `D1-04` shipped the surface with
+no stylesheet of its own, and the allocation plan assigns those rules to `D1-03`, `D1-08` and
+`D1-10`. Styling the drawer while the cards it hangs from have nothing would be the same half-done
+shape this slice exists to close, one level down. `<details>` is operable unstyled, which the
+browser run confirms at both viewports in both directions.
 
 No new `ShellServices` field is expected: `services.decisions` is one `SemanticQueryActions` and
 every read in this slice goes through it. **Rule 11 still applies** — if that turns out to be
@@ -176,21 +187,25 @@ wrong, the collaborator reaches `build_shell_services` in the same commit, and
 ### GREEN
 
 - [ ] `decision/evidence.py`: `EvidenceEntry`, `EvidenceReading`, `EvidenceRequest`,
-      `read_evidence`. Keys by metric, keeps `effective`, groups absences by citation, computes
-      nothing.
-- [ ] `decision/card.py`: `evidence: EvidenceAction | None = None`, and `read_cards` attaching the
-      entry for each card's metric. The type stops being `None` and starts being a value.
+      `read_evidence`. Keys by metric off the records, groups absences by citation, computes
+      nothing, and keeps no effective request of its own.
+- [ ] `decision/card.py`: `evidence: EvidenceAction | None = None`, `CardsReading.effective` from
+      the S-1 outcome, and `read_cards` reading S-9 **once for the surface** — `FR-168` bars a cache
+      and ten reads of one view over one run would be one. The type stops being `None` and starts
+      being a value.
 - [ ] `shell_decisions.py`: the definition half from `RRA-011`'s catalog, a `_DrawerView`, the
       S-3/S-4/S-5/S-6 section views, and the bilingual wording the drawer's new lines need in
       `DECISION_COPY`.
 - [ ] `decision.html.j2`: a `<details>` drawer beside every figure, and the four sections.
-- [ ] `shell_assets/workspace.css`: drawer and table rules, decision surfaces only.
 
 ### Gates
 
 - [ ] `uv run khepri-gov validate`, `uv run ruff check .`, `uv run pytest`.
 - [ ] Browser cases driven directly against the container's headless shell, because a shell surface
-      changed and `-m browser` skips here.
+      changed and `pytest -m browser` skips here — `playwright.chromium.launch()` raises on the
+      pinned build and the case skips itself rather than failing. Driven with an explicit
+      `executable_path`, both viewports and both languages: direction, one `h1`, no horizontal
+      overflow **before or after the drawer is opened**, and every governed target at 44px.
 - [ ] Every new file 10.00 in CodeScene; no tracked hotspot declines. `shell_decisions.py` is the
       risk: it gains four section views and a drawer view, and it has already paid the Excess
       Number of Function Arguments finding once. Every new helper takes a value object, and no

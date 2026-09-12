@@ -65,14 +65,19 @@ from jinja2 import Environment
 
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, read_cards
+from khepri.rca.workspace.decision.evidence import EvidenceAction, EvidenceEntry
+from khepri.rra import definitions
+from khepri.rra.facts import UNIT_COUNT, UNIT_MONETARY, UNIT_RATIO
 from khepri.rra.rendering.wording import caveat_message, metric_business_name
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
 from khepri.runtime.shell_invitations import ShellRendering
 
 __all__ = [
+    "ABSENCE_WORDING",
     "COMPARISON_UNREACHABLE",
     "DECISION_COPY",
+    "UNIT_WORDING",
     "DecisionFrame",
     "add_decision_routes",
     "decision_view",
@@ -89,6 +94,42 @@ COMPARISON_UNREACHABLE = {
     "ar": "مقارنة الفترات غير متاحة بعد في مساحة العمل هذه.",
 }
 
+#: The three governed unit kinds, named for a reader. The keys are `RRA-004`'s
+#: own constants rather than strings retyped here: the shell may import
+#: `khepri.rra`, so a unit kind renamed there is an import error and not a
+#: silently missing line.
+UNIT_WORDING = {
+    "en": {UNIT_MONETARY: "Currency", UNIT_COUNT: "Count", UNIT_RATIO: "Ratio"},
+    "ar": {UNIT_MONETARY: "عملة", UNIT_COUNT: "عدد", UNIT_RATIO: "نسبة"},
+}
+
+#: What a governed evidence absence is called. `RRA-014` names the three, and
+#: `FR-140` makes each a positive statement -- "the record says there is none" --
+#: so each gets words rather than a blank cell.
+#:
+#: **The keys are literals, and `RCA-007` is why.** `ABSENCE_PRECISION` and its
+#: two siblings live in `khepri.rra.semantic_views.projection`, and
+#: `test_the_adapter_is_the_only_runtime_module_reaching_the_projection` asserts
+#: that `semantic_view_adapter.py` is the **one** runtime module importing that
+#: package -- a second one is what a second composition root would look like.
+#: So they are literals here and `test_d105_evidence_drawer` asserts them against
+#: that module, exactly as `card.py`'s availability literals are asserted against
+#: `khepri.rra.definitions`. Drift fails visibly rather than silently. The unit
+#: kinds above need no such treatment: `khepri.rra.facts` is not the semantic-view
+#: package and the shell may import it.
+ABSENCE_WORDING = {
+    "en": {
+        "precision": "Precision is not stated by the source.",
+        "inputs": "The inputs are not stated by the source.",
+        "provenance": "Provenance is not stated by the source.",
+    },
+    "ar": {
+        "precision": "لم يذكر المصدر الدقة.",
+        "inputs": "لم يذكر المصدر المدخلات.",
+        "provenance": "لم يذكر المصدر مصدر البيانات.",
+    },
+}
+
 #: This surface's own wording. Kept here rather than in `shell_copy.py` for the
 #: reason `landing_copy.py` is separate: one surface's strings, changed with it.
 DECISION_COPY = {
@@ -98,6 +139,20 @@ DECISION_COPY = {
         "unavailable": "Part of this view is unavailable.",
         "no_rows": "This analysis published no figures.",
         "caveats_label": "Caveats",
+        "evidence_label": "Evidence and definition",
+        "definition_label": "Definition",
+        "formula_label": "Formula version",
+        "versions_label": "Contract versions",
+        "filters_label": "Effective filters",
+        "period_label": "Period",
+        "unit_label": "Unit",
+        "precision_label": "Precision",
+        "inputs_label": "Inputs",
+        "provenance_label": "Provenance",
+        "not_stated": "Not stated by the source.",
+        "no_filters": "No filter applied.",
+        "evidence_absent": "This analysis cited no evidence for this figure.",
+        "evidence_unavailable": "Evidence is unavailable.",
     },
     "ar": {
         "title": "القرارات",
@@ -105,6 +160,20 @@ DECISION_COPY = {
         "unavailable": "جزء من هذا العرض غير متاح.",
         "no_rows": "لم ينشر هذا التحليل أي أرقام.",
         "caveats_label": "تحفظات",
+        "evidence_label": "الأدلة والتعريف",
+        "definition_label": "التعريف",
+        "formula_label": "إصدار الصيغة",
+        "versions_label": "إصدارات العقد",
+        "filters_label": "المرشحات المطبقة",
+        "period_label": "الفترة",
+        "unit_label": "الوحدة",
+        "precision_label": "الدقة",
+        "inputs_label": "المدخلات",
+        "provenance_label": "مصدر البيانات",
+        "not_stated": "لم يذكره المصدر.",
+        "no_filters": "لم يطبق أي مرشح.",
+        "evidence_absent": "لم يستشهد هذا التحليل بأي دليل لهذا الرقم.",
+        "evidence_unavailable": "الأدلة غير متاحة.",
     },
 }
 
@@ -119,6 +188,46 @@ def offers_decisions(services: Any) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
+class _EntryView:
+    """One cited evidence record as the drawer reads it.
+
+    `absences` is governed prose and not codes, for `FR-164`'s reason applied to
+    data rather than to a refusal: a code in front of a customer states nothing.
+    Each of `precision`, `inputs` and `provenance` is the record's own value or
+    `None`, and a `None` here is always accompanied by the absence that names it.
+    """
+
+    citation: str
+    unit: str | None
+    precision: object | None
+    inputs: object | None
+    provenance: object | None
+    absences: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
+class _DrawerView:
+    """`FR-162`'s evidence action: the two halves, from their two authorities.
+
+    `definition` and `formula_version` are `RRA-011`'s catalog -- structure,
+    which `FR-159` admits from it in as many words. `entries` are
+    `ReportEvidenceView`'s. `units` is one unit per entry, in the entries' own
+    order and undeduplicated: a single unit chosen from several would be a
+    choice made on the reader's behalf.
+
+    `unavailable` is S-9 having answered content-free (`FR-165`) and is a
+    different statement from an empty `entries`, which is this projection having
+    cited nothing for this metric.
+    """
+
+    definition: str
+    formula_version: object
+    entries: tuple[_EntryView, ...] = field(default_factory=tuple)
+    units: tuple[str, ...] = field(default_factory=tuple)
+    unavailable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class _CardView:
     """One card as the template reads it: named, and qualified in the same row."""
 
@@ -129,6 +238,9 @@ class _CardView:
     status: str
     availability: object | None
     reason: object | None
+    versions: object = None
+    caveat_count: int = 0
+    drawer: _DrawerView | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +252,9 @@ class _DecisionView:
     """
 
     cards: tuple[_CardView, ...] = field(default_factory=tuple)
+    #: `FR-137`'s applied filters, which `FR-162` requires be reachable from the
+    #: card. Page-level because one read produced every card on it.
+    filters: tuple[str, ...] = field(default_factory=tuple)
     #: The projection's caveats as governed prose, rendered once.
     #:
     #: Once and not per card, because that is what they are: a `StatedCaveat`
@@ -155,7 +270,15 @@ class _DecisionView:
 
 
 def _named(card: Any, language: str) -> _CardView:
-    """One card, labelled from the governed catalog in the page language."""
+    """One card, labelled from the governed catalog in the page language.
+
+    `caveat_count` is `FR-162`'s "caveat or refusal count" and is the one place
+    this surface counts anything. It is not a figure and cannot become one:
+    `card_status` selects from the outcome kind, the governed availability and
+    whether caveats exist at all -- `if not caveats`, never `len` -- so the
+    number rendered here reaches no decision. `test_d105_evidence_drawer` asserts
+    that by giving two readings different counts and one status.
+    """
     return _CardView(
         metric=card.metric,
         label=metric_business_name(card.metric, language),
@@ -164,7 +287,62 @@ def _named(card: Any, language: str) -> _CardView:
         status=card.status,
         availability=card.availability,
         reason=card.reason,
+        versions=card.versions,
+        caveat_count=len(card.caveats),
+        drawer=_drawer(card.metric, card.evidence, language),
     )
+
+
+def _drawer(metric: str, action: EvidenceAction | None, language: str) -> _DrawerView:
+    """The evidence action for one metric: the catalog half and the view half.
+
+    The catalog is read here and not across the seam because `khepri.rca` may not
+    import `khepri.rra`, which is the same boundary that leaves a metric's
+    business name to this module. `FR-159` admits it: "Structure and navigation
+    may come from `RCA-005` records and the `RRA-011` catalog; figures may not",
+    and a definition and a formula version are structure.
+    """
+    entries = tuple(
+        _entry(one, language) for one in getattr(action, "entries", ())
+    )
+    return _DrawerView(
+        definition=definitions.describe_metric(metric, language),
+        formula_version=definitions.define_metric(metric).formula_version,
+        entries=entries,
+        units=tuple(one.unit for one in entries if one.unit is not None),
+        unavailable=bool(getattr(action, "unavailable", False)),
+    )
+
+
+def _entry(entry: EvidenceEntry, language: str) -> _EntryView:
+    """One record as the drawer reads it, with its absences in governed prose."""
+    return _EntryView(
+        citation=entry.citation,
+        unit=UNIT_WORDING[language].get(str(entry.unit_kind)),
+        precision=entry.precision,
+        inputs=entry.inputs,
+        provenance=entry.provenance,
+        absences=tuple(
+            ABSENCE_WORDING[language][kind]
+            for kind in entry.absences
+            if kind in ABSENCE_WORDING[language]
+        ),
+    )
+
+
+def _effective_filters(reading: CardsReading) -> tuple[str, ...]:
+    """`FR-137`'s applied filters, requested and definition-fixed alike.
+
+    Both halves, because the requirement names both and a surface showing only
+    what the reader asked for would hide the ones the view itself applies. The
+    order is the effective request's own; nothing here sorts or dedupes, because
+    a filter stated twice by two mechanisms is two statements.
+    """
+    effective = reading.effective
+    if effective is None:
+        return ()
+    applied = tuple(effective.requested_filters) + tuple(effective.fixed_filters)
+    return tuple(f"{dimension}={member}" for dimension, member in applied)
 
 
 def _caveat_prose(reading: CardsReading, language: str) -> tuple[str, ...]:
@@ -195,6 +373,7 @@ def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
     """The reading as one page in one language. Labels and words, no figures."""
     return _DecisionView(
         cards=tuple(_named(card, language) for card in reading.cards),
+        filters=_effective_filters(reading),
         caveats=_caveat_prose(reading, language),
         refusal=_refusal_text(reading, language),
         unavailable=reading.status == "unavailable",
@@ -258,16 +437,25 @@ class DecisionFrame:
             raise ValueError("DecisionFrame.organization_id must name an organization")
 
 
-def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:
-    """The two keys this surface adds to `RCA-002`'s frame, in one place.
+def decision_context(
+    reading: CardsReading, language: str, source_id: str
+) -> dict[str, Any]:
+    """The three keys this surface adds to `RCA-002`'s frame, in one place.
 
     Both render paths use it -- the frameless one below and the route's, which
     hands the rest to `ShellRendering.render` so the security headers keep one
     definition. Two places assembling a template context is how a key goes
     missing from one of them.
+
+    **`period` is the run, and that is `FR-166` rather than a shortcut.**
+    `FR-162` requires a card expose "the effective filters and period"; the
+    period is "a source selector, choosing a completed run", so the period this
+    surface states is the run it is addressed by. It arrives as an argument and
+    not from the reading because a reading does not know its own address.
     """
     return {
         "decision": DECISION_COPY[language],
+        "period": source_id,
         "view": decision_view(reading, language=language),
     }
 
@@ -295,7 +483,7 @@ def render_decisions(
         # The frame's destination list. Empty here because this render path has
         # no organization frame to read; the route passes the real one.
         destinations=(),
-        **decision_context(reading, frame.language),
+        **decision_context(reading, frame.language, frame.source_id),
     )
 
 
@@ -423,6 +611,6 @@ def _page(
         **{
             **frame,
             "surface_path": decision_tail(context.organization_id, call.source_id),
-            **decision_context(reading, language),
+            **decision_context(reading, language, call.source_id),
         },
     )

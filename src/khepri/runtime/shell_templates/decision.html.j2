@@ -52,20 +52,108 @@
   </ul>
   {% endif %}
 
+  {#
+    FR-162: a card exposes its lines "directly or through one action". The
+    action is the <details> below -- a disclosure on this page and never an
+    address, because FR-161 says availability, caveats and refusals are
+    "reachable from the surface carrying the figure ... and are not deferred to
+    a terminal page". `data-line` names each required line so the test asserts
+    against the requirement's own list rather than against this markup.
+
+    There is no comparison line. FR-162 requires one "only when compatible" and
+    FR-170's source is not; the note above says so once, for the page.
+  #}
   {% if view.cards %}
   <ul class="decision-cards">
     {% for card in view.cards %}
     <li class="decision-card" data-status="{{ card.status }}">
-      <span class="decision-label">{{ card.label }}</span>
-      <span class="decision-value">{{ card.value }}</span>
-      <span class="decision-status">{{ card.status }}</span>
-      <span class="decision-population">{{ card.population }}</span>
+      <span class="decision-label" data-line="label">{{ card.label }}</span>
+      <span class="decision-value" data-line="value">{{ card.value }}</span>
+      <span class="decision-status" data-line="status">{{ card.status }}</span>
+      <span class="decision-population" data-line="population">{{ card.population }}</span>
       {% if card.availability %}
       <span class="decision-availability">{{ card.availability }}</span>
       {% endif %}
       {% if card.reason %}
       <span class="decision-reason">{{ card.reason }}</span>
       {% endif %}
+      <details class="decision-drawer">
+        <summary class="decision-drawer-summary">{{ decision.evidence_label }}</summary>
+
+        {# The definition half: RRA-011's catalog, which FR-159 admits as structure. #}
+        <p class="decision-definition" data-line="definition">
+          {{ decision.definition_label }}: {{ card.drawer.definition }}
+        </p>
+        <p class="decision-formula" data-line="formula">
+          {{ decision.formula_label }}: {{ card.drawer.formula_version }}
+        </p>
+        <p class="decision-versions" data-line="versions">
+          {{ decision.versions_label }}: {{ card.versions }}
+        </p>
+        <p class="decision-unit" data-line="unit">
+          {{ decision.unit_label }}:
+          {% if card.drawer.units %}{{ card.drawer.units | join(", ") }}
+          {% else %}{{ decision.not_stated }}{% endif %}
+        </p>
+
+        {# FR-137: what actually applied, requested and definition-fixed alike. #}
+        <p class="decision-filters" data-line="filters">
+          {{ decision.filters_label }}:
+          {% if view.filters %}{{ view.filters | join(", ") }}
+          {% else %}{{ decision.no_filters }}{% endif %}
+        </p>
+
+        {# FR-166: the period is a source selector, so the run is the period. #}
+        <p class="decision-period" data-line="period">{{ period }}</p>
+
+        {# FR-162's caveat count. Counted for display; never for the status. #}
+        <p class="decision-caveat-count" data-line="caveats">
+          {{ decision.caveats_label }}: {{ card.caveat_count }}
+        </p>
+
+        {#
+          The figure half. Three answers and not two: unavailable is FR-165's
+          content-free miss, an empty entries tuple is this projection having
+          cited nothing for this metric, and neither is a refusal.
+        #}
+        {% if card.drawer.unavailable %}
+        <p class="decision-evidence-unavailable" data-line="evidence" role="note">
+          {{ decision.evidence_unavailable }}
+        </p>
+        {% elif card.drawer.entries %}
+        <ul class="decision-evidence" data-line="evidence">
+          {% for entry in card.drawer.entries %}
+          <li class="decision-entry">
+            <span class="decision-citation">{{ entry.citation }}</span>
+            {% if entry.precision is not none %}
+            <span class="decision-precision">
+              {{ decision.precision_label }}: {{ entry.precision }}
+            </span>
+            {% endif %}
+            {% if entry.inputs %}
+            <span class="decision-inputs">
+              {{ decision.inputs_label }}: {{ entry.inputs | join(", ") }}
+            </span>
+            {% endif %}
+            {% if entry.provenance %}
+            <span class="decision-provenance">{{ decision.provenance_label }}</span>
+            {% endif %}
+            {#
+              FR-140: "the record says there is none" is a statement, so it is
+              rendered as one. Data on an admitted projection, never a refusal.
+            #}
+            {% for absence in entry.absences %}
+            <span class="decision-absence">{{ absence }}</span>
+            {% endfor %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="decision-evidence-absent" data-line="evidence" role="note">
+          {{ decision.evidence_absent }}
+        </p>
+        {% endif %}
+      </details>
     </li>
     {% endfor %}
   </ul>

@@ -34,6 +34,7 @@ from khepri.rca.semantic_queries import ports
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.decision import card, evidence, seam
+from khepri.rra import facts
 from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
     SECTION_PRESENT,
@@ -249,11 +250,16 @@ def test_an_entry_names_the_figures_its_citation_appears_against() -> None:
     assert entry.figures == ("fig_revenue",)
 
 
-def test_the_effective_request_survives_because_fr162_asks_for_it() -> None:
-    """`FR-137`'s "what actually applied" is what the drawer's filter line states."""
-    reading = _read(_evidence_outcome())
-    assert reading.effective is not None
-    assert reading.effective.dimensions == ("period",)
+def test_the_evidence_reading_keeps_no_effective_request_of_its_own() -> None:
+    """The filters a card states are the ones that applied to its own figure.
+
+    `FR-162` requires a card expose "the effective filters and period", and the
+    card's figure is S-1's. Keeping S-9's applied request here as well would put
+    two effective requests on one surface with one of them rendered, which is the
+    second truth `FR-135` bars.
+    """
+    named = {field.name for field in dataclasses.fields(evidence.EvidenceReading)}
+    assert "effective" not in named
 
 
 # --- FR-140: an absence is data on an admitted reading, never a refusal ------
@@ -443,6 +449,7 @@ def _overview(caveats: tuple[object, ...] = ()) -> ports.ViewOutcome:
             ),
             caveats=caveats,
         ),
+        effective=ports.EffectiveRequest(dimensions=("period",)),
     )
 
 
@@ -485,6 +492,13 @@ def test_an_unavailable_evidence_read_leaves_every_card_rendered() -> None:
     assert len(reading.cards) == 2
     assert all(one.evidence.unavailable for one in reading.cards)
     assert all(one.evidence.entries == () for one in reading.cards)
+
+
+def test_the_cards_carry_the_effective_request_their_own_figures_applied() -> None:
+    """`FR-137`/`FR-162` -- the filter line states what applied to *this* view."""
+    reading = _cards(_evidence_outcome())
+    assert reading.effective is not None
+    assert reading.effective.dimensions == ("period",)
 
 
 def test_the_caveat_count_cannot_reach_the_status_selection() -> None:
@@ -627,6 +641,33 @@ def test_the_drawer_states_no_less_in_one_language_than_the_other(language: str)
     assert body.count('class="decision-absence"') == _page("en").count(
         'class="decision-absence"'
     )
+
+
+def test_the_absence_literals_are_the_ones_rra014_states() -> None:
+    """Pinned in the shell, asserted against the source here.
+
+    `RCA-007`'s
+    `test_the_adapter_is_the_only_runtime_module_reaching_the_projection` makes
+    `semantic_view_adapter.py` the one runtime module that may import the
+    semantic-view package, because a second one is what a second composition
+    root would look like. So the three absence kinds are literals in
+    `shell_decisions.py` and this asserts them, exactly as `D1-03` asserts the
+    availability literals against `khepri.rra.definitions`.
+    """
+    stated = {
+        projection.ABSENCE_PRECISION,
+        projection.ABSENCE_INPUTS,
+        projection.ABSENCE_PROVENANCE,
+    }
+    for language in LANGUAGES:
+        assert set(shell_decisions.ABSENCE_WORDING[language]) == stated
+
+
+def test_the_unit_literals_are_the_ones_rra004_states() -> None:
+    """The three governed unit kinds, keyed by the constants themselves."""
+    stated = {facts.UNIT_MONETARY, facts.UNIT_COUNT, facts.UNIT_RATIO}
+    for language in LANGUAGES:
+        assert set(shell_decisions.UNIT_WORDING[language]) == stated
 
 
 def test_every_string_the_drawer_adds_exists_in_both_governed_languages() -> None:
