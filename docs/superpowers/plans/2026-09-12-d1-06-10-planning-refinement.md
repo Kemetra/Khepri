@@ -1,6 +1,8 @@
 # `D1-06`–`D1-10` — Planning refinement, and what each slice may not decide
 
-**Status: this is not six execution plans.** `D1-05` has one
+**Status: this is not five execution plans.** Five slices are refined here -- `D1-06`, `D1-07`,
+`D1-08`, `D1-09` and `D1-10` -- and `D1-05` has its own plan beside them, so the six remaining D1
+slices are covered between the two documents. `D1-05` has one
 (`2026-09-12-d1-05-execution-plan.md`) because its dependency is merged and its inputs are
 verifiable on `main` today. `D1-06` through `D1-10` get theirs **at their turn**, and this document
 records why that is a discipline rather than a shortfall.
@@ -87,7 +89,9 @@ step lists for surfaces that do not exist are not.
 
 ---
 
-## What none of these six slices may do
+## What none of these slices may do
+
+Binding on `D1-06`, `D1-07`, `D1-08`, `D1-09` and `D1-10`, and on `D1-05` where it is still open.
 
 1. **Bind the Period Comparison source.** `RCA-008` §The open question, precondition 2: the binding
    is a composition-root change in a file `RCA-007` §Scope already governs, and two active

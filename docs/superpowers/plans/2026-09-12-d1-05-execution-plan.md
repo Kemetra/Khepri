@@ -80,8 +80,11 @@ No new route. No new `ShellServices` field. No persistence change.
 1. **An evidence absence renders as data, not as a refusal.** Project a `REPORT_EVIDENCE` outcome
    whose `evidence_absences` is non-empty; assert the drawer renders the absence and that the read
    model is an admitted projection, not a `ViewRefusal`. *This is the slice's central assertion.*
-2. **The definition half comes from the catalog.** Assert the rendered label and formula version
-   equal `define_metric(code)`'s, in both `en` and `ar`, rather than a string the drawer coins.
+2. **The definition half comes from the catalog.** Assert the rendered description equals
+   `describe_metric(code, language)` and the formula version equals
+   `define_metric(code).formula_version`, in both `en` and `ar`, rather than a string the drawer
+   coins. Two accessors because they answer different questions: `define_metric` returns the code
+   and its governed contract version and no localized prose at all.
 3. **An unknown code refuses.** `UnknownCode` reaches the surface as `FR-164`'s worded refusal in
    the page language, and the drawer does not render.
 4. **The drawer is reachable from every figure on the surfaces that render**, asserted over the
@@ -106,7 +109,8 @@ No new route. No new `ShellServices` field. No persistence change.
 
 Build `evidence.py`: a read model holding the figure half (a `REPORT_EVIDENCE` projection via
 `admitted_projection`) and the definition half (catalog lookups), each named by its source. Wire the
-drawer into the existing templates for the four surfaces. Add drawer rules to `workspace.css`.
+drawer into **`decision.html.j2` — S-1, the only decision surface that renders**; see step 4 for why
+S-3/S-4/S-5 have no template to wire it into. Add drawer rules to `workspace.css`.
 
 ### Gates
 
