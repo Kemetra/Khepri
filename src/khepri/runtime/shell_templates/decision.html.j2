@@ -69,6 +69,20 @@
     </li>
     {% endfor %}
   </ul>
+  {#
+    D1-05, FR-161: the run's evidence, inside the surface that carries the
+    figures and never on a page of its own.
+
+    One drawer, not one per card: `ReportEvidenceView` publishes `figure_id` and
+    `citation_id` and no metric, so its rows belong to the run rather than to any
+    one figure. A drawer under each card would claim an attribution the view does
+    not publish. Review on `#449`.
+  #}
+  {% if drawer %}
+  {% with view = drawer, copy = drawer_copy %}
+  {% include "decision_drawer.html.j2" %}
+  {% endwith %}
+  {% endif %}
   {% endif %}
 </section>
 {% endblock %}

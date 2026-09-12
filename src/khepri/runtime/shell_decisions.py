@@ -65,7 +65,13 @@ from jinja2 import Environment
 
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, read_cards
+from khepri.rca.workspace.decision.evidence import (
+    DrawerReading,
+    DrawerRequest,
+    read_drawer,
+)
 from khepri.rra.rendering.wording import caveat_message, metric_business_name
+from khepri.runtime.metric_definitions import CatalogDefinitions
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
 from khepri.runtime.shell_invitations import ShellRendering
@@ -73,11 +79,14 @@ from khepri.runtime.shell_invitations import ShellRendering
 __all__ = [
     "COMPARISON_UNREACHABLE",
     "DECISION_COPY",
+    "DRAWER_COPY",
     "DecisionFrame",
     "add_decision_routes",
     "decision_view",
+    "drawer_view",
     "offers_decisions",
     "render_decisions",
+    "render_drawer",
 ]
 
 #: `FR-170`. The Period Comparison source is a two-population bundle and the
@@ -105,6 +114,26 @@ DECISION_COPY = {
         "unavailable": "جزء من هذا العرض غير متاح.",
         "no_rows": "لم ينشر هذا التحليل أي أرقام.",
         "caveats_label": "تحفظات",
+    },
+}
+
+#: `D1-05`'s own wording, beside `DECISION_COPY` for its reason: one surface's
+#: strings, changed with it. Both languages, because `FR-171` admits no surface
+#: that states less in one -- the drawer's labels are as governed as its figures.
+DRAWER_COPY = {
+    "en": {
+        "drawer_label": "Evidence",
+        "definition_label": "What this measures",
+        "formula_label": "Governed contract",
+        "absences_label": "Not recorded",
+        "unavailable": "This evidence is unavailable.",
+    },
+    "ar": {
+        "drawer_label": "الأدلة",
+        "definition_label": "ما يقيسه هذا",
+        "formula_label": "العقد المحوكم",
+        "absences_label": "غير مسجل",
+        "unavailable": "هذه الأدلة غير متاحة.",
     },
 }
 
@@ -268,6 +297,14 @@ def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:
     """
     return {
         "decision": DECISION_COPY[language],
+        "drawer_copy": DRAWER_COPY[language],
+        # Empty by default, and named here rather than in each caller for the
+        # reason this function exists: the environment is `StrictUndefined`, so a
+        # key one render path sets and the other forgets is an exception at the
+        # second path rather than a blank. The frameless path renders no drawers
+        # -- it has no actions to read them through -- and says so by passing
+        # none, which the template reads as "no evidence on this surface".
+        "drawer": None,
         "view": decision_view(reading, language=language),
     }
 
@@ -394,11 +431,26 @@ def _respond(call: _RouteCall) -> Response:
             source_id=call.source_id,
         ),
     )
-    return _page(call, context, language, reading)
+    drawer = drawer_for(
+        call.services.decisions,
+        reading,
+        request=DrawerRequest(
+            organization_id=context.organization_id,
+            account_id=context.account_id,
+            source_id=call.source_id,
+            language=language,
+        ),
+        language=language,
+    )
+    return _page(call, context, language, reading, drawer)
 
 
 def _page(
-    call: _RouteCall, context: Any, language: str, reading: CardsReading
+    call: _RouteCall,
+    context: Any,
+    language: str,
+    reading: CardsReading,
+    drawer: Any | None = None,
 ) -> Response:
     """The surface inside `RCA-002`'s organization frame.
 
@@ -424,5 +476,115 @@ def _page(
             **frame,
             "surface_path": decision_tail(context.organization_id, call.source_id),
             **decision_context(reading, language),
+            # After `decision_context`, deliberately: the route read a real
+            # drawer and overrides the absent default above.
+            "drawer": drawer,
         },
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _DrawerView:
+    """One rendered evidence drawer.
+
+    `refusal` is the governed message or `None`, never the bare cause code
+    (`FR-164`). `absences` is deliberately its own field and not folded into
+    `refusal`: an absence is data on an admitted projection, and the two reach
+    the reader through different slots in the template for that reason.
+    """
+
+    status: str
+    definition: object | None = None
+    items: tuple[object, ...] = field(default_factory=tuple)
+    absences: tuple[str, ...] = field(default_factory=tuple)
+    refusal: str | None = None
+    unavailable: bool = False
+
+
+def drawer_view(reading: DrawerReading, *, language: str) -> _DrawerView:
+    """The drawer reading as one rendered surface in one language.
+
+    The two halves stay separate, as they are in the read model: nothing here
+    merges the catalog's definition into an evidence row, so the markup can
+    attribute each to the authority that published it.
+    """
+    return _DrawerView(
+        status=reading.status,
+        definition=reading.definition,
+        items=reading.items,
+        absences=reading.absences,
+        refusal=(
+            None if reading.refusal is None else reading.refusal.wording.get(language)
+        ),
+        unavailable=reading.status == "unavailable",
+    )
+
+
+def render_drawer(
+    environment: Environment, reading: DrawerReading, *, language: str
+) -> str:
+    """The drawer's markup, rendered on its own.
+
+    Frameless and address-free by construction (`FR-161`): the drawer is included
+    beside the figure it qualifies, so it takes no `DecisionFrame` and emits no
+    link. A drawer that rendered its own address would be a page by another
+    spelling, whatever the route table says.
+    """
+    return environment.get_template("decision_drawer.html.j2").render(
+        language=language,
+        direction=DIRECTIONS[language],
+        copy=DRAWER_COPY[language],
+        drawer=reading,
+        view=drawer_view(reading, language=language),
+    )
+
+
+#: The catalog adapter this surface reads definitions through. Constructed here
+#: rather than carried on `ShellServices` because it holds no state, binds no
+#: connection and varies with nothing: a deployment cannot have a different one.
+#: `offers_decisions` already gates the surface, so an optional field would gate
+#: nothing a second time -- and every optional field is one more that
+#: `build_shell_services` must remember to wire (`#448`).
+_DEFINITIONS = CatalogDefinitions()
+
+
+def drawer_for(
+    actions: Any, reading: CardsReading, *, request: DrawerRequest, language: str
+) -> _DrawerView | None:
+    """The run's evidence, read once, or `None` when the surface has no figures.
+
+    **One read for the surface, and the view is why.** `ReportEvidenceView`
+    names ten metrics in its allowlist and `DecisionRead` sends none -- which is
+    the published-selection contract `seam.py` records, not an omission here:
+    `FR-135` forbids retyping a metric code. So every read of this view answers
+    with the run's whole citation table, and reading it once per card would
+    return the same table N times.
+
+    **Nothing published could narrow it to one figure.** The overview publishes
+    `("metric", "value", "population", "versions")`; this view publishes `figure`
+    (a `figure_id`) and `evidence` (a `citation_id`). Neither carries the other's
+    key. A per-card drawer could only have been built by inventing an attribution
+    the views do not publish, which would put one metric's citations under
+    another metric's label -- the silent failure, not the loud one.
+
+    So the drawer is the run's, stated as the run's. `FR-161` is satisfied
+    because it sits inside the surface that carries the figures and is never a
+    page of its own; the first draft's per-card read was found by review on
+    `#449`. `FR-168` is better served too: one acquisition, not one per card.
+    """
+    if not reading.cards:
+        return None
+    return drawer_view(
+        read_drawer(
+            actions,
+            DrawerRequest(
+                organization_id=request.organization_id,
+                account_id=request.account_id,
+                source_id=request.source_id,
+                metric=request.metric,
+                language=language,
+            ),
+            definitions=_DEFINITIONS,
+        ),
+        language=language,
     )

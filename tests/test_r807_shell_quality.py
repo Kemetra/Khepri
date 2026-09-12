@@ -16,6 +16,7 @@ case here fails rather than going unmeasured.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from importlib.resources import files
@@ -80,6 +81,19 @@ _LAYOUT_TEMPLATES = {"shell.html.j2"}
 
 #: Reachable only by POST, so the GET-driven browser cases cannot visit it.
 _POST_ONLY_TEMPLATES = {"invitation_issued.html.j2"}
+
+#: Rendered *inside* a surface and never addressed on their own.
+#:
+#: `D1-05`'s evidence drawer is the first: `RCA-008` `FR-161` requires it be
+#: reachable from a figure in one action and never a page, so it declares no
+#: route and no link, and the GET-driven cases below have no address to visit.
+#: It is measured by `test_d105_evidence_drawer.py` instead, which renders it
+#: directly and asserts the markup carries no address of its own.
+#:
+#: An entry here is a claim that a template has no surface, not a way to skip
+#: measurement. A template that *does* have an address belongs in
+#: `SHELL_SURFACES`, where the browser cases exercise it.
+_INCLUDED_TEMPLATES = {"decision_drawer.html.j2"}
 
 @dataclass
 class _Context:
@@ -365,7 +379,28 @@ def test_every_shell_template_is_measured() -> None:
 
     assert templates, "no shell templates found, so this test proves nothing"
     measured = {f"{surface}.html.j2" for surface in SHELL_SURFACES}
-    assert templates == (measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES)
+    assert templates == (
+        measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES | _INCLUDED_TEMPLATES
+    )
+
+
+def test_no_included_template_declares_an_address() -> None:
+    """An entry in `_INCLUDED_TEMPLATES` is a claim, and this is what checks it.
+
+    Without this, the exemption above would be a way to opt any template out of
+    measurement -- add the name, and neither the browser cases nor this file
+    look at it again. So the claim that a template has no surface is asserted
+    against the template's own source: no link, and no address.
+    """
+    assert _INCLUDED_TEMPLATES, "no included templates, so this test proves nothing"
+
+    for name in _INCLUDED_TEMPLATES:
+        source = (
+            files("khepri.runtime").joinpath("shell_templates", name).read_text("utf-8")
+        )
+        body = re.sub(r"\{#.*?#\}", "", source, flags=re.DOTALL)
+        assert "<a " not in body, name
+        assert "href=" not in body, name
 
 
 @pytest.mark.browser

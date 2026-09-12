@@ -141,19 +141,25 @@ tests/test_r807_shell_quality.py                 EDIT  _UNROUTED_TEMPLATES remov
 
 ---
 
-## `wiring.py` — the question, and the owner's answer
+## `wiring.py` — the question, and how it was answered in practice
 
 This plan shipped saying the composition root was out of reach: `ShellServices` is constructed in
 `src/khepri/runtime/wiring.py`, which `RCA-008` §Scope does not name, so whether it was `D1`'s to
 edit was raised as an owner question and left open — on `#447`, in this plan, and in
 `shell_decisions.py`'s docstring.
 
-**The owner answered it by wiring it** (`387c21c`, after review on `#448`): `_shell_decisions`
-composes `SemanticQueryActions` from the caller's own `IsolationService` and record store, and
-`build_shell_services` passes it as `decisions`. So the decision route is in the built image, and
-the surface is reachable by a deployment rather than only by a test.
+**It was answered in practice, by the fix review forced** (`387c21c`, after review on `#448`):
+`_shell_decisions` composes `SemanticQueryActions` from the caller's own `IsolationService` and
+record store, and `build_shell_services` passes it as `decisions`. So the decision route is in the
+built image, and the surface is reachable by a deployment rather than only by a test.
 
-**The reading that settles it, for the slices after this one.** §Scope not naming a file is not
+**Attribution, stated exactly.** The owner merged that fix; the owner did **not** author a scope
+ruling. `#448` review found the route absent from the built image, the alternative to editing
+`wiring.py` was shipping a capability no customer could reach, and the call was taken in-session on
+that basis. **The scope question therefore remains open and owner-authored** — a merge accepts a
+change, it does not settle whether `RCA-008` §Scope reaches this file.
+
+**The reading offered in support of it, which the owner has not ratified.** §Scope not naming a file is not
 the same as §Exclusions barring it. §Exclusions names `RCA-001`, `RCA-002`, `RCA-005`, `RCA-006`,
 `RCA-007`, `RRA-011`, `RRA-012` and `RRA-014` source paths; `wiring.py` is named by neither, and
 the alternative to editing it was shipping a capability no customer could reach. Decisions 5 and 6
