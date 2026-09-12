@@ -27,6 +27,8 @@ from playwright.sync_api import Error, sync_playwright
 
 from khepri.rca.errors import ScopeAccessDenied
 from khepri.rca.organizations import Organization, OrganizationMember
+from khepri.rca.semantic_queries.ports import KIND_ADMITTED as VIEW_ADMITTED
+from khepri.rca.semantic_queries.ports import ViewOutcome, ViewProjection
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.comparisons import (
     KIND_ADMITTED,
@@ -68,6 +70,9 @@ SHELL_SURFACES = {
     "analyses": "/org-acme/analyses",
     "analysis": "/org-acme/analyses/run-a",
     "compare": "/org-acme/analyses/compare/ver-a/ver-b",
+    # `D1-04`. The run is a path segment because `FR-166` makes the period a source selector --
+    # choosing a completed run -- rather than a view filter.
+    "decision": "/org-acme/decisions/run-a",
 }
 
 #: Templates that render inside another and are never a surface of their own.
@@ -75,23 +80,6 @@ _LAYOUT_TEMPLATES = {"shell.html.j2"}
 
 #: Reachable only by POST, so the GET-driven browser cases cannot visit it.
 _POST_ONLY_TEMPLATES = {"invitation_issued.html.j2"}
-
-#: Shipped ahead of its route and therefore not yet visitable (`D1-03`).
-#:
-#: `RCA-008`'s decision surface ships its read model, its view assembly and its
-#: template before the route that serves them: the route needs the session and
-#: membership resolution `shell_comparison.py` reaches through `_RouteCall`, and
-#: an HTTP surface no test drives would be worse than a deferred one. The
-#: template is driven directly by `test_d103_metric_card` meanwhile, because
-#: `FR-170` requires the unreachable Period Comparison surface be *visibly*
-#: held open and a template nothing renders cannot show that.
-#:
-#: **This set is removed by `D1-04`, not amended by it.** The moment the route
-#: exists the template gains an address, and the equality below then fails until
-#: it moves into `SHELL_SURFACES` with one -- which is the point of naming it
-#: here rather than loosening the assertion.
-_UNROUTED_TEMPLATES = {"decision.html.j2"}
-
 
 @dataclass
 class _Context:
@@ -302,6 +290,37 @@ class _StubComparisons:
         )
 
 
+class _StubDecisions:
+    """`D1-04`. One admitted overview and one governed availability, for any request.
+
+    A stub at the `SemanticQueryActions` seam rather than a live one, because what these cases
+    measure is the rendered surface: direction, structure, overflow and target size. The
+    selection behind it is `test_d104_breakdowns_and_limits`' subject.
+    """
+
+    def request(self, asked: object) -> ViewOutcome:
+        view = asked.view.view_id  # type: ignore[attr-defined]
+        rows = (
+            (("revenue", "available", None, ()),)
+            if view == "MetricAvailabilityView"
+            else (("revenue", "700.00", "complete", ()),)
+        )
+        fields = (
+            ("metric", "availability", "reason", "versions")
+            if view == "MetricAvailabilityView"
+            else ("metric", "value", "population", "versions")
+        )
+        return ViewOutcome(
+            kind=VIEW_ADMITTED,
+            projection=ViewProjection(
+                view_id=view,
+                view_version=asked.view.view_version,  # type: ignore[attr-defined]
+                fields=fields,
+                rows=rows,
+            ),
+        )
+
+
 def _client(surface: str) -> TestClient:
     """One app per surface, configured so that surface is what renders."""
     app = FastAPI()
@@ -318,6 +337,7 @@ def _client(surface: str) -> TestClient:
             provenance=_StubProvenance(),
             bridge=_StubBridge(),
             comparisons=_StubComparisons(),
+            decisions=_StubDecisions(),
         ),
         clock=lambda: NOW,
     )
@@ -345,9 +365,7 @@ def test_every_shell_template_is_measured() -> None:
 
     assert templates, "no shell templates found, so this test proves nothing"
     measured = {f"{surface}.html.j2" for surface in SHELL_SURFACES}
-    assert templates == (
-        measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES | _UNROUTED_TEMPLATES
-    )
+    assert templates == (measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES)
 
 
 @pytest.mark.browser

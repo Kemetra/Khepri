@@ -61,6 +61,7 @@ from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_change_notice import methodology_change, previous_completed
 from khepri.runtime.shell_comparison import add_comparison_routes, offers_comparisons
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
+from khepri.runtime.shell_decisions import add_decision_routes
 from khepri.runtime.shell_deletion import add_deletion_route
 from khepri.runtime.shell_frame import (
     Offers,
@@ -267,6 +268,10 @@ class ShellServices:
     #: a deployment without it declares no comparison routes, so the address is unknown rather
     #: than refused differently (`FR-046`).
     comparisons: Any | None = None
+    #: `D1-04`. The semantic-query seam the decision surfaces read (`RCA-008` `FR-159`). Optional
+    #: like the rest -- a deployment without it declares no decision route, so the address is
+    #: unknown rather than refused differently (`FR-046`). See `shell_decisions.offers_decisions`.
+    decisions: Any | None = None
 
 
 def _offers_workspace(services: ShellServices) -> bool:
@@ -806,6 +811,7 @@ _ROUTE_DECLARATIONS = (
     add_deletion_route,
     add_pin_routes,
     add_comparison_routes,
+    add_decision_routes,
 )
 
 

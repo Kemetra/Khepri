@@ -219,3 +219,79 @@ class TestTheOwnerGate:
         client.post(_pin_address(who, version.version_id), follow_redirects=False)
 
         assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+
+class TestEveryOptionalFieldTheImageWires:
+    """The assertion that outlives the next optional field.
+
+    `W1-07a` (`deletion`), `W1-09` (`pins`) and `D1-04` (`decisions`) each shipped -- or nearly
+    shipped -- a route absent from the built wheel, each for one reason: an optional field on
+    `ShellServices` gates a route, and `build_shell_services` was not taught to set it. Two of
+    the three are guarded above by a test naming that field. A test that names its field guards
+    the field it names and leaves the next one open, which is how this recurred three times.
+
+    So this derives the population instead of listing it: every field on `ShellServices` that
+    defaults to `None` must be non-`None` on the object `build_shell_services` returns, unless
+    `_DELIBERATELY_UNWIRED` names it. Adding a tenth optional field turns "I forgot" into a
+    failing test that demands an entry in that tuple and a reason beside it.
+    """
+
+    def test_the_built_image_wires_every_optional_field(self) -> None:
+        import dataclasses
+
+        from khepri.runtime.shell_api import ShellServices
+        from khepri.runtime.wiring import build_shell_services
+        from tests.test_runtime_wiring import runtime_stack
+
+        #: Fields a deployment intentionally leaves unset. Empty today: every optional field on
+        #: `ShellServices` gates a customer-facing route, and the built image declares all of
+        #: them. An entry here is a decision that a capability ships unreachable -- it needs a
+        #: reason on the line beside it, not a silent addition to make this test pass.
+        deliberately_unwired: tuple[str, ...] = ()
+
+        shell = build_shell_services(runtime_stack())
+        assert shell is not None
+
+        optional = tuple(
+            field.name
+            for field in dataclasses.fields(ShellServices)
+            if field.default is None
+        )
+        assert optional, "no optional fields found -- this guard is reading the wrong dataclass"
+
+        unwired = tuple(
+            name
+            for name in optional
+            if getattr(shell, name, None) is None and name not in deliberately_unwired
+        )
+        assert unwired == (), (
+            f"build_shell_services left {unwired} at the None default, so the routes they gate "
+            f"are absent from the built image while hand-wired route tests pass over them"
+        )
+
+
+class TestTheDeployedDecisionRoute:
+    def test_the_built_image_declares_the_decision_route(self) -> None:
+        """`D1-04`: the decision surface, at the address the image actually serves.
+
+        The same assertion `#382` exists to make, for `RCA-008` `FR-159`'s route. Every other
+        `D1-04` test builds `SemanticQueryActions` by hand, so the route table they exercise is
+        the test's, never the deployment's.
+        """
+        from khepri.runtime.shell_api import add_shell_routes
+        from khepri.runtime.shell_decisions import offers_decisions
+        from khepri.runtime.wiring import build_shell_services
+        from tests.test_runtime_wiring import runtime_stack
+
+        shell = build_shell_services(runtime_stack())
+        assert shell is not None
+        assert offers_decisions(shell), (
+            "the built image left ShellServices.decisions at its None default"
+        )
+
+        app = FastAPI()
+        add_shell_routes(app, services=shell, clock=lambda: NOW)
+        paths = {route.path for route in app.routes}
+
+        suffix = "/{language}/{organization}/decisions/{source}"
+        assert any(path.endswith(suffix) for path in paths), (suffix, sorted(paths))
