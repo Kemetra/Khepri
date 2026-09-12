@@ -698,6 +698,15 @@ def test_a_decision_frame_must_name_the_run_it_renders() -> None:
             language="en", organization_id="org-acme", prefix=SHELL_PREFIX
         )
 
+    # The explicit empty, refused for the same reason the omission is (`#448`, second
+    # round). Dropping the default answers the frame that forgets its run; it does not
+    # answer the one that names `""`, whose tail is `/decisions/` -- an address the
+    # router 404s, having no run segment to match.
+    with pytest.raises(ValueError):
+        shell_decisions.DecisionFrame(
+            language="en", organization_id="org-acme", prefix=SHELL_PREFIX, source_id=""
+        )
+
     body = shell_decisions.render_decisions(
         shell_environment(),
         card.read_cards(

@@ -232,6 +232,20 @@ class DecisionFrame:
     prefix: str
     source_id: str
 
+    def __post_init__(self) -> None:
+        """Refuse the empty run as the missing one is refused (`#448`, second round).
+
+        Dropping the default made the *omitted* field a `TypeError`; an explicit
+        `source_id=""` still built a frame whose tail is `/decisions/`, an address
+        the route does not serve -- the router 404s it, having no run segment to
+        match. No caller can reach that state today: nothing in `src/` constructs
+        this frame, and the route's `{source}` segment cannot arrive empty. The
+        guard is here so the invariant lives on the type rather than in that
+        argument, which holds only while both remain true.
+        """
+        if not self.source_id:
+            raise ValueError("DecisionFrame.source_id must name a run")
+
 
 def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:
     """The two keys this surface adds to `RCA-002`'s frame, in one place.
