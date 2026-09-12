@@ -52,23 +52,205 @@
   </ul>
   {% endif %}
 
+  {#
+    FR-162: a card exposes its lines "directly or through one action". The
+    action is the <details> below -- a disclosure on this page and never an
+    address, because FR-161 says availability, caveats and refusals are
+    "reachable from the surface carrying the figure ... and are not deferred to
+    a terminal page". `data-line` names each required line so the test asserts
+    against the requirement's own list rather than against this markup.
+
+    There is no comparison line. FR-162 requires one "only when compatible" and
+    FR-170's source is not; the note above says so once, for the page.
+  #}
   {% if view.cards %}
   <ul class="decision-cards">
     {% for card in view.cards %}
     <li class="decision-card" data-status="{{ card.status }}">
-      <span class="decision-label">{{ card.label }}</span>
-      <span class="decision-value">{{ card.value }}</span>
-      <span class="decision-status">{{ card.status }}</span>
-      <span class="decision-population">{{ card.population }}</span>
+      <span class="decision-label" data-line="label">{{ card.label }}</span>
+      <span class="decision-value" data-line="value">{{ card.value }}</span>
+      <span class="decision-status" data-line="status">{{ card.status }}</span>
+      <span class="decision-population" data-line="population">{{ card.population }}</span>
       {% if card.availability %}
       <span class="decision-availability">{{ card.availability }}</span>
       {% endif %}
       {% if card.reason %}
       <span class="decision-reason">{{ card.reason }}</span>
       {% endif %}
+      <details class="decision-drawer">
+        <summary class="decision-drawer-summary">{{ decision.evidence_label }}</summary>
+
+        {# The definition half: RRA-011's catalog, which FR-159 admits as structure. #}
+        <p class="decision-definition" data-line="definition">
+          {{ decision.definition_label }}: {{ card.drawer.definition }}
+        </p>
+        <p class="decision-formula" data-line="formula">
+          {{ decision.formula_label }}: {{ card.drawer.formula_version }}
+        </p>
+        <p class="decision-versions" data-line="versions">
+          {{ decision.versions_label }}: {{ card.versions }}
+        </p>
+        <p class="decision-unit" data-line="unit">
+          {{ decision.unit_label }}:
+          {% if card.drawer.units %}{{ card.drawer.units | join(", ") }}
+          {% else %}{{ decision.not_stated }}{% endif %}
+        </p>
+
+        {# FR-137: what actually applied, requested and definition-fixed alike. #}
+        <p class="decision-filters" data-line="filters">
+          {{ decision.filters_label }}:
+          {% if view.filters %}{{ view.filters | join(", ") }}
+          {% else %}{{ decision.no_filters }}{% endif %}
+        </p>
+
+        {# FR-166: the period is a source selector, so the run is the period. #}
+        <p class="decision-period" data-line="period">{{ period }}</p>
+
+        {# FR-162's caveat count. Counted for display; never for the status. #}
+        <p class="decision-caveat-count" data-line="caveats">
+          {{ decision.caveats_label }}: {{ card.caveat_count }}
+        </p>
+
+        {#
+          The figure half. Three answers and not two: unavailable is FR-165's
+          content-free miss, an empty entries tuple is this projection having
+          cited nothing for this metric, and neither is a refusal.
+        #}
+        {% if card.drawer.unavailable %}
+        <p class="decision-evidence-unavailable" data-line="evidence" role="note">
+          {{ decision.evidence_unavailable }}
+        </p>
+        {% elif card.drawer.entries %}
+        <ul class="decision-evidence" data-line="evidence">
+          {% for entry in card.drawer.entries %}
+          <li class="decision-entry">
+            <span class="decision-citation">{{ entry.citation }}</span>
+            {% if entry.precision is not none %}
+            <span class="decision-precision">
+              {{ decision.precision_label }}: {{ entry.precision }}
+            </span>
+            {% endif %}
+            {% if entry.inputs %}
+            <span class="decision-inputs">
+              {{ decision.inputs_label }}: {{ entry.inputs | join(", ") }}
+            </span>
+            {% endif %}
+            {% if entry.provenance %}
+            <span class="decision-provenance">{{ decision.provenance_label }}</span>
+            {% endif %}
+            {#
+              FR-140: "the record says there is none" is a statement, so it is
+              rendered as one. Data on an admitted projection, never a refusal.
+            #}
+            {% for absence in entry.absences %}
+            <span class="decision-absence">{{ absence }}</span>
+            {% endfor %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="decision-evidence-absent" data-line="evidence" role="note">
+          {{ decision.evidence_absent }}
+        </p>
+        {% endif %}
+      </details>
     </li>
     {% endfor %}
   </ul>
   {% endif %}
 </section>
+
+{#
+  S-3, S-4, S-5a and S-5b. Four sections and not three: FR-165 makes Basket and
+  Concentration independent reads, so one may be admitted while the other is
+  unavailable and this page renders partial success rather than failing whole.
+
+  Every row is named by its own view's published field order. That is FR-167
+  holding through the render as well as the read: a row carrying exactly what
+  its view published cannot carry a four-state availability, because no
+  breakdown view publishes one.
+#}
+{% for section in sections %}
+<section class="document-card decision-section" data-section="{{ section.section }}"
+         aria-labelledby="section-{{ section.section }}">
+  <h2 id="section-{{ section.section }}">{{ section.heading }}</h2>
+
+  {# FR-164: the governed message, never the bare cause code. #}
+  {% if section.refusal %}
+  <p class="decision-refusal" role="alert">{{ section.refusal }}</p>
+  {% endif %}
+
+  {# FR-165: content-free. This says a part is unavailable and never says why. #}
+  {% if section.unavailable %}
+  <p class="decision-unavailable" role="note">{{ decision.unavailable }}</p>
+  {% endif %}
+
+  {#
+    FR-163: the two governed empty rules are different findings with different
+    remedies, so they are different sentences. A store filter naming a store
+    with no sales is not a refused measure.
+  #}
+  {% if section.empty %}
+  <p class="decision-empty" role="note">{{ section.empty }}</p>
+  {% endif %}
+
+  {% if section.caveats %}
+  <ul class="decision-caveats" aria-label="{{ decision.caveats_label }}">
+    {% for caveat in section.caveats %}
+    <li class="decision-caveat">{{ caveat }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if section.rows %}
+  <ul class="decision-rows">
+    {% for row in section.rows %}
+    <li class="decision-row">
+      {% if row.label %}
+      <span class="decision-label">{{ row.label }}</span>
+      {% endif %}
+      {% for name, value in row.cells %}
+      <span class="decision-cell" data-cell="{{ name }}">{{ value }}</span>
+      {% endfor %}
+
+      {# FR-161: this figure's claim and its limits, on the surface carrying it. #}
+      <details class="decision-drawer">
+        <summary class="decision-drawer-summary">{{ decision.evidence_label }}</summary>
+        <p class="decision-definition">
+          {{ decision.definition_label }}: {{ row.drawer.definition }}
+        </p>
+        <p class="decision-formula">
+          {{ decision.formula_label }}: {{ row.drawer.formula_version }}
+        </p>
+        <p class="decision-unit">
+          {{ decision.unit_label }}:
+          {% if row.drawer.units %}{{ row.drawer.units | join(", ") }}
+          {% else %}{{ decision.not_stated }}{% endif %}
+        </p>
+        <p class="decision-period">{{ period }}</p>
+        {% if row.drawer.unavailable %}
+        <p class="decision-evidence-unavailable" role="note">
+          {{ decision.evidence_unavailable }}
+        </p>
+        {% elif row.drawer.entries %}
+        <ul class="decision-evidence">
+          {% for entry in row.drawer.entries %}
+          <li class="decision-entry">
+            <span class="decision-citation">{{ entry.citation }}</span>
+            {% for absence in entry.absences %}
+            <span class="decision-absence">{{ absence }}</span>
+            {% endfor %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="decision-evidence-absent" role="note">{{ decision.evidence_absent }}</p>
+        {% endif %}
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endfor %}
 {% endblock %}
