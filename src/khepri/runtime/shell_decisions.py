@@ -303,8 +303,8 @@ def decision_context(reading: CardsReading, language: str) -> dict[str, Any]:
         # key one render path sets and the other forgets is an exception at the
         # second path rather than a blank. The frameless path renders no drawers
         # -- it has no actions to read them through -- and says so by passing
-        # none, which the template reads as "no evidence beside these figures".
-        "drawers": {},
+        # none, which the template reads as "no evidence on this surface".
+        "drawer": None,
         "view": decision_view(reading, language=language),
     }
 
@@ -431,19 +431,18 @@ def _respond(call: _RouteCall) -> Response:
             source_id=call.source_id,
         ),
     )
-    drawers = drawers_for(
+    drawer = drawer_for(
         call.services.decisions,
         reading,
         request=DrawerRequest(
             organization_id=context.organization_id,
             account_id=context.account_id,
             source_id=call.source_id,
-            metric="",
             language=language,
         ),
         language=language,
     )
-    return _page(call, context, language, reading, drawers)
+    return _page(call, context, language, reading, drawer)
 
 
 def _page(
@@ -451,7 +450,7 @@ def _page(
     context: Any,
     language: str,
     reading: CardsReading,
-    drawers: tuple[tuple[str, Any], ...] = (),
+    drawer: Any | None = None,
 ) -> Response:
     """The surface inside `RCA-002`'s organization frame.
 
@@ -477,9 +476,9 @@ def _page(
             **frame,
             "surface_path": decision_tail(context.organization_id, call.source_id),
             **decision_context(reading, language),
-            # After `decision_context`, deliberately: the route has real drawers
-            # and overrides the empty default above.
-            "drawers": dict(drawers),
+            # After `decision_context`, deliberately: the route read a real
+            # drawer and overrides the absent default above.
+            "drawer": drawer,
         },
     )
 
@@ -549,40 +548,43 @@ def render_drawer(
 _DEFINITIONS = CatalogDefinitions()
 
 
-def drawers_for(
+def drawer_for(
     actions: Any, reading: CardsReading, *, request: DrawerRequest, language: str
-) -> tuple[tuple[str, _DrawerView], ...]:
-    """One drawer per card on the surface, in the order the cards were published.
+) -> _DrawerView | None:
+    """The run's evidence, read once, or `None` when the surface has no figures.
 
-    **One read per card, and that count is deliberate rather than incidental.**
-    `FR-161` requires the evidence be reachable from each figure in one action,
-    and `FR-168` bars the instruments that would fold these into fewer reads --
-    no cache, no pre-aggregation, no materialized view. `D1-09` is the slice that
-    measures acquisition and may coalesce *within* one request; it may not keep
-    anything between requests. The count is stated here so that slice finds it
-    named rather than having to discover it.
+    **One read for the surface, and the view is why.** `ReportEvidenceView`
+    names ten metrics in its allowlist and `DecisionRead` sends none -- which is
+    the published-selection contract `seam.py` records, not an omission here:
+    `FR-135` forbids retyping a metric code. So every read of this view answers
+    with the run's whole citation table, and reading it once per card would
+    return the same table N times.
 
-    Ordered pairs and not a mapping, for `ViewRefusal.wording`'s reason: the
-    order the drawers are rendered in is the order the view published its cards,
-    and a mapping's iteration order is an implementation detail.
+    **Nothing published could narrow it to one figure.** The overview publishes
+    `("metric", "value", "population", "versions")`; this view publishes `figure`
+    (a `figure_id`) and `evidence` (a `citation_id`). Neither carries the other's
+    key. A per-card drawer could only have been built by inventing an attribution
+    the views do not publish, which would put one metric's citations under
+    another metric's label -- the silent failure, not the loud one.
+
+    So the drawer is the run's, stated as the run's. `FR-161` is satisfied
+    because it sits inside the surface that carries the figures and is never a
+    page of its own; the first draft's per-card read was found by review on
+    `#449`. `FR-168` is better served too: one acquisition, not one per card.
     """
-    return tuple(
-        (
-            card.metric,
-            drawer_view(
-                read_drawer(
-                    actions,
-                    DrawerRequest(
-                        organization_id=request.organization_id,
-                        account_id=request.account_id,
-                        source_id=request.source_id,
-                        metric=card.metric,
-                        language=language,
-                    ),
-                    definitions=_DEFINITIONS,
-                ),
+    if not reading.cards:
+        return None
+    return drawer_view(
+        read_drawer(
+            actions,
+            DrawerRequest(
+                organization_id=request.organization_id,
+                account_id=request.account_id,
+                source_id=request.source_id,
+                metric=request.metric,
                 language=language,
             ),
-        )
-        for card in reading.cards
+            definitions=_DEFINITIONS,
+        ),
+        language=language,
     )

@@ -114,8 +114,16 @@ class DrawerRequest:
     organization_id: str
     account_id: str
     source_id: str
-    metric: str
     language: str
+    #: The metric whose definition to state beside the evidence, or `""` for the
+    #: run's evidence with no definition half.
+    #:
+    #: Optional because `ReportEvidenceView` is a per-run citation table, not a
+    #: per-metric lookup: it publishes `figure_id` and `citation_id` and no
+    #: metric, so a reading of it belongs to the run. A surface that *does* name
+    #: one figure -- a metric detail page -- states that metric's definition
+    #: beside the same table. Review on `#449` established the distinction.
+    metric: str = ""
 
 
 def _definition(
@@ -186,7 +194,11 @@ def read_drawer(
     refuse the whole drawer (`UnknownCode`), and resolving it after a successful
     read would spend a governed query on a figure no reader may be shown.
     """
-    definition = _definition(definitions, request.metric, request.language)
+    definition = (
+        None
+        if not request.metric
+        else _definition(definitions, request.metric, request.language)
+    )
     outcome = read(
         actions,
         DecisionRead(
@@ -201,6 +213,11 @@ def read_drawer(
         return DrawerReading(
             status=outcome.kind, definition=definition, refusal=outcome.refusal
         )
+    if tuple(projection.fields) != _EVIDENCE_FIELDS:
+        # Not this view's shape, so neither its rows nor its absences are this
+        # view's to state. Forwarding the absences alone would say, under these
+        # labels, what some other view reported missing (`#449` review).
+        return DrawerReading(status=outcome.kind, definition=definition)
     return DrawerReading(
         status=outcome.kind,
         definition=definition,

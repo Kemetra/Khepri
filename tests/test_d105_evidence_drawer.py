@@ -22,7 +22,7 @@ import pytest
 
 from khepri.rca.semantic_queries import ports
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
-from khepri.rca.workspace.decision import evidence, seam
+from khepri.rca.workspace.decision import card, evidence, seam
 from khepri.rra import definitions
 from khepri.rra.semantic_views import registry
 from khepri.runtime import shell_decisions
@@ -419,8 +419,16 @@ class _StubDecisions:
         """Two metrics on the overview, and one evidence row per drawer read."""
         view_id = asked.view.view_id  # type: ignore[attr-defined]
         if view_id == seam.REPORT_EVIDENCE.view_id:
+            # Several rows, as the real view returns: `ReportEvidenceView` names
+            # ten metrics in its allowlist and `DecisionRead` sends no metric, so
+            # every read of it answers with the run's whole citation table. A
+            # one-row stub hid that (review on `#449`).
             return _projection(
-                (("revenue", "invoice-1", "pkg-1", ""),),
+                (
+                    ("fig-1", "cite-1", "pkg-1", ""),
+                    ("fig-2", "cite-2", "pkg-1", ""),
+                    ("fig-3", "cite-3", "pkg-1", ""),
+                ),
                 absences=("no_provenance",),
             )
         return ports.ViewOutcome(
@@ -464,23 +472,36 @@ def _route_body(language: str = "en") -> str:
     ).text
 
 
-def test_every_card_on_the_surface_carries_its_own_drawer() -> None:
-    """`FR-161` -- the evidence is reachable from the figure, in one action.
+def test_the_surface_carries_the_evidence_beside_its_figures() -> None:
+    """`FR-161` -- the evidence is reachable from the surface, in one action.
 
     Driven over the route rather than by rendering the drawer alone: what is
     under test is that a reader who reaches the surface can reach the evidence,
     which a standalone render cannot show.
+
+    **One drawer and not one per card.** This case first asserted two, one under
+    each card. `ReportEvidenceView` publishes `figure_id` and `citation_id` and
+    no metric, so per-card drawers claimed an attribution the view does not
+    publish -- see `test_the_surface_reads_the_evidence_table_once_for_the_run`.
     """
     body = _route_body()
 
-    assert body.count('class="decision-drawer"') == 2
+    assert body.count('class="decision-drawer"') == 1
+    assert "cite-1" in body
 
 
-def test_the_drawer_on_the_surface_carries_the_governed_definition() -> None:
-    """The definition half survives the route, not only the direct render."""
+def test_the_surface_drawer_states_no_metric_definition() -> None:
+    """The run's evidence carries no one metric's definition, and says so by absence.
+
+    `DrawerRequest.metric` is empty on this path, so `read_drawer` states no
+    definition. Naming one would attach a single metric's meaning to a citation
+    table covering the whole run. The definition half is for a surface that
+    names one figure, which is `D1-06`'s metric detail rather than this one.
+    """
     body = _route_body()
 
-    assert definitions.describe_metric("revenue", "en") in body
+    assert definitions.describe_metric("revenue", "en") not in body
+    assert "drawer-definition" not in body
 
 
 def test_the_surface_states_an_absence_without_calling_it_a_refusal() -> None:
@@ -570,3 +591,97 @@ def test_the_frameless_render_path_supplies_every_key_the_template_reads() -> No
 
     assert "700.00" in body
     assert "decision-drawer" not in body
+
+
+# --- The evidence view is per run, not per metric ----------------------------
+
+
+def test_the_surface_reads_the_evidence_table_once_for_the_run() -> None:
+    """`ReportEvidenceView` publishes no metric, so it cannot answer per figure.
+
+    The view names ten metrics in its allowlist and `DecisionRead` sends none --
+    deliberately: `FR-135` forbids retyping a metric code, and `seam.py` records
+    that an empty selection asks for the definition's own. So every read returns
+    the run's whole citation table.
+
+    **And nothing published can narrow it.** The overview publishes
+    `("metric", "value", "population", "versions")`; this view publishes `figure`
+    (a `figure_id`) and `evidence` (a `citation_id`). Neither carries the
+    other's key, so a per-card drawer could only have been built by inventing an
+    attribution the views do not publish -- which would put one metric's
+    citations under another metric's label.
+
+    Review on `#449` found the first draft reading this view once per card. The
+    surface reads it once and states it as the run's evidence.
+    """
+    port = _ScriptedPort(
+        {
+            seam.REPORT_EVIDENCE.view_id: _projection(()),
+            seam.EXECUTIVE_OVERVIEW.view_id: ports.ViewOutcome(
+                kind=ports.KIND_ADMITTED,
+                projection=ports.ViewProjection(
+                    view_id=seam.EXECUTIVE_OVERVIEW.view_id,
+                    view_version=seam.EXECUTIVE_OVERVIEW.view_version,
+                    fields=("metric", "value", "population", "versions"),
+                    rows=(
+                        ("revenue", "700.00", "complete", ()),
+                        ("units", "12", "complete", ()),
+                        ("cost", "300.00", "complete", ()),
+                    ),
+                ),
+            ),
+        }
+    )
+    reading = card.read_cards(
+        _actions(port),
+        card.CardsRequest(
+            organization_id="org-1", account_id="acct-1", source_id="run-1"
+        ),
+    )
+
+    shell_decisions.drawer_for(
+        _actions(port),
+        reading,
+        request=evidence.DrawerRequest(
+            organization_id="org-1",
+            account_id="acct-1",
+            source_id="run-1",
+            language="en",
+        ),
+        language="en",
+    )
+
+    assert len(reading.cards) == 3, "three cards, so a per-card read would be three"
+    asked = [r.view_id for r in port.requests if r.view_id == seam.REPORT_EVIDENCE.view_id]
+    assert len(asked) == 1, asked
+
+
+def test_the_surface_renders_one_drawer_for_the_run() -> None:
+    """One citation table, one drawer -- not one per card claiming to be its own."""
+    body = _route_body()
+
+    assert body.count('class="decision-drawer"') == 1
+
+
+def test_an_absence_on_a_foreign_projection_is_not_forwarded() -> None:
+    """The shape check gates the absences as it gates the rows (`#449` review).
+
+    A projection whose fields are some other view's yields no items; forwarding
+    its `evidence_absences` would state, under this view's labels, what some
+    other view said was missing.
+    """
+    outcome = ports.ViewOutcome(
+        kind=ports.KIND_ADMITTED,
+        projection=ports.ViewProjection(
+            view_id=seam.REPORT_EVIDENCE.view_id,
+            view_version=seam.REPORT_EVIDENCE.view_version,
+            fields=("metric", "value", "population", "versions"),
+            rows=(("revenue", "700.00", "complete", ()),),
+            evidence_absences=("no_provenance",),
+        ),
+    )
+
+    reading = _read(outcome)
+
+    assert reading.items == ()
+    assert reading.absences == ()

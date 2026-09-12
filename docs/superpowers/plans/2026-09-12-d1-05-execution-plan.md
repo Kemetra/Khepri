@@ -124,7 +124,21 @@ CodeScene pre-flight against a freshly fetched `origin/main`.
   they need their own authority.
 - **No S-3/S-4/S-5 surface.** Those read models exist and nothing renders them; building a template
   to host a drawer would be building the surface. `D1-06` onward.
-- **One evidence read per card, and it is named rather than hidden.** `FR-161` wants the evidence at
-  each figure and `FR-168` bars the instruments that would fold the reads together. `D1-09` measures
-  acquisition and may coalesce *within* a request — never between them. `drawers_for`'s docstring
-  states the count so that slice finds it recorded.
+- **One evidence read for the surface, not one per card — corrected in review on `#449`.**
+
+  The first implementation read `ReportEvidenceView` once per card. It is a **per-run citation
+  table**: it names ten metrics in its allowlist, `DecisionRead` sends none (the published-selection
+  contract `seam.py` records, since `FR-135` forbids retyping a metric code), so every read returns
+  the run's whole table — the same table, N times.
+
+  **And nothing published could have narrowed it.** The overview publishes
+  `("metric", "value", "population", "versions")`; the evidence view publishes `figure` (a
+  `figure_id`) and `evidence` (a `citation_id`). Neither carries the other's key, so a per-card
+  drawer could only have been built by inventing an attribution the views do not publish — putting
+  one metric's citations under another metric's label, which fails silently rather than loudly.
+
+  So the surface reads once and states the run's evidence. `FR-161` holds: the drawer sits inside
+  the surface carrying the figures and is never a page of its own. `FR-168` is better served —
+  one acquisition rather than N. `DrawerRequest.metric` stays optional for the surface that *does*
+  name one figure (`D1-06`'s metric detail), which states that metric's definition beside the same
+  table.
