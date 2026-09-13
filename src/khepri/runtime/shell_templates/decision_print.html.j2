@@ -1,0 +1,64 @@
+{#
+  RCA-008 `D1-08` -- presentation without recalculation.
+
+  This template does NOT extend `shell.html.j2`. The shell carries navigation,
+  the organization switcher and the language switcher: controls that mean
+  nothing on paper and would print as dead links. What it carries instead is the
+  same figure markup the screen carries, by including the same two partials.
+
+  `FR-159`: nothing here computes, re-groups or re-totals. Both surfaces include
+  `_decision_cards.html.j2` and `_decision_sections.html.j2`, so there is one
+  definition of a figure's markup and a print-only re-total is not expressible
+  without editing markup the screen's own tests guard.
+
+  §Retention: no print setting is read or written. Orientation and paper size
+  are the print dialog's, which is the reader's own surface, and this page keeps
+  no record that it was rendered.
+#}
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ decision.title }} · {{ copy.product }}</title>
+  <style>
+    /* Paper, not a viewport. The disclosure affordance does not survive here,
+       but its CONTENTS must: `FR-161` requires a figure's definition, formula,
+       versions, units and applied filters be reachable from the surface
+       carrying it, and on paper there is no opening a closed `<details>`. So
+       the drawer is forced open rather than dropped -- omitting it would print
+       figures whose basis the reader cannot reach. */
+    body { font-family: serif; margin: 0; padding: 1.5rem; }
+    .decision-print-header { margin-bottom: 1.5rem; }
+    .document-card { page-break-inside: avoid; margin-bottom: 1rem; }
+    .decision-drawer > *:not(summary) { display: revert !important; }
+    .decision-drawer-summary { font-weight: bold; list-style: none; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body data-language="{{ language }}" data-surface="print">
+  {#
+    No `<h1>` here: `_decision_cards.html.j2` renders `decision.title` as the
+    page heading already, and a second identical one is a duplicate label
+    rather than a distinct heading.
+  #}
+  <header class="decision-print-header">
+    {#
+      FR-169: the applied scope is disclosed on the printed page, so a sheet of
+      paper cannot misrepresent which population produced these figures. The
+      filters are the effective request's, the same ones the screen displays.
+    #}
+    {% if view.filters %}
+    <p class="decision-applied" data-print="filters">
+      <strong>{{ decision.filters_label }}</strong>
+      {% for filter in view.filters %}{{ filter }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </header>
+
+  {% include "_decision_cards.html.j2" %}
+
+  {% for section in sections %}
+  {% include "_decision_sections.html.j2" %}
+  {% endfor %}
+</body>
+</html>

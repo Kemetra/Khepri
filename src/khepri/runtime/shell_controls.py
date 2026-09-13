@@ -59,6 +59,8 @@ __all__ = [
     "controls_view",
     "selection_query",
     "inbound_parameters",
+    "PRINT_PARAMETER",
+    "partition_print",
     "source_options",
 ]
 
@@ -214,3 +216,36 @@ def inbound_parameters(raw: Any) -> tuple[tuple[str, str], ...]:
     statements -- the reading `_effective_filters` already takes of `FR-137`.
     """
     return tuple((name, value) for name, value in raw.multi_items())
+
+
+#: The rendering-mode parameter. Not a filter, and partitioned out before the
+#: selection is built -- `selection_from` passes every parameter it is given to
+#: the seam, where a name no view admits is *refused* (`FR-166`). Leaving `print`
+#: in that stream would refuse the very request that asked to print.
+PRINT_PARAMETER = "print"
+
+
+def partition_print(
+    parameters: tuple[tuple[str, str], ...],
+) -> tuple[bool, tuple[tuple[str, str], ...]]:
+    """Split the rendering mode from the filter statements.
+
+    Returns whether print was asked for, and the parameters with it removed.
+
+    **This is not a silent drop.** `FR-137` forbids reading a filter statement
+    and discarding it; `print` is not a filter statement. It names how the page
+    renders, the way the language segment does, and the surface it selects is
+    visible in the response. Every remaining parameter still travels to the seam
+    untouched, so an unadmitted dimension is still refused rather than ignored.
+
+    A `print` carrying no value is not a request to print: an absent control and
+    one left blank are the same statement, which is the reading `selection_from`
+    already takes of an empty member.
+    """
+    asked = any(
+        name == PRINT_PARAMETER and value for name, value in parameters
+    )
+    remaining = tuple(
+        (name, value) for name, value in parameters if name != PRINT_PARAMETER
+    )
+    return asked, remaining
