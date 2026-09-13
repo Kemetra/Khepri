@@ -9,6 +9,7 @@ evidence is not a finding. Default to REVISE or REJECT.
 
 LAYER: <slice | program | product>
 TARGET: <paths / branch / PR / plan / spec / claim — inspect these yourself>
+BASE: <git ref the diff is taken against, e.g. origin/main — or "n/a" if the target is not code>
 GOVERNING ARTIFACTS: <registry identities + document paths; confirm state=active>
 REJECTED ALTERNATIVES: <what was considered and why it was not taken, or "none recorded">
 
@@ -18,8 +19,8 @@ SPECIFIC CLAIMS TO STRESS-TEST:
 3. <plain claim or omit>
 
 Inspect the working tree yourself. Read the named files, the spec/plan sections,
-and the tests that claim to prove the FRs. Run git diff against the stated base
-if the target is code. Do not trust any summary in this prompt beyond the
+and the tests that claim to prove the FRs. Run `git diff <BASE>...HEAD` when BASE is a
+ref and the target is code. Do not trust any summary in this prompt beyond the
 claims list and the artifact identities.
 
 Rubric — a claim PASSes only if all six hold:

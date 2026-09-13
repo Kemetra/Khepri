@@ -39,7 +39,7 @@ If the user did not name a layer and the target is a named slice or PR, pick `sl
 
 ## Steps
 
-1. Name **layer**, **target**, and **1–3 claims** to stress-test (the author's strongest claims, stated plainly).
+1. Name **layer**, **target**, **base** (the ref the diff is taken against, `n/a` when the target is not code), and **1–3 claims** to stress-test (the author's strongest claims, stated plainly).
 2. Resolve governing artifacts from the registry (spec/decision identity + `active`/`retired`). A claim with no active artifact is already a finding.
 3. For `slice` only, run deterministic gates as *evidence* (`uv run khepri-gov validate`, `uv run ruff check .`, targeted pytest). Do not treat their passing as `APPROVE`. Ordinary code review (`/review` or CodeRabbit) may run first; it does not replace this skill.
 4. Dispatch the judge with [references/judge-prompt.md](references/judge-prompt.md). Fill every bracket. Do not paraphrase the rubric. Isolation is the current worktree (`none`) — the judge must see the real files. Prefer a model that did not author the work.
