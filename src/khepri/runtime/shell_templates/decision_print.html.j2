@@ -21,16 +21,27 @@
   <meta charset="utf-8">
   <title>{{ decision.title }} · {{ copy.product }}</title>
   <style>
-    /* Paper, not a viewport. No interactive affordance survives here. */
+    /* Paper, not a viewport. The disclosure affordance does not survive here,
+       but its CONTENTS must: `FR-161` requires a figure's definition, formula,
+       versions, units and applied filters be reachable from the surface
+       carrying it, and on paper there is no opening a closed `<details>`. So
+       the drawer is forced open rather than dropped -- omitting it would print
+       figures whose basis the reader cannot reach. */
     body { font-family: serif; margin: 0; padding: 1.5rem; }
     .decision-print-header { margin-bottom: 1.5rem; }
     .document-card { page-break-inside: avoid; margin-bottom: 1rem; }
+    .decision-drawer > *:not(summary) { display: revert !important; }
+    .decision-drawer-summary { font-weight: bold; list-style: none; }
     @media print { body { padding: 0; } }
   </style>
 </head>
 <body data-language="{{ language }}" data-surface="print">
+  {#
+    No `<h1>` here: `_decision_cards.html.j2` renders `decision.title` as the
+    page heading already, and a second identical one is a duplicate label
+    rather than a distinct heading.
+  #}
   <header class="decision-print-header">
-    <h1>{{ decision.title }}</h1>
     {#
       FR-169: the applied scope is disclosed on the printed page, so a sheet of
       paper cannot misrepresent which population produced these figures. The

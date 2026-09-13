@@ -155,6 +155,31 @@ def _rows(j: Journey) -> dict[str, int]:
         }
 
 
+# --- FR-161: the basis of a figure reaches the paper ------------------------
+
+
+def test_the_evidence_drawer_is_open_on_paper() -> None:
+    """`FR-161` -- a figure's basis must be reachable from the surface carrying it.
+
+    On screen the drawer is a `<details>` the reader opens. **On paper there is
+    no opening it**: a closed `<details>` prints only its `<summary>`, so the
+    definition, formula, versions, units and applied filters would leave the
+    page while the figures stayed. That is not a styling nit -- it prints
+    numbers whose basis the reader cannot reach.
+
+    The markup is shared with the screen (`FR-159`), so the equality test cannot
+    see this: both surfaces emit the same `<details>`. The difference is in what
+    renders, which is why this asserts the print stylesheet's rule.
+    """
+    world = journey()
+    who, _other = two_members(world)
+    run, _job, _session = completed_run(world, who)
+    printed = _shell(world, who).get(_address(who, run.run_id, printable=True))
+    assert "decision-drawer" in printed.text
+    assert ".decision-drawer > *:not(summary)" in printed.text
+    assert "display: revert !important" in printed.text
+
+
 # --- The export reading: refused, and raised ---------------------------------
 
 
@@ -175,4 +200,10 @@ def test_export_is_refused_while_its_reading_is_open() -> None:
     assert refused.status_code == 200
     assert "text/csv" not in refused.headers.get("content-type", "")
     assert "attachment" not in refused.headers.get("content-disposition", "")
+    # The header assertions alone are satisfied by an ordinary page that
+    # silently IGNORED `export=csv`, which is the `FR-137` defect rather than
+    # the refusal. `export` names no published view's filter, so it reaches the
+    # seam and earns the governed unsupported-parameter wording -- assert that
+    # the reader is actually told, not merely that no CSV was served.
+    assert 'data-control="unsupported"' in refused.text
 
