@@ -106,6 +106,7 @@ from khepri.rra.rendering.wording import (
 from khepri.runtime.shell_controls import (
     controls_view,
     inbound_parameters,
+    partition_print,
     selection_query,
     source_options,
 )
@@ -938,6 +939,9 @@ class _RouteCall:
     session: str | None
     source_id: str
     parameters: tuple[tuple[str, str], ...] = ()
+    #: `D1-08`: the rendering mode, partitioned from the filter statements at the
+    #: route boundary because an unadmitted filter name is refused at the seam.
+    printable: bool = False
 
 
 def add_decision_routes(
@@ -966,6 +970,9 @@ def add_decision_routes(
         be silently dropped when it did not match, and `FR-137` requires the
         opposite. What each view is sent is `controls.routed_to`'s.
         """
+        printable, filters = partition_print(
+            inbound_parameters(request.query_params)
+        )
         return _respond(
             _RouteCall(
                 services,
@@ -975,7 +982,8 @@ def add_decision_routes(
                 organization,
                 session,
                 source,
-                inbound_parameters(request.query_params),
+                filters,
+                printable,
             )
         )
 
@@ -1109,7 +1117,7 @@ def _page(call: _RouteCall, resolved: _Resolved) -> Response:
     )
     return rendering.render(
         rendering.environment,
-        "decision.html.j2",
+        "decision_print.html.j2" if call.printable else "decision.html.j2",
         language=resolved.language,
         status_code=200,
         organization_id=context.organization_id,

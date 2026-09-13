@@ -1,0 +1,53 @@
+{#
+  RCA-008 `D1-08` -- presentation without recalculation.
+
+  This template does NOT extend `shell.html.j2`. The shell carries navigation,
+  the organization switcher and the language switcher: controls that mean
+  nothing on paper and would print as dead links. What it carries instead is the
+  same figure markup the screen carries, by including the same two partials.
+
+  `FR-159`: nothing here computes, re-groups or re-totals. Both surfaces include
+  `_decision_cards.html.j2` and `_decision_sections.html.j2`, so there is one
+  definition of a figure's markup and a print-only re-total is not expressible
+  without editing markup the screen's own tests guard.
+
+  §Retention: no print setting is read or written. Orientation and paper size
+  are the print dialog's, which is the reader's own surface, and this page keeps
+  no record that it was rendered.
+#}
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ decision.title }} · {{ copy.product }}</title>
+  <style>
+    /* Paper, not a viewport. No interactive affordance survives here. */
+    body { font-family: serif; margin: 0; padding: 1.5rem; }
+    .decision-print-header { margin-bottom: 1.5rem; }
+    .document-card { page-break-inside: avoid; margin-bottom: 1rem; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body data-language="{{ language }}" data-surface="print">
+  <header class="decision-print-header">
+    <h1>{{ decision.title }}</h1>
+    {#
+      FR-169: the applied scope is disclosed on the printed page, so a sheet of
+      paper cannot misrepresent which population produced these figures. The
+      filters are the effective request's, the same ones the screen displays.
+    #}
+    {% if view.filters %}
+    <p class="decision-applied" data-print="filters">
+      <strong>{{ decision.filters_label }}</strong>
+      {% for filter in view.filters %}{{ filter }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </header>
+
+  {% include "_decision_cards.html.j2" %}
+
+  {% for section in sections %}
+  {% include "_decision_sections.html.j2" %}
+  {% endfor %}
+</body>
+</html>
