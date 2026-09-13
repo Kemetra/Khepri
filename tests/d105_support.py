@@ -48,10 +48,15 @@ __all__ = [
     "UNAVAILABLE",
     "UNSTATED",
     "UNSTATED_ABSENCES",
+    "VIEW_FIELDS",
+    "EchoPort",
     "Record",
     "ScriptedPort",
+    "StubIsolation",
     "StubOrganizations",
+    "StubRecords",
     "StubResolver",
+    "StubRun",
     "actions",
     "address",
     "availability",
@@ -213,7 +218,12 @@ def breakdown(
     rows: tuple[tuple[object, ...], ...],
     is_empty: bool = False,
 ) -> ports.ViewOutcome:
-    """An admitted breakdown outcome in its own view's published field order."""
+    """An admitted breakdown outcome in its own view's published field order.
+
+    `effective` is absent here and supplied by `filtered_breakdown` where a case
+    needs it, so the cases that do not care about `D1-07`'s routing read exactly
+    as they did before it.
+    """
     return ports.ViewOutcome(
         kind=ports.KIND_ADMITTED,
         projection=ports.ViewProjection(
@@ -224,6 +234,102 @@ def breakdown(
             is_empty=is_empty,
         ),
     )
+
+
+def _echo_cell(field: str) -> str:
+    """One cell, governed where the field names something the catalog knows.
+
+    `metric` carries a real code because the drawer resolves a business name
+    through `RRA-011`, and an invented code raises `UnknownCode` rather than
+    rendering. Every other field is filler: this port exists to show which
+    filters reached which view, not to publish figures.
+    """
+    return "revenue" if field == "metric" else "1"
+
+
+class EchoPort:
+    """Answers every view admitted, echoing the request's own filters back.
+
+    `D1-07` routes a filter to the views whose definitions admit it, so what a
+    case must see is **which pairs reached which view**. A port that answered a
+    fixed outcome could not show that; this one builds each outcome's
+    `EffectiveRequest` from the request it was handed, which is what
+    `projection.project` does for a real read.
+    """
+
+    def __init__(self, fields: dict[str, tuple[str, ...]]) -> None:
+        """Answer each view with rows shaped to its own published fields."""
+        self.fields = fields
+        self.requests: list[ports.SemanticViewRequest] = []
+
+    def project(
+        self, request: ports.SemanticViewRequest, sources: tuple[object, ...]
+    ) -> ports.ViewOutcome:
+        """Record the request verbatim, and admit it carrying its own filters."""
+        self.requests.append(request)
+        fields = self.fields.get(request.view_id, OVERVIEW_FIELDS)
+        return ports.ViewOutcome(
+            kind=ports.KIND_ADMITTED,
+            projection=ports.ViewProjection(
+                view_id=request.view_id,
+                view_version=request.view_version,
+                fields=fields,
+                rows=(tuple(_echo_cell(name) for name in fields),),
+            ),
+            effective=ports.EffectiveRequest(requested_filters=request.filters),
+        )
+
+    def filters_for(self, view_id: str) -> tuple[tuple[str, str], ...]:
+        """What reached one view, from the requests this port recorded."""
+        for request in self.requests:
+            if request.view_id == view_id:
+                return request.filters
+        raise AssertionError(f"{view_id} was not read")
+
+
+#: The published field order of every view a decision page reads, so `EchoPort`
+#: shapes each row to the view that published it.
+VIEW_FIELDS = {
+    seam.EXECUTIVE_OVERVIEW.view_id: OVERVIEW_FIELDS,
+    seam.METRIC_AVAILABILITY.view_id: AVAILABILITY_FIELDS,
+    seam.REPORT_EVIDENCE.view_id: EVIDENCE_FIELDS,
+    seam.BRANCH_PERFORMANCE.view_id: BRANCH_FIELDS,
+    seam.PRODUCT_CATEGORY.view_id: PRODUCT_FIELDS,
+    seam.BASKET.view_id: BASKET_FIELDS,
+    seam.CONCENTRATION.view_id: CONCENTRATION_FIELDS,
+}
+
+
+class StubRun:
+    """One analysis run as `analysis_runs_for_scope` answers it."""
+
+    def __init__(self, run_id: str, state: str = "completed") -> None:
+        """A run in the state a case names, completed at a fixed instant."""
+        self.run_id = run_id
+        self.state = state
+        self.completed_at = NOW if state == "completed" else None
+
+
+class StubRecords:
+    """The record reader the source selector reads, over a fixed run list."""
+
+    def __init__(self, runs: tuple[StubRun, ...]) -> None:
+        """The runs this scope holds."""
+        self.runs = runs
+        self.scopes: list[str] = []
+
+    def analysis_runs_for_scope(self, owner_id: str) -> tuple[StubRun, ...]:
+        """Every run of this scope, newest first as the real store orders them."""
+        self.scopes.append(owner_id)
+        return self.runs
+
+
+class StubIsolation:
+    """`RCA-001`'s bridge, answering one opaque owner id per organization."""
+
+    def resolve_scope(self, account_id: str, organization_id: str) -> str:
+        """The opaque key, which no commercial identifier may be derivable from."""
+        return f"owner-of-{organization_id}"
 
 
 class _Context:
@@ -269,17 +375,26 @@ class StubOrganizations:
         ]
 
 
-def services(decisions: object) -> ShellServices:
-    """A shell wired with the decision collaborator a case supplies."""
+def services(decisions: object, records: object | None = None) -> ShellServices:
+    """A shell wired with the decision collaborator a case supplies.
+
+    `records` and `isolation` are wired together or not at all: `D1-07`'s source
+    selector needs both, and `FR-165` makes a deployment without them render the
+    page with the selector absent rather than failing.
+    """
     return ShellServices(
-        resolver=StubResolver(), organizations=StubOrganizations(), decisions=decisions
+        resolver=StubResolver(),
+        organizations=StubOrganizations(),
+        decisions=decisions,
+        records=records,
+        isolation=StubIsolation() if records is not None else None,
     )
 
 
-def client(decisions: object) -> TestClient:
+def client(decisions: object, records: object | None = None) -> TestClient:
     """That shell, behind a session cookie."""
     app = FastAPI()
-    add_shell_routes(app, services=services(decisions), clock=lambda: NOW)
+    add_shell_routes(app, services=services(decisions, records), clock=lambda: NOW)
     started = TestClient(app, base_url="https://testserver")
     started.cookies.set(SESSION_COOKIE, "a-session-token")
     return started

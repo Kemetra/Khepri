@@ -9,6 +9,70 @@
   Nothing here computes. Every value, population and status arrived selected in
   the read model, and every label and refusal message is the governed catalog's.
 #}
+{#
+  FR-166: the controls, modelled as what they actually are. The period is a
+  source selector -- a completed run, addressed as a path segment -- and only
+  store, product and category are view filters, offered on the views that admit
+  them. There is no period filter input, because no published view names one.
+
+  A GET form, so the applied state is the address and nothing is retained
+  (FR-169). That is also what makes the state survive the language switch: the
+  switch is built from surface_path, which carries this query string.
+#}
+<section class="document-card decision-controls" aria-labelledby="controls-title">
+  <h2 id="controls-title">{{ controls.copy.controls_label }}</h2>
+
+  {#
+    FR-137/FR-164: a parameter no published view admits is refused, not dropped.
+    The governed wording, never a string this surface invents.
+  #}
+  {% if unsupported %}
+  <p class="decision-unsupported" role="alert" data-control="unsupported">{{ unsupported }}</p>
+  {% endif %}
+
+  {# The source selector. Each option re-addresses this same surface. #}
+  <nav class="decision-sources" aria-label="{{ controls.copy.period_label }}">
+    <p class="decision-sources-hint">{{ controls.copy.period_hint }}</p>
+    {% if controls.sources %}
+    <ul class="decision-source-list">
+      {% for option in controls.sources %}
+      <li class="decision-source" data-source="{{ option.source_id }}"
+          {% if option.selected %}data-selected="true"{% endif %}>
+        <a href="{{ prefix }}/{{ language }}/{{ organization_id }}/decisions/{{ option.source_id }}"
+           {% if option.selected %}aria-current="true"{% endif %}>{{ option.source_id }}</a>
+        {% if option.completed_at %}
+        <span class="decision-source-completed">{{ option.completed_at }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="decision-no-sources" role="note">{{ controls.copy.no_sources }}</p>
+    {% endif %}
+  </nav>
+
+  {# The three real filters, offered only where a view admits them. #}
+  {% if controls.filters %}
+  <form class="decision-filter-form" method="get" action="{{ prefix }}/{{ language }}{{ surface_path.split('?')[0] }}">
+    <fieldset>
+      <legend>{{ controls.copy.filters_label }}</legend>
+      {% for control in controls.filters %}
+      <label class="decision-filter" data-filter="{{ control.dimension }}">
+        <span class="decision-filter-label">{{ control.label }}</span>
+        <input type="text" name="{{ control.dimension }}"
+               value="{{ control.value or '' }}"
+               placeholder="{{ controls.copy.any_label }}">
+      </label>
+      {% endfor %}
+      <button type="submit">{{ controls.copy.apply_label }}</button>
+      {% if controls.applied %}
+      <a class="decision-clear" href="{{ prefix }}/{{ language }}{{ surface_path.split('?')[0] }}">{{ controls.copy.clear_label }}</a>
+      {% endif %}
+    </fieldset>
+  </form>
+  {% endif %}
+</section>
+
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ decision.title }}</h1>
   <p class="lede">{{ decision.lede }}</p>
@@ -201,6 +265,17 @@
     {% endfor %}
   </ul>
   {% endif %}
+
+  {#
+    FR-137/FR-161: this section's own applied request, from its own outcome.
+    Filters are routed to the views whose definitions admit them, so two
+    sections can stand over different populations and each states its own.
+  #}
+  <p class="decision-section-filters" data-line="filters">
+    {{ decision.filters_label }}:
+    {% if section.filters %}{{ section.filters | join(", ") }}
+    {% else %}{{ decision.no_filters }}{% endif %}
+  </p>
 
   {% if section.rows %}
   <ul class="decision-rows">

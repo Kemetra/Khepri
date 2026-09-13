@@ -28,7 +28,7 @@ from types import SimpleNamespace
 import pytest
 
 from khepri.rca.semantic_queries import ports
-from khepri.rca.workspace.decision import card, seam
+from khepri.rca.workspace.decision import card, controls, seam
 from khepri.rra import definitions
 from khepri.rra.rendering.wording import caveat_message, metric_business_name
 from khepri.rra.semantic_views import compatibility, registry
@@ -337,6 +337,11 @@ def test_the_template_renders_the_unreachable_comparison_visibly(language: str) 
             organization_id="org-1",
             prefix=SHELL_PREFIX,
             source_id="run-1",
+        ),
+        # `D1-07`: this path renders no controls beyond the run it is addressed
+        # by, so the selection carries the source and no filter.
+        shell_decisions.DecisionControls(
+            selection=controls.ControlSelection(source_id="run-1")
         ),
     )
     assert shell_decisions.COMPARISON_UNREACHABLE[language] in body
