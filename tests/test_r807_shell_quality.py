@@ -76,10 +76,27 @@ SHELL_SURFACES = {
 }
 
 #: Templates that render inside another and are never a surface of their own.
-_LAYOUT_TEMPLATES = {"shell.html.j2"}
+#:
+#: `D1-08`'s two partials carry the decision surface's figure markup and are
+#: included by both `decision.html.j2` and `decision_print.html.j2`, which is what
+#: makes a print-only re-total inexpressible (`FR-159`). Neither is addressable,
+#: so neither is a surface the browser cases can visit.
+_LAYOUT_TEMPLATES = {
+    "shell.html.j2",
+    "_decision_cards.html.j2",
+    "_decision_sections.html.j2",
+}
 
 #: Reachable only by POST, so the GET-driven browser cases cannot visit it.
 _POST_ONLY_TEMPLATES = {"invitation_issued.html.j2"}
+
+#: Rendered for paper, so the viewport and shell-CSS measurement below does not
+#: apply: `decision_print.html.j2` deliberately does not extend `shell.html.j2`
+#: and links none of the three stylesheets the browser cases inject. Measuring it
+#: would report every target as too small in an unstyled document -- the exact
+#: false finding this module's docstring records from before the component layer
+#: existed. Its figures are measured through `decision`, whose partials it shares.
+_PRINT_TEMPLATES = {"decision_print.html.j2"}
 
 
 @dataclass
@@ -366,7 +383,9 @@ def test_every_shell_template_is_measured() -> None:
 
     assert templates, "no shell templates found, so this test proves nothing"
     measured = {f"{surface}.html.j2" for surface in SHELL_SURFACES}
-    assert templates == (measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES)
+    assert templates == (
+        measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES | _PRINT_TEMPLATES
+    )
 
 
 @pytest.mark.browser
