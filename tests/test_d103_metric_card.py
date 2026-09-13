@@ -308,6 +308,34 @@ def test_a_caveat_is_rendered_as_governed_prose(language: str) -> None:
     assert reading.cards[0].status == card.STATUS_CAVEATED
 
 
+def test_an_unknown_caveat_does_not_crash_the_surface() -> None:
+    """`FR-164` -- ungoverned caveat codes are omitted, never a 500 or a raw code."""
+    from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
+
+    caveat = SimpleNamespace(code="not_a_governed_caveat_code")
+    reading = card.read_cards(
+        _actions(
+            {
+                seam.EXECUTIVE_OVERVIEW.view_id: _overview(
+                    (("revenue", "7", "c", ()),), caveats=(caveat,)
+                )
+            }
+        ),
+        _request(),
+    )
+    body = shell_decisions.render_decisions(
+        shell_environment(),
+        shell_decisions.DecisionReadings(cards=reading),
+        shell_decisions.DecisionFrame(
+            language="en",
+            organization_id="org-1",
+            prefix=SHELL_PREFIX,
+            source_id="run-1",
+        ),
+    )
+    assert "not_a_governed_caveat_code" not in body
+
+
 def test_both_languages_carry_the_same_cards_and_statuses() -> None:
     """`FR-171` -- a figure present in one language is present in the other."""
     reading = card.read_cards(
@@ -318,6 +346,45 @@ def test_both_languages_carry_the_same_cards_and_statuses() -> None:
     assert [c.metric for c in views["en"].cards] == [c.metric for c in views["ar"].cards]
     assert [c.status for c in views["en"].cards] == [c.status for c in views["ar"].cards]
     assert views["en"].cards[0].label != views["ar"].cards[0].label
+    assert views["en"].cards[0].status_label != views["ar"].cards[0].status_label
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_status_copy_is_in_the_page_language(language: str) -> None:
+    """`FR-171` -- the four states are customer words, not English codes on both pages."""
+    from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
+
+    reading = card.read_cards(
+        _actions(
+            {
+                seam.EXECUTIVE_OVERVIEW.view_id: _overview(
+                    (("revenue", "7", "c", ()),)
+                ),
+                seam.METRIC_AVAILABILITY.view_id: _availability(
+                    (("revenue", definitions.AVAILABLE, None, ()),)
+                ),
+            }
+        ),
+        _request(),
+    )
+    view = shell_decisions.decision_view(reading, language=language)
+    label = shell_decisions.DECISION_COPY[language]["status_verified"]
+    assert view.cards[0].status == card.STATUS_VERIFIED
+    assert view.cards[0].status_label == label
+    body = shell_decisions.render_decisions(
+        shell_environment(),
+        shell_decisions.DecisionReadings(cards=reading),
+        shell_decisions.DecisionFrame(
+            language=language,
+            organization_id="org-1",
+            prefix=SHELL_PREFIX,
+            source_id="run-1",
+        ),
+    )
+    assert f'data-status="{card.STATUS_VERIFIED}"' in body
+    assert f'data-line="status">{label}</span>' in body
+    if language == "ar":
+        assert ">verified<" not in body
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

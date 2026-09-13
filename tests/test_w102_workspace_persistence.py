@@ -13,6 +13,7 @@ duplicates. A second head test would be a second place to forget.
 
 from __future__ import annotations
 
+import inspect as py_inspect
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -206,12 +207,32 @@ def test_an_analysis_run_round_trips_and_names_its_version(factory: sessionmaker
     written = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
     )
-    read = store.get_analysis_run(written.run_id)
+    read = store.get_analysis_run(written.run_id, scope)
 
     assert read is not None
     assert read == written
     assert read.version_id == version.version_id
     assert read.package_digest is None
+
+
+def test_get_analysis_run_requires_a_scope(factory: sessionmaker) -> None:
+    """FR-023: omitted scope is not a widen. Possession of a run_id confers no authority."""
+    parameter = py_inspect.signature(SqlWorkspaceRecordStore.get_analysis_run).parameters[
+        "owner_id"
+    ]
+    assert parameter.default is py_inspect.Parameter.empty
+
+    scope = _scope(factory)
+    store = SqlWorkspaceRecordStore(factory)
+    version = _version(store, scope)
+    written = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    with pytest.raises(TypeError):
+        store.get_analysis_run(written.run_id)
+    assert store.get_analysis_run(written.run_id, None) is None  # type: ignore[arg-type]
+    assert store.get_analysis_run(written.run_id, "") is None
+    assert store.get_analysis_run(written.run_id, scope) == written
 
 
 def test_a_run_cannot_name_a_dataset_version_that_does_not_exist(factory: sessionmaker) -> None:

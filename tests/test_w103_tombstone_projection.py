@@ -349,7 +349,7 @@ def _stored_run(
     )
     if complete:
         store.complete_analysis_run(run.run_id, OUTCOME)
-        completed = store.get_analysis_run(run.run_id)
+        completed = store.get_analysis_run(run.run_id, scope)
         assert completed is not None
         return completed
     return run

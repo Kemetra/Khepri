@@ -204,7 +204,7 @@ def test_a_started_run_can_record_what_it_produced(factory: sessionmaker) -> Non
 
     assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME) is True
 
-    completed = store.get_analysis_run(run.run_id)
+    completed = store.get_analysis_run(run.run_id, scope)
     assert completed is not None
     assert completed.state == "completed"
     assert completed.package_digest == COMPLETED_OUTCOME.package_digest
@@ -221,7 +221,7 @@ def test_a_run_can_also_record_that_it_failed(factory: sessionmaker) -> None:
 
     assert store.complete_analysis_run(run.run_id, RunOutcome(state="failed")) is True
 
-    failed = store.get_analysis_run(run.run_id)
+    failed = store.get_analysis_run(run.run_id, scope)
     assert failed is not None
     assert failed.state == "failed"
     assert failed.package_digest is None
@@ -237,7 +237,7 @@ def test_completing_twice_is_refused(factory: sessionmaker) -> None:
     other = RunOutcome(state="failed", completed_at=LATER)
     assert store.complete_analysis_run(run.run_id, other) is False
 
-    unchanged = store.get_analysis_run(run.run_id)
+    unchanged = store.get_analysis_run(run.run_id, scope)
     assert unchanged is not None
     assert unchanged.state == "completed"
     assert unchanged.package_digest == COMPLETED_OUTCOME.package_digest
@@ -299,7 +299,7 @@ def test_a_foreign_scope_cannot_complete_a_run(factory: sessionmaker) -> None:
 
     assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME, owner_id=second) is False
 
-    untouched = store.get_analysis_run(run.run_id)
+    untouched = store.get_analysis_run(run.run_id, first)
     assert untouched is not None
     assert untouched.state == "started"
 
@@ -384,7 +384,7 @@ def test_tombstoning_a_version_tombstones_its_live_runs(factory: sessionmaker) -
 
     store.tombstone_dataset_version(deleted.version_id, now=LATER)
 
-    assert store.get_analysis_run(doomed.run_id) is None
+    assert store.get_analysis_run(doomed.run_id, scope) is None
     assert [run.run_id for run in store.analysis_runs_for_scope(scope)] == [spared.run_id]
     with pytest.raises(ValueError, match="accepts no further update"):
         store.complete_analysis_run(

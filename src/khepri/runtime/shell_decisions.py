@@ -98,6 +98,7 @@ from khepri.rca.workspace.decision.seam import (
 from khepri.rra import definitions
 from khepri.rra.facts import UNIT_COUNT, UNIT_MONETARY, UNIT_RATIO
 from khepri.rra.rendering.wording import (
+    CAVEAT_WORDING,
     business_metric_name,
     caveat_message,
     metric_business_name,
@@ -250,6 +251,13 @@ DECISION_COPY = {
         "no_filters": "No filter applied.",
         "evidence_absent": "This analysis cited no evidence for this figure.",
         "evidence_unavailable": "Evidence is unavailable.",
+        "status_verified": "Verified",
+        "status_caveated": "Caveated",
+        "status_refused": "Refused",
+        "status_unavailable": "Unavailable",
+        "availability_available": "Available",
+        "availability_partial": "Partial",
+        "availability_unavailable": "Unavailable",
     },
     "ar": {
         "title": "القرارات",
@@ -271,6 +279,13 @@ DECISION_COPY = {
         "no_filters": "لم يطبق أي مرشح.",
         "evidence_absent": "لم يستشهد هذا التحليل بأي دليل لهذا الرقم.",
         "evidence_unavailable": "الأدلة غير متاحة.",
+        "status_verified": "مثبت",
+        "status_caveated": "متحفَّظ عليه",
+        "status_refused": "مرفوض",
+        "status_unavailable": "غير متاح",
+        "availability_available": "متاح",
+        "availability_partial": "جزئي",
+        "availability_unavailable": "غير متاح",
     },
 }
 
@@ -333,7 +348,9 @@ class _CardView:
     value: object
     population: object
     status: str
+    status_label: str
     availability: object | None
+    availability_label: str | None
     reason: object | None
     versions: object = None
     caveat_count: int = 0
@@ -376,13 +393,19 @@ def _named(card: Any, language: str) -> _CardView:
     number rendered here reaches no decision. `test_d105_evidence_drawer` asserts
     that by giving two readings different counts and one status.
     """
+    copy = DECISION_COPY[language]
+    availability = card.availability
     return _CardView(
         metric=card.metric,
         label=metric_business_name(card.metric, language),
         value=card.value,
         population=card.population,
         status=card.status,
-        availability=card.availability,
+        status_label=copy[f"status_{card.status}"],
+        availability=availability,
+        availability_label=(
+            copy[f"availability_{availability}"] if availability else None
+        ),
         reason=card.reason,
         versions=card.versions,
         caveat_count=len(card.caveats),
@@ -455,7 +478,7 @@ def _caveat_prose(reading: CardsReading, language: str) -> tuple[str, ...]:
     caveat tuple; the first is representative and the set is the projection's.
     """
     codes = reading.cards[0].caveats if reading.cards else ()
-    return tuple(caveat_message(getattr(code, "code", code), language) for code in codes)
+    return _governed_caveats(codes, language)
 
 
 def _refusal_text(reading: CardsReading, language: str) -> str | None:
@@ -630,7 +653,7 @@ def _section(
         section=section,
         heading=SECTION_COPY[language][section],
         rows=tuple(_row(row, language, evidence) for row in reading.rows),
-        caveats=_caveat_codes(reading.caveats, language),
+        caveats=_governed_caveats(reading.caveats, language),
         refusal=_wording_of(reading.refusal, language),
         empty=EMPTY_WORDING[language].get(reading.empty_rule or ""),
         unavailable=reading.status == "unavailable",
@@ -664,9 +687,15 @@ def _action_for(evidence: EvidenceReading | None, metric: str) -> EvidenceAction
     return evidence.for_metric(metric)
 
 
-def _caveat_codes(caveats: tuple[object, ...], language: str) -> tuple[str, ...]:
-    """Governed prose for each caveat code, never the code itself (`FR-164`)."""
-    return tuple(caveat_message(getattr(code, "code", code), language) for code in caveats)
+def _governed_caveats(caveats: tuple[object, ...], language: str) -> tuple[str, ...]:
+    """Governed prose for each caveat that has wording. Unknown codes are omitted (`FR-164`)."""
+    wording = CAVEAT_WORDING[language]
+    messages = []
+    for item in caveats:
+        token = str(getattr(item, "code", item))
+        if token in wording:
+            messages.append(caveat_message(token, language))
+    return tuple(messages)
 
 
 def _wording_of(refusal: Any, language: str) -> str | None:

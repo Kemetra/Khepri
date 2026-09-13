@@ -92,7 +92,7 @@ class ScopedSourceReader(Protocol):
     assertion hard to falsify later.
     """
 
-    def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
+    def get_analysis_run(self, run_id: str, owner_id: str) -> AnalysisRun | None:
         """One run under this scope, or `None` if absent, ended, or another scope's."""
         ...
 

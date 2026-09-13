@@ -258,7 +258,7 @@ def test_starting_a_run_needs_a_live_version_in_scope() -> None:
     w = world()
     who = member(w)
     session_id, version_id, run_id = _version_and_run(w, who)
-    run = w.store.get_analysis_run(run_id)
+    run = w.store.get_analysis_run(run_id, who.owner_id)
     assert run is not None and run.state == RUN_STARTED and run.version_id == version_id
     # Two events at one instant order arbitrarily; the assertion is which actions occurred.
     assert sorted(e.action for e in events(w, who)) == sorted(
@@ -291,7 +291,7 @@ def test_completing_a_run_binds_every_required_artifact_and_seals_the_version() 
     assert completed.package_version == package.package_version
     assert completed.formula_version == package.formula_version
     assert completed.completed_at == LATER
-    assert w.store.get_analysis_run(run_id) == completed
+    assert w.store.get_analysis_run(run_id, who.owner_id) == completed
     bindings = w.store.artifact_bindings_for_run(run_id)
     assert {(b.surface, b.artifact_digest) for b in bindings} == {
         (kind, w.artifacts.items[(session_id, JOB, kind)].sha256_hex)
@@ -322,7 +322,7 @@ def test_a_run_missing_any_required_artifact_is_not_presented_as_completed(missi
             who.caller, run_id=run_id, report=ReportLocator(session_id, JOB), now=LATER
         )
 
-    run = w.store.get_analysis_run(run_id)
+    run = w.store.get_analysis_run(run_id, who.owner_id)
     assert run is not None and run.state == RUN_STARTED and run.package_digest is None
     assert w.store.artifact_bindings_for_run(run_id) == ()
     version = w.store.get_dataset_version(version_id)
@@ -341,7 +341,7 @@ def test_a_run_cannot_be_completed_without_a_delivery_for_its_job() -> None:
         w.services.complete_analysis_run(
             who.caller, run_id=run_id, report=ReportLocator(session_id, JOB), now=LATER
         )
-    run = w.store.get_analysis_run(run_id)
+    run = w.store.get_analysis_run(run_id, who.owner_id)
     assert run is not None and run.state == RUN_STARTED
 
 
@@ -360,7 +360,7 @@ def test_a_package_derived_from_another_source_cannot_complete_a_run() -> None:
             who.caller, run_id=run_id, report=ReportLocator(session_b, "job_b"), now=LATER
         )
 
-    run = w.store.get_analysis_run(run_id)
+    run = w.store.get_analysis_run(run_id, who.owner_id)
     assert run is not None and run.state == RUN_STARTED
     assert w.store.artifact_bindings_for_run(run_id) == ()
 
@@ -386,7 +386,7 @@ def test_a_delivery_from_another_session_cannot_complete_a_run() -> None:
         w.services.complete_analysis_run(
             who.caller, run_id=run_id, report=ReportLocator(session_id, JOB), now=LATER
         )
-    run = w.store.get_analysis_run(run_id)
+    run = w.store.get_analysis_run(run_id, who.owner_id)
     assert run is not None and run.state == RUN_STARTED
 
 
@@ -468,7 +468,7 @@ def test_failing_a_run_records_the_real_state_and_no_provenance() -> None:
 
     assert failed.state == RUN_FAILED
     assert failed.package_digest is None and failed.completed_at == LATER
-    assert w.store.get_analysis_run(run_id) == failed
+    assert w.store.get_analysis_run(run_id, who.owner_id) == failed
     version = w.store.get_dataset_version(version_id)
     assert version is not None and version.sealed_at is None, "nothing was derived"
     recorded = events(w, who)[-1]
