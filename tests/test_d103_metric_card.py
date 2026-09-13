@@ -308,6 +308,31 @@ def test_a_caveat_is_rendered_as_governed_prose(language: str) -> None:
     assert reading.cards[0].status == card.STATUS_CAVEATED
 
 
+def test_an_unknown_availability_does_not_crash_the_surface() -> None:
+    """`FR-164` -- a code the catalog does not name shows nothing, never a 500.
+
+    `MetricCard.availability` is typed `object | None`, so a projection emitting
+    a value the copy catalog does not name reaches `_named`. Before this, the
+    lookup was a direct index and raised `KeyError`, which the shell renders as
+    a 500 -- the outcome `FR-164` forbids twice over: a crash rather than a
+    surface, and a bare code on the way there.
+    """
+    card = SimpleNamespace(
+        metric="revenue",
+        value="1",
+        population="1",
+        versions="1",
+        status="verified",
+        availability="a-code-the-catalog-does-not-name",
+        reason=None,
+        caveats=(),
+        evidence=None,
+    )
+    view = shell_decisions._named(card, "en")
+    assert view.availability_label is None
+    assert view.availability == "a-code-the-catalog-does-not-name"
+
+
 def test_an_unknown_caveat_does_not_crash_the_surface() -> None:
     """`FR-164` -- ungoverned caveat codes are omitted, never a 500 or a raw code."""
     from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
@@ -332,7 +357,12 @@ def test_an_unknown_caveat_does_not_crash_the_surface() -> None:
             prefix=SHELL_PREFIX,
             source_id="run-1",
         ),
-    )
+            # `D1-07`: this path renders no controls beyond the run it is addressed
+        # by, so the selection carries the source and no filter.
+        shell_decisions.DecisionControls(
+            selection=controls.ControlSelection(source_id="run-1")
+        ),
+)
     assert "not_a_governed_caveat_code" not in body
 
 
@@ -380,7 +410,12 @@ def test_status_copy_is_in_the_page_language(language: str) -> None:
             prefix=SHELL_PREFIX,
             source_id="run-1",
         ),
-    )
+            # `D1-07`: this path renders no controls beyond the run it is addressed
+        # by, so the selection carries the source and no filter.
+        shell_decisions.DecisionControls(
+            selection=controls.ControlSelection(source_id="run-1")
+        ),
+)
     assert f'data-status="{card.STATUS_VERIFIED}"' in body
     assert f'data-line="status">{label}</span>' in body
     if language == "ar":

@@ -404,7 +404,12 @@ def _named(card: Any, language: str) -> _CardView:
         status_label=copy[f"status_{card.status}"],
         availability=availability,
         availability_label=(
-            copy[f"availability_{availability}"] if availability else None
+            # `.get` rather than `[...]`, for `_refusal_text`'s stated reason:
+            # `availability` is typed `object | None` on `MetricCard`, so a
+            # projection emitting one the catalog does not name reaches here.
+            # `FR-164` would rather this surface show nothing than show a bare
+            # code to a customer, and a `KeyError` shows a 500 instead.
+            copy.get(f"availability_{availability}") if availability else None
         ),
         reason=card.reason,
         versions=card.versions,
