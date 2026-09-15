@@ -26,7 +26,8 @@ from khepri.rca.workspace.schema import DatasetVersionRow
 from khepri.rca.workspace.unit_of_work import unit_of_work, writing
 from khepri.rra.artifact_persistence import ReportArtifactRow
 from khepri.rra.delivery_persistence import ReportDeliveryRow
-from khepri.rra.persistence import BetaSessionRow, UploadRow
+from khepri.rra.persistence import UploadRow, session_scope_for_update_statement
+from khepri.rra.sessions import SessionScope
 
 # A storage sentinel for DEC-033's deliberately unbounded active lifetime.  It
 # is not a retention horizon: dataset/run deletion and organization closure are
@@ -61,12 +62,25 @@ def retain_workspace_content(
 
     The write joins the caller's ambient workspace transaction.  A deletion
     already requested or completed is never revived.
+
+    **The row is locked, and reusing `session_scope_for_update_statement` is the
+    point.** `SqlDeletionRepository.begin` takes that same named lock before it
+    sets `deletion_requested_at`, so a plain `SELECT` here does not wait for it:
+    a deletion committing between this read and the caller's write would be
+    revived by the promotion that follows. Reusing the statement rather than
+    inlining `.with_for_update()` follows `rca/workspace/locks.py`'s rule and for
+    its reason -- SQLite emits no `FOR UPDATE` and SQLAlchemy silently omits it,
+    so an inline lock someone later removed would leave the suite green. Found in
+    review on `#460`.
+
+    Returns whether the promotion happened. **The caller must act on the answer**:
+    `False` means a deletion won, and a version recorded after that would report
+    success for content this never promoted.
     """
     with writing(factory) as database:
         session = database.scalar(
-            select(BetaSessionRow).where(
-                BetaSessionRow.owner_id == owner_id,
-                BetaSessionRow.session_id == session_id,
+            session_scope_for_update_statement(
+                SessionScope(owner_id=owner_id, session_id=session_id)
             )
         )
         if session is None:

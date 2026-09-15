@@ -109,6 +109,10 @@ NO_SESSION_FAILURE = "No analysis session answers to this request in this scope.
 NO_ADMISSION_FAILURE = "No admission is recorded for this analysis."
 ADMISSION_REFUSED_FAILURE = "The source was not admitted, so no dataset version can record it."
 NO_ATTESTATION_FAILURE = "The admission carries no coverage attestation for a version to keep."
+
+#: A deletion for this scope had already begun, so its content was never promoted off the
+#: beta timer. Recording a version here would report success for content that is going away.
+RETENTION_REFUSED_FAILURE = "The session is being deleted, so no dataset version can record it."
 NO_VERSION_FAILURE = "No live dataset version answers to this identifier in this scope."
 NO_RUN_FAILURE = (
     "No live analysis run awaiting completion answers to this identifier in this scope."
@@ -274,7 +278,7 @@ class WorkspaceRecording:
             owner_id, upload.ciphertext_sha256_hex
         )
         if existing is not None:
-            retain_workspace_content(self._rca.factory, owner_id=owner_id, session_id=session_id)
+            self._retain(owner_id, session_id)
             return Performed(existing, OUTCOME_ALREADY_RECORDED, subject_of_version(existing))
         if not profile.admissible:
             raise WorkspaceRefused(ADMISSION_REFUSED_FAILURE)
@@ -294,9 +298,27 @@ class WorkspaceRecording:
             ),
             now=now,
         )
+        self._retain(owner_id, session_id)
         self._rca.workspace.add_dataset_version(version)
-        retain_workspace_content(self._rca.factory, owner_id=owner_id, session_id=session_id)
         return Performed(version, OUTCOME_COMPLETED, subject_of_version(version))
+
+    def _retain(self, owner_id: str, session_id: str) -> None:
+        """Promote this session's content, or refuse because a deletion won.
+
+        **Called before `add_dataset_version`, not after.** `_perform_once`
+        catches `WorkspaceRefused` inside the ambient `unit_of_work`, so raising
+        after the version is added would commit the version *and* its refusal
+        event rather than rolling the version back. Ordering the promotion first
+        makes the refusal arrive while there is nothing to undo.
+
+        The existing-version branch refuses for the same reason it matters here:
+        reporting `already_recorded` after a deletion has won tells a caller its
+        content is retained when the promotion did not happen. Review on `#460`.
+        """
+        if not retain_workspace_content(
+            self._rca.factory, owner_id=owner_id, session_id=session_id
+        ):
+            raise WorkspaceRefused(RETENTION_REFUSED_FAILURE)
 
     def records_a_version(self, owner_id: str, session_id: str, now: datetime) -> bool:
         """Whether `create_version` would record rather than refuse: the session's source is

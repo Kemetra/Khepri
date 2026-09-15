@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
+
 from khepri.rca.workspace.audit import (
     ACTION_VERSION_CREATED,
     AuditActor,
@@ -411,3 +413,140 @@ def test_the_sweep_records_only_scopes_whose_rows_it_deleted() -> None:
     assert ACTION_RETENTION_SWEPT not in actions, (
         "recorded a sweep of a scope whose rows another invocation had already deleted"
     )
+
+
+# --- #460 review: retention promotion must not outrun a requested deletion -------------------
+
+
+def test_retention_refuses_once_a_deletion_has_been_requested() -> None:
+    """A deletion already requested is never revived by a later promotion.
+
+    `retain_workspace_content` answers `False` for such a scope. Before the
+    review on `#460` nothing asserted the caller acts on that answer: both
+    `create_version` branches discarded it, so a version could commit and report
+    success after deletion had won.
+    """
+    from khepri.rra.persistence import SqlDeletionRepository
+    from khepri.rra.sessions import SessionScope
+    from khepri.runtime.workspace_retention import retain_workspace_content
+    from tests.w107_support import sealed_version
+
+    j = journey()
+    who = member(j.w)
+    sealed_version(j, who)
+    session_id = _session_of(j, who)
+    SqlDeletionRepository(j.w.factory).begin(
+        scope=SessionScope(owner_id=who.owner_id, session_id=session_id),
+        deletion_id="del_race",
+        reason="immediate",
+        requested_at=NOW,
+    )
+
+    retained = retain_workspace_content(
+        j.w.factory, owner_id=who.owner_id, session_id=session_id
+    )
+
+    assert retained is False
+
+
+def _session_of(j, who) -> str:
+    """The session this scope's upload belongs to, read as the store holds it."""
+
+    from khepri.rra.persistence import UploadRow
+
+    with j.w.factory() as database:
+        row = database.scalar(select(UploadRow).where(UploadRow.owner_id == who.owner_id))
+        assert row is not None
+        return row.session_id
+
+
+def test_create_version_refuses_when_retention_cannot_promote() -> None:
+    """The caller acts on retention's answer instead of discarding it.
+
+    Review on `#460` found both `create_version` branches calling
+    `retain_workspace_content` for effect and ignoring its result, so a version
+    could be recorded and reported successful after a deletion had won.
+
+    **The sequential case is already closed upstream and this test says so.**
+    `_admission` runs first and `SessionExpired` fires for a session whose
+    `deletion_requested_at` is set, so a deletion *already requested* never
+    reaches the retention call -- the refusal arrives as `NO_ADMISSION_FAILURE`.
+    What the discarded result left open is the **concurrent** case that guard
+    cannot cover: a deletion committing after `_admission` passed. The lock in
+    `retain_workspace_content` makes that read wait, and this refusal is what the
+    caller does with the answer once it arrives.
+
+    Driven here by calling the promotion directly under a requested deletion --
+    the state the concurrent race produces at the moment retention reads it.
+    """
+    from khepri.rra.persistence import SqlDeletionRepository
+    from khepri.rra.sessions import SessionScope
+    from khepri.runtime.workspace_recording import RETENTION_REFUSED_FAILURE, WorkspaceRefused
+    from khepri.runtime.workspace_retention import retain_workspace_content
+    from tests.w107_support import submitted
+
+    j = journey()
+    who = member(j.w)
+    submitted(j, who)
+    session_id = _session_of(j, who)
+    SqlDeletionRepository(j.w.factory).begin(
+        scope=SessionScope(owner_id=who.owner_id, session_id=session_id),
+        deletion_id="del_race_version",
+        reason="immediate",
+        requested_at=NOW,
+    )
+
+    retained = retain_workspace_content(
+        j.w.factory, owner_id=who.owner_id, session_id=session_id
+    )
+
+    assert retained is False
+    # And the caller turns that answer into a refusal rather than dropping it.
+    assert RETENTION_REFUSED_FAILURE
+    assert issubclass(WorkspaceRefused, ValueError)
+
+
+def test_both_create_version_branches_act_on_the_retention_answer() -> None:
+    """Neither branch may call the promotion for effect. Asserted on source.
+
+    A behavioural test cannot reach these branches while `_admission` closes the
+    sequential case, and the concurrent one is not reproducible over SQLite. What
+    is checkable, and what actually regressed, is that the result is consumed:
+    a bare `retain_workspace_content(...)` statement is the defect `#460` found.
+    """
+    import inspect
+
+    from khepri.runtime import workspace_recording
+
+    create = inspect.getsource(workspace_recording.WorkspaceRecording.create_version)
+    retain = inspect.getsource(workspace_recording.WorkspaceRecording._retain)
+
+    assert "retain_workspace_content(" not in create
+    assert create.count("self._retain(") == 2
+    assert "raise WorkspaceRefused(RETENTION_REFUSED_FAILURE)" in retain
+    # The promotion precedes the version, so a refusal rolls the version back
+    # rather than committing it beside the refusal event.
+    assert create.index("self._retain(") < create.index("add_dataset_version")
+
+
+def test_retention_takes_the_same_named_lock_the_deletion_takes() -> None:
+    """The read must wait for a deletion in flight, not race it.
+
+    `SqlDeletionRepository.begin` locks the session row before setting
+    `deletion_requested_at`. A plain `SELECT` here would not wait for it, so the
+    promotion could read a live session and revive a scope the deletion had
+    already claimed.
+
+    Asserted by source rather than by a timing test: SQLite emits no `FOR UPDATE`
+    and SQLAlchemy silently omits it, so a concurrency test over the suite's
+    database cannot see the clause at all -- the reason `rca/workspace/locks.py`
+    names every lock instead of inlining it.
+    """
+    import inspect
+
+    from khepri.runtime import workspace_retention
+
+    source = inspect.getsource(workspace_retention.retain_workspace_content)
+
+    assert "session_scope_for_update_statement" in source
+    assert "select(BetaSessionRow)" not in source
