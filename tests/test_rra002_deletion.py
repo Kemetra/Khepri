@@ -19,6 +19,7 @@ from khepri.rra.sessions import (
     CrossSessionAccessDenied,
     SessionScope,
 )
+from khepri.runtime.retention_sweep import REASON_EXPIRED
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 LOCATION_DIGEST = "83390a61bb59fdbfad2f36666488f781ef73ddcf8042b4bd7315e82a535c1682"
@@ -254,6 +255,20 @@ def test_successful_deletion_records_only_content_free_evidence() -> None:
             error_code=None,
         )
     ]
+
+
+def test_retention_sweep_reason_drives_the_real_expiry_deletion_path() -> None:
+    """An expired session must use the deletion reason accepted by the shared service."""
+    repository = MemoryDeletionRepository(upload())
+
+    result = service(repository, MemoryDeletionObjectStore()).delete_session_content(
+        session_id="ses_alpha",
+        reason=REASON_EXPIRED,
+        now=NOW,
+    )
+
+    assert result.state == "complete"
+    assert result.reason == "expiry"
 
 
 def test_in_flight_publication_defers_deletion_before_storage_sweep() -> None:

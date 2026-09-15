@@ -131,25 +131,42 @@ class WorkspaceDeletion:
             )
         return DeletionOutcome(version_id=version_id, deleted=True)
 
-    def _session_of_upload(self, owner_id: str, ciphertext_digest: str) -> str | None:
-        """The session that admitted this upload, by the digest the version retains.
+    def _sessions_of_version(self, version: Any) -> tuple[str, ...]:
+        """Every analysis session that holds content derived from this version.
 
-        Read here rather than through a new `SqlUploadRepository` verb: the join is this ending's,
-        not the upload store's, and `R7-01` §3 puts a read that serves an `RCA` ending over an
-        `RRA` row at the composition seam. Scoped by `owner_id` as well as the digest, so a digest
-        two organizations happen to share cannot address the other's session.
+        The upload row is the shortest path while raw retention still keeps it.  After seal plus
+        seven days DEC-033 removes that row, so completed runs provide the durable path through
+        their run-to-job links.  Both reads remain owner-scoped at this composition seam.
         """
         from sqlalchemy import select
 
+        from khepri.rca.workspace.run_reports import RunReportRow
+        from khepri.rca.workspace.schema import AnalysisRunRow
+        from khepri.rra.job_persistence import ReportJobRow
         from khepri.rra.persistence import UploadRow
 
         with self._sources.factory() as database:
-            return database.scalar(
+            upload_session = database.scalar(
                 select(UploadRow.session_id).where(
-                    UploadRow.owner_id == owner_id,
-                    UploadRow.ciphertext_sha256_hex == ciphertext_digest,
+                    UploadRow.owner_id == version.owner_id,
+                    UploadRow.ciphertext_sha256_hex == version.upload_ciphertext_digest,
                 )
             )
+            report_sessions = database.scalars(
+                select(ReportJobRow.session_id)
+                .join(RunReportRow, RunReportRow.job_id == ReportJobRow.job_id)
+                .join(AnalysisRunRow, AnalysisRunRow.run_id == RunReportRow.run_id)
+                .where(
+                    AnalysisRunRow.owner_id == version.owner_id,
+                    AnalysisRunRow.version_id == version.version_id,
+                    RunReportRow.owner_id == version.owner_id,
+                    ReportJobRow.owner_id == version.owner_id,
+                )
+            )
+            sessions = set(report_sessions)
+            if upload_session is not None:
+                sessions.add(upload_session)
+            return tuple(sorted(sessions))
 
     def _end_derived_content(self, version: Any, now: datetime) -> None:
         """End the upload this version was admitted from, and everything derived from it.
@@ -175,16 +192,15 @@ class WorkspaceDeletion:
         a second ending -- but the caller returns before this on the already-deleted path, so a
         repeat does not reach it at all.
         """
-        session_id = self._session_of_upload(
-            version.owner_id, version.upload_ciphertext_digest
-        )
-        if session_id is None:
+        session_ids = self._sessions_of_version(version)
+        if not session_ids:
             # The upload already ended -- its own seven-day horizon, or an earlier deletion. The
             # version's ending is not blocked by content that is already gone.
             return
-        self._sources.content.delete_session_content(
-            session_id=session_id, reason=self.REASON_IMMEDIATE, now=now
-        )
+        for session_id in session_ids:
+            self._sources.content.delete_session_content(
+                session_id=session_id, reason=self.REASON_IMMEDIATE, now=now
+            )
 
 
 __all__ = ["DeletionOutcome", "DeletionSources", "WorkspaceDeletion"]

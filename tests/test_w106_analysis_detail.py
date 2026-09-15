@@ -379,11 +379,9 @@ def test_an_inexact_or_unknown_detail_address_is_unavailable(tail: str) -> None:
         assert EN["unavailable_title"] in response.text
 
 
-def test_a_run_whose_journey_content_has_expired_keeps_its_passport_but_not_its_handoff() -> None:
-    """`KHEPRI-DEC-033` §2: the provenance record lives with the run, so eight days on the
-    Passport still reads -- period, scale, outcomes. The analysis session's content is gone, so
-    no artifact is offered and the page says the report can no longer be opened rather than
-    offering a handoff that would refuse (`FR-049`; `W1-07` reconciles artifact retention)."""
+def test_a_workspace_run_keeps_its_passport_and_handoff_past_day_seven() -> None:
+    """`KHEPRI-DEC-033` §2 keeps provenance and report artifacts with the run. The session-shaped
+    read path therefore remains usable on day eight; only the raw upload has reached its ending."""
     j = journey()
     who = member(j.w)
     run, _job, _session = completed_run(j, who)
@@ -393,8 +391,8 @@ def test_a_run_whose_journey_content_has_expired_keeps_its_passport_but_not_its_
 
     assert EN["passport_period"] in html and "2026-01-05" in html and ">4<" in html
     assert EN["passport_unavailable"] not in html
-    assert "<form" not in html
-    assert EN["artifacts_unreachable"] in html
+    assert "<form" in html
+    assert EN["artifacts_unreachable"] not in html
     assert EN["run_state_completed"] in html
 
 
@@ -434,9 +432,8 @@ def test_the_spines_reads_do_not_grow_with_the_runs_it_lists() -> None:
     assert statements_for(j, who) == with_one
 
 
-def test_the_spine_says_what_detail_says_once_the_report_can_no_longer_be_opened() -> None:
-    """A row that said "Report available" while its detail offered nothing sent the reader to a
-    page that contradicted the row (review on `#376` round 2). The spine's word is detail's."""
+def test_the_spine_and_detail_keep_the_report_available_past_day_seven() -> None:
+    """The spine and detail agree on DEC-033's durable report lifetime after the beta horizon."""
     j = journey()
     who = member(j.w)
     completed_run(j, who)
@@ -445,8 +442,8 @@ def test_the_spine_says_what_detail_says_once_the_report_can_no_longer_be_opened
 
     html = page(j, who, "analyses")
 
-    assert EN["report_available"] not in html
-    assert EN["report_unreachable"] in html
+    assert EN["report_available"] in html
+    assert EN["report_unreachable"] not in html
     assert EN["run_state_completed"] in html
 
 
@@ -558,21 +555,20 @@ def test_the_handoff_sets_no_cookie_when_the_bridge_will_not_resume() -> None:
     assert EN["unavailable_title"] in response.text
 
 
-def test_the_handoff_refuses_a_run_whose_content_has_expired_and_sets_no_cookie() -> None:
-    """The handoff's rule is detail's rule: what the page will not offer, the route will not hand
-    off, so a stale address cannot resume a session whose content has ended (`FR-049`)."""
+def test_the_handoff_resumes_a_workspace_run_past_the_beta_horizon() -> None:
+    """The run owns its retained artifacts under DEC-033, so day eight remains resumable."""
     j = journey()
     who = member(j.w)
-    run, _job, _session = completed_run(j, who)
+    run, job_id, session_id = completed_run(j, who)
     j.clock.advance(timedelta(days=8))
 
     response = shell_over(j, who).post(
         handoff_address(who, run.run_id, "web"), follow_redirects=False
     )
 
-    assert response.status_code == 404
-    assert "set-cookie" not in response.headers
-    assert EN["unavailable_title"] in response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/api/v1/beta/reports/{job_id}/surfaces/web/en"
+    assert f"{BETA_COOKIE}={session_id}" in response.headers["set-cookie"]
 
 
 def test_the_handoff_redirect_carries_the_shells_security_headers() -> None:

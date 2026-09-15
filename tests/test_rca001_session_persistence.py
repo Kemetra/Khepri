@@ -424,7 +424,8 @@ class TestTheMigration:
         and the `already_deleted` outcome, then `20260906_0027`, the revocation ledger (`FR-126`),
         then `20260906_0028`, which admits the retention sweep's own action (`FR-125`). `W1-09`
         then added `20260906_0029`, the pin table (`FR-128`, under active `KHEPRI-DEC-034`), which
-        is the head this pin now names.
+        was followed by `20260915_0030`, the DEC-033 correction that moves existing workspace
+        content off the beta timer. That correction is the head this pin now names.
         """
         import subprocess
 
@@ -433,7 +434,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260906_0029" in result.stdout
+        assert "20260915_0030" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

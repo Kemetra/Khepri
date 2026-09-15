@@ -17,6 +17,7 @@ from khepri.local.sweeper import REASON_EXPIRED, RetentionPasses, RetentionSweep
 from khepri.rca.lifecycle import EventPurgeReport, PurgeReport
 from khepri.rca.session_retention import SessionSweepReport
 from khepri.rra.deletion import DeletionRetryRequired
+from khepri.runtime.workspace_retention import RawUploadPurgeReport
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -155,23 +156,31 @@ class TestTheRetentionPassesAreWired:
         accounts = CountingPass(PurgeReport(purged_accounts=2))
         events = CountingPass(EventPurgeReport(purged_events=3))
         sessions = CountingPass(SessionSweepReport(purged_sessions=4))
+        raw_uploads = CountingPass(RawUploadPurgeReport(purged_uploads=6))
         sweeper = StubSweeper(
             jobs=FakeJobs(),
             deletion=FakeDeletion(),
             expired=[],
             retention=RetentionPasses(  # type: ignore[arg-type]
-                accounts=accounts, events=events, sessions=sessions
+                accounts=accounts,
+                events=events,
+                sessions=sessions,
+                raw_uploads=raw_uploads,
             ),
         )
 
         report = sweeper.sweep(now=NOW)
 
-        assert (accounts.calls, events.calls, sessions.calls) == (1, 1, 1), (
-            "each horizon ran exactly once"
-        )
+        assert (accounts.calls, events.calls, sessions.calls, raw_uploads.calls) == (
+            1,
+            1,
+            1,
+            1,
+        ), "each horizon ran exactly once"
         assert report.purged_accounts == 2
         assert report.purged_events == 3
         assert report.purged_sessions == 4
+        assert report.purged_uploads == 6
 
     def test_the_session_count_is_distinct_from_rra_content_expiry(self) -> None:
         """`expired_sessions` and `purged_sessions` measure unrelated things.
@@ -227,6 +236,7 @@ class TestTheRetentionPassesAreWired:
             "recovery_events",
             "workspace_audit",
             "evidence",
+            "raw_uploads",
         }, "all seven horizons are wired"
         assert "AccountRetentionSweeper" in wired["accounts"]
         assert "MembershipEventSweeper" in wired["events"]
@@ -245,6 +255,7 @@ class TestTheRetentionPassesAreWired:
         # so an unwired pass here means the class has never had an ending in any deployment.
         assert "WorkspaceAuditSweeper" in wired["workspace_audit"]
         assert "DeletionEvidenceSweeper" in wired["evidence"]
+        assert "RawUploadRetentionSweeper" in wired["raw_uploads"]
         for name, expression in wired.items():
             assert "retention_months" not in expression, (
                 f"the {name} horizon must be the governed default, not an override"

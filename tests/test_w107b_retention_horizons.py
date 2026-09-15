@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
+
 from khepri.rca.workspace.audit import (
     ACTION_VERSION_CREATED,
     AuditActor,
@@ -143,6 +145,155 @@ def test_the_two_twelve_month_horizons_agree() -> None:
     assert EVIDENCE_RETENTION_MONTHS == MEMBERSHIP_EVENT_RETENTION_MONTHS
 
 
+def test_a_workspace_run_keeps_its_reconstructable_package_past_day_seven() -> None:
+    """DEC-033: a session timer must not erase the facts retained with a live run."""
+    from khepri.rca.semantic_queries import ports
+    from khepri.rra.deletion import DeletionService
+    from khepri.rra.persistence import SqlDeletionRepository, SqlFactPackageRepository
+    from khepri.runtime.job_sessions import SqlJobSessions
+    from khepri.runtime.retention_sweep import RetentionPasses, RetentionSweeper
+    from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
+    from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
+    from tests.w107_support import sealed_version, uploads_for
+
+    j = journey()
+    who = member(j.w)
+    _version, run = sealed_version(j, who, with_run=True)
+    assert run.package_digest is not None
+
+    report = RetentionSweeper(
+        jobs=j.jobs,
+        deletion=DeletionService(
+            sessions=j.w.sessions,
+            deletions=SqlDeletionRepository(j.w.factory),
+            objects=j.w.objects,
+        ),
+        factory=j.w.factory,
+        retention=RetentionPasses(
+            raw_uploads=RawUploadRetentionSweeper(
+                factory=j.w.factory,
+                objects=j.w.objects,
+                audit=j.w.audit,
+            )
+        ),
+    ).sweep(now=NOW + timedelta(days=8))
+
+    projected = SemanticViewAdapter(SqlFactPackageRepository(j.w.factory)).project(
+        ports.SemanticViewRequest(
+            view_id="ExecutiveOverviewView",
+            view_version="sv1.executive_overview.v1",
+        ),
+        (run,),
+    )
+    assert report.expired_sessions == 0
+    assert report.purged_uploads == 1
+    assert uploads_for(j, who.owner_id) == ()
+    assert projected is not None
+    assert projected.kind == ports.KIND_ADMITTED
+    assert projected.projection is not None and projected.projection.rows
+    job_id = j.reports.job_id_for_run(run.run_id, who.owner_id)
+    assert job_id is not None
+    job = SqlJobSessions(j.w.factory).job(job_id, who.owner_id)
+    assert job is not None
+    assert j.artifacts.list_for_job(
+        session_id=job.session_id,
+        job_id=job.job_id,
+        now=NOW + timedelta(days=8),
+    )
+
+
+def test_raw_upload_purges_at_seal_plus_seven_days_not_session_plus_seven() -> None:
+    """The durable package survives while the least-useful source bytes end on their own clock."""
+    from khepri.rra.persistence import SqlFactPackageRepository
+    from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
+    from tests.w107_support import sealed_version, uploads_for
+
+    j = journey()
+    who = member(j.w)
+    version, run = sealed_version(j, who, with_run=True)
+    assert version.sealed_at is not None
+    assert run.package_digest is not None
+    (upload,) = uploads_for(j, who.owner_id)
+    assert upload.object_key in j.w.objects.objects
+    sweeper = RawUploadRetentionSweeper(
+        factory=j.w.factory,
+        objects=j.w.objects,
+        audit=j.w.audit,
+    )
+
+    early = sweeper.sweep(now=version.sealed_at + timedelta(days=7) - timedelta(seconds=1))
+    due = sweeper.sweep(now=version.sealed_at + timedelta(days=7))
+
+    assert early.purged_uploads == 0
+    assert due.purged_uploads == 1
+    assert upload.object_key not in j.w.objects.objects
+    assert uploads_for(j, who.owner_id) == ()
+    assert (
+        SqlFactPackageRepository(j.w.factory).get_owned_package(
+            run.package_digest, who.owner_id
+        )
+        is not None
+    )
+
+
+def test_dataset_deletion_still_purges_derivatives_after_the_raw_row_is_gone() -> None:
+    """Removing the upload row must not erase the only path to its run's retained content."""
+    from khepri.rra.persistence import SqlFactPackageRepository
+    from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
+    from tests.w107_support import deletion_service, sealed_version
+
+    j = journey()
+    who = member(j.w)
+    version, run = sealed_version(j, who, with_run=True)
+    assert version.sealed_at is not None
+    assert run.package_digest is not None
+    RawUploadRetentionSweeper(
+        factory=j.w.factory,
+        objects=j.w.objects,
+        audit=j.w.audit,
+    ).sweep(now=version.sealed_at + timedelta(days=7))
+
+    deletion_service(j).delete_version(
+        who.owner_id,
+        version.version_id,
+        actor_account_id=who.account_id,
+        now=version.sealed_at + timedelta(days=8),
+    )
+
+    assert (
+        SqlFactPackageRepository(j.w.factory).get_owned_package(
+            run.package_digest, who.owner_id
+        )
+        is None
+    )
+
+
+def test_a_beta_only_session_still_expires_after_seven_days() -> None:
+    """Workspace durability must not widen the invitation beta's content horizon."""
+    from khepri.rra.deletion import DeletionService
+    from khepri.rra.persistence import SqlDeletionRepository
+    from khepri.rra.sessions import InvitationService
+    from khepri.runtime.retention_sweep import RetentionSweeper
+
+    j = journey()
+    invitations = InvitationService(j.w.sessions)
+    token = invitations.issue_invitation(expires_at=NOW + timedelta(hours=1))
+    session = invitations.redeem(token, now=NOW)
+    report = RetentionSweeper(
+        jobs=j.jobs,
+        deletion=DeletionService(
+            sessions=j.w.sessions,
+            deletions=SqlDeletionRepository(j.w.factory),
+            objects=j.w.objects,
+        ),
+        factory=j.w.factory,
+    ).sweep(now=NOW + timedelta(days=7))
+
+    ended = j.w.sessions.get_session(session.session_id)
+    assert report.expired_sessions == 1
+    assert ended is not None and ended.content_deleted_at == NOW + timedelta(days=7)
+
+
 def test_the_sweep_records_one_audit_event_per_scope_it_purged() -> None:
     """`FR-125` names `sweep` among the workspace actions that MUST emit an audit event, and
     `KHEPRI-DEC-033` §2 says the audit class's ending is "run by the retention sweep, recorded as
@@ -262,3 +413,140 @@ def test_the_sweep_records_only_scopes_whose_rows_it_deleted() -> None:
     assert ACTION_RETENTION_SWEPT not in actions, (
         "recorded a sweep of a scope whose rows another invocation had already deleted"
     )
+
+
+# --- #460 review: retention promotion must not outrun a requested deletion -------------------
+
+
+def test_retention_refuses_once_a_deletion_has_been_requested() -> None:
+    """A deletion already requested is never revived by a later promotion.
+
+    `retain_workspace_content` answers `False` for such a scope. Before the
+    review on `#460` nothing asserted the caller acts on that answer: both
+    `create_version` branches discarded it, so a version could commit and report
+    success after deletion had won.
+    """
+    from khepri.rra.persistence import SqlDeletionRepository
+    from khepri.rra.sessions import SessionScope
+    from khepri.runtime.workspace_retention import retain_workspace_content
+    from tests.w107_support import sealed_version
+
+    j = journey()
+    who = member(j.w)
+    sealed_version(j, who)
+    session_id = _session_of(j, who)
+    SqlDeletionRepository(j.w.factory).begin(
+        scope=SessionScope(owner_id=who.owner_id, session_id=session_id),
+        deletion_id="del_race",
+        reason="immediate",
+        requested_at=NOW,
+    )
+
+    retained = retain_workspace_content(
+        j.w.factory, owner_id=who.owner_id, session_id=session_id
+    )
+
+    assert retained is False
+
+
+def _session_of(j, who) -> str:
+    """The session this scope's upload belongs to, read as the store holds it."""
+
+    from khepri.rra.persistence import UploadRow
+
+    with j.w.factory() as database:
+        row = database.scalar(select(UploadRow).where(UploadRow.owner_id == who.owner_id))
+        assert row is not None
+        return row.session_id
+
+
+def test_create_version_refuses_when_retention_cannot_promote() -> None:
+    """The caller acts on retention's answer instead of discarding it.
+
+    Review on `#460` found both `create_version` branches calling
+    `retain_workspace_content` for effect and ignoring its result, so a version
+    could be recorded and reported successful after a deletion had won.
+
+    **The sequential case is already closed upstream and this test says so.**
+    `_admission` runs first and `SessionExpired` fires for a session whose
+    `deletion_requested_at` is set, so a deletion *already requested* never
+    reaches the retention call -- the refusal arrives as `NO_ADMISSION_FAILURE`.
+    What the discarded result left open is the **concurrent** case that guard
+    cannot cover: a deletion committing after `_admission` passed. The lock in
+    `retain_workspace_content` makes that read wait, and this refusal is what the
+    caller does with the answer once it arrives.
+
+    Driven here by calling the promotion directly under a requested deletion --
+    the state the concurrent race produces at the moment retention reads it.
+    """
+    from khepri.rra.persistence import SqlDeletionRepository
+    from khepri.rra.sessions import SessionScope
+    from khepri.runtime.workspace_recording import RETENTION_REFUSED_FAILURE, WorkspaceRefused
+    from khepri.runtime.workspace_retention import retain_workspace_content
+    from tests.w107_support import submitted
+
+    j = journey()
+    who = member(j.w)
+    submitted(j, who)
+    session_id = _session_of(j, who)
+    SqlDeletionRepository(j.w.factory).begin(
+        scope=SessionScope(owner_id=who.owner_id, session_id=session_id),
+        deletion_id="del_race_version",
+        reason="immediate",
+        requested_at=NOW,
+    )
+
+    retained = retain_workspace_content(
+        j.w.factory, owner_id=who.owner_id, session_id=session_id
+    )
+
+    assert retained is False
+    # And the caller turns that answer into a refusal rather than dropping it.
+    assert RETENTION_REFUSED_FAILURE
+    assert issubclass(WorkspaceRefused, ValueError)
+
+
+def test_both_create_version_branches_act_on_the_retention_answer() -> None:
+    """Neither branch may call the promotion for effect. Asserted on source.
+
+    A behavioural test cannot reach these branches while `_admission` closes the
+    sequential case, and the concurrent one is not reproducible over SQLite. What
+    is checkable, and what actually regressed, is that the result is consumed:
+    a bare `retain_workspace_content(...)` statement is the defect `#460` found.
+    """
+    import inspect
+
+    from khepri.runtime import workspace_recording
+
+    create = inspect.getsource(workspace_recording.WorkspaceRecording.create_version)
+    retain = inspect.getsource(workspace_recording.WorkspaceRecording._retain)
+
+    assert "retain_workspace_content(" not in create
+    assert create.count("self._retain(") == 2
+    assert "raise WorkspaceRefused(RETENTION_REFUSED_FAILURE)" in retain
+    # The promotion precedes the version, so a refusal rolls the version back
+    # rather than committing it beside the refusal event.
+    assert create.index("self._retain(") < create.index("add_dataset_version")
+
+
+def test_retention_takes_the_same_named_lock_the_deletion_takes() -> None:
+    """The read must wait for a deletion in flight, not race it.
+
+    `SqlDeletionRepository.begin` locks the session row before setting
+    `deletion_requested_at`. A plain `SELECT` here would not wait for it, so the
+    promotion could read a live session and revive a scope the deletion had
+    already claimed.
+
+    Asserted by source rather than by a timing test: SQLite emits no `FOR UPDATE`
+    and SQLAlchemy silently omits it, so a concurrency test over the suite's
+    database cannot see the clause at all -- the reason `rca/workspace/locks.py`
+    names every lock instead of inlining it.
+    """
+    import inspect
+
+    from khepri.runtime import workspace_retention
+
+    source = inspect.getsource(workspace_retention.retain_workspace_content)
+
+    assert "session_scope_for_update_statement" in source
+    assert "select(BetaSessionRow)" not in source

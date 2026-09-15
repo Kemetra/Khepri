@@ -80,7 +80,9 @@ from khepri.rra.report_services import (
 )
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
+from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.legal_api import add_legal_routes
+from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 
 def utc_now() -> datetime:
@@ -121,6 +123,7 @@ class LocalStack:
     services: SessionServices
     reports: ReportStores
     factory: sessionmaker[Session]
+    objects: S3EncryptedObjectStore
     clock: Callable[[], datetime]
 
     @property
@@ -197,6 +200,7 @@ def build_stack(
             publisher=artifact_publisher,
         ),
         factory=factory,
+        objects=objects,
         clock=clock,
     )
 
@@ -337,6 +341,11 @@ def build_worker_stack(
                 # a stated twelve-month rule, which is the shape §5 exists to close.
                 workspace_audit=WorkspaceAuditSweeper(SqlWorkspaceAuditStore(stack.factory)),
                 evidence=DeletionEvidenceSweeper(SqlDeletionRepository(stack.factory)),
+                raw_uploads=RawUploadRetentionSweeper(
+                    factory=stack.factory,
+                    objects=stack.objects,
+                    audit=SqlWorkspaceAuditStore(stack.factory),
+                ),
             ),
         ),
     )
