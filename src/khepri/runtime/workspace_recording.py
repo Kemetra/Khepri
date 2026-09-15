@@ -95,6 +95,7 @@ from khepri.rra.pipeline import DeliveryRecord
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.rra.sessions import SessionStore
 from khepri.runtime.run_quality import section_states_of
+from khepri.runtime.workspace_retention import retain_workspace_content
 
 #: The admission outcome code a version records. Only an admitted source becomes a version --
 #: `KHEPRI-DEC-033` §2 calls the version "the durable identity of one admitted source" -- so a
@@ -273,6 +274,7 @@ class WorkspaceRecording:
             owner_id, upload.ciphertext_sha256_hex
         )
         if existing is not None:
+            retain_workspace_content(self._rca.factory, owner_id=owner_id, session_id=session_id)
             return Performed(existing, OUTCOME_ALREADY_RECORDED, subject_of_version(existing))
         if not profile.admissible:
             raise WorkspaceRefused(ADMISSION_REFUSED_FAILURE)
@@ -293,6 +295,7 @@ class WorkspaceRecording:
             now=now,
         )
         self._rca.workspace.add_dataset_version(version)
+        retain_workspace_content(self._rca.factory, owner_id=owner_id, session_id=session_id)
         return Performed(version, OUTCOME_COMPLETED, subject_of_version(version))
 
     def records_a_version(self, owner_id: str, session_id: str, now: datetime) -> bool:

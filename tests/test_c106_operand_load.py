@@ -1,9 +1,8 @@
-"""How the C1-06 assembly binds each operand: which run, which manifest, and for how long.
+"""How the C1-06 assembly binds each operand: which run, manifest, and retention scope.
 
 Three legs review on `#409` found stated nowhere: the newest completed run is the one bound; a
-stored manifest that no longer reads is a governed refusal, not an escape; and the read path is
-gated on the upload session's content horizon, which is recorded as a decision rather than left
-as emergent behaviour.
+stored manifest that no longer reads is a governed refusal, not an escape; and a workspace-bound
+session remains readable with its run under DEC-033 rather than inheriting the beta timer.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from khepri.rca.workspace.audit import ACTION_RUN_FAILED
+from khepri.rca.workspace.audit import ACTION_RUN_COMPLETED, ACTION_RUN_FAILED
 from khepri.rca.workspace.contracts import RUN_COMPLETED, AnalysisRun, RunOutcome, RunSubject
 from khepri.rra.analysis.dataset_period import CAUSE_INCOMPLETE
 from khepri.runtime.comparison_assembly import _latest_completed
@@ -89,12 +88,9 @@ def test_an_unreadable_stored_manifest_refuses_as_incomplete_with_one_audit_even
     assert [event.action for event in added] == [ACTION_RUN_FAILED]
 
 
-def test_past_the_upload_sessions_content_horizon_the_pair_is_unavailable(tmp_path) -> None:
-    """Stated, not emergent: the package and profile are read through the upload session, whose
-    content horizon is seven days, so a comparison is the uniform unavailable surface after it,
-    with one audit event -- the same horizon at which the report itself stops reopening. The
-    retention matrix keeps the package with the run; a retained read path that outlives the
-    session is an owner amendment, recorded in the roadmap row."""
+def test_a_workspace_pair_remains_available_past_the_beta_horizon(tmp_path) -> None:
+    """DEC-033 keeps each package with its run, so the session-shaped read path must not make a
+    comparison disappear on day eight. The request still records its one content-free event."""
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
@@ -107,5 +103,5 @@ def test_past_the_upload_sessions_content_horizon_the_pair_is_unavailable(tmp_pa
     )
 
     added = j.w.audit.events_for_scope(who.owner_id)[before:]
-    assert outcome.unavailable
-    assert [event.action for event in added] == [ACTION_RUN_FAILED]
+    assert outcome.admitted
+    assert [event.action for event in added] == [ACTION_RUN_COMPLETED]

@@ -112,6 +112,7 @@ from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
 from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
 from khepri.runtime.workspace_recording import WorkspaceRecording
+from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 # The web role publishes but never claims, so this identity appears in no lease. It
 # is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
@@ -763,6 +764,11 @@ def build_retention_sweep(stack: RuntimeStack) -> RetentionSweeper:
             # twelve-month rule, which is the shape §5 exists to close.
             workspace_audit=WorkspaceAuditSweeper(SqlWorkspaceAuditStore(stack.factory)),
             evidence=DeletionEvidenceSweeper(SqlDeletionRepository(stack.factory)),
+            raw_uploads=RawUploadRetentionSweeper(
+                factory=stack.factory,
+                objects=stack.objects,
+                audit=SqlWorkspaceAuditStore(stack.factory),
+            ),
         ),
     )
 

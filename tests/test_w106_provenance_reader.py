@@ -4,9 +4,9 @@
 The Passport is read from the record the run retained at completion -- the attested period and day
 boundary, the coverage scope, who attested, the admitted row count, and each section's outcome --
 written in the completion's own transaction from the admission and the package the run binds. It
-lives with the run: the analysis session's content ends on its own horizon and the Passport does
-not end with it (review on `#376`). What is still the session's is the artifact handoff, which the
-read reports as `reachable` only while that session can be resumed.
+lives with the run: the raw upload ends on its own horizon, while the workspace-bound package,
+Passport and artifact handoff do not inherit the beta timer (review on `#376`). The read reports the
+handoff as `reachable` while its retained session can be resumed.
 
 At completion the package is rebuilt and checked against its digest before a section outcome is
 recorded; a document that rebuilds to another package, or a digest that names another, is refused
@@ -86,10 +86,8 @@ def test_a_started_run_has_no_passport_yet() -> None:
     assert provenance(j).for_run(who.owner_id, run, version) is None
 
 
-def test_the_passport_outlives_the_sessions_content_but_the_handoff_does_not() -> None:
-    """`KHEPRI-DEC-033` §2: the provenance record lives with the run; the analysis session's
-    content ends on its seven-day horizon. After it the Passport is still read, and `reachable`
-    says the artifacts cannot be handed off -- `W1-07` reconciles artifact retention."""
+def test_the_passport_and_handoff_outlive_the_beta_horizon_for_a_workspace_run() -> None:
+    """`KHEPRI-DEC-033` §2 keeps both provenance and artifacts with a workspace run."""
     j = journey()
     who = member(j.w)
     completed_run(j, who)
@@ -100,7 +98,7 @@ def test_the_passport_outlives_the_sessions_content_but_the_handoff_does_not() -
 
     assert found is not None
     assert found.row_count == 4 and found.covered_start.isoformat() == "2026-01-05"
-    assert found.reachable is False
+    assert found.reachable is True
 
 
 def test_a_run_completed_through_the_customer_door_retains_provenance_but_has_no_report():

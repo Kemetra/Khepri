@@ -98,9 +98,10 @@ def open_commercial_session(
     eventually differ.
 
     `session_id` stays RRA's to mint: it is per-analysis, not per-organization, and one scope now
-    holds many sessions -- which is what migration `20260817_0017` enabled. `content_expires_at`
-    follows `redeem`'s horizon so a commercial analysis and a beta one age out identically; nothing
-    in `KHEPRI-DEC-021` authorizes a different one.
+    holds many sessions -- which is what migration `20260817_0017` enabled. The row starts on
+    `redeem`'s beta horizon. Once its admitted source becomes a workspace dataset version, the
+    runtime composition moves the session-shaped content to `KHEPRI-DEC-033`'s run and organization
+    lifetime; a commercial session that never crosses that boundary keeps this fail-closed timer.
     """
     session = BetaSession(
         owner_id=owner_id,

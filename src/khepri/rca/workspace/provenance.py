@@ -1,12 +1,11 @@
 """The provenance record a completed run retains (`W1-06`; `RCA-005` `FR-119`; `KHEPRI-DEC-033` §2).
 
 `KHEPRI-DEC-033`'s matrix gives the **provenance record** its own row: "with the run; the tombstone
-keeps its digests". The raw upload and the analysis session's content end on their own horizons --
-the upload seven days after sealing, the session's content on `content_expires_at` -- while the run
-lives with the organization. So what the Analysis Passport states must be written *at completion*,
-from the admission and the package the run binds, into a row that lives with the run; read back
-later through session-gated services it would vanish on a timer the decision says it outlives.
-Review on `#376` found the surface reading it that way.
+keeps its digests". The raw upload ends seven days after sealing, while the package, artifacts and
+provenance live with the run. The RRA stores remain session-shaped, so runtime composition moves a
+workspace-bound session off the beta timer. The Analysis Passport is still written *at completion*
+from the admission and package the run binds: it is an immutable allowlisted record, not a later
+reconstruction from retained customer content. Review on `#376` found the surface doing the latter.
 
 The record carries the Passport's customer tier -- the attested period and its day boundary, the
 coverage scope, who attested, the admitted row count -- and one governed state code per report

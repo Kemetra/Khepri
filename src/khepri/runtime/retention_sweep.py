@@ -16,12 +16,13 @@ requires, and `DeletionService.delete_session_content` implements the deletion
 RRA-002 requires. Before `W1-07b` all three were complete and none had a caller in the
 shipped image; `khepri-retention-sweep` is that caller.
 
-**Expiry deletes, it does not merely mark.** RRA-002 requires content to be gone
-at seven days across input, materializations, facts, narrative and exports, so a
-session past `content_expires_at` is swept through the same
-`delete_session_content` path an immediate request uses, with a different reason.
-Sharing the path is the point: an expiry route that deleted differently from the
-on-demand route would be a second deletion implementation to keep correct.
+**Expiry deletes, it does not merely mark.** RRA-002 requires beta-only content to be gone at its
+seven-day session horizon, so a session past `content_expires_at` is swept through the same
+`delete_session_content` path an immediate request uses, with a different reason. A session bound
+to a workspace version has already moved to DEC-033's organization lifetime; its raw upload is the
+separate seal-plus-seven-days pass. Sharing the full-content deletion path is the point: an expiry
+route that deleted differently from the on-demand route would be a second implementation to keep
+correct.
 
 **Nothing here is a scheduler.** It runs one pass when called. Choosing a cadence
 is an operational decision, and a loop that invented one would be modelling a
@@ -47,8 +48,9 @@ from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.persistence import BetaSessionRow
+from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
-REASON_EXPIRED = "expired"
+REASON_EXPIRED = "expiry"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +85,7 @@ class SweepReport:
     # measuring unrelated things.
     purged_workspace_audit_events: int = 0
     purged_evidence: int = 0
-
+    purged_uploads: int = 0
 
     def as_counts(self) -> dict[str, int]:
         """Every count by name, for the entry point's one JSON line."""
@@ -103,14 +105,15 @@ class RetentionCounts:
     sessions: int = 0
     invitations: int = 0
     recovery_events: int = 0
-    #: `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons, which had no implementation before it.
+    #: `W1-07b`'s content-free `KHEPRI-DEC-033` §2 horizons.
     workspace_audit_events: int = 0
     evidence: int = 0
+    raw_uploads: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class RetentionPasses:
-    """`KHEPRI-DEC-015`'s two horizons, travelling together.
+    """The independent retention passes that travel through the deployed caller together.
 
     They are one parameter rather than two because they are one concern with one reason to be
     absent: a stack with no RCA tables has neither. Passing them separately also pushed
@@ -134,9 +137,11 @@ class RetentionPasses:
     workspace_audit: WorkspaceAuditSweeper | None = None
     #: `KHEPRI-DEC-033` `OD-2`'s twelve-month deletion-evidence horizon (`W1-07b`).
     evidence: DeletionEvidenceSweeper | None = None
+    #: DEC-033's raw-upload horizon, anchored to the workspace version's seal.
+    raw_uploads: RawUploadRetentionSweeper | None = None
 
     def run(self, *, now: datetime) -> RetentionCounts:
-        """All five passes, returning the purged counts by name.
+        """Run every configured pass, returning the purged counts by name.
 
         Independent of each other: §2a's twelve-month audit horizon is shorter than §2b's
         twenty-four month account horizon, so an event never outlives the account it refers to,
@@ -183,6 +188,11 @@ class RetentionPasses:
             evidence=(
                 0 if self.evidence is None else self.evidence.sweep(now=now).purged_evidence
             ),
+            raw_uploads=(
+                0
+                if self.raw_uploads is None
+                else self.raw_uploads.sweep(now=now).purged_uploads
+            ),
         )
 
 
@@ -226,6 +236,7 @@ class RetentionSweeper:
             purged_recovery_events=purged.recovery_events,
             purged_workspace_audit_events=purged.workspace_audit_events,
             purged_evidence=purged.evidence,
+            purged_uploads=purged.raw_uploads,
         )
 
     def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
