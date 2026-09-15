@@ -431,3 +431,17 @@ artifacts:
       - RRA-011
       - RRA-012
       - RRA-014
+  - type: specification
+    id: RCA-009
+    state: active
+    document: governance/specifications/RCA-009.md
+    depends_on:
+      - RCA
+      - RCA-001
+      - RCA-005
+      - RCA-006
+      - RCA-007
+      - RCA-008
+      - RRA-006
+      - RRA-008
+      - RRA-014
