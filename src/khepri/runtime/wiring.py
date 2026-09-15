@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -101,6 +100,7 @@ from khepri.runtime.pipeline_recording import (
     RecordingProfilingService,
     RecordingReportRequests,
 )
+from khepri.runtime.private_directory import own_private_directory
 from khepri.runtime.retention_sweep import (
     RetentionPasses,
     RetentionSweeper,
@@ -341,29 +341,10 @@ class _OnDemandPrinter:
             return printer.print_to_pdf(page)
 
 
-def _own_render_directory(path: Path) -> None:
-    """Create the comparison render parent as this process's alone (`CWE-377`, review on `#409`).
-
-    The default sits in a shared temporary namespace, as the worker's workbook directory does,
-    so a path another local user pre-created -- or a symlink placed there -- would redirect or
-    fail every render. The directory is created private to the process user, a symlink is
-    refused, and on POSIX a directory owned by someone else is refused rather than used.
-    """
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if path.is_symlink():
-        raise RuntimeError(f"comparison render directory must not be a symlink: {path}")
-    # mkdir applies its mode only when it creates the directory; a path left behind by an
-    # earlier run, or pre-created wider, keeps its mode unless it is set here as well.
-    path.chmod(0o700)
-    getuid = getattr(os, "getuid", None)
-    if getuid is not None and path.stat().st_uid != getuid():
-        raise RuntimeError(f"comparison render directory is owned by another user: {path}")
-
-
 def build_comparison_actions(stack: RuntimeStack, *, workbooks: Path) -> ComparisonActions:
     """The comparison door (`C1-06`): a pair, resolved through `IsolationService`."""
     factory = stack.factory
-    _own_render_directory(workbooks)
+    own_private_directory(workbooks, purpose="comparison render directory")
     return ComparisonActions(
         isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
         stores=ComparisonStores(
@@ -779,7 +760,7 @@ def build_pipeline(
     workbooks: Path,
     printer: PagePrinter,
 ) -> ReportPipeline:
-    workbooks.mkdir(parents=True, exist_ok=True)
+    own_private_directory(workbooks, purpose="worker workbook directory")
     renderers: tuple[MaterializedRenderer, ...] = (
         HtmlReportRenderer(),
         PdfReportRenderer(printer=printer),

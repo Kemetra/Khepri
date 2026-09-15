@@ -82,6 +82,7 @@ from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.legal_api import add_legal_routes
+from khepri.runtime.private_directory import own_private_directory
 from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 
@@ -300,7 +301,7 @@ def build_worker_stack(
     printer: PagePrinter | None = None,
 ) -> WorkerStack:
     """The worker loop and the sweeper, over one already-built stack."""
-    workbooks.mkdir(parents=True, exist_ok=True)
+    own_private_directory(workbooks, purpose="worker workbook directory")
     return WorkerStack(
         worker=build_local_worker(
             LocalWorkerPorts(
