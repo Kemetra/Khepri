@@ -12,6 +12,9 @@ notice a surface that renders a foreign figure under a caught error.
 
 from __future__ import annotations
 
+import dataclasses
+from typing import Any
+
 import pytest
 
 from tests.d110_support import LANGUAGES, MODES, Ask, page
@@ -28,6 +31,18 @@ def _two_organizations():
     return world, who, other, run.run_id
 
 
+def _missing(ask: Ask) -> Any:
+    """The same ask, for a run that exists nowhere.
+
+    The comparison partner for every isolation assertion. Asserting only that a
+    foreign response withholds the run id would accept a `200` decision page that
+    happened not to echo it; what `FR-165` requires is that denial and absence are
+    the *same* answer, so each case is compared against this rather than against a
+    predicate.
+    """
+    return page(dataclasses.replace(ask, run_id="no-such-run-at-all"))
+
+
 @pytest.mark.parametrize("printable", [False, True])
 def test_a_foreign_member_cannot_reach_another_organizations_run(
     printable: bool,
@@ -40,11 +55,14 @@ def test_a_foreign_member_cannot_reach_another_organizations_run(
     """
     world, who, other, run_id = _two_organizations()
 
-    response = page(
-        Ask(world, other, run_id, who.organization_id, printable=printable)
-    )
+    ask = Ask(world, other, run_id, who.organization_id, printable=printable)
 
-    assert response.status_code != 200 or run_id not in response.text
+    response = page(ask)
+    missing = _missing(ask)
+
+    assert response.status_code == missing.status_code
+    assert response.text == missing.text
+    assert run_id not in response.text
 
 
 def test_the_foreign_answer_is_indistinguishable_from_a_missing_run() -> None:
@@ -68,11 +86,14 @@ def test_isolation_holds_in_both_languages(language: str) -> None:
     """A governed refusal is content, so `FR-171` applies to it like any figure."""
     world, who, other, run_id = _two_organizations()
 
-    response = page(
-        Ask(world, other, run_id, who.organization_id, language=language)
-    )
+    ask = Ask(world, other, run_id, who.organization_id, language=language)
 
-    assert response.status_code != 200 or run_id not in response.text
+    response = page(ask)
+    missing = _missing(ask)
+
+    assert response.status_code == missing.status_code
+    assert response.text == missing.text
+    assert run_id not in response.text
 
 
 def test_no_mode_is_exempt_from_the_isolation_extent() -> None:
@@ -81,8 +102,11 @@ def test_no_mode_is_exempt_from_the_isolation_extent() -> None:
 
     assert MODES
     for mode in MODES:
-        response = page(
-            Ask(world, other, run_id, who.organization_id, printable=mode == "print")
-        )
+        ask = Ask(world, other, run_id, who.organization_id, printable=mode == "print")
 
-        assert response.status_code != 200 or run_id not in response.text, mode
+        response = page(ask)
+        missing = _missing(ask)
+
+        assert response.status_code == missing.status_code, mode
+        assert response.text == missing.text, mode
+        assert run_id not in response.text, mode

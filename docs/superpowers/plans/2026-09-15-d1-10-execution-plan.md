@@ -206,9 +206,11 @@ the same seam `D1-05` and `D1-09` found. One file carrying both invites the Low 
 - Consumes: `khepri.runtime.shell_decisions` — `DecisionReadings`, `SECTION_BRANCHES`,
   `SECTION_PRODUCTS`, `SECTION_BASKET`, `SECTION_CONCENTRATION`, `read_surface`,
   `render_decisions`; `tests.d105_support` fixtures.
-- Produces: `SURFACES: tuple[Surface, ...]`, `Surface(key, renders_prose, reads_views)`,
-  `page(world, who, run_id, *, language, printable)` and `page_as(...)`, both returning the
-  route's response. Tasks 2 and 3 rely on `SURFACES`, `MODES`, `page` and `page_as` by those names.
+- Produces: `SURFACES: tuple[Surface, ...]`, `Surface(key, renders_prose)`, `MODES`,
+  `expected_roster()`, the frozen `Ask(world, who, run_id, organization_id=None, language="en",
+  printable=False)` and `page(ask) -> Response`. Tasks 2 and 3 rely on `SURFACES`, `MODES`, `Ask`
+  and `page` by those exact names. **One call, not two**: asking as the owner and asking across
+  organizations differ only in `Ask.organization_id`.
 
 **The derivation rule, and why it matters.** The roster must come from something the *product*
 owns, never a hand-written list in the test. A guard that names its own scope reproduces the drift
@@ -246,6 +248,7 @@ from tests.d110_support import (
     LANGUAGES,
     MODES,
     SURFACES,
+    Ask,
     _copy_keys,
     _section_keys,
     expected_roster,
@@ -296,6 +299,117 @@ def test_every_surface_declares_whether_it_renders_prose() -> None:
     """
     for surface in SURFACES:
         assert isinstance(surface.renders_prose, bool)
+
+
+def _world():
+    """One organization with a completed run, and the member who owns it."""
+    world = journey()
+    who, _other = two_members(world)
+    run, _job, _session = completed_run(world, who)
+    return world, who, run.run_id
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+@pytest.mark.parametrize("printable", [False, True])
+def test_every_mode_renders_in_both_languages(language: str, printable: bool) -> None:
+    """`FR-171` over both render modes, which is where the gap was.
+
+    Parametrized over `printable` rather than written twice: the screen case
+    already had coverage and the print case had none, and a convention that tests
+    one mode per file is what let that happen.
+    """
+    world, who, run_id = _world()
+
+    response = page(Ask(world, who, run_id, language=language, printable=printable))
+
+    assert response.status_code == 200
+    assert f'lang="{language}"' in response.text
+
+
+def test_the_print_surface_carries_the_same_languages_as_the_screen() -> None:
+    """The gap this slice was written to find.
+
+    `decision_print.html.j2` carries `lang` and `dir` and includes the same card
+    and section partials the screen uses, so it is a fully bilingual surface --
+    and before this test no case rendered it in Arabic.
+    """
+    world, who, run_id = _world()
+
+    printed = {
+        language: page(Ask(world, who, run_id, language=language, printable=True))
+        for language in LANGUAGES
+    }
+
+    assert all(r.status_code == 200 for r in printed.values())
+    assert printed["en"].text != printed["ar"].text
+
+
+@pytest.mark.parametrize("printable", [False, True])
+def test_arabic_carries_the_right_text_direction(printable: bool) -> None:
+    """RTL as parity evidence, not as a layout assertion.
+
+    `RCA-008` §Exclusions leaves the layout programme to `U1-05`/`U1-06`/`U1-07`.
+    What is admissible here is that the page declares its own direction, which is
+    a property of the governed content rather than of how it looks.
+    """
+    world, who, run_id = _world()
+
+    arabic = page(Ask(world, who, run_id, language="ar", printable=printable))
+    english = page(Ask(world, who, run_id, language="en", printable=printable))
+
+    assert 'dir="rtl"' in arabic.text
+    assert 'dir="ltr"' in english.text
+
+
+def test_no_mode_is_exempt_from_the_parity_extent() -> None:
+    """The extent assertion: every render mode has a parity case, derived.
+
+    `MODES` comes from the product's own branch in `render_decisions`; asserted
+    non-empty so a derivation that silently returned nothing cannot pass.
+    """
+    world, who, run_id = _world()
+
+    assert MODES
+    for mode in MODES:
+        for language in LANGUAGES:
+            response = page(
+                Ask(world, who, run_id, language=language, printable=mode == "print")
+            )
+
+            assert response.status_code == 200, f"{mode} in {language}"
+            assert f'lang="{language}"' in response.text, f"{mode} in {language}"
+
+
+def test_every_refusal_state_is_reachable_and_governed() -> None:
+    """`FR-164`: refusal wording comes from the governed vocabulary, both languages.
+
+    Reachability is the point. A refusal defined in the vocabulary but reached by
+    no code path renders nowhere and fails nothing -- the "defined but never
+    attached" defect -- so each state is driven to the surface rather than
+    asserted to exist.
+    """
+    world, who, run_id = _world()
+
+    for language in LANGUAGES:
+        response = page(Ask(world, who, run_id, language=language))
+
+        assert response.status_code == 200
+        assert "incompatible source shape" not in response.text
+
+
+def test_the_fr170_unreachability_assertion_still_stands() -> None:
+    """`D1-10`'s acceptance: the assertion `D1-03` made is not weakened here.
+
+    `PeriodComparisonView` is published and unreachable, and `FR-170` requires the
+    gap be held open visibly rather than rendered as an empty tab. This slice
+    neither binds the source nor removes the assertion -- the slice that makes it
+    reachable is the one that removes it.
+    """
+    assert seam.PERIOD_COMPARISON in seam.DECISION_VIEWS
+
+    read = surface_reads(admitted_script(), ControlSelection(source_id="run1"))
+
+    assert seam.PERIOD_COMPARISON.view_id not in read
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -336,6 +450,7 @@ __all__ = [
     "LANGUAGES",
     "MODES",
     "SURFACES",
+    "Ask",
     "Surface",
     "expected_roster",
     "page",
@@ -413,15 +528,37 @@ SURFACES: tuple[Surface, ...] = tuple(
 )
 
 
-def page(
-    world: Any,
-    who: Any,
-    run_id: str,
-    *,
-    language: str = "en",
-    printable: bool = False,
-) -> Any:
-    """One whole surface over the real route, in `language`.
+@dataclasses.dataclass(frozen=True, slots=True)
+class Ask:
+    """One request for one surface, grouped rather than passed flat.
+
+    A value object because CodeScene's gate admits four arguments and the flat
+    form carried six; `DecisionRead` in `decision/seam.py` made the same trade
+    for the same reason. It also collapses what were two near-duplicate helpers:
+    asking as the owner and asking across organizations differ only in
+    `organization_id`, so one call with a defaulted field expresses both.
+    """
+
+    world: Any
+    who: Any
+    run_id: str
+    organization_id: str | None = None
+    language: str = "en"
+    printable: bool = False
+
+    @property
+    def address(self) -> str:
+        """Where this ask is addressed. The owner's organization unless named."""
+        organization = self.organization_id or self.who.organization_id
+        tail = "?print=1" if self.printable else ""
+        return (
+            f"{SHELL_PREFIX}/{self.language}/{organization}"
+            f"/decisions/{self.run_id}{tail}"
+        )
+
+
+def page(ask: Ask) -> Any:
+    """One whole surface over the real route, as `ask` describes it.
 
     **Driven over HTTP and not through `render_decisions`**, which takes four
     positional arguments and hardcodes `decision.html.j2` -- it cannot reach the
@@ -433,9 +570,7 @@ def page(
     production decision collaborator; reusing it rather than rebuilding one keeps
     a single definition of what the shell is wired to.
     """
-    tail = "?print=1" if printable else ""
-    address = f"{SHELL_PREFIX}/{language}/{who.organization_id}/decisions/{run_id}{tail}"
-    return print_support._shell(world, who).get(address)
+    return print_support._shell(ask.world, ask.who).get(ask.address)
 ```
 
 **Note for the executor:** `render_decisions`' exact signature must be confirmed against
@@ -503,85 +638,7 @@ MSG
 
 Append to `tests/test_d110_parity.py`:
 
-```python
-def _world():
-    """One organization with a completed run, and the member who owns it."""
-    world = journey()
-    who, _other = two_members(world)
-    run, _job, _session = completed_run(world, who)
-    return world, who, run.run_id
-
-
-@pytest.mark.parametrize("language", LANGUAGES)
-@pytest.mark.parametrize("printable", [False, True])
-def test_every_mode_renders_in_both_languages(language: str, printable: bool) -> None:
-    """`FR-171` over both render modes, which is where the gap was.
-
-    Parametrized over `printable` rather than written twice: the screen case
-    already had coverage and the print case had none, and a convention that tests
-    one mode per file is what let that happen.
-    """
-    world, who, run_id = _world()
-
-    response = page(world, who, run_id, language=language, printable=printable)
-
-    assert response.status_code == 200
-    assert f'lang="{language}"' in response.text
-
-
-def test_the_print_surface_carries_the_same_languages_as_the_screen() -> None:
-    """The gap this slice was written to find.
-
-    `decision_print.html.j2` carries `lang` and `dir` and includes the same card
-    and section partials the screen uses, so it is a fully bilingual surface --
-    and before this test no case rendered it in Arabic.
-    """
-    world, who, run_id = _world()
-
-    printed = {
-        language: page(world, who, run_id, language=language, printable=True)
-        for language in LANGUAGES
-    }
-
-    assert all(r.status_code == 200 for r in printed.values())
-    assert printed["en"].text != printed["ar"].text
-
-
-@pytest.mark.parametrize("printable", [False, True])
-def test_arabic_carries_the_right_text_direction(printable: bool) -> None:
-    """RTL as parity evidence, not as a layout assertion.
-
-    `RCA-008` §Exclusions leaves the layout programme to `U1-05`/`U1-06`/`U1-07`.
-    What is admissible here is that the page declares its own direction, which is
-    a property of the governed content rather than of how it looks.
-    """
-    world, who, run_id = _world()
-
-    arabic = page(world, who, run_id, language="ar", printable=printable)
-    english = page(world, who, run_id, language="en", printable=printable)
-
-    assert 'dir="rtl"' in arabic.text
-    assert 'dir="ltr"' in english.text
-
-
-def test_no_mode_is_exempt_from_the_parity_extent() -> None:
-    """The extent assertion: every render mode has a parity case, derived.
-
-    `MODES` comes from the product's own branch in `render_decisions`; asserted
-    non-empty so a derivation that silently returned nothing cannot pass.
-    """
-    world, who, run_id = _world()
-
-    assert MODES
-    for mode in MODES:
-        for language in LANGUAGES:
-            response = page(
-                world, who, run_id, language=language, printable=mode == "print"
-            )
-
-            assert response.status_code == 200, f"{mode} in {language}"
-            assert f'lang="{language}"' in response.text, f"{mode} in {language}"
-```
+*(Included in the parity module shown in Task 1 — one file, one import header.)*
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -673,9 +730,12 @@ notice a surface that renders a foreign figure under a caught error.
 
 from __future__ import annotations
 
+import dataclasses
+from typing import Any
+
 import pytest
 
-from tests.d110_support import LANGUAGES, MODES, page_as
+from tests.d110_support import LANGUAGES, MODES, Ask, page
 from tests.w104b_support import journey
 from tests.w106_support import completed_run
 from tests.w110_support import two_members
@@ -687,6 +747,18 @@ def _two_organizations():
     who, other = two_members(world)
     run, _job, _session = completed_run(world, who)
     return world, who, other, run.run_id
+
+
+def _missing(ask: Ask) -> Any:
+    """The same ask, for a run that exists nowhere.
+
+    The comparison partner for every isolation assertion. Asserting only that a
+    foreign response withholds the run id would accept a `200` decision page that
+    happened not to echo it; what `FR-165` requires is that denial and absence are
+    the *same* answer, so each case is compared against this rather than against a
+    predicate.
+    """
+    return page(dataclasses.replace(ask, run_id="no-such-run-at-all"))
 
 
 @pytest.mark.parametrize("printable", [False, True])
@@ -701,11 +773,14 @@ def test_a_foreign_member_cannot_reach_another_organizations_run(
     """
     world, who, other, run_id = _two_organizations()
 
-    response = page_as(
-        world, other, who.organization_id, run_id, printable=printable
-    )
+    ask = Ask(world, other, run_id, who.organization_id, printable=printable)
 
-    assert response.status_code != 200 or run_id not in response.text
+    response = page(ask)
+    missing = _missing(ask)
+
+    assert response.status_code == missing.status_code
+    assert response.text == missing.text
+    assert run_id not in response.text
 
 
 def test_the_foreign_answer_is_indistinguishable_from_a_missing_run() -> None:
@@ -718,8 +793,8 @@ def test_the_foreign_answer_is_indistinguishable_from_a_missing_run() -> None:
     """
     world, _who, other, _run_id = _two_organizations()
 
-    foreign = page_as(world, other, other.organization_id, "run-of-another-org")
-    missing = page_as(world, other, other.organization_id, "no-such-run-at-all")
+    foreign = page(Ask(world, other, "run-of-another-org"))
+    missing = page(Ask(world, other, "no-such-run-at-all"))
 
     assert foreign.status_code == missing.status_code
 
@@ -729,11 +804,14 @@ def test_isolation_holds_in_both_languages(language: str) -> None:
     """A governed refusal is content, so `FR-171` applies to it like any figure."""
     world, who, other, run_id = _two_organizations()
 
-    response = page_as(
-        world, other, who.organization_id, run_id, language=language
-    )
+    ask = Ask(world, other, run_id, who.organization_id, language=language)
 
-    assert response.status_code != 200 or run_id not in response.text
+    response = page(ask)
+    missing = _missing(ask)
+
+    assert response.status_code == missing.status_code
+    assert response.text == missing.text
+    assert run_id not in response.text
 
 
 def test_no_mode_is_exempt_from_the_isolation_extent() -> None:
@@ -742,11 +820,14 @@ def test_no_mode_is_exempt_from_the_isolation_extent() -> None:
 
     assert MODES
     for mode in MODES:
-        response = page_as(
-            world, other, who.organization_id, run_id, printable=mode == "print"
-        )
+        ask = Ask(world, other, run_id, who.organization_id, printable=mode == "print")
 
-        assert response.status_code != 200 or run_id not in response.text, mode
+        response = page(ask)
+        missing = _missing(ask)
+
+        assert response.status_code == missing.status_code, mode
+        assert response.text == missing.text, mode
+        assert run_id not in response.text, mode
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -760,27 +841,7 @@ Add `rendered_for_organization` to `tests/d110_support.py`, following the isolat
 `tests/test_d1_isolation.py:53` — that file already builds a foreign-organization request correctly
 and is the definition to reuse rather than re-derive. Add it to `__all__`.
 
-```python
-def page_as(
-    world: Any,
-    who: Any,
-    organization_id: str,
-    run_id: str,
-    *,
-    language: str = "en",
-    printable: bool = False,
-) -> Any:
-    """One surface addressed at `organization_id`, authenticated as `who`.
-
-    The organization in the address is a parameter so a member of one may ask for
-    another's run, which is the cross-organization case. `who` still supplies the
-    session, because an unauthenticated request tests the session gate rather
-    than isolation.
-    """
-    tail = "?print=1" if printable else ""
-    address = f"{SHELL_PREFIX}/{language}/{organization_id}/decisions/{run_id}{tail}"
-    return print_support._shell(world, who).get(address)
-```
+*(Folded into the module above — `Ask` and `page` are one call, not two helpers.)*
 
 **Executor note:** the stub isolation in `d105_support.py` resolves every pair to one owner
 (`_FakeIsolation` returns `f"owner-of-{organization_id}"`), so a foreign organization already gets a
@@ -836,38 +897,7 @@ MSG
 
 Append to `tests/test_d110_parity.py`:
 
-```python
-def test_every_refusal_state_is_reachable_and_governed() -> None:
-    """`FR-164`: refusal wording comes from the governed vocabulary, both languages.
-
-    Reachability is the point. A refusal defined in the vocabulary but reached by
-    no code path renders nowhere and fails nothing -- the "defined but never
-    attached" defect -- so each state is driven to the surface rather than
-    asserted to exist.
-    """
-    world, who, run_id = _world()
-
-    for language in LANGUAGES:
-        response = page(world, who, run_id, language=language)
-
-        assert response.status_code == 200
-        assert "incompatible source shape" not in response.text
-
-
-def test_the_fr170_unreachability_assertion_still_stands() -> None:
-    """`D1-10`'s acceptance: the assertion `D1-03` made is not weakened here.
-
-    `PeriodComparisonView` is published and unreachable, and `FR-170` requires the
-    gap be held open visibly rather than rendered as an empty tab. This slice
-    neither binds the source nor removes the assertion -- the slice that makes it
-    reachable is the one that removes it.
-    """
-    assert seam.PERIOD_COMPARISON in seam.DECISION_VIEWS
-
-    read = surface_reads(admitted_script(), ControlSelection(source_id="run1"))
-
-    assert seam.PERIOD_COMPARISON.view_id not in read
-```
+*(Included in the parity module shown in Task 1.)*
 
 - [ ] **Step 2: Run, fix, verify**
 
