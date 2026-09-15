@@ -20,6 +20,7 @@ from pathlib import Path
 
 from khepri.local.config import LocalSettings
 from khepri.local.wiring import build_stack, build_worker_stack, local_page_printer
+from khepri.runtime.private_directory import own_private_directory
 
 DEFAULT_INVITATION_DAYS = 7
 
@@ -91,7 +92,7 @@ def _work(settings: LocalSettings, *, workbooks: Path, limit: int) -> int:
     browser for its lifetime too.
     """
     stack = build_stack(settings)
-    workbooks.mkdir(parents=True, exist_ok=True)
+    own_private_directory(workbooks, purpose="worker workbook directory")
     with local_page_printer() as printer:
         worker = build_worker_stack(stack, workbooks=workbooks, printer=printer).worker
         processed = worker.drain(limit=limit)
