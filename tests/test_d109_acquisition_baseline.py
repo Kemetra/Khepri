@@ -113,3 +113,26 @@ def test_the_same_port_across_two_requests_still_reads_twice() -> None:
 
     assert after_first == 7
     assert len(port.requests) == 14
+
+
+def test_a_within_request_cache_would_be_inert_because_nothing_repeats() -> None:
+    """Why the two tests above are the whole obligation, stated as an assertion.
+
+    A cache scoped to one request -- retained on the reader rather than across
+    readers -- is the weaker form of the mutant, and neither test above catches
+    it. That is not a gap: it is **inert**, because no view is read twice within
+    one request, so it could never serve a hit. Asserting that here makes the
+    reason explicit rather than incidental, and turns a later slice that
+    introduces a repeat into a failure here as well as in the read-count file.
+
+    The distinction matters for `FR-168`: coalescing within a request is
+    permitted and a cache between requests is not, so what must be proved is
+    that there is nothing left to coalesce.
+    """
+    port = ScriptedPort(admitted_script())
+    counting = CountingActions(actions(port))
+
+    read_surface(counting, request_for(), selection=ControlSelection(source_id="run1"))
+
+    assert counting.views
+    assert len(counting.views) == len(set(counting.views))

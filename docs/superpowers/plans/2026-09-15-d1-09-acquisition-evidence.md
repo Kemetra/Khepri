@@ -17,7 +17,7 @@ cost by, not a tolerance.**
 |---|---|---|
 | Read counts per path | **MEASURED** | §2 |
 | Surface acquisition latency | **MEASURED** | §3 |
-| Every bound able to fail | **MEASURED** — four mutants, each observed failing | §4 |
+| Every bound able to fail | **MEASURED** — six mutants; four fail as written, one is inert and now asserted | §4 |
 | The `FR-168` prohibitions | **HELD** — no production module changed | §5 |
 | Coalescing | **VERIFIED, not built** — `D1-03`/`D1-05` already performed it | §6 |
 | `PeriodComparisonView` unreachable | **HELD** — untouched; stays `D1-10`'s to assert | §6 |
@@ -100,7 +100,9 @@ A bound that cannot fail is decorative. Each mutant was applied alone, observed,
 | 1 | A real second `read_products(actions, routed(PRODUCT_CATEGORY))` statement in `read_surface` | **6 of 6 failed** in `test_d109_read_counts.py` |
 | 2 | `if not asked:` → `if False:` in `_unsupported_read` | **5 failed**, including `test_a_real_filter_adds_no_read` |
 | 3 | The `qualifiers = ...` read moved above the `if projection is None` guard in `read_cards` | **exactly the 2 refusal-path cases failed** |
-| 4 | A retained-result cache on `CountingActions.request` | **3 of 3 failed** in `test_d109_acquisition_baseline.py` |
+| 4 | A **module-level** retained-result cache on `CountingActions.request` | **3 of 3 failed** in `test_d109_acquisition_baseline.py` |
+| 5 | A **per-instance** cache on the same method (`self._cache`, not a class attribute) | **0 of 3 failed** — inert, see below |
+| 6 | A repeat read, against the inertness test added for mutant 5 | **1 failed**, as written |
 
 **Mutant 3 is the one that justifies the per-path table.** It is invisible to every admitted-path
 assertion — the admitted count stays seven — and is caught only by
@@ -110,7 +112,23 @@ read above a guard would have been a silent widening of the refusal path.
 
 **Mutant 4 is the shape `FR-168` names.** It retains a result across requests, which is a cache
 whatever it is called, and it fails the distribution test as well as the two non-retention tests —
-because retention shows up as a read count below seven.
+because retention shows up as a read count below seven. The cache is a **class attribute** keyed by
+`view_id` alone, and the early return precedes `self.views.append`, so once it is warm a fresh
+wrapper over a fresh port records zero views: `{0, 7}` in the distribution test (iteration 1 records
+seven, iterations 2–200 record none) and `0 == 7` in both non-retention tests.
+
+**Mutant 5 is the weaker form, and it is inert rather than uncaught.** Raised in review on `#457`: a
+cache scoped to one reader (`self._cache`) rather than across readers survives all three tests. The
+reason is not a gap in the assertions — it is that **no view is read twice within one request**, so
+a within-request cache can never serve a hit and changes no observable behavior. Confirmed
+directly: `surface_reads` over the admitted script returns seven distinct view ids with no
+duplicate.
+
+That the property held only incidentally is itself worth fixing, so
+`test_a_within_request_cache_would_be_inert_because_nothing_repeats` now asserts it, and mutant 6
+confirms that test fails the moment a repeat read is introduced. The distinction is exactly
+`FR-168`'s: coalescing *within* a request is permitted, a cache *between* requests is not, so what
+must be proved is that there is nothing left to coalesce.
 
 **One malformed mutant, recorded because it proves nothing.** The first attempt at mutant 1
 duplicated the `products=` keyword argument, which is a `SyntaxError`: pytest never collected, and a
@@ -181,8 +199,9 @@ No figure here is unreproducible from committed code.
 | Figure | Producer |
 |---|---|
 | §2's five-row count table | `tests/test_d109_read_counts.py`, all six tests |
+| §4's within-request inertness | `test_a_within_request_cache_would_be_inert_because_nothing_repeats` |
 | §3's min/p50/p90/max and `reads=[7]` | `tests/test_d109_acquisition_baseline.py::_surface_samples` |
-| §4's four mutant outcomes | the mutations described in §4, applied to the named lines |
+| §4's six mutant outcomes | the mutations described in §4, applied to the named lines |
 
 ```bash
 PYTHONPATH="src;." ./.venv/Scripts/python.exe -m pytest \
