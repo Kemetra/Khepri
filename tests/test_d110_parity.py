@@ -22,6 +22,7 @@ from tests.d110_support import (
     LANGUAGES,
     MODES,
     SURFACES,
+    Ask,
     _copy_keys,
     _section_keys,
     expected_roster,
@@ -93,7 +94,7 @@ def test_every_mode_renders_in_both_languages(language: str, printable: bool) ->
     """
     world, who, run_id = _world()
 
-    response = page(world, who, run_id, language=language, printable=printable)
+    response = page(Ask(world, who, run_id, language=language, printable=printable))
 
     assert response.status_code == 200
     assert f'lang="{language}"' in response.text
@@ -109,7 +110,7 @@ def test_the_print_surface_carries_the_same_languages_as_the_screen() -> None:
     world, who, run_id = _world()
 
     printed = {
-        language: page(world, who, run_id, language=language, printable=True)
+        language: page(Ask(world, who, run_id, language=language, printable=True))
         for language in LANGUAGES
     }
 
@@ -127,8 +128,8 @@ def test_arabic_carries_the_right_text_direction(printable: bool) -> None:
     """
     world, who, run_id = _world()
 
-    arabic = page(world, who, run_id, language="ar", printable=printable)
-    english = page(world, who, run_id, language="en", printable=printable)
+    arabic = page(Ask(world, who, run_id, language="ar", printable=printable))
+    english = page(Ask(world, who, run_id, language="en", printable=printable))
 
     assert 'dir="rtl"' in arabic.text
     assert 'dir="ltr"' in english.text
@@ -146,7 +147,7 @@ def test_no_mode_is_exempt_from_the_parity_extent() -> None:
     for mode in MODES:
         for language in LANGUAGES:
             response = page(
-                world, who, run_id, language=language, printable=mode == "print"
+                Ask(world, who, run_id, language=language, printable=mode == "print")
             )
 
             assert response.status_code == 200, f"{mode} in {language}"
@@ -164,7 +165,7 @@ def test_every_refusal_state_is_reachable_and_governed() -> None:
     world, who, run_id = _world()
 
     for language in LANGUAGES:
-        response = page(world, who, run_id, language=language)
+        response = page(Ask(world, who, run_id, language=language))
 
         assert response.status_code == 200
         assert "incompatible source shape" not in response.text

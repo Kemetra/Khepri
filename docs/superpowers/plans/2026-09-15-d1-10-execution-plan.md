@@ -162,6 +162,14 @@ you.
 | Remove the Arabic heading for a section (real parity defect) | — | **8 failed**, including the parity extent |
 | Isolation test asks as the *owner* instead of the foreigner | — | **2 failed** — the tests discriminate, they do not pass blanketly |
 
+**A fifth defect, found by the CodeScene pre-flight rather than by the tests.** The draft's `page`
+took 5 arguments and `page_as` 6; the gate admits 4, and it failed with "Excess Number of Function
+Arguments". The two were also near-duplicates differing only in `organization_id`. Both are fixed by
+one frozen `Ask` value object with a defaulted `organization_id` — the trade `DecisionRead` in
+`decision/seam.py` already made for the same reason. Re-run: **passed**, 3 eligible files, no issues.
+The plan's code below carries the value object; a `page(world, who, ...)` call signature anywhere is
+the superseded draft.
+
 **One finding for the executor:** `DecisionReadings` has five fields (`cards`, `branches`,
 `products`, `basket`, `unsupported`) and `SECTION_COPY` four sections. `concentration` is a section
 but not a reading — it travels inside `basket` as `BasketSurface`. The roster is the union, and that

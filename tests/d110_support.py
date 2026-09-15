@@ -26,6 +26,7 @@ __all__ = [
     "LANGUAGES",
     "MODES",
     "SURFACES",
+    "Ask",
     "Surface",
     "expected_roster",
     "page",
@@ -103,15 +104,37 @@ SURFACES: tuple[Surface, ...] = tuple(
 )
 
 
-def page(
-    world: Any,
-    who: Any,
-    run_id: str,
-    *,
-    language: str = "en",
-    printable: bool = False,
-) -> Any:
-    """One whole surface over the real route, in `language`.
+@dataclasses.dataclass(frozen=True, slots=True)
+class Ask:
+    """One request for one surface, grouped rather than passed flat.
+
+    A value object because CodeScene's gate admits four arguments and the flat
+    form carried six; `DecisionRead` in `decision/seam.py` made the same trade
+    for the same reason. It also collapses what were two near-duplicate helpers:
+    asking as the owner and asking across organizations differ only in
+    `organization_id`, so one call with a defaulted field expresses both.
+    """
+
+    world: Any
+    who: Any
+    run_id: str
+    organization_id: str | None = None
+    language: str = "en"
+    printable: bool = False
+
+    @property
+    def address(self) -> str:
+        """Where this ask is addressed. The owner's organization unless named."""
+        organization = self.organization_id or self.who.organization_id
+        tail = "?print=1" if self.printable else ""
+        return (
+            f"{SHELL_PREFIX}/{self.language}/{organization}"
+            f"/decisions/{self.run_id}{tail}"
+        )
+
+
+def page(ask: Ask) -> Any:
+    """One whole surface over the real route, as `ask` describes it.
 
     **Driven over HTTP and not through `render_decisions`**, which takes four
     positional arguments and hardcodes `decision.html.j2` -- it cannot reach the
@@ -123,27 +146,4 @@ def page(
     production decision collaborator; reusing it rather than rebuilding one keeps
     a single definition of what the shell is wired to.
     """
-    tail = "?print=1" if printable else ""
-    address = f"{SHELL_PREFIX}/{language}/{who.organization_id}/decisions/{run_id}{tail}"
-    return print_support._shell(world, who).get(address)
-
-
-def page_as(
-    world: Any,
-    who: Any,
-    organization_id: str,
-    run_id: str,
-    *,
-    language: str = "en",
-    printable: bool = False,
-) -> Any:
-    """One surface addressed at `organization_id`, authenticated as `who`.
-
-    The organization in the address is a parameter so a member of one may ask for
-    another's run, which is the cross-organization case. `who` still supplies the
-    session, because an unauthenticated request tests the session gate rather
-    than isolation.
-    """
-    tail = "?print=1" if printable else ""
-    address = f"{SHELL_PREFIX}/{language}/{organization_id}/decisions/{run_id}{tail}"
-    return print_support._shell(world, who).get(address)
+    return print_support._shell(ask.world, ask.who).get(ask.address)

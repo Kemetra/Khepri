@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.d110_support import LANGUAGES, MODES, page_as
+from tests.d110_support import LANGUAGES, MODES, Ask, page
 from tests.w104b_support import journey
 from tests.w106_support import completed_run
 from tests.w110_support import two_members
@@ -40,8 +40,8 @@ def test_a_foreign_member_cannot_reach_another_organizations_run(
     """
     world, who, other, run_id = _two_organizations()
 
-    response = page_as(
-        world, other, who.organization_id, run_id, printable=printable
+    response = page(
+        Ask(world, other, run_id, who.organization_id, printable=printable)
     )
 
     assert response.status_code != 200 or run_id not in response.text
@@ -57,8 +57,8 @@ def test_the_foreign_answer_is_indistinguishable_from_a_missing_run() -> None:
     """
     world, _who, other, _run_id = _two_organizations()
 
-    foreign = page_as(world, other, other.organization_id, "run-of-another-org")
-    missing = page_as(world, other, other.organization_id, "no-such-run-at-all")
+    foreign = page(Ask(world, other, "run-of-another-org"))
+    missing = page(Ask(world, other, "no-such-run-at-all"))
 
     assert foreign.status_code == missing.status_code
 
@@ -68,8 +68,8 @@ def test_isolation_holds_in_both_languages(language: str) -> None:
     """A governed refusal is content, so `FR-171` applies to it like any figure."""
     world, who, other, run_id = _two_organizations()
 
-    response = page_as(
-        world, other, who.organization_id, run_id, language=language
+    response = page(
+        Ask(world, other, run_id, who.organization_id, language=language)
     )
 
     assert response.status_code != 200 or run_id not in response.text
@@ -81,8 +81,8 @@ def test_no_mode_is_exempt_from_the_isolation_extent() -> None:
 
     assert MODES
     for mode in MODES:
-        response = page_as(
-            world, other, who.organization_id, run_id, printable=mode == "print"
+        response = page(
+            Ask(world, other, run_id, who.organization_id, printable=mode == "print")
         )
 
         assert response.status_code != 200 or run_id not in response.text, mode
