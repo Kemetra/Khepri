@@ -69,11 +69,11 @@ def retain_workspace_content(
                 BetaSessionRow.session_id == session_id,
             )
         )
-        if (
-            session is None
-            or session.deletion_requested_at is not None
-            or session.content_deleted_at is not None
-        ):
+        if session is None:
+            return False
+        if session.deletion_requested_at is not None:
+            return False
+        if session.content_deleted_at is not None:
             return False
         session.content_expires_at = WORKSPACE_CONTENT_END
         for row in (UploadRow, ReportDeliveryRow, ReportArtifactRow):
