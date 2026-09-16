@@ -86,12 +86,12 @@ EXECUTIVE_OVERVIEW = ViewIdentity(
     empty_rule=EMPTY_STATED_ABSENCE,
 )
 
-#: Published and **not reachable**. `RCA-008` §The open question: the adapter
-#: builds only single-population bundles, so `FR-136`'s shape predicate refuses
-#: this view, and `FR-170` requires the gap be held open visibly rather than
-#: rendered as an empty tab. The identity is here so the source map is complete;
-#: no read model calls it, and the slice that makes it reachable is the one that
-#: removes that assertion.
+#: Published and reachable, but **not read by this surface**. `RCA-009` bound the
+#: governed two-population source to this view through the semantic-query
+#: composition root, so it answers there. That is a different consumer from the
+#: decision surface: no read model here calls it, and whether this surface should
+#: is an `RCA-008` reading rather than a slice's to take. The identity is here so
+#: the source map stays complete.
 PERIOD_COMPARISON = ViewIdentity(
     view_id="PeriodComparisonView",
     view_version="sv1.period_comparison.v1",

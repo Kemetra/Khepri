@@ -1,6 +1,6 @@
-"""`D1-03` -- the `FR-162` metric card, its status selection, and one asserted absence.
+"""`D1-03` -- the `FR-162` metric card and its status selection.
 
-Authority: active `RCA-008` `FR-161`, `FR-162`, `FR-164`, `FR-165`, `FR-170`, `FR-171`.
+Authority: active `RCA-008` `FR-161`, `FR-162`, `FR-164`, `FR-165`, `FR-171`.
 
 The read model is driven through a fake port, as `D1-02`'s was and for the same
 reason: what is under test is the *selection*, and a real projection would put a
@@ -11,12 +11,6 @@ over HTTP. The HTTP plumbing -- session, scope resolution, headers, the frame --
 is `RCA-002`'s and is already asserted by the `W1`/`C1` shell tests; repeating it
 here would test those and not this. What is this slice's own is the mapping from
 a `CardsReading` to rendered bilingual text, and that is what these drive.
-
-**The absence is the point of one whole group.** `FR-170` requires the Period
-Comparison surface be "held open visibly and asserted to be unreachable, never
-rendered as empty or partial", and requires the assertion be removed by the
-slice that makes the source reachable rather than by this one. So a test here
-fails if that source quietly becomes reachable.
 """
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ from khepri.rca.semantic_queries import ports
 from khepri.rca.workspace.decision import card, controls, seam
 from khepri.rra import definitions
 from khepri.rra.rendering.wording import caveat_message, metric_business_name
-from khepri.rra.semantic_views import compatibility, registry
+from khepri.rra.semantic_views import compatibility
 from khepri.runtime import shell_decisions
 
 LANGUAGES = ("en", "ar")
@@ -213,36 +207,6 @@ def test_a_refusal_carrying_a_projection_is_still_a_refusal() -> None:
     assert reading.refusal is refusal
 
 
-# --- FR-170: the absence this slice may not close ----------------------------
-
-
-def test_no_card_carries_a_comparison() -> None:
-    """`FR-170` -- the Period Comparison source is not reachable, so there is none."""
-    assert _one_card().comparison is None
-
-
-def test_the_reading_states_the_comparison_surface_is_unreachable() -> None:
-    """`FR-170` -- held open visibly, never rendered as empty or partial."""
-    reading = card.read_cards(
-        _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", "c", ()),))}),
-        _request(),
-    )
-    assert reading.comparison_unreachable is True
-
-
-def test_the_period_comparison_source_is_still_unreachable() -> None:
-    """`FR-170` -- remove this with the slice that makes the source reachable.
-
-    `PeriodComparisonView` admits a two-population bundle and the shipping
-    adapter builds one population per run, so `FR-136`'s shape predicate refuses
-    it. If this ever stops being true, the absence above became a lie and both
-    must be revisited deliberately rather than discovered by a customer.
-    """
-    definition = registry.define_view(seam.PERIOD_COMPARISON.view_id)
-    single = registry.define_view(seam.EXECUTIVE_OVERVIEW.view_id)
-    assert definition.accepted_source_shape != single.accepted_source_shape
-
-
 # --- FR-164 and FR-171: the surface ------------------------------------------
 
 
@@ -420,33 +384,6 @@ def test_status_copy_is_in_the_page_language(language: str) -> None:
     assert f'data-line="status">{label}</span>' in body
     if language == "ar":
         assert ">verified<" not in body
-
-
-@pytest.mark.parametrize("language", LANGUAGES)
-def test_the_template_renders_the_unreachable_comparison_visibly(language: str) -> None:
-    """`FR-170` -- the surface says it, rather than showing an empty tab."""
-    from khepri.runtime.shell_api import SHELL_PREFIX, shell_environment
-
-    reading = card.read_cards(
-        _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", "c", ()),))}),
-        _request(),
-    )
-    body = shell_decisions.render_decisions(
-        shell_environment(),
-        shell_decisions.DecisionReadings(cards=reading),
-        shell_decisions.DecisionFrame(
-            language=language,
-            organization_id="org-1",
-            prefix=SHELL_PREFIX,
-            source_id="run-1",
-        ),
-        # `D1-07`: this path renders no controls beyond the run it is addressed
-        # by, so the selection carries the source and no filter.
-        shell_decisions.DecisionControls(
-            selection=controls.ControlSelection(source_id="run-1")
-        ),
-    )
-    assert shell_decisions.COMPARISON_UNREACHABLE[language] in body
 
 
 def test_the_request_sends_no_filter() -> None:

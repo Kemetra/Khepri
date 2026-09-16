@@ -5,6 +5,7 @@ Authority: active `RCA-009` `FR-172`--`FR-180`.
 
 from __future__ import annotations
 
+import pathlib
 from dataclasses import dataclass
 
 import pytest
@@ -485,3 +486,56 @@ def test_the_row_census_can_see_a_write() -> None:
     after = _row_census(scene.journey)
     assert after != before, "the census cannot observe a change it must be able to see"
     assert after["rra_fact_packages"] < before["rra_fact_packages"]
+
+
+# --- Task 4: the FR-170 asserted absence is removed --------------------------
+
+
+def test_no_asserted_absence_survives_anywhere() -> None:
+    """`FR-179` -- every `FR-170` assertion and explanatory claim is removed.
+
+    An extent assertion, not a per-file one: eleven files carried this marker and
+    a file-by-file removal cannot see the twelfth. `governance/` is excluded --
+    `RCA-008` keeps `FR-170` as history and `RCA-009` succeeds its reading rather
+    than editing the artifact.
+
+    **This file excludes itself, and that is not a loophole.** The sweep's own
+    docstring and predicate contain the literals, so a sweep including itself
+    could never pass. The exclusion is sound because this file *asserts the
+    absence* rather than claiming Period Comparison is unreachable -- which is
+    the thing `FR-179` removes. Exactly one path is exempt and it is named by
+    `__file__`, so the exemption cannot silently widen to a second file.
+    """
+    here = pathlib.Path(__file__).resolve()
+    roots = (pathlib.Path("src"), pathlib.Path("tests"))
+    markers = ("FR-170", "comparison_unreachable", "COMPARISON_UNREACHABLE")
+    offenders = sorted(
+        str(path)
+        for root in roots
+        for path in root.rglob("*")
+        if path.suffix in {".py", ".j2"}
+        and "__pycache__" not in path.parts
+        and path.resolve() != here
+        and any(marker in path.read_text(encoding="utf-8") for marker in markers)
+    )
+    assert offenders == [], offenders
+
+
+def test_the_absence_sweep_can_actually_fail(tmp_path: pathlib.Path) -> None:
+    """The sweep is evidence only if its predicate can find a marker.
+
+    A sweep whose matcher was broken -- a typo in a marker, a suffix filter that
+    excludes everything -- reports zero offenders forever and would have passed
+    before this slice removed anything. This drives the same predicate over a
+    file that does carry a marker and asserts it is caught.
+    """
+    planted = tmp_path / "carries_the_marker.py"
+    planted.write_text("# FR-170 lives here\n", encoding="utf-8")
+    markers = ("FR-170", "comparison_unreachable", "COMPARISON_UNREACHABLE")
+    found = [
+        path
+        for path in tmp_path.rglob("*")
+        if path.suffix in {".py", ".j2"}
+        and any(marker in path.read_text(encoding="utf-8") for marker in markers)
+    ]
+    assert found == [planted]

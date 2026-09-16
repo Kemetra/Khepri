@@ -65,9 +65,11 @@ __all__ = [
 ]
 
 #: Every view the decision surface reads, which is what decides the filters it
-#: may offer. Seven and not eight: `PeriodComparisonView` is published and not
-#: reachable (`FR-170`), no read model calls it, and offering a control for a
-#: surface held open would be rendering it as partial.
+#: may offer. Seven and not eight: `PeriodComparisonView` answers through the
+#: semantic-query composition root (`RCA-009`), but no read model on *this*
+#: surface calls it, and a filter control for a view this surface does not read
+#: would offer to narrow a figure the page never shows. Whether the decision
+#: surface should consume it is an `RCA-008` reading.
 SURFACE_VIEWS = (
     EXECUTIVE_OVERVIEW,
     METRIC_AVAILABILITY,

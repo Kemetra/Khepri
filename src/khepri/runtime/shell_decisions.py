@@ -20,11 +20,6 @@ refusal catalog: `refusal_message` serves the `section` and `result` tiers and
 knows nothing of a view's causes, so reaching for it here would have meant
 either an invented string or a `KeyError` in front of a customer.
 
-**The Period Comparison absence is rendered, not hidden.** `FR-170` requires a
-promised surface whose source is unreachable be "held open visibly and asserted
-to be unreachable, never rendered as empty or partial". `CardsReading` carries
-the flag and this module gives it bilingual words.
-
 **This module does not import `shell_api`**, as `shell_comparison.py` does not:
 the shell hands each route module a `ShellRendering` so one definition of the
 security headers and the render path serves every surface. That is also why
@@ -116,7 +111,6 @@ from khepri.runtime.shell_invitations import ShellRendering
 
 __all__ = [
     "ABSENCE_WORDING",
-    "COMPARISON_UNREACHABLE",
     "DECISION_COPY",
     "EMPTY_WORDING",
     "SECTION_BASKET",
@@ -148,15 +142,6 @@ SECTION_BASKET = "basket"
 #: Basket may be admitted while Concentration is unavailable, and one surface
 #: that failed whole would be the partial projection `RCA-008` §Invariants bars.
 SECTION_CONCENTRATION = "concentration"
-
-#: `FR-170`. The Period Comparison source is a two-population bundle and the
-#: shipping composition builds one population per run, so the surface is promised
-#: and not reachable. Said in both languages because `FR-171` admits no surface
-#: that states less in one.
-COMPARISON_UNREACHABLE = {
-    "en": "Period comparison is not available yet on this workspace.",
-    "ar": "مقارنة الفترات غير متاحة بعد في مساحة العمل هذه.",
-}
 
 #: The three governed unit kinds, named for a reader. The keys are `RRA-004`'s
 #: own constants rather than strings retyped here: the shell may import
@@ -381,7 +366,6 @@ class _DecisionView:
     refusal: str | None = None
     unavailable: bool = False
     empty: bool = False
-    comparison_unreachable: str | None = None
 
 
 def _named(card: Any, language: str) -> _CardView:
@@ -508,9 +492,6 @@ def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
         refusal=_refusal_text(reading, language),
         unavailable=reading.status == "unavailable",
         empty=reading.empty_rule is not None,
-        comparison_unreachable=(
-            COMPARISON_UNREACHABLE[language] if reading.comparison_unreachable else None
-        ),
     )
 
 
@@ -877,8 +858,8 @@ def render_decisions(
     """The decision surface's body, without the shell's frame around it.
 
     The route below renders through `ShellRendering`; this path exists so the
-    template can be driven directly, which `FR-170` needs -- a template nothing
-    renders cannot show that the Period Comparison surface is held open.
+    template can be driven directly, which the surface's own tests need -- a
+    template nothing renders cannot be shown to render what it claims.
     """
     return environment.get_template("decision.html.j2").render(
         language=frame.language,

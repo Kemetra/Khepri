@@ -8,15 +8,6 @@
   <h1 id="page-title">{{ decision.title }}</h1>
   <p class="lede">{{ decision.lede }}</p>
 
-  {#
-    FR-170: the Period Comparison source is not reachable, and this says so
-    rather than rendering an empty tab. The slice that makes the source
-    reachable removes this, not the slice that shipped the surface.
-  #}
-  {% if view.comparison_unreachable %}
-  <p class="decision-unreachable" role="note">{{ view.comparison_unreachable }}</p>
-  {% endif %}
-
   {# FR-164: the governed message, never the bare cause code. #}
   {% if view.refusal %}
   <p class="decision-refusal" role="alert">{{ view.refusal }}</p>
@@ -56,7 +47,7 @@
     against the requirement's own list rather than against this markup.
 
     There is no comparison line. FR-162 requires one "only when compatible" and
-    FR-170's source is not; the note above says so once, for the page.
+    no read model on this surface supplies one.
   #}
   {% if view.cards %}
   <ul class="decision-cards">

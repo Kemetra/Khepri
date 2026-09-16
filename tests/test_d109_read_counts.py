@@ -21,8 +21,9 @@ from tests.d109_support import (
 )
 
 #: The admitted page, in the order `read_surface` issues it. Seven and not eight:
-#: `PeriodComparisonView` is published and unreachable (`FR-170`), so this is not
-#: derived from `DECISION_VIEWS`.
+#: `PeriodComparisonView` answers through the semantic-query composition root
+#: (`RCA-009`) and no read model on this surface calls it, so this is not derived
+#: from `DECISION_VIEWS`.
 ADMITTED_VIEWS = (
     "ExecutiveOverviewView",
     "MetricAvailabilityView",
