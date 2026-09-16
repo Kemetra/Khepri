@@ -7,6 +7,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text as sa_text
+
 from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.semantic_queries import ports as query_ports
@@ -15,12 +19,14 @@ from khepri.rca.workspace.contracts import AnalysisRun
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
+from khepri.rra.analysis.dataset_period import CAUSE_UNORDERED_PAIR
 from khepri.rra.persistence import SqlFactPackageRepository
 from khepri.rra.semantic_views import projection
 from khepri.rra.semantic_views.contracts import SHAPE_TWO_POPULATION
 from khepri.rra.semantic_views.registry import define_view, view_ids
 from khepri.runtime import wiring
 from khepri.runtime.comparison_assembly import ComparisonAssemblyPorts
+from khepri.runtime.comparison_operands import OperandRequest, admit_pair, derive_operand
 from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
 from tests.c106_support import CompletedPair, completed_pair
@@ -290,3 +296,192 @@ def test_the_composition_root_wires_the_branch_not_a_hand_built_fixture() -> Non
     assert outcome.kind == query_ports.KIND_ADMITTED
     assert outcome.projection is not None
     assert outcome.projection.rows
+
+
+# --- Task 3: fail-closed, isolation, parity and no-write evidence -------------
+#
+# `FR-173`, `FR-175`, `FR-177`, `FR-178`. The group above proves the branch
+# answers; this group proves it refuses correctly and writes nothing.
+
+
+def _row_census(j: Journey) -> dict[str, int]:
+    """Every table in the live database and how many rows it holds.
+
+    A whole-database count rather than a spy on one store. A spy proves only
+    that the store it wraps stayed silent, and `FR-178` bars a write anywhere --
+    including a table nobody thought to wrap. Derived from `inspect`, so a table
+    added later is counted without this test being updated.
+    """
+    with j.w.factory() as session:
+        names = tuple(sa_inspect(session.bind).get_table_names())
+        assert names, "census must count something"
+        return {
+            name: session.execute(sa_text(f"SELECT COUNT(*) FROM {name}")).scalar_one()
+            for name in names
+        }
+
+
+def _drop_stored_packages(j: Journey) -> None:
+    """Remove every retained package, so no operand can be derived.
+
+    The run rows are left exactly as they are. `AnalysisRun` is built through a
+    capability door (`records.py:206`) that refuses both direct construction and
+    `dataclasses.replace`, so a hand-damaged run is not available to this test --
+    and would be the wrong instrument anyway: it would prove the branch refuses a
+    record that cannot exist. Deleting the stored package makes a *real* run
+    underivable through the path production uses.
+    """
+    with j.w.factory() as session:
+        session.execute(sa_text("DELETE FROM rra_fact_packages"))
+        session.commit()
+
+
+def _operand_of(scene: _Scene, run: AnalysisRun):
+    """One derived operand through the same seam the branch calls."""
+    load = derive_operand(
+        OperandRequest(
+            ports=_ports(scene.journey),
+            owner_id=run.owner_id,
+            run=run,
+            now=scene.journey.clock(),
+        )
+    )
+    assert load.operand is not None
+    return load.operand
+
+
+def test_every_failure_is_one_content_identical_miss() -> None:
+    """`FR-173`, `FR-175` -- content-free, naming no source, identical across causes.
+
+    An extent assertion over the failure set rather than one test per cause: a
+    per-cause test still passes when two causes answer differently, and what
+    `FR-173` requires is exactly that a reader cannot tell them apart.
+    """
+    scene = _scene()
+    subject, baseline = scene.pair.subject_run, scene.pair.baseline_run
+    outcomes = {
+        "self_pair": _composed(scene, subject=subject, baseline=subject),
+        "wrong_arity_one": scene.adapter.project(_request(), (subject,)),
+        "wrong_arity_three": scene.adapter.project(_request(), (subject, baseline, subject)),
+    }
+    _drop_stored_packages(scene.journey)
+    outcomes["underivable_operand"] = _composed(scene, subject=subject, baseline=baseline)
+    assert set(outcomes.values()) == {None}, outcomes
+
+
+def test_one_run_named_twice_is_refused() -> None:
+    """`FR-175` -- a self-pair is what the comparison surface refuses first.
+
+    `_admission_cause` does not see this: it checks organization scope and
+    package compatibility, and one run named twice passes both. Without the
+    seam's guard the view would admit a period compared against itself while
+    `ComparisonActions._shape_refused` refuses the same request.
+    """
+    scene = _scene()
+    assert _composed(scene, subject=scene.pair.subject_run, baseline=scene.pair.subject_run) is None
+
+
+def test_the_seam_refuses_a_self_pair_under_the_existing_cause() -> None:
+    """`FR-180` -- the cause is the one the existing path already produces.
+
+    Asserted at the seam, not through the branch: the branch maps every cause to
+    `None` and so cannot show *which* cause fired, so a branch-only test would
+    pass with any cause at all -- including one no governed wording covers.
+
+    **What refuses this is `RRA-008`, not the seam.**
+    `VersionPair.__post_init__` (`dataset_period.py:108-110`) raises
+    `UnorderedPairRefused` when both sides name one `dataset_version_id`. The
+    seam adds no guard of its own; this test pins that the governed refusal
+    survives relocation and still reaches a caller as a stated cause with
+    wording in both languages.
+    """
+    scene = _scene()
+    operand = _operand_of(scene, scene.pair.subject_run)
+    admission = admit_pair(scene.pair.subject_run.owner_id, operand, operand)
+    assert admission.bundle is None
+    assert admission.cause == CAUSE_UNORDERED_PAIR
+    assert set(admission.wording) == {"ar", "en"}
+    assert all(admission.wording.values()), "a governed refusal states text in both languages"
+
+
+@pytest.mark.parametrize("arity", [0, 1, 3])
+def test_the_branch_fails_closed_on_the_wrong_number_of_sources(arity: int) -> None:
+    """`FR-175` -- the branch owns arity once it intercepts `_candidate`.
+
+    Zero is included: an empty tuple is the one arity that could plausibly read
+    as "nothing to refuse" and come back as an admitted empty projection.
+    """
+    scene = _scene()
+    sources = tuple([scene.pair.subject_run] * arity)
+    assert scene.adapter.project(_request(), sources) is None
+
+
+def test_projected_content_equals_the_governed_source() -> None:
+    """`FR-176` -- the adapter adds, suppresses and relabels nothing.
+
+    Derived from the bundle the seam itself assembles rather than restated here:
+    comparing a restatement against itself is a tautology that survives every
+    mutant. Both sides come from one `admit_pair`, so any divergence is the
+    adapter's doing and nothing else's.
+    """
+    scene = _scene()
+    subject, baseline = scene.pair.subject_run, scene.pair.baseline_run
+    admission = admit_pair(
+        subject.owner_id, _operand_of(scene, subject), _operand_of(scene, baseline)
+    )
+    assert admission.bundle is not None
+    governed = projection.project(_request(), (admission.bundle,))
+    assert governed.projection is not None
+
+    outcome = _composed(scene, subject=subject, baseline=baseline)
+    assert outcome is not None and outcome.projection is not None
+    assert outcome.projection.rows == governed.projection.rows
+    assert outcome.projection.version_pairs == governed.projection.version_pairs
+    assert outcome.projection.caveats == governed.projection.caveats
+    assert outcome.projection.population_qualifiers == governed.projection.population_qualifiers
+    assert _provenance(outcome) == tuple(
+        figure.provenance for figure in governed.projection.evidence
+    )
+
+
+def test_the_projection_carries_evidence_and_versions_through() -> None:
+    """`FR-176`, `FR-177` -- the paths a reader follows survive composition.
+
+    `FR-177` requires neither language drop an evidence path or a version, and a
+    surface can only render what the projection carries. The projection states
+    governed codes rather than prose, so their presence here is the property
+    both languages then read from.
+    """
+    scene = _scene()
+    outcome = _composed(scene, subject=scene.pair.subject_run, baseline=scene.pair.baseline_run)
+    assert outcome is not None and outcome.projection is not None
+    assert outcome.projection.evidence, "evidence paths must survive composition"
+    assert outcome.projection.version_pairs, "the versions the run recorded must survive"
+    assert all(code for code, _value in outcome.projection.version_pairs)
+
+
+def test_the_composition_writes_nothing() -> None:
+    """`FR-178` -- no row, artifact, event, counter or content-bearing log.
+
+    A whole-database delta, not a spy: see `_row_census`.
+    """
+    scene = _scene()
+    before = _row_census(scene.journey)
+    outcome = _composed(scene, subject=scene.pair.subject_run, baseline=scene.pair.baseline_run)
+    assert outcome is not None and outcome.projection is not None
+    assert _row_census(scene.journey) == before
+
+
+def test_the_row_census_can_see_a_write() -> None:
+    """The zero-write assertion is evidence only if the census can fire.
+
+    A census that cannot observe a change makes every no-write test pass by
+    construction. This drives one real write through the live factory and
+    asserts the census notices it.
+    """
+    scene = _scene()
+    before = _row_census(scene.journey)
+    _drop_stored_packages(scene.journey)
+    after = _row_census(scene.journey)
+    assert after != before, "the census cannot observe a change it must be able to see"
+    assert after["rra_fact_packages"] < before["rra_fact_packages"]

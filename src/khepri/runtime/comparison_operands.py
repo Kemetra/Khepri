@@ -22,7 +22,6 @@ from khepri.rra.aggregates import granularity_for
 from khepri.rra.analysis.comparison_narrative import refusal_wording
 from khepri.rra.analysis.dataset_period import (
     CAUSE_RETAIL_DAY,
-    CAUSE_UNORDERED_PAIR,
     DatasetPeriod,
 )
 from khepri.rra.coverage import CompletenessQuery, CoverageManifest, admits_completeness
@@ -276,15 +275,16 @@ def admit_pair(
     because a caller that skipped it would admit a pair the other refuses --
     an incompatibility degrading into another result, which §Invariants bars.
     """
-    if subject.run_id == baseline.run_id:
-        # `ComparisonActions._shape_refused` refuses a self-pair before assembly and
-        # `_admission_cause` does not -- it checks scope and package compatibility,
-        # neither of which sees one run named twice. A caller that reached assembly
-        # without passing that earlier gate would compare a period against itself and
-        # be admitted. The cause is the one the comparison path already produces.
-        return PairAdmission(
-            None, CAUSE_UNORDERED_PAIR, dict(refusal_wording(CAUSE_UNORDERED_PAIR))
-        )
+    # No self-pair guard here, deliberately. A draft of this seam carried one, on
+    # the premise that `_admission_cause` "checks scope and package compatibility,
+    # neither of which sees one run named twice". That premise is false:
+    # `VersionPair.__post_init__` (`dataset_period.py:108-110`) raises
+    # `UnorderedPairRefused` when both sides name one `dataset_version_id`, so
+    # `assemble_crossversion` already refuses a self-pair under exactly
+    # `CAUSE_UNORDERED_PAIR`. Mutation-testing found the guard dead -- disabling it
+    # changed no test's outcome. `FR-180` admits no addition to the relocated
+    # derivation, and a second statement of a rule the governed path already states
+    # is the "two agreeing copies" this specification exists to prevent.
     built = assemble_crossversion(_cross_request(owner_id, subject, baseline))
     if isinstance(built, CrossVersionRefusal):
         return PairAdmission(None, built.cause, dict(built.wording))
