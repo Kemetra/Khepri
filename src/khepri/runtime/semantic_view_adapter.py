@@ -173,11 +173,12 @@ class SemanticViewAdapter:
         (`FR-177`). `FR-175` admits exactly this -- "the existing governed
         refusal *or unavailable outcome*".
         """
-        if self._operands is None or self._now is None:
+        operands, now = self._operands, self._now
+        if operands is None or now is None:
             return None
         if len(sources) != 2:
             return None
-        pair = self._operands_for(sources)
+        pair = _operands_for(operands, now, sources)
         if pair is None:
             return None
         owner_id, subject, baseline = pair
@@ -185,41 +186,6 @@ class SemanticViewAdapter:
         if admission.bundle is None:
             return None
         return projection.project(request, (admission.bundle,))  # type: ignore[arg-type]
-
-    def _operands_for(
-        self, sources: tuple[object, ...]
-    ) -> tuple[str, ComparisonOperand, ComparisonOperand] | None:
-        """One operand per run, or `None` if either cannot be derived.
-
-        All-or-nothing, matching `_bundles` and `SemanticQueryActions._scoped_sources`:
-        a partial pair would let a two-population view project over one
-        population.
-
-        The scope equality check is not redundant. Each run is read under the
-        caller's own scope, but nothing before this point has compared the two
-        runs' scopes to each other -- `FR-173` requires each source be loaded
-        through the *same* requesting organization's opaque scope, and two runs
-        from different scopes reaching here would otherwise be compared as
-        though they shared one.
-        """
-        assert self._operands is not None and self._now is not None  # narrowed by `_compare`
-        derived: list[tuple[str, ComparisonOperand]] = []
-        for source in sources:
-            owner_id = getattr(source, "owner_id", None)
-            if not isinstance(owner_id, str) or not owner_id:
-                return None
-            load = derive_operand(
-                OperandRequest(
-                    ports=self._operands, owner_id=owner_id, run=source, now=self._now()  # type: ignore[arg-type]
-                )
-            )
-            if load.operand is None:
-                return None
-            derived.append((owner_id, load.operand))
-        (subject_owner, subject), (baseline_owner, baseline) = derived
-        if subject_owner != baseline_owner:
-            return None
-        return subject_owner, subject, baseline
 
     def _bundles(self, sources: tuple[object, ...]) -> tuple[object, ...] | None:
         """Every run's bundle, or `None` if any one of them cannot be built.
@@ -261,6 +227,49 @@ class SemanticViewAdapter:
         if record is None or not _versions_agree(run, record):
             return None
         return _rebuilt_bundle(record)
+
+
+def _operands_for(
+    operands: ComparisonAssemblyPorts,
+    now: Callable[[], datetime],
+    sources: tuple[object, ...],
+) -> tuple[str, ComparisonOperand, ComparisonOperand] | None:
+    """One operand per run, or `None` if either cannot be derived.
+
+    `operands` and `now` are taken as plain parameters, already narrowed to
+    non-`None` by `_compare`'s guard, rather than re-read from `self._operands`
+    /`self._now` behind an `assert`. `Constitution V`, quoted in
+    `projection.py`, is explicit about why: "an `assert` states the same
+    belief while disappearing under `-O`", and a narrowing that vanishes under
+    `-O` would let `derive_operand` be called with `ports=None`, crashing with
+    an `AttributeError` where `FR-146` requires the uniform `None` miss instead.
+
+    All-or-nothing, matching `_bundles` and `SemanticQueryActions._scoped_sources`:
+    a partial pair would let a two-population view project over one
+    population.
+
+    The scope equality check is not redundant. Each run is read under the
+    caller's own scope, but nothing before this point has compared the two
+    runs' scopes to each other -- `FR-173` requires each source be loaded
+    through the *same* requesting organization's opaque scope, and two runs
+    from different scopes reaching here would otherwise be compared as
+    though they shared one.
+    """
+    derived: list[tuple[str, ComparisonOperand]] = []
+    for source in sources:
+        owner_id = getattr(source, "owner_id", None)
+        if not isinstance(owner_id, str) or not owner_id:
+            return None
+        load = derive_operand(
+            OperandRequest(ports=operands, owner_id=owner_id, run=source, now=now())  # type: ignore[arg-type]
+        )
+        if load.operand is None:
+            return None
+        derived.append((owner_id, load.operand))
+    (subject_owner, subject), (baseline_owner, baseline) = derived
+    if subject_owner != baseline_owner:
+        return None
+    return subject_owner, subject, baseline
 
 
 def _definition_of(request: object) -> SemanticViewDefinition | None:
