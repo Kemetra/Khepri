@@ -48,8 +48,20 @@ def provenance(j: Journey) -> ProvenanceReader:
 
 
 def services_over(
-    j: Journey, who: Member, *, with_provenance: bool = True, with_bridge: bool = True
+    j: Journey,
+    who: Member,
+    *,
+    with_provenance: bool = True,
+    with_bridge: bool = True,
+    with_decisions: bool = False,
 ) -> ShellServices:
+    """The shell as `build_shell_services` composes it, with the wiring the case asks for.
+
+    `with_decisions` defaults to `False` so every existing caller keeps the shell it had. `D1-12`
+    needs it because the Passport's decision entry point exists exactly when the decision routes
+    do (`FR-049`): a link to a capability absent from the deployed image is a dangling address,
+    which is what `#382` and `#448` each found once.
+    """
     return ShellServices(
         resolver=StubResolver(Context(who.account_id, who.organization_id)),
         organizations=j.w.organizations,
@@ -59,7 +71,15 @@ def services_over(
             CommercialBridge(isolation=isolation(j), store=j.w.sessions) if with_bridge else None
         ),
         provenance=provenance(j) if with_provenance else None,
+        decisions=_decisions_stub() if with_decisions else None,
     )
+
+
+def _decisions_stub() -> Any:
+    """`D1-04`'s own stub seam, imported rather than restated so one shape serves both."""
+    from tests.test_d104_breakdowns_and_limits import _StubDecisions
+
+    return _StubDecisions()
 
 
 def shell_over(j: Journey, who: Member, **wiring: bool) -> TestClient:
