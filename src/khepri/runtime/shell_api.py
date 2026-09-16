@@ -61,7 +61,7 @@ from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_change_notice import methodology_change, previous_completed
 from khepri.runtime.shell_comparison import add_comparison_routes, offers_comparisons
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
-from khepri.runtime.shell_decisions import add_decision_routes
+from khepri.runtime.shell_decisions import add_decision_routes, offers_decisions
 from khepri.runtime.shell_deletion import add_deletion_route
 from khepri.runtime.shell_frame import (
     Offers,
@@ -605,8 +605,17 @@ def _analysis_response(
     # `FR-054`: the language control keeps the reader on this analysis, so the tail is the
     # detail address; the navigation still marks Analyses, whose address the tail begins with.
     reads["surface_path"] = f"/{context.organization_id}/analyses/{run_id}"
+    # `D1-12`: the decision entry point exists exactly when the decision route does (`FR-049`).
+    # Read from the same `offers_decisions` the route declaration reads, so a deployment cannot
+    # render a link to an address it never declared -- the `#382`/`#448` shape.
     return _render(
-        environment, "analysis.html.j2", language=language, status_code=200, view=view, **reads
+        environment,
+        "analysis.html.j2",
+        language=language,
+        status_code=200,
+        view=view,
+        offers_decisions=offers_decisions(services),
+        **reads,
     )
 
 

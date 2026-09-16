@@ -21,6 +21,26 @@
   </p>
 
   {#
+    `D1-12` (`RCA-008` §Scope): the one way in to the decision surface, and the only one.
+
+    Guarded on `offers_decisions` for `FR-049`'s reason -- a deployment without the seam declares
+    no decision route, so a link rendered anyway would be a dangling address. That is the shape
+    `#382` and `#448` each found once, in this module, and it is why the flag is passed in rather
+    than assumed.
+
+    Guarded on `view.source_id` because the route is addressed per run: a run the worker has not
+    settled has no figures for the surface to show, and `shell_analysis` supplies the identifier
+    only for one that has. This is an entry point, not a fifth destination -- the frame's set is
+    `U1`'s (see `shell_copy.decisions_open`).
+  #}
+  {% if offers_decisions and view.source_id %}
+  <p class="analysis-decisions">
+    <a class="decisions-open"
+       href="{{ prefix }}/{{ language }}/{{ organization_id }}/decisions/{{ view.source_id }}">{{ copy.decisions_open }}</a>
+  </p>
+  {% endif %}
+
+  {#
     `RCA-005` FR-116, blueprint §7.4 (`W1-08`): where this run's governed versions differ from the
     previous completed run's, say so before the Passport, name each identifier that differs,
     reach the previous analysis, and state that the two are not numerically comparable. A

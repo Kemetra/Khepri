@@ -27,7 +27,7 @@ from datetime import timedelta
 
 from tests.w104_support import member
 from tests.w104b_support import journey
-from tests.w106_support import completed_run, page, shell_over
+from tests.w106_support import completed_run, page, shell_over, started_run
 
 __all__: list[str] = []
 
@@ -91,6 +91,23 @@ def test_no_link_is_rendered_when_the_surface_is_unwired() -> None:
     assert not _decision_links(body)
 
 
+def test_an_unsettled_run_offers_no_entry_point() -> None:
+    """The decision surface's `{source}` is a *completed* run (`D1-12`).
+
+    A run the worker has not settled has no projections, so the surface could only refuse;
+    offering the way in would promise a page that cannot answer. **This test exists because a
+    mutant proved the guard untested**: dropping the `completed` check from
+    `DetailView.source_id` left all 39 detail and entry-point tests passing, since every other
+    case builds a settled run.
+    """
+    j = journey()
+    who = member(j.w, "unsettled@example.test")
+    run, _job, _session = started_run(j, who)
+    assert run.completed_at is None, "this case needs a run the worker has not settled"
+    body = page(j, who, f"analyses/{run.run_id}", with_decisions=True)
+    assert not _decision_links(body)
+
+
 def test_the_frame_destination_set_is_unchanged() -> None:
     """The entry point adds no fifth destination (`RCA-008` §Exclusions).
 
@@ -123,4 +140,8 @@ def test_the_entry_point_names_this_runs_own_source() -> None:
         body = page(j, who, f"analyses/{run.run_id}", with_decisions=True)
         links = _decision_links(body)
         assert links, "no entry point on this Passport"
-        assert all(run.run_id in href for href in links)
+        # The segment is compared **exactly**, not by containment. A mutant returning
+        # `"mut_" + run_id` survives `run_id in href` — the corrupted identifier still contains
+        # the real one — and the decision route answers `200` for an unknown source by design
+        # (it renders the governed empty page), so status cannot catch it either.
+        assert [href.rsplit("/decisions/", 1)[1] for href in links] == [run.run_id] * len(links)

@@ -174,6 +174,19 @@ class DetailView:
     #: none, or when every governed version is the same.
     change: MethodologyChange | None = None
 
+    @property
+    def source_id(self) -> str | None:
+        """This run as the decision surface's `{source}`, or `None` when it cannot be one.
+
+        `D1-12`. The decision route is addressed per run and reads one *completed* run's
+        projections, so a run the worker has not settled is not a source: offering it would
+        promise a surface that can only refuse. Derived here rather than in the template,
+        because `analysis.html.j2` "iterates what `detail_view` handed it and decides nothing"
+        -- and because a template re-deriving this is a second definition of when a run is
+        ready, which is how the two come to disagree.
+        """
+        return self.run_id if self.completed is not None else None
+
 
 def trust_groups(sections: SectionStates | None, language: str) -> tuple[TrustGroup, ...]:
     """The run's retained section outcomes, grouped and worded in the report's own words; empty
