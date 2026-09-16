@@ -624,10 +624,22 @@ def _shell_decisions(
     before the first source read, so the door this resolves through must be the door the
     surrounding surfaces resolve through.
     """
+    factory = stack.factory
     return semantic_queries.SemanticQueryActions(
         isolation=isolation,
         sources=sources,
-        port=SemanticViewAdapter(SqlFactPackageRepository(stack.factory)),
+        port=SemanticViewAdapter(
+            SqlFactPackageRepository(factory),
+            operands=ComparisonAssemblyPorts(
+                packages=stack.services.packages,
+                profiling=stack.services.profiling,
+                jobs=SqlJobSessions(factory),
+                reports=SqlRunReportStore(factory),
+                provenance=SqlRunProvenanceStore(factory),
+                workspace=SqlWorkspaceRecordStore(factory),
+            ),
+            now=lambda: datetime.now(UTC),
+        ),
     )
 
 
