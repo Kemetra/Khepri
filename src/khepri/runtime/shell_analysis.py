@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from khepri.rca.workspace.contracts import RUN_STARTED
+from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
 from khepri.rca.workspace.schema import (
     SECTION_STATE_ANSWERED,
     SECTION_STATE_CAVEATED,
@@ -174,18 +174,30 @@ class DetailView:
     #: none, or when every governed version is the same.
     change: MethodologyChange | None = None
 
+    #: `D1-12`: the run's state, kept so `source_id` can read it. `state_key` beside it is the
+    #: *copy key* for that state and is not the state -- reading the label to decide behaviour
+    #: would bind this guard to the wording.
+    state: str = RUN_STARTED
+
     @property
     def source_id(self) -> str | None:
         """This run as the decision surface's `{source}`, or `None` when it cannot be one.
 
         `D1-12`. The decision route is addressed per run and reads one *completed* run's
-        projections, so a run the worker has not settled is not a source: offering it would
-        promise a surface that can only refuse. Derived here rather than in the template,
-        because `analysis.html.j2` "iterates what `detail_view` handed it and decides nothing"
-        -- and because a template re-deriving this is a second definition of when a run is
-        ready, which is how the two come to disagree.
+        projections, so only a completed run is a source: offering any other would promise a
+        surface that can only refuse. Derived here rather than in the template, because
+        `analysis.html.j2` "iterates what `detail_view` handed it and decides nothing" -- and
+        because a template re-deriving this is a second definition of when a run is ready,
+        which is how the two come to disagree.
+
+        **The test is the state, not `completed`, and review on `#472` is why.** A settled run
+        is not necessarily a succeeded one: `workspace_recording.fail_run` writes
+        `RunOutcome(state=RUN_FAILED, completed_at=now)`, so a dead-lettered run carries a
+        completion instant while having produced no report and retained no provenance. Gating on
+        `completed is not None` therefore offered the way in for exactly the run that cannot
+        answer.
         """
-        return self.run_id if self.completed is not None else None
+        return self.run_id if self.state == RUN_COMPLETED else None
 
 
 def trust_groups(sections: SectionStates | None, language: str) -> tuple[TrustGroup, ...]:
@@ -243,6 +255,7 @@ def detail_view(
     offers = availability == "report_available"
     return DetailView(
         run_id=run.run_id,
+        state=run.state,
         state_key=worded(RUN_STATE_COPY, run.state),
         started=moment(run.started_at),
         completed=None if run.completed_at is None else moment(run.completed_at),

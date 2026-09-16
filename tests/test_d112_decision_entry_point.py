@@ -30,9 +30,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from khepri.rca.session_cookie import SESSION_COOKIE
+from khepri.rca.workspace.contracts import RUN_FAILED
 from khepri.runtime.shell_api import SHELL_PREFIX, add_shell_routes
 from tests.w104_support import member
-from tests.w104b_support import journey
+from tests.w104b_support import (
+    RETRY_DELAY,
+    BrokenHandler,
+    commercial_client,
+    journey,
+    request_report,
+    submit,
+)
 from tests.w106_support import HTTPS, completed_run, decisions_stub, services_over, started_run
 
 __all__: list[str] = []
@@ -142,6 +150,33 @@ def test_an_unsettled_run_offers_no_entry_point() -> None:
     who = member(j.w, "unsettled@example.test")
     run, _job, _session = started_run(j, who)
     assert run.completed_at is None, "this case needs a run the worker has not settled"
+    body = _Reader(j, who).passport(run.run_id)
+    assert not _decision_links(body)
+
+
+def test_a_failed_run_offers_no_entry_point() -> None:
+    """A settled run is not necessarily a *succeeded* one (`D1-12`).
+
+    **Review on `#472` found this, and it is a real defect rather than a hypothetical.**
+    `workspace_recording.fail_run` writes `RunOutcome(state=RUN_FAILED, completed_at=now)`, so a
+    dead-lettered run has a non-`None` `completed_at`. Gating `source_id` on `completed is not
+    None` therefore offered the way in for a run that produced no report and has no provenance —
+    a link to a surface that could only refuse. The guard reads the *state*, and this test drives
+    the real failure path rather than constructing the state directly.
+    """
+    j = journey()
+    who = member(j.w, "failed@example.test")
+    client, _session = commercial_client(j, who)
+    submit(client)
+    job_id = request_report(client)
+    broken = BrokenHandler()
+    for _attempt in range(3):
+        j.run_job(job_id, handler=broken)
+        j.clock.advance(RETRY_DELAY * 2)
+    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+    assert run.state == RUN_FAILED, "this case needs the dead-letter path to have failed the run"
+    assert run.completed_at is not None, "the defect only exists because a failed run is settled"
+
     body = _Reader(j, who).passport(run.run_id)
     assert not _decision_links(body)
 
