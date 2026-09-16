@@ -23,15 +23,53 @@ Passport is already about one run, so it holds the `{source}` the address needs 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from khepri.rca.session_cookie import SESSION_COOKIE
+from khepri.runtime.shell_api import SHELL_PREFIX, add_shell_routes
 from tests.w104_support import member
 from tests.w104b_support import journey
-from tests.w106_support import completed_run, page, shell_over, started_run
+from tests.w106_support import HTTPS, completed_run, decisions_stub, services_over, started_run
 
 __all__: list[str] = []
 
 _HREF = re.compile(r'href="([^"]+)"')
+
+
+@dataclass(frozen=True, slots=True)
+class _Reader:
+    """One member's browser onto one journey's shell.
+
+    A value object rather than more parameters: `j` and `who` travel together everywhere below,
+    and threading them plus the wiring and language flags through each helper is the argument
+    count CodeScene refuses. Grouping them is also the honest shape — every helper here needs
+    the same reader, not four independent inputs.
+    """
+
+    j: object
+    who: object
+    wired: bool = True
+
+    @property
+    def client(self) -> TestClient:
+        """A shell whose decision seam is present or absent, varied with `dataclasses.replace` —
+        the idiom every other optional collaborator in these fixtures uses."""
+        services = services_over(self.j, self.who)
+        if self.wired:
+            services = replace(services, decisions=decisions_stub())
+        app = FastAPI()
+        add_shell_routes(app, services=services, clock=self.j.clock)
+        client = TestClient(app, base_url=HTTPS)
+        client.cookies.set(SESSION_COOKIE, "a-session-token")
+        return client
+
+    def passport(self, run_id: str, language: str = "en") -> str:
+        address = f"{SHELL_PREFIX}/{language}/{self.who.organization_id}/analyses/{run_id}"
+        return self.client.get(address).text
 
 
 def _links(body: str) -> tuple[str, ...]:
@@ -52,7 +90,7 @@ def test_a_reader_reaches_the_decision_surface_without_composing_an_address() ->
     j = journey()
     who = member(j.w, "reader@example.test")
     run, _job, _session = completed_run(j, who)
-    client = shell_over(j, who, with_decisions=True)
+    client = _Reader(j, who).client
 
     spine = client.get(f"/app/en/{who.organization_id}/analyses").text
     to_passport = [href for href in _links(spine) if href.endswith(f"/analyses/{run.run_id}")]
@@ -73,7 +111,7 @@ def test_the_entry_point_is_offered_in_both_languages() -> None:
     who = member(j.w, "bilingual@example.test")
     run, _job, _session = completed_run(j, who)
     for language in ("en", "ar"):
-        body = page(j, who, f"analyses/{run.run_id}", language=language, with_decisions=True)
+        body = _Reader(j, who).passport(run.run_id, language)
         assert _decision_links(body), f"{language} drops the decision entry point"
 
 
@@ -87,7 +125,7 @@ def test_no_link_is_rendered_when_the_surface_is_unwired() -> None:
     j = journey()
     who = member(j.w, "unwired@example.test")
     run, _job, _session = completed_run(j, who)
-    body = page(j, who, f"analyses/{run.run_id}", with_decisions=False)
+    body = _Reader(j, who, wired=False).passport(run.run_id)
     assert not _decision_links(body)
 
 
@@ -104,7 +142,7 @@ def test_an_unsettled_run_offers_no_entry_point() -> None:
     who = member(j.w, "unsettled@example.test")
     run, _job, _session = started_run(j, who)
     assert run.completed_at is None, "this case needs a run the worker has not settled"
-    body = page(j, who, f"analyses/{run.run_id}", with_decisions=True)
+    body = _Reader(j, who).passport(run.run_id)
     assert not _decision_links(body)
 
 
@@ -118,7 +156,7 @@ def test_the_frame_destination_set_is_unchanged() -> None:
     j = journey()
     who = member(j.w, "frame@example.test")
     run, _job, _session = completed_run(j, who)
-    body = page(j, who, f"analyses/{run.run_id}", with_decisions=True)
+    body = _Reader(j, who).passport(run.run_id)
     frame = body[: body.find("</nav>")] if "</nav>" in body else body
     assert "/decisions/" not in frame, "the entry point leaked into the frame's destination set"
 
@@ -137,7 +175,7 @@ def test_the_entry_point_names_this_runs_own_source() -> None:
     second, _job2, _session2 = completed_run(j, two)
     assert first.run_id != second.run_id
     for who, run in ((one, first), (two, second)):
-        body = page(j, who, f"analyses/{run.run_id}", with_decisions=True)
+        body = _Reader(j, who).passport(run.run_id)
         links = _decision_links(body)
         assert links, "no entry point on this Passport"
         # The segment is compared **exactly**, not by containment. A mutant returning
