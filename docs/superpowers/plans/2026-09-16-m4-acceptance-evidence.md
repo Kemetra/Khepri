@@ -1,5 +1,24 @@
 # M4 acceptance — the exit gate, measured on the deployed image
 
+> ## STATUS: `M4` is ACCEPTED — 2026-09-16, on `main` at `5c4c522`
+>
+> **Accepted by the owner on the evidence below: all seven `M4` exit-gate clauses PASS.**
+>
+> This document records four stages and keeps them distinct. Read them in order; do not read the
+> first as the outcome:
+>
+> 1. **Original measurement** (`#471`), `main` at `44d54a7` — **5 of 7 PASS**, clauses 3 and 4
+>    failing on one shared blocker. **That result is preserved exactly as run and is not revised.**
+> 2. **Blocker remediation** (`#472`, `D1-12`), merged at `5c4c522` — one governed entry point to
+>    the decision surface, the single unblocker the measurement named.
+> 3. **Re-measurement after remediation** — see §Addendum — **7 of 7 PASS**, driven by navigation
+>    on the rebuilt image.
+> 4. **Owner acceptance** — recorded here and in the roadmap's `M4` exit gate. See §M4 acceptance.
+>
+> **Acceptance is scoped to the `M4` gate sentence and nothing else.** It resolves no deferred or
+> open work; the caveats in §What this run does not establish and §Caveats stand unchanged, and
+> `M4` remains non-paying as already governed.
+
 Roadmap §7's `M4` exit gate is one sentence:
 
 > A design partner can return to a workspace, compare governed periods, view an executive decision
@@ -13,7 +32,10 @@ document says which it measured rather than choosing silently.
 
 **Run on:** `main` at `44d54a7`, 2026-09-16.
 
-**Result: `M4` is NOT YET ACCEPTED.** **Five of the seven clauses pass** against the deployed
+**Result of THIS run, at `44d54a7`: `M4` was NOT YET ACCEPTED.** *(Preserved as run. The blocker
+this paragraph names was cleared by `#472` and the gate was re-measured at 7/7; see the STATUS
+banner above and §Addendum. Nothing below this line is revised.)* **Five of the seven clauses pass**
+against the deployed
 image and **two fail** — clauses 3 and 4. The two failures share **one** blocker: **the executive
 decision page has no entry point from any shipped surface.** That shared cause reduces the work to
 a single unblocker; it does not make either clause pass. Everything both clauses need is built,
@@ -400,10 +422,10 @@ Clause 4 drilled from the page's own form: `store=Cairo` 51,452 B, `category=Bev
 
 **Seven of seven clauses pass.** On the measured evidence the `M4` exit gate is met.
 
-**What this addendum does not do.** It does not declare `M4` accepted: acceptance is the owner's,
-and this is the evidence for it. The caveats above stand unchanged — the local-stack limitation,
-the `D1-08` export reading, `D1-11`'s telemetry exclusion, and `PeriodComparisonView` being
-reachable through the composition root while consumed by no route.
+**The caveats above stand unchanged** — the local-stack limitation, the `D1-08` export reading,
+`D1-11`'s telemetry exclusion, and `PeriodComparisonView` being reachable through the composition
+root while consumed by no route. None of them blocks the gate; see §M4 acceptance below for what
+acceptance does and does not settle.
 
 **Guards proven by mutation, because a guard with no failing test is not a guard.** Dropping the
 completeness check left all 39 detail tests passing until
@@ -420,3 +442,54 @@ uv run ruff check .                                           # All checks passe
 uv run khepri-gov validate                                    # Governance validation passed.
 codescene analyze_change_set --base origin/main               # quality_gates passed
 ```
+
+---
+
+# M4 acceptance
+
+**`M4` is ACCEPTED.**
+
+| | |
+|---|---|
+| **Milestone** | `M4` — Sellable decision workspace |
+| **Accepted on** | 2026-09-16 |
+| **Accepted against** | `main` at `5c4c522` (`feat(d1-12): reach the decision surface from the Analysis Passport (#472)`) |
+| **Basis** | All **7 of 7** `M4` exit-gate clauses PASS, measured on the deployed image |
+| **Original measurement** | `#471` — `main` at `44d54a7`, 5/7 PASS, one shared blocker on clauses 3 and 4 |
+| **Unblocker** | `#472` (`D1-12`) — one governed entry point to the decision surface |
+| **Re-measurement** | §Addendum — 7/7 PASS, driven by navigation on the rebuilt image |
+| **Accepted by** | The owner, explicitly, on the evidence in this document |
+
+**The four stages are distinct, and the record keeps them so.** The 5/7 result at `44d54a7` was
+true of that tree and is preserved unrevised; `#472` cleared the single blocker it named; the
+re-measurement then found 7/7; and acceptance is the owner's judgment on that evidence. This
+document is not rewritten as though the first run had passed.
+
+**Validation carried by the accepted tree** (from `#472`, the merge that produced `5c4c522`):
+full suite 5,578 passed / 77 skipped / 1 xfailed; `ruff check .` clean; `khepri-gov validate`
+passing; the CodeScene change-set gate passing; and all CI checks green on the merged PR.
+
+## What acceptance does NOT settle
+
+Acceptance is scoped to the `M4` exit-gate sentence. It closes, schedules, reinterprets and
+authorizes nothing else. Each of the following remains exactly as it stood before:
+
+- **`M4` remains non-paying**, as `KHEPRI-DEC-025` §5 governs. Taking consideration is `M5` and
+  waits on the successor commercial identity authority under `G6`.
+- **`D1-08`'s export reading** — whether "no cross-organization access, sharing, or export"
+  reaches "export" — is still the owner's, still undecided. Print shipped; export did not.
+- **`D1-11`** content-free decision-use telemetry stays **unauthorized**, not merely unscheduled:
+  `RCA-008` §Retention declines to amend `KHEPRI-DEC-015` §3.
+- **`PeriodComparisonView` is consumed by no route.** It is reachable through the semantic-query
+  composition root (`RCA-009`, `#470`), but `shell_controls.SURFACE_VIEWS` names seven views and
+  not eight, and `MetricCard.comparison` stays `None` because no read model fills it. Whether the
+  decision surface should consume it is an `RCA-008` reading, still open. Clause 2 is satisfied by
+  the `C1` comparison surface and does not depend on it.
+- **`U1`'s navigation, chart-grammar, accessibility-evidence and visual-regression programme**
+  remains `U1-03`/`U1-05`/`U1-06`/`U1-07`'s and still needs its own authority; `U1` is blocked on
+  the owner's `RRA-010` journey-adoption reading. `D1-12` added one entry point under `RCA-008`
+  §Scope and changed no destination set.
+- **`S1-05` / `#152`** is untouched by this acceptance.
+- **This is a local-stack run.** It authorizes no external participant; the hosted environment
+  (`OPS1-02`…`OPS1-03`) stays deferred by `KHEPRI-DEC-031` §4, and hosted-production admission is
+  not granted here.
