@@ -435,9 +435,16 @@ unwired test; and a mutant returning `"mut_" + run_id` survived a containment as
 
 ## Commands run for this addendum
 
+**The suite count below is 5,577 and §M4 acceptance reports 5,578; both are right, and the
+difference is one test.** This addendum's run predates review on `#472`, which found that a failed
+run is settled but not decision-ready (`fail_run` writes `completed_at`) and added
+`test_a_failed_run_offers_no_entry_point`. That test is the 5,578th and is present in the accepted
+tree. Two trees, two counts, neither revised.
+
 ```
 docker compose -f docker-compose.staging.yml up -d --build   # 4/4 modules digest-match
 ./.venv/Scripts/python.exe -m pytest -q                       # 5577 passed, 77 skipped, 1 xfailed
+                                                              # (pre-review-fix tree; see note above)
 uv run ruff check .                                           # All checks passed!
 uv run khepri-gov validate                                    # Governance validation passed.
 codescene analyze_change_set --base origin/main               # quality_gates passed

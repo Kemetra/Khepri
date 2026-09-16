@@ -1047,7 +1047,7 @@ Expose recurring decision value without duplicating calculations outside RRA fac
 
 A design partner can return to a workspace, compare governed periods, view an executive decision page, drill through supported breakdowns, inspect evidence and limitations for every material claim, and download reconciled bilingual reports.
 
-**`M4` is ACCEPTED — 2026-09-16, on `main` at `5c4c522`, on all seven exit-gate clauses passing.** Measured on the deployed image; evidence in `docs/superpowers/plans/2026-09-16-m4-acceptance-evidence.md`. Three stages, kept distinct: the original measurement at `44d54a7` (`#471`) found **5 of 7** clauses passing, with clauses 3 and 4 failing on one shared blocker — the executive decision page was built, correct and bilingual but linked from no shipped surface; `#472` (`D1-12`) shipped the single unblocker, one governed entry point under `RCA-008` §Scope; re-measurement by navigation on the rebuilt image then found **7 of 7**. The `44d54a7` result is preserved as run and is not rewritten as though it had passed.
+**`M4` is ACCEPTED — 2026-09-16, on `main` at `5c4c522`, on all seven exit-gate clauses passing.** Measured on the deployed image; evidence in `docs/superpowers/plans/2026-09-16-m4-acceptance-evidence.md`. Four stages, kept distinct: (1) the original measurement at `44d54a7` (`#471`) found **5 of 7** clauses passing, with clauses 3 and 4 failing on one shared blocker — the executive decision page was built, correct and bilingual but linked from no shipped surface; (2) `#472` (`D1-12`) shipped the single unblocker, one governed entry point under `RCA-008` §Scope; (3) re-measurement by navigation on the rebuilt image then found **7 of 7**; (4) the owner accepted `M4` on that evidence, which is the stage this paragraph records. The `44d54a7` result is preserved as run and is not rewritten as though it had passed.
 
 **What acceptance does not settle.** It is scoped to the sentence above and closes, schedules, reinterprets and authorizes nothing else. `M4` remains non-paying (below). `D1-08`'s export reading stays the owner's and undecided; `D1-11` stays unauthorized under `RCA-008` §Retention; `PeriodComparisonView` is reachable through the composition root and consumed by no route, and whether the decision surface should consume it is an open `RCA-008` reading; `U1`'s navigation, chart-grammar, accessibility-evidence and visual-regression programme still needs its own authority and `U1` stays blocked on the owner's `RRA-010` reading; `S1-05` is untouched; and this is a local-stack run that admits no external participant, with the hosted environment still deferred by `KHEPRI-DEC-031` §4.
 
@@ -1758,7 +1758,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 
 ---
 
-## 16. Recommended current status at `74e6a19`
+## 16. Recommended current status at `5c4c522`
 
 *This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-023` makes `R7-06`'s definition of done include "flipping §16's `R7` row". Like `§15`, it may not be renumbered without amending the decision that cites it.*
 
