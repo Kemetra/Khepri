@@ -353,3 +353,70 @@ docker compose -f docker-compose.staging.yml up -d --build
 ```
 
 The journey itself was driven inside `khepri-staging-web` against `khepri.runtime.web:app`.
+
+---
+
+# Addendum — 2026-09-16: the blocker is cleared, and all seven clauses pass
+
+**The measurement above stands as run.** It recorded `main` at `44d54a7`, and every finding was
+true of that tree. This addendum records a later tree; it does not revise the earlier one.
+
+**The owner's reading.** Asked whether `RCA-008` authorizes one decision-surface entry point or
+whether that is reserved to `U1`'s navigation programme, the owner ruled that it is authorized.
+`D1-12` implements it under `RCA-008` §Scope, which already names `shell_api.py` and
+`shell_templates/`.
+
+**What shipped.** One entry point on the Analysis Passport — not a fifth frame destination, because
+the settled `Overview · Data · Analyses · Team` set is `U1`'s and a test now asserts the entry point
+never leaks into it. The link is offered per run, because the route is addressed per run, and is
+guarded twice: on `offers_decisions`, so a deployment without the seam offers no dangling address
+(`FR-049`), and on a *completed* run, because an unsettled run has no projections for the surface
+to show.
+
+**Re-measured by navigation, on a rebuilt image whose four changed modules digest-match the
+worktree.** The reader arrives at Analyses, follows a rendered link to the Passport, and follows a
+rendered link to the decision surface. **No address in this run was composed by the harness** —
+each was read out of the page before it.
+
+| Step | `en` | `ar` |
+|---|---|---|
+| 1. Analyses → Passport links | 2 | 2 |
+| 2. Passport → decision links | 1 | 1 |
+| 3. Decision surface | `200`, 56,947 B, 34 citations, all four sections | `200`, 60,825 B, `dir="rtl"`, 34 citations, all four sections |
+| 4. Filters offered by the page | `store`, `product`, `category` | same |
+
+Clause 4 drilled from the page's own form: `store=Cairo` 51,452 B, `category=Beverages` 39,295 B,
+`store=Cairo&category=Beverages` 33,664 B — each materially different from the 56,947 B baseline.
+
+| # | §7 clause | Result |
+|---|---|---|
+| 1 | return to a workspace | **PASS** |
+| 2 | compare governed periods | **PASS** |
+| 3 | view an executive decision page | **PASS** — was FAIL at `44d54a7` |
+| 4 | drill through supported breakdowns | **PASS** — was FAIL at `44d54a7` |
+| 5 | inspect evidence and limitations | **PASS** |
+| 6 | download reconciled bilingual reports | **PASS** |
+| 7 | fail-closed, scope/isolation, Arabic/English | **PASS** |
+
+**Seven of seven clauses pass.** On the measured evidence the `M4` exit gate is met.
+
+**What this addendum does not do.** It does not declare `M4` accepted: acceptance is the owner's,
+and this is the evidence for it. The caveats above stand unchanged — the local-stack limitation,
+the `D1-08` export reading, `D1-11`'s telemetry exclusion, and `PeriodComparisonView` being
+reachable through the composition root while consumed by no route.
+
+**Guards proven by mutation, because a guard with no failing test is not a guard.** Dropping the
+completeness check left all 39 detail tests passing until
+`test_an_unsettled_run_offers_no_entry_point` was added; dropping `offers_decisions` fails the
+unwired test; and a mutant returning `"mut_" + run_id` survived a containment assertion, so the
+`{source}` segment is now compared exactly.
+
+## Commands run for this addendum
+
+```
+docker compose -f docker-compose.staging.yml up -d --build   # 4/4 modules digest-match
+./.venv/Scripts/python.exe -m pytest -q                       # 5577 passed, 77 skipped, 1 xfailed
+uv run ruff check .                                           # All checks passed!
+uv run khepri-gov validate                                    # Governance validation passed.
+codescene analyze_change_set --base origin/main               # quality_gates passed
+```

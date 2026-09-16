@@ -131,6 +131,13 @@ _EN = {
     # and are not restated here.
     "analysis_title": "Analysis",
     "analysis_intro": "What this analysis covered, what it answered, and its report.",
+    # `D1-12`. The one way in to the decision surface, offered per run because the address is
+    # per run. It is deliberately NOT a fifth entry in `frame_surfaces_label`'s set: design
+    # language §3.5 settles that set as Overview · Data · Analyses · Team, and editing it is the
+    # navigation programme `RCA-008` §Exclusions reserves to `U1`. The wording names the
+    # destination rather than promising a figure, because whether any figure is available is
+    # the decision surface's own four-state to state (`FR-165`).
+    "decisions_open": "Open the decision view",
     "passport_title": "Analysis passport",
     "passport_period": "Period covered",
     "passport_timezone": "Retail day boundary",
@@ -281,6 +288,9 @@ _AR = {
     # `W1-06`.
     "analysis_title": "التحليل",
     "analysis_intro": "ما شمله هذا التحليل، وما أجاب عنه، وتقريره.",
+    # `D1-12`. The Arabic half of the entry point; `FR-164`/`FR-171` require neither language to
+    # drop the way in.
+    "decisions_open": "افتح عرض القرار",
     "passport_title": "بطاقة التحليل",
     "passport_period": "الفترة المشمولة",
     "passport_timezone": "حدود يوم البيع",

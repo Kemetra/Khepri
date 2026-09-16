@@ -62,6 +62,19 @@ def services_over(
     )
 
 
+def decisions_stub() -> Any:
+    """`D1-04`'s own stub seam, imported rather than restated so one shape serves both.
+
+    Varied onto a shell with `dataclasses.replace`, as every other optional collaborator here is
+    (`c106_support`, `test_d108_print`, `w110_support`), rather than through a fifth parameter on
+    `services_over` -- which CodeScene's argument threshold refuses, and which would make this
+    helper the one place that wires a collaborator two different ways.
+    """
+    from tests.test_d104_breakdowns_and_limits import _StubDecisions
+
+    return _StubDecisions()
+
+
 def shell_over(j: Journey, who: Member, **wiring: bool) -> TestClient:
     app = FastAPI()
     add_shell_routes(app, services=services_over(j, who, **wiring), clock=j.clock)
