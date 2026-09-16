@@ -13,11 +13,12 @@ document says which it measured rather than choosing silently.
 
 **Run on:** `main` at `44d54a7`, 2026-09-16.
 
-**Result: `M4` is NOT YET ACCEPTED.** Six of the seven clauses pass against the deployed image.
-Clause 3 fails, and clause 4 fails with it for the same single reason — **the executive decision
-page has no entry point from any shipped surface.** Everything the clause needs is built, correct
-and bilingual; a design partner has no way to reach it. §The one blocker states the minimum
-unblocker.
+**Result: `M4` is NOT YET ACCEPTED.** **Five of the seven clauses pass** against the deployed
+image and **two fail** — clauses 3 and 4. The two failures share **one** blocker: **the executive
+decision page has no entry point from any shipped surface.** That shared cause reduces the work to
+a single unblocker; it does not make either clause pass. Everything both clauses need is built,
+correct and bilingual; a design partner has no way to reach it. §The one blocker states the
+minimum unblocker.
 
 ---
 
