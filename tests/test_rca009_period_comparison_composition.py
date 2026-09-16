@@ -550,3 +550,28 @@ def test_the_absence_sweep_can_actually_fail(tmp_path: pathlib.Path) -> None:
         and any(marker in path.read_text(encoding="utf-8") for marker in markers)
     ]
     assert found == [planted]
+
+
+def test_the_composition_root_supplies_the_stacks_clock_not_a_second_one() -> None:
+    """`FR-180` -- the time source is supplied, never minted at the root.
+
+    The first shipped wiring passed `lambda: datetime.now(UTC)`, a second wall
+    clock beside `stack.clock`. Nothing failed: every store in the test stack
+    was already on `j.clock`, and a branch reading the real wall clock still
+    answered. It would have diverged only in production, where a controlled
+    clock governs the stores the branch reads but not the branch itself --
+    and `FR-180` supplies the time source precisely so one request's outcome
+    cannot depend on when it ran.
+
+    Asserted by identity rather than by behaviour, because behaviour cannot see
+    it: two clocks a millisecond apart admit the same pair. `is` is the only
+    thing that distinguishes the stack's clock from a faithful copy of it.
+    """
+    j = journey()
+    stack = _minimal_stack(j)
+    isolation = IsolationService(SqlOrganizationStore(j.w.factory), SqlAccountStore(j.w.factory))
+    sources = SqlWorkspaceRecordStore(j.w.factory)
+
+    actions = wiring._shell_decisions(stack, isolation, sources)
+
+    assert actions._port._now is stack.clock

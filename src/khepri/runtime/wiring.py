@@ -638,7 +638,11 @@ def _shell_decisions(
                 provenance=SqlRunProvenanceStore(factory),
                 workspace=SqlWorkspaceRecordStore(factory),
             ),
-            now=lambda: datetime.now(UTC),
+            # `stack.clock`, not a second wall clock. Every other service here is
+            # built on it, and a composition root that minted its own would put
+            # the comparison path on a different time from the stores it reads --
+            # invisible in production and untestable under a controlled clock.
+            now=stack.clock,
         ),
     )
 

@@ -256,12 +256,19 @@ def _operands_for(
     though they shared one.
     """
     derived: list[tuple[str, ComparisonOperand]] = []
+    # One instant for both operands. Calling `now()` per source would derive the
+    # two sides at two instants, and a pair straddling a session or retention
+    # boundary would then be read against two different snapshots -- one side
+    # admitted and the other missed, for no reason the caller could see.
+    # `FR-180` supplies the time source rather than reading it precisely so a
+    # request's outcome does not depend on when within itself it ran.
+    requested_at = now()
     for source in sources:
         owner_id = getattr(source, "owner_id", None)
         if not isinstance(owner_id, str) or not owner_id:
             return None
         load = derive_operand(
-            OperandRequest(ports=operands, owner_id=owner_id, run=source, now=now())  # type: ignore[arg-type]
+            OperandRequest(ports=operands, owner_id=owner_id, run=source, now=requested_at)  # type: ignore[arg-type]
         )
         if load.operand is None:
             return None
