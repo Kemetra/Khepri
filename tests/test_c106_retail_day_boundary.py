@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from khepri.rra.analysis.comparison_narrative import refusal_wording
 from khepri.rra.analysis.dataset_period import CAUSE_RETAIL_DAY
-from khepri.runtime import comparison_assembly
+from khepri.runtime import comparison_operands
 from tests.c106_support import comparison_actions, completed_pair
 from tests.test_c106_comparison_orchestration import _request
 from tests.w104_support import member
@@ -22,7 +22,7 @@ from tests.w104b_support import journey
 
 def _zoned(zones: list[str]):
     """`stored_manifest` as the assembly sees it, each operand's manifest in the next zone."""
-    original = comparison_assembly.stored_manifest
+    original = comparison_operands.stored_manifest
     queue = list(zones)
 
     def shifted(profile):
@@ -42,7 +42,7 @@ def test_two_zones_refuse_under_the_retail_day_boundary_cause(tmp_path) -> None:
     actions = comparison_actions(j, tmp_path)
 
     with patch(
-        "khepri.runtime.comparison_assembly.stored_manifest",
+        "khepri.runtime.comparison_operands.stored_manifest",
         side_effect=_zoned(["Africa/Cairo", "Asia/Riyadh"]),
     ):
         outcome = actions.request(
@@ -64,7 +64,7 @@ def test_one_zone_on_both_sides_is_admitted(tmp_path) -> None:
     actions = comparison_actions(j, tmp_path)
 
     with patch(
-        "khepri.runtime.comparison_assembly.stored_manifest",
+        "khepri.runtime.comparison_operands.stored_manifest",
         side_effect=_zoned(["Asia/Riyadh", "Asia/Riyadh"]),
     ):
         outcome = actions.request(
