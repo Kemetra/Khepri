@@ -371,12 +371,16 @@ def test_every_failure_is_one_content_identical_miss() -> None:
 
 
 def test_one_run_named_twice_is_refused() -> None:
-    """`FR-175` -- a self-pair is what the comparison surface refuses first.
+    """`FR-175` -- one run named twice never reaches an admitted projection.
 
-    `_admission_cause` does not see this: it checks organization scope and
-    package compatibility, and one run named twice passes both. Without the
-    seam's guard the view would admit a period compared against itself while
-    `ComparisonActions._shape_refused` refuses the same request.
+    **The refusal is `RRA-008`'s, and the seam adds none of its own.**
+    `VersionPair.__post_init__` (`dataset_period.py:108-110`) raises
+    `UnorderedPairRefused` when both sides name one `dataset_version_id`, and
+    `assemble_crossversion` turns that into a `CrossVersionRefusal` under
+    `CAUSE_UNORDERED_PAIR`. A draft of this seam carried its own self-pair guard
+    on the premise that `_admission_cause` could not see this; mutation testing
+    found the guard dead and it was removed, because a second statement of a
+    governed rule is the "two agreeing copies" `FR-180` exists to prevent.
     """
     scene = _scene()
     assert _composed(scene, subject=scene.pair.subject_run, baseline=scene.pair.subject_run) is None
@@ -505,9 +509,16 @@ def test_no_asserted_absence_survives_anywhere() -> None:
     absence* rather than claiming Period Comparison is unreachable -- which is
     the thing `FR-179` removes. Exactly one path is exempt and it is named by
     `__file__`, so the exemption cannot silently widen to a second file.
+
+    **The roots are anchored to `__file__`, not to the working directory.** A
+    bare `Path("src")` resolves against the CWD, so running this from `tests/`
+    made `rglob` yield nothing and the sweep pass vacuously -- a guard that
+    cannot see the surface it guards. `testpaths` makes the normal invocation
+    fire, which is exactly why the vacuous case would have gone unnoticed.
     """
     here = pathlib.Path(__file__).resolve()
-    roots = (pathlib.Path("src"), pathlib.Path("tests"))
+    repo = here.parents[1]
+    roots = (repo / "src", repo / "tests")
     markers = ("FR-170", "comparison_unreachable", "COMPARISON_UNREACHABLE")
     offenders = sorted(
         str(path)
