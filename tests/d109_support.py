@@ -80,9 +80,9 @@ class CountingActions:
 def admitted_script() -> dict[str, ports.ViewOutcome]:
     """The seven reachable views, each admitting.
 
-    `PeriodComparisonView` is absent and that is `FR-170`, not an omission: the
-    adapter builds only single-population bundles, so it is published and
-    unreachable, and `D1-10` asserts it stays so.
+    `PeriodComparisonView` is absent and that is deliberate, not an omission:
+    it answers through the semantic-query composition root (`RCA-009`) and no
+    read model on this surface calls it.
     """
     return {
         seam.EXECUTIVE_OVERVIEW.view_id: overview(),

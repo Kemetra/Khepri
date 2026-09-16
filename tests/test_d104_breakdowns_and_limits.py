@@ -34,7 +34,6 @@ from khepri.rca.semantic_queries import ports
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.decision import breakdowns, card, controls, limits, seam
-from khepri.rra.semantic_views import registry
 from khepri.runtime import shell_decisions
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 
@@ -643,12 +642,6 @@ def test_a_member_reaches_the_decision_surface_in_the_page_language(language: st
     assert "700.00" in response.text
 
 
-def test_the_route_states_the_comparison_surface_is_unreachable() -> None:
-    """`FR-170` -- held open visibly on the surface a reader can actually reach."""
-    body = _shell(decisions=_StubDecisions()).get(_address()).text
-    assert shell_decisions.COMPARISON_UNREACHABLE["en"] in body
-
-
 def test_an_address_naming_another_organization_gets_the_uniform_refusal() -> None:
     """`FR-042`/`FR-050` -- scope comes from the session, never from the address."""
     body = _shell(decisions=_StubDecisions()).get(_address(organization="org-other")).text
@@ -745,9 +738,3 @@ def test_a_decision_frame_must_name_the_run_it_renders() -> None:
     assert href is not None
     assert href.group(1).endswith("/org-acme/decisions/run-a")
 
-
-def test_the_period_comparison_source_is_still_unreachable() -> None:
-    """`FR-170` -- carried from `D1-03`; removed by the slice that binds the source."""
-    two = registry.define_view(seam.PERIOD_COMPARISON.view_id)
-    one = registry.define_view(seam.BASKET.view_id)
-    assert two.accepted_source_shape != one.accepted_source_shape

@@ -10,7 +10,7 @@ module does not re-derive. Three of the four are reachable: S-1 supplies the
 value, population, versions and caveats; S-6 supplies the governed availability
 and reason; S-9 supplies `FR-162`'s evidence action, which `D1-05` added to the
 line `D1-03` named and left empty. The fourth is still named and absent -- the
-comparison, because `FR-170` holds its source open. **Named rather than
+comparison, because no read model on this surface fills it. **Named rather than
 omitted**, so a later slice fills a line that already exists instead of
 discovering one that does not; the evidence line is that argument having now
 been paid off once.
@@ -91,10 +91,15 @@ STATUS_UNAVAILABLE = KIND_UNAVAILABLE
 class MetricCard:
     """One figure and everything `FR-162` requires beside it.
 
-    `comparison` is always `None` today and is a field anyway: `FR-162` names
-    it, `FR-170` explains why its source is unreachable, and a card that omitted
-    it would let a later slice add a line the contract already required, which is
-    how a required line goes missing.
+    `comparison` is always `None` today and is a field anyway: `FR-162` names it,
+    and a card that omitted it would let a later slice add a line the contract
+    already required, which is how a required line goes missing.
+
+    **It is empty because no read model fills it, not because its source is
+    unreachable.** `RCA-009` made `PeriodComparisonView` reachable through the
+    semantic-query composition root, which is a different consumer from this
+    surface. Whether the decision surface should now consume it is an `RCA-008`
+    reading -- the surface authority's call, not a slice's.
 
     **`evidence` was the other one and `D1-05` filled it.** It is `FR-162`'s
     evidence action -- what opening this figure's drawer shows -- and it carries
@@ -121,10 +126,6 @@ class MetricCard:
 class CardsReading:
     """What one decision read yielded, in the shape a surface renders.
 
-    `comparison_unreachable` is `FR-170` stated in the data rather than in the
-    template: the surface must say the Period Comparison source is unreachable,
-    and a flag the read model sets is harder to drop than a paragraph.
-
     `effective` is `FR-137`'s "what actually applied, requested and
     definition-fixed alike", for the S-1 read these cards came from. `FR-162`
     requires a card expose "the effective filters and period", and the filters a
@@ -137,7 +138,6 @@ class CardsReading:
     cards: tuple[MetricCard, ...] = field(default_factory=tuple)
     refusal: ViewRefusal | None = None
     empty_rule: str | None = None
-    comparison_unreachable: bool = True
     effective: EffectiveRequest | None = None
     #: The surface's one S-9 read, kept whole.
     #:

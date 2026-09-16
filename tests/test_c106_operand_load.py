@@ -76,7 +76,7 @@ def test_an_unreadable_stored_manifest_refuses_as_incomplete_with_one_audit_even
     before = len(j.w.audit.events_for_scope(who.owner_id))
 
     with patch(
-        "khepri.runtime.comparison_assembly.stored_manifest", side_effect=KeyError("timezone")
+        "khepri.runtime.comparison_operands.stored_manifest", side_effect=KeyError("timezone")
     ):
         outcome = actions.request(
             _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()

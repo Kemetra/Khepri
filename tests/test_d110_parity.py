@@ -171,13 +171,13 @@ def test_every_refusal_state_is_reachable_and_governed() -> None:
         assert "incompatible source shape" not in response.text
 
 
-def test_the_fr170_unreachability_assertion_still_stands() -> None:
-    """`D1-10`'s acceptance: the assertion `D1-03` made is not weakened here.
+def test_the_period_comparison_identity_stays_in_the_source_map() -> None:
+    """`D1-10`'s acceptance: the surface's source map stays complete.
 
-    `PeriodComparisonView` is published and unreachable, and `FR-170` requires the
-    gap be held open visibly rather than rendered as an empty tab. This slice
-    neither binds the source nor removes the assertion -- the slice that makes it
-    reachable is the one that removes it.
+    `PeriodComparisonView` answers through the semantic-query composition root
+    (`RCA-009`), and no read model on this surface calls it. The identity stays
+    in `DECISION_VIEWS` so the source map names every view the surface knows of,
+    which is what keeps a later reader from re-deriving it.
     """
     assert seam.PERIOD_COMPARISON in seam.DECISION_VIEWS
 

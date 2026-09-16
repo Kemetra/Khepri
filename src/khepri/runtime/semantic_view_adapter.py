@@ -44,16 +44,45 @@ is already evidence of the scope it was read under. Reading its package under
 `run.owner_id` therefore cannot cross an organization, and the alternative --
 widening `RRA-014`'s protocol to carry a scope -- would edit the seam `RCA-007`
 excludes touching.
+
+**`RCA-009` `FR-172`-`FR-176`: the one composition branch.** `PeriodComparisonView`
+is the sole published definition whose `accepted_source_shape` is
+`SHAPE_TWO_POPULATION`, and this adapter is its one successor branch over the
+`RCA-007` default above. `_is_two_population` selects it from the published
+definition's own declared shape, never from the view's name or id, so a
+future definition change routes correctly with no edit here. Every other view
+falls through to the unmodified single-population path unchanged. The branch
+derives one comparison operand per source through the `FR-180` shared seam,
+admits the ordered pair through the same seam, and hands the admitted bundle to
+the existing projection -- it performs no arithmetic, aggregation, ordering
+inference, or refusal derivation of its own. A refused pair returns `None`
+rather than a `ViewRefusal`: the comparison causes are `RRA-008`'s own and carry
+no `RRA-014` wording, so naming one here would publish a refusal with no
+governed text in either language. `FR-175` admits exactly this reading -- "the
+existing governed refusal or unavailable outcome".
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Callable
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol
 
 from khepri.rra.bundle import ReportBundle
 from khepri.rra.package_source import rebuild_fact_package
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted
 from khepri.rra.semantic_views import projection
+from khepri.rra.semantic_views.contracts import SHAPE_TWO_POPULATION, SemanticViewDefinition
+from khepri.rra.semantic_views.registry import UnknownView, define_view
+from khepri.runtime.comparison_operands import (
+    ComparisonOperand,
+    OperandRequest,
+    admit_pair,
+    derive_operand,
+)
+
+if TYPE_CHECKING:
+    from khepri.runtime.comparison_assembly import ComparisonAssemblyPorts
 
 __all__ = ["OwnedPackageReader", "SemanticViewAdapter"]
 
@@ -71,9 +100,23 @@ class OwnedPackageReader(Protocol):
 class SemanticViewAdapter:
     """`RRA-014`'s projection over `RCA-006`'s organization-scoped runs."""
 
-    def __init__(self, packages: OwnedPackageReader) -> None:
-        """Hold the one package read; the adapter owns no other collaborator."""
+    def __init__(
+        self,
+        packages: OwnedPackageReader,
+        *,
+        operands: ComparisonAssemblyPorts | None = None,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
+        """Hold the package read, and optionally the `RCA-009` comparison collaborators.
+
+        `operands` and `now` are both optional and both default to `None` so an
+        unwired deployment fails closed (`_compare` returns `None`) rather than
+        crashing at construction. Only `PeriodComparisonView` requests reach
+        `_compare`; every other view is unaffected by either being absent.
+        """
         self._packages = packages
+        self._operands = operands
+        self._now = now
 
     def project(
         self, request: object, sources: tuple[object, ...]
@@ -85,10 +128,64 @@ class SemanticViewAdapter:
         an unknown view, an unadmitted metric, an incompatible shape -- are
         `RRA-014`'s and come back as outcomes, not as `None`.
         """
+        if self._is_two_population(request):
+            return self._compare(request, sources)
         bundles = self._bundles(sources)
         if bundles is None:
             return None
         return projection.project(request, bundles)  # type: ignore[arg-type]
+
+    def _is_two_population(self, request: object) -> bool:
+        """`FR-172` -- the published definition's own declared shape, never the view's name.
+
+        A string compare against the view id would keep routing this view here
+        if its published shape ever changed, which is the opposite of what
+        `FR-172` asks. The equality is exact -- `SHAPE_TWO_POPULATION` only,
+        not `SHAPE_EITHER_BUNDLE` -- because `MetricAvailabilityView` and
+        `ReportEvidenceView` both declare `SHAPE_EITHER_BUNDLE` today and both
+        project over exactly one source through the unmodified path; routing
+        either into this branch would fail their existing one-source requests
+        under `_compare`'s `len(sources) != 2` guard, breaking `FR-172`'s own
+        "every other view continues through `RCA-007` unchanged".
+
+        An unpublished view resolves to `None` and falls through to the
+        existing single-population path, where `validate` refuses it under the
+        cause it already owns -- this branch invents no refusal (`FR-174`).
+        """
+        definition = _definition_of(request)
+        return definition is not None and definition.accepted_source_shape == SHAPE_TWO_POPULATION
+
+    def _compare(
+        self, request: object, sources: tuple[object, ...]
+    ) -> projection.ViewOutcome | None:
+        """`FR-173`-`FR-176` -- the ordered pair, assembled by the governed path.
+
+        Every miss is the same miss. An unwired deployment, a run whose operand
+        cannot be derived, a cross-scope pair, wrong arity, and a pair the
+        governed path refuses all return `None`, which `SemanticQueryActions`
+        maps to the one content-free unavailable outcome (`ports.py`: "`None`
+        is part of the contract, not an escape from it"). Nothing here reports
+        which condition held.
+
+        A refused pair cannot come back as a `ViewRefusal`: the comparison
+        causes are `RRA-008`'s and carry no `RRA-014` wording, so naming one
+        would publish a refusal with no governed text in either language
+        (`FR-177`). `FR-175` admits exactly this -- "the existing governed
+        refusal *or unavailable outcome*".
+        """
+        operands, now = self._operands, self._now
+        if operands is None or now is None:
+            return None
+        if len(sources) != 2:
+            return None
+        pair = _operands_for(operands, now, sources)
+        if pair is None:
+            return None
+        owner_id, subject, baseline = pair
+        admission = admit_pair(owner_id, subject, baseline)
+        if admission.bundle is None:
+            return None
+        return projection.project(request, (admission.bundle,))  # type: ignore[arg-type]
 
     def _bundles(self, sources: tuple[object, ...]) -> tuple[object, ...] | None:
         """Every run's bundle, or `None` if any one of them cannot be built.
@@ -130,6 +227,72 @@ class SemanticViewAdapter:
         if record is None or not _versions_agree(run, record):
             return None
         return _rebuilt_bundle(record)
+
+
+def _operands_for(
+    operands: ComparisonAssemblyPorts,
+    now: Callable[[], datetime],
+    sources: tuple[object, ...],
+) -> tuple[str, ComparisonOperand, ComparisonOperand] | None:
+    """One operand per run, or `None` if either cannot be derived.
+
+    `operands` and `now` are taken as plain parameters, already narrowed to
+    non-`None` by `_compare`'s guard, rather than re-read from `self._operands`
+    /`self._now` behind an `assert`. `Constitution V`, quoted in
+    `projection.py`, is explicit about why: "an `assert` states the same
+    belief while disappearing under `-O`", and a narrowing that vanishes under
+    `-O` would let `derive_operand` be called with `ports=None`, crashing with
+    an `AttributeError` where `FR-146` requires the uniform `None` miss instead.
+
+    All-or-nothing, matching `_bundles` and `SemanticQueryActions._scoped_sources`:
+    a partial pair would let a two-population view project over one
+    population.
+
+    The scope equality check is not redundant. Each run is read under the
+    caller's own scope, but nothing before this point has compared the two
+    runs' scopes to each other -- `FR-173` requires each source be loaded
+    through the *same* requesting organization's opaque scope, and two runs
+    from different scopes reaching here would otherwise be compared as
+    though they shared one.
+    """
+    derived: list[tuple[str, ComparisonOperand]] = []
+    # One instant for both operands. Calling `now()` per source would derive the
+    # two sides at two instants, and a pair straddling a session or retention
+    # boundary would then be read against two different snapshots -- one side
+    # admitted and the other missed, for no reason the caller could see.
+    # `FR-180` supplies the time source rather than reading it precisely so a
+    # request's outcome does not depend on when within itself it ran.
+    requested_at = now()
+    for source in sources:
+        owner_id = getattr(source, "owner_id", None)
+        if not isinstance(owner_id, str) or not owner_id:
+            return None
+        load = derive_operand(
+            OperandRequest(ports=operands, owner_id=owner_id, run=source, now=requested_at)  # type: ignore[arg-type]
+        )
+        if load.operand is None:
+            return None
+        derived.append((owner_id, load.operand))
+    (subject_owner, subject), (baseline_owner, baseline) = derived
+    if subject_owner != baseline_owner:
+        return None
+    return subject_owner, subject, baseline
+
+
+def _definition_of(request: object) -> SemanticViewDefinition | None:
+    """The published definition this request names, or `None`.
+
+    `define_view` raises `UnknownView` rather than returning `None`, and a raise
+    escaping here would reach the caller as a broken read instead of `FR-146`'s
+    content-free miss -- a fail-open dressed as an error.
+    """
+    view_id = getattr(request, "view_id", None)
+    if not isinstance(view_id, str):
+        return None
+    try:
+        return define_view(view_id)
+    except UnknownView:
+        return None
 
 
 class _Run(Protocol):

@@ -13,7 +13,7 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,44 +26,27 @@ from khepri.rca.workspace.comparisons import (
     OrderedVersionIds,
 )
 from khepri.rca.workspace.contracts import RUN_COMPLETED, AnalysisRun
-from khepri.rca.workspace.provenance import RunProvenance, SqlRunProvenanceStore
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.rca.workspace.store import SqlWorkspaceRecordStore
-from khepri.rra.aggregates import granularity_for
 from khepri.rra.analysis.comparison_narrative import refusal_wording
-from khepri.rra.analysis.dataset_period import (
-    CAUSE_INCOMPLETE,
-    CAUSE_RETAIL_DAY,
-    CAUSE_UNORDERED_PAIR,
-    DatasetPeriod,
-)
+from khepri.rra.analysis.dataset_period import CAUSE_INCOMPLETE, CAUSE_UNORDERED_PAIR
 from khepri.rra.bundle import BundleAssembler, SurfaceContent
-from khepri.rra.coverage import CompletenessQuery, CoverageManifest, admits_completeness
-from khepri.rra.crossversion_assembly import assemble_crossversion
-from khepri.rra.crossversion_bundle import CrossVersionRefusal, CrossVersionRequest
-from khepri.rra.datasets import DatasetProfileRecord, ProfilingService, stored_manifest
-from khepri.rra.facts import FactPackage
-from khepri.rra.package_source import rebuild_fact_package
-from khepri.rra.packages import (
-    FactPackageRecord,
-    FactPackageService,
-    PackageCorrupted,
-    PackageRefused,
-)
+from khepri.rra.datasets import ProfilingService
+from khepri.rra.packages import FactPackageService
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.pdf import PdfReportRenderer
-from khepri.runtime.job_sessions import JobSession, SqlJobSessions
-from khepri.runtime.run_quality import PACKAGE_MISMATCH_FAILURE, PackageDoesNotVerify
+from khepri.runtime.comparison_operands import (
+    ComparisonOperand,
+    OperandLoad,
+    OperandRequest,
+    admit_pair,
+    derive_operand,
+)
+from khepri.runtime.job_sessions import SqlJobSessions
 
 __all__ = ["ComparisonAssemblyPorts", "CrossVersionAssembly"]
-
-#: Coverage manifests attest calendar ``date`` values, not datetimes. The
-#: attested retail day therefore starts at hour 0 of the manifest timezone.
-#: Derived from the retained type, not supplied as a comparison default.
-_CALENDAR_DAY_HOUR = 0
-
-_PACKAGE_FAULTS = (PermissionError, PackageCorrupted, PackageRefused, PackageDoesNotVerify)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,38 +59,6 @@ class ComparisonAssemblyPorts:
     reports: SqlRunReportStore
     provenance: SqlRunProvenanceStore
     workspace: SqlWorkspaceRecordStore
-
-
-@dataclass(frozen=True, slots=True)
-class _Operand:
-    package: FactPackage
-    period: DatasetPeriod
-    aggregate_scope: str | None
-    run_id: str
-    #: The manifest's timezone: the retail day boundary every attested day is stated in.
-    timezone: str
-
-
-@dataclass(frozen=True, slots=True)
-class _Load:
-    operand: _Operand | None
-    incomplete: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _RunPackage:
-    run: AnalysisRun
-    session: JobSession
-    package: FactPackage
-
-
-@dataclass(frozen=True, slots=True)
-class _OperandAsk:
-    ports: ComparisonAssemblyPorts
-    owner_id: str
-    version_id: str
-    now: datetime
-    bound: _RunPackage
 
 
 @dataclass(slots=True)
@@ -161,26 +112,18 @@ class CrossVersionAssembly:
         return self._assemble(owner_id, subject.operand, baseline.operand)
 
     def _assemble(
-        self, owner_id: str, subject: _Operand, baseline: _Operand
+        self, owner_id: str, subject: ComparisonOperand, baseline: ComparisonOperand
     ) -> ComparisonOutcome | None:
-        built = assemble_crossversion(_cross_request(owner_id, subject, baseline))
-        if isinstance(built, CrossVersionRefusal):
+        admission = admit_pair(owner_id, subject, baseline)
+        if admission.bundle is None:
             return ComparisonOutcome(
                 kind=KIND_REFUSED,
-                refusal=ComparisonRefusal(built.cause, dict(built.wording)),
+                refusal=ComparisonRefusal(admission.cause, admission.wording),
             )
-        if subject.timezone != baseline.timezone:
-            # `RRA-008` §Period rule refuses a pair whose periods differ in retail-day boundary,
-            # and the coverage manifest's timezone is that boundary. The frozen period type
-            # carries an hour, not a zone, so the family's predicate cannot see this; the
-            # comparison is made here, once every frozen predicate has admitted the pair, under
-            # the cause the family already froze. Its proper home is the predicate itself, which
-            # is an owner amendment recorded in the roadmap row (owner's reading, 2026-09-08).
-            return _refused_outcome(CAUSE_RETAIL_DAY)
-        surfaces = self._render(built, subject.run_id, baseline.run_id)
+        surfaces = self._render(admission.bundle, subject.run_id, baseline.run_id)
         if surfaces is None:
             return None
-        return ComparisonOutcome(kind=KIND_ADMITTED, surfaces=surfaces, bundle=built)
+        return ComparisonOutcome(kind=KIND_ADMITTED, surfaces=surfaces, bundle=admission.bundle)
 
     def _render(
         self, bundle: Any, subject_run_id: str, baseline_run_id: str
@@ -245,90 +188,25 @@ def _refused_outcome(cause: str) -> ComparisonOutcome:
     )
 
 
-def _load_missing(subject: _Load, baseline: _Load) -> bool:
+def _load_missing(subject: OperandLoad, baseline: OperandLoad) -> bool:
     if subject.operand is None and not subject.incomplete:
         return True
     return baseline.operand is None and not baseline.incomplete
 
 
-def _load_incomplete(subject: _Load, baseline: _Load) -> bool:
+def _load_incomplete(subject: OperandLoad, baseline: OperandLoad) -> bool:
     if subject.incomplete:
         return True
     return baseline.incomplete
 
 
-def _cross_request(owner_id: str, subject: _Operand, baseline: _Operand) -> CrossVersionRequest:
-    return CrossVersionRequest(
-        subject=subject.package,
-        baseline=baseline.package,
-        subject_organization_scope=owner_id,
-        baseline_organization_scope=owner_id,
-        subject_period=subject.period,
-        baseline_period=baseline.period,
-        subject_aggregate_scope=subject.aggregate_scope,
-        baseline_aggregate_scope=baseline.aggregate_scope,
-    )
-
-
 def _load_operand(
     ports: ComparisonAssemblyPorts, owner_id: str, version_id: str, now: datetime
-) -> _Load:
+) -> OperandLoad:
     run = _latest_completed(ports.workspace, owner_id, version_id)
-    if run is None or run.package_digest is None:
-        return _Load(None, False)
-    session = _session_of(ports, run.run_id, owner_id)
-    if session is None:
-        return _Load(None, False)
-    record = _package_record(ports.packages, session.session_id, now)
-    if record is None:
-        return _Load(None, False)
-    try:
-        package = _verified_package(record)
-    except PackageDoesNotVerify:
-        return _Load(None, False)
-    if package is None:
-        return _Load(None, False)
-    if run.package_digest != package.digest:
-        return _Load(None, False)
-    bound = _RunPackage(run=run, session=session, package=package)
-    ask = _OperandAsk(ports, owner_id, version_id, now, bound)
-    return _operand_from(ask)
-
-
-def _operand_from(ask: _OperandAsk) -> _Load:
-    bound = ask.bound
-    provenance = ask.ports.provenance.for_run(bound.run.run_id, ask.owner_id)
-    if provenance is None:
-        return _Load(None, True)
-    profile = _profile_record(ask.ports.profiling, bound.session.session_id, ask.now)
-    if profile is None:
-        return _Load(None, True)
-    manifest = _manifest_of(profile)
-    if manifest is None:
-        return _Load(None, True)
-    period = _dataset_period(ask.version_id, provenance, manifest)
-    operand = _Operand(
-        package=bound.package,
-        period=period,
-        aggregate_scope=manifest.aggregate_scope,
-        run_id=bound.run.run_id,
-        timezone=manifest.timezone,
-    )
-    return _Load(operand, False)
-
-
-def _manifest_of(profile: DatasetProfileRecord) -> CoverageManifest | None:
-    """The stored manifest, or None when the profile carries none or it no longer reads.
-
-    `stored_manifest` is a read that is not re-admitted: bare subscripts and date parsing
-    raise on a document whose manifest section has drifted, and `ManifestRefused` is a
-    `ValueError`. A corrupted package already loads as `None` here; a corrupted manifest
-    gets the same treatment, so the pair refuses as incomplete with its one audit event.
-    """
-    try:
-        return stored_manifest(profile)
-    except (KeyError, ValueError):
-        return None
+    if run is None:
+        return OperandLoad(None, False)
+    return derive_operand(OperandRequest(ports=ports, owner_id=owner_id, run=run, now=now))
 
 
 def _latest_completed(
@@ -355,75 +233,3 @@ def _completion_key(run: AnalysisRun) -> tuple[datetime, str]:
     if completed is None:
         return (datetime.min, run.run_id)
     return (completed, run.run_id)
-
-
-def _session_of(ports: ComparisonAssemblyPorts, run_id: str, owner_id: str) -> JobSession | None:
-    job_id = ports.reports.job_id_for_run(run_id, owner_id)
-    if job_id is None:
-        return None
-    return ports.jobs.job(job_id, owner_id)
-
-
-def _package_record(
-    packages: FactPackageService, session_id: str, now: datetime
-) -> FactPackageRecord | None:
-    try:
-        return packages.get_session_package(session_id=session_id, now=now)
-    except _PACKAGE_FAULTS:
-        return None
-
-
-def _profile_record(
-    profiling: ProfilingService, session_id: str, now: datetime
-) -> DatasetProfileRecord | None:
-    try:
-        return profiling.get_session_profile(session_id=session_id, now=now)
-    except PermissionError:
-        return None
-
-
-def _verified_package(record: FactPackageRecord) -> FactPackage | None:
-    try:
-        package = rebuild_fact_package(record.document)
-    except (KeyError, TypeError, ValueError):
-        return None
-    if package.digest != record.package_digest:
-        raise PackageDoesNotVerify(PACKAGE_MISMATCH_FAILURE)
-    return package
-
-
-def _dataset_period(
-    version_id: str, provenance: RunProvenance, manifest: CoverageManifest
-) -> DatasetPeriod:
-    start, end = provenance.covered_start, provenance.covered_end
-    return DatasetPeriod(
-        dataset_version_id=version_id,
-        start=start,
-        end=end,
-        granularity=_granularity(manifest),
-        retail_day_start_hour=_CALENDAR_DAY_HOUR,
-        complete=_complete(manifest, start, end),
-    )
-
-
-def _granularity(manifest: CoverageManifest) -> str:
-    days = [day for _scope, day in manifest.covered_pairs]
-    return granularity_for(days)
-
-
-def _complete(manifest: CoverageManifest, start: date, end: date) -> bool:
-    scopes = tuple(sorted(manifest.scopes))
-    if not scopes:
-        return False
-    return all(_scope_complete(manifest, scope, start, end) for scope in scopes)
-
-
-def _scope_complete(manifest: CoverageManifest, scope: str, start: date, end: date) -> bool:
-    query = CompletenessQuery(
-        input_digest=manifest.input_digest,
-        source_contract_digest=manifest.source_contract_digest,
-        scope=scope,
-        start=start,
-        end=end,
-    )
-    return admits_completeness(manifest, query)

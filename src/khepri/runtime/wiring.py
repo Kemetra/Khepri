@@ -624,10 +624,26 @@ def _shell_decisions(
     before the first source read, so the door this resolves through must be the door the
     surrounding surfaces resolve through.
     """
+    factory = stack.factory
     return semantic_queries.SemanticQueryActions(
         isolation=isolation,
         sources=sources,
-        port=SemanticViewAdapter(SqlFactPackageRepository(stack.factory)),
+        port=SemanticViewAdapter(
+            SqlFactPackageRepository(factory),
+            operands=ComparisonAssemblyPorts(
+                packages=stack.services.packages,
+                profiling=stack.services.profiling,
+                jobs=SqlJobSessions(factory),
+                reports=SqlRunReportStore(factory),
+                provenance=SqlRunProvenanceStore(factory),
+                workspace=SqlWorkspaceRecordStore(factory),
+            ),
+            # `stack.clock`, not a second wall clock. Every other service here is
+            # built on it, and a composition root that minted its own would put
+            # the comparison path on a different time from the stores it reads --
+            # invisible in production and untestable under a controlled clock.
+            now=stack.clock,
+        ),
     )
 
 

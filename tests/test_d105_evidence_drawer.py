@@ -52,9 +52,9 @@ from tests import d105_support as support
 
 #: Every line `FR-162` requires a card expose "directly or through one action",
 #: as the template marks them. `comparison` is absent on purpose: the
-#: requirement says "comparison **only when compatible**", and `FR-170`'s source
-#: is unreachable, so a comparison line here would be the invented figure
-#: `FR-164` forbids rather than the requirement met.
+#: requirement says "comparison **only when compatible**", and no read model on
+#: this surface supplies one, so a comparison line here would be the invented
+#: figure `FR-164` forbids rather than the requirement met.
 _FR162_LINES = (
     "label",
     "value",
@@ -438,11 +438,16 @@ def test_every_line_fr162_requires_is_on_the_card_or_in_its_drawer(line: str) ->
     assert f'data-line="{line}"' in _page()
 
 
-def test_no_comparison_line_is_rendered_while_its_source_is_unreachable() -> None:
-    """`FR-162` says "comparison only when compatible"; `FR-170` says it is not."""
-    body = _page()
-    assert 'data-line="comparison"' not in body
-    assert shell_decisions.COMPARISON_UNREACHABLE["en"] in body
+def test_no_comparison_line_is_rendered_on_this_surface() -> None:
+    """`FR-162` -- "comparison only when compatible", and none is read here.
+
+    `RCA-009` made `PeriodComparisonView` answer through the semantic-query
+    composition root, but no read model on this surface consumes it, so there is
+    no comparison for a card to state. The line's absence is still the property;
+    what changed is the reason, which is now "not read here" rather than "not
+    reachable anywhere".
+    """
+    assert 'data-line="comparison"' not in _page()
 
 
 def test_a_stated_absence_renders_as_data_rather_than_as_a_refusal() -> None:
