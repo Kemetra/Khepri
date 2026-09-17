@@ -908,6 +908,23 @@ inspiration.** A coding agent may adapt layout responsively but **may not replac
 language with its own interpretation.** Visual-language drift is a defect even where every test
 passes.
 
+### 16.4 Where the approved pack lives
+
+The repository pack at **`docs/product/ui-visual-references/README.md`** is the concrete acceptance
+evidence referred to by §16.3 and §17. It records, per image, what is binding, what is not, and which
+generation artifacts must not be inherited.
+
+**It does not cover all twelve references of §16.2.** Independently covered: **#6 period comparison,
+#8 evidence drawer, #9 refusal, #10 Arabic RTL**. Partially covered: **#4** (workspace overview —
+density floor shown in Arabic/RTL only) and **#7** (executive decision — composition only; the four
+trust states are not demonstrated). **Not yet independently referenced: #1, #2, #3, #5, #11, #12**,
+which appear only as low-fidelity panels on the family board and therefore do not count as screen
+references.
+
+The pack is acceptance evidence for the surfaces it covers and is **silent** on the rest; §16.3's
+prohibition on substituting a coding agent's own visual interpretation applies regardless. The pack
+carries no authority of its own and changes nothing in §16.0–§16.3, §18, or §19.
+
 ---
 
 ## 17. Visual acceptance methodology
