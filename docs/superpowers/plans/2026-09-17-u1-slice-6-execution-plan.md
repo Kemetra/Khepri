@@ -90,6 +90,21 @@ keys a bilingual table off those imported constants, and its comment states the 
 kind renamed there is an import error and not a silently missing line." The chart's axis-unit table
 does the same.
 
+**The duplication with that table is forced by the scope split, and the code must say so.**
+`UNIT_WORDING` lives in `src/khepri/runtime/`, which is `RCA`'s and **outside `RRA-015` §Scope** —
+this slice cannot import it. A second bilingual unit table in `wording.py` is therefore required,
+not drift. **Record the reason in a comment beside it**, or a reviewer reads two identical tables
+as an accident and a later slice "fixes" it with a cross-family import that `FR-201`'s sibling
+boundary forbids.
+
+### Three traps verified before GREEN
+
+| Trap | State at `d2a01fc` |
+|---|---|
+| `ChartView` construction sites | **One** — `charts.py:217`, all keyword arguments. Adding a field breaks nothing; the `slots=True` frozen dataclass and its nine existing fields are not a barrier |
+| The new chrome key must reach **both** `_CHROME` branches | `html.py:178` is English, `:226` Arabic. The macro resolves chrome under `StrictUndefined`, so a key in one branch only raises on the Arabic render alone — Task 4's bilingual assertion must drive a **real render**, not just compare key sets |
+| A new completeness assertion must be **called** | `wording.py:1215` invokes `_assert_chart_descriptions_complete()` at import. A sibling defined and never called is the defined-but-never-attached defect and passes every test. Verify the call, then mutate the table without touching `facts.py` and confirm the **import** fails |
+
 ---
 
 ## Global Constraints
@@ -196,12 +211,23 @@ mean** — so prefer adding to an existing helper over minting a new one, and pr
       shipping a decorative legend that names nothing.
 - [ ] Commit: `test(u1-03): refuse a legend until a series concept exists`
 
-### Task 6 — RED: missing data, refusal, and the evidence entry point
+### Task 6 — RED: refusal, and the evidence entry point
 
-- [ ] `FR-185`: missing data renders a visible gap **carrying its stated reason** — never
-      interpolated, never drawn as zero, never silently dropped. Note `_resolve` currently returns
-      `None` for any missing value, refusing the whole chart; assert the behaviour that ships and
-      record whether a per-point gap needs its own artifact.
+**`FR-185`'s per-point gap is a fourth deferral, not a task here.** `_resolve` returns `None` when
+**any** value is missing (`charts.py:278`), so the whole chart refuses and there is no per-point
+gap to carry a reason. Giving one a gap means per-point geometry — a `charts.py` change of a
+different shape. Assert what ships; the deferral is in the table below.
+
+**`FR-186` is already satisfied, and the reason is worth asserting so it stays.**
+`report.html.j2:91` renders the chart only `{% if section.chart %}`, so a refused chart draws
+**nothing at all** — not an empty chart, not error paint — and the table beside it remains the
+authoritative presentation, exactly as `FR-182` requires. Verified at `d2a01fc`. The task is to
+pin that behaviour, not to build it.
+
+- [ ] A missing value refuses the chart, and nothing draws it as zero (`FR-185`, as it ships).
+- [ ] A refused chart renders **no chart element**, asserted through the real template path rather
+      than by checking `build_chart` returned `None` (`FR-186`). **Assert the effect on the code
+      path.**
 - [ ] `FR-186`: a refused figure renders the governed refusal presentation, not an empty chart; a
       zero denominator is that refusal rather than `0%` or `NaN`. **Assert the effect on the real
       code path**, not that an exception type is raised.
@@ -263,7 +289,7 @@ mean** — so prefer adding to an existing helper over minting a new one, and pr
 |---|---|---|
 | The axis's **period** | No governed period is reachable from `build_chart`'s input; composing one violates `FR-182`, and reaching for one needs `bundle.py`, outside §Scope | An `RRA-006` slice, or an artifact putting a governed period on the bundle |
 | A **legend** | No series concept exists; `_bars` and `_grouped_bars` differ only by fill | A slice giving `_Plot` series grouping, which needs `ChartSpec` to name membership — `RRA-006`'s |
-| A **per-point data gap** | `_resolve` refuses the whole chart when any value is missing; a per-point gap is a geometry change | Recorded for the owner; this slice asserts what ships |
+| A **per-point data gap** (`FR-185`) | `_resolve` returns `None` when any value is missing (`charts.py:278`), so the whole chart refuses and there is no per-point gap to carry a reason. Giving one a gap is per-point geometry, a different shape of `charts.py` change | Recorded for the owner; this slice asserts what ships |
 
 **Each is a deferral with a named owner, not a silent narrowing** — and each is asserted negatively
 (no period rendered, no legend rendered) so a later slice cannot quietly ship the thing this one
