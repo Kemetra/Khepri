@@ -690,3 +690,34 @@ def test_the_axis_unit_renders_in_both_languages_on_a_real_surface() -> None:
         AXIS_UNITS[LANGUAGE_ENGLISH][DEFAULT_UNIT]
         != AXIS_UNITS[LANGUAGE_ARABIC][DEFAULT_UNIT]
     )
+
+
+def test_the_new_chart_rules_carry_no_hardcoded_colour() -> None:
+    """`FR-192`, and the reason print inherits these rules correctly.
+
+    `report.print.css` is layered onto `report.css` rather than replacing it, and it
+    redefines `--report-rule` and `--report-muted` for paper. So a chart rule written
+    with those tokens prints in the paper palette without a second declaration, and
+    one written with a literal hex value would print the screen colour on paper --
+    silently, because nothing renders a chart during a stylesheet test.
+
+    Asserted on the two rules this slice added rather than on the whole sheet: the
+    rest of the file is `RRA-012`'s and `RRA-009`'s, and a scan over all of it would
+    fail on rules this specification does not govern.
+    """
+    sheet = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "khepri"
+        / "rra"
+        / "rendering"
+        / "templates"
+        / "report.css"
+    ).read_text(encoding="utf-8")
+    assert sheet.strip(), "the stylesheet is empty, so this proves nothing"
+
+    for selector in (".chart__baseline", ".chart__axis-unit"):
+        start = sheet.index(selector)
+        block = sheet[start : sheet.index("}", start)]
+        assert "var(--report-" in block, f"{selector} must take the report palette"
+        assert "#" not in block, f"{selector} hardcodes a colour: {block!r}"
