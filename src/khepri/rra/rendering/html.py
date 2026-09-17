@@ -59,6 +59,7 @@ from khepri.rra.narrative import (
 from khepri.rra.renderable import PresentationSection, RenderableBundle
 from khepri.rra.rendering.charts import ChartView, build_chart
 from khepri.rra.rendering.wording import (
+    AXIS_UNITS,
     CHART_DESCRIPTIONS,
     COMPONENT_STATE_WORDING,
     LABEL_WORDING,
@@ -176,6 +177,7 @@ _CHROME: dict[str, dict[str, str]] = {
         # naming the same section, chart, label, or refusal differently.
         "sections": SECTION_HEADINGS[LANGUAGE_ENGLISH],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ENGLISH],
+        "axis_units": AXIS_UNITS[LANGUAGE_ENGLISH],
         "labels": LABEL_WORDING[LANGUAGE_ENGLISH],
         # The data-display component layer's own chrome (`RRA-012` FR-095a), and the
         # word its status badge shows per governed section state. Registered here
@@ -224,6 +226,7 @@ _CHROME: dict[str, dict[str, str]] = {
         "refusal_prose": _section_refusal_prose(LANGUAGE_ARABIC),
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
+        "axis_units": AXIS_UNITS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],
         # The data-display component layer's own chrome (`RRA-012` FR-095a), and the
         # word its status badge shows per governed section state. Registered here

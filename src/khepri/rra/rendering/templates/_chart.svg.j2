@@ -27,6 +27,14 @@
      class="chart chart--{{ view.kind }}">
   <title id="{{ section_id }}-ct">{{ chrome.sections[section_id] }}</title>
   <desc id="{{ section_id }}-cd">{{ chrome.chart_descriptions[view.description_code] }}</desc>
+  {#
+    The zero line, drawn before the marks so a bar sits on top of it rather than
+    being cut by it. Its position comes from the view: the domain always includes
+    zero, so the line is always inside the canvas, and deriving the offset here
+    again would be a second chance to disagree with the geometry.
+  #}
+  <line class="chart__baseline" x1="0" y1="{{ view.baseline }}"
+        x2="{{ view.width }}" y2="{{ view.baseline }}" />
   {% for mark in view.marks %}
   <rect class="chart__mark" x="{{ mark.x }}" y="{{ mark.y }}"
         width="{{ mark.width }}" height="{{ mark.height }}" />
@@ -39,5 +47,15 @@
     #}{% if label.localize %}{{ chrome.labels[label.value] }}{#
     #}{% else %}{{ label.value }}{% endif %}</text>
   {% endfor %}
+  {#
+    The value axis states its unit. The word is a governed code resolved in the
+    per-language chrome like every other one here, so a unit kind with no entry
+    raises under `StrictUndefined` rather than reaching a reader as `monetary`.
+    The anchor mirrors with the category axis, because it sits on that axis: a
+    hardcoded `x="0"` paints the label off the canvas under `direction: rtl`.
+    No period, because nothing the bundle hands this chart carries one.
+  #}
+  <text class="chart__axis-unit" x="{{ view.axis_unit_x }}" y="{{ view.height }}">{#
+    #}{{ chrome.axis_units[view.axis_unit_kind] }}</text>
 </svg>
 {% endmacro %}

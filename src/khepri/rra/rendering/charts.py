@@ -140,6 +140,24 @@ class ChartView:
     `labels` names each mark: a customer category where the figure has one, and
     otherwise a governed metric code. See `ChartLabel`.
 
+    `axis_unit_kind` is the governed unit the series is measured in, carried as the
+    kind rather than a word so the surface resolves it through `rendering.wording`
+    like every other chrome label. `_resolve` refuses a series mixing units, so one
+    chart states one dimension and this is unambiguous by construction. There is
+    deliberately no period: nothing this module receives carries one, and composing
+    one would be a chart-derived fact.
+
+    `axis_unit_x` is where that label is anchored. It mirrors, because the category
+    axis mirrors and this label sits on it: a hardcoded `x="0"` in the template would
+    anchor the text's start edge at canvas zero and paint it off the canvas under
+    `direction: rtl`, leaving the Arabic page with no axis unit at all while the
+    English one reads correctly. Mirroring is geometry, so it is decided here.
+
+    `baseline` is where zero falls from the top of the canvas, as an exact decimal
+    string. The domain always includes zero, so it is always inside the canvas; a
+    consumer draws the line rather than deriving its position, because a second
+    derivation is a second chance to disagree about where zero sits.
+
     `polyline` connects the marks of a line chart, and is empty for every other kind.
     `RRA-008` requires a cumulative share *curve*, and independent marks are a
     scatter however they are sized: a consumer drawing one rectangle per mark drew
@@ -155,6 +173,9 @@ class ChartView:
     marks: tuple[ChartMark, ...]
     labels: tuple[ChartLabel, ...]
     polyline: str
+    axis_unit_kind: str
+    axis_unit_x: str
+    baseline: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +246,13 @@ def build_chart(
             _label(figure, mark) for figure, mark in zip(resolved, marks, strict=True)
         ),
         polyline=_polyline(spec.kind, marks),
+        # One unit per chart is `_resolve`'s guarantee, so the first figure's kind is
+        # the series' kind. Reading it from the resolved figures rather than taking a
+        # parameter keeps `build_chart`'s signature at four, which the code-health
+        # gate on argument count requires.
+        axis_unit_kind=resolved[0].unit_kind,
+        axis_unit_x=_coordinate(_mirror(plot, Decimal(0), Decimal(0))),
+        baseline=_coordinate(plot.domain.zero),
     )
 
 

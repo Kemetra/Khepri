@@ -1215,6 +1215,80 @@ def _assert_chart_descriptions_complete() -> None:
 _assert_chart_descriptions_complete()
 
 
+#: What a chart's value axis is called, per governed unit kind (`FR-183`, `FR-184`).
+#:
+#: **Keyed off `facts`' constants rather than string literals**, for the reason
+#: `shell_decisions.py`'s `UNIT_WORDING` states about its own table: a unit kind
+#: renamed in `khepri.rra.facts` becomes an import error here and not a silently
+#: missing line. `_resolve` in `charts.py` already refuses a series mixing units, so
+#: one chart states one dimension and this table is asked for exactly one key.
+#:
+#: **The duplication with `shell_decisions.UNIT_WORDING` is forced, not drift.** That
+#: table lives in `src/khepri/runtime/`, which is `RCA`'s and outside `RRA-015`
+#: §Scope, so a slice under this specification cannot import it. Two tables keyed off
+#: one set of governed constants is the shape the scope split requires; a
+#: cross-family import to collapse them would cross a boundary this specification
+#: does not own.
+#:
+#: **No period.** `FR-183` asks an axis to state its unit *and* its period, and
+#: nothing `build_chart` receives carries a period: `ChartSpec` is a kind and figure
+#: identifiers, and a `CitedFigure` has none. Composing one would be a chart-derived
+#: fact, which `FR-182` forbids, so the axis states the unit alone and the period
+#: half waits on an artifact that puts a governed period on the bundle.
+AXIS_UNITS: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        facts.UNIT_MONETARY: "Currency",
+        facts.UNIT_COUNT: "Count",
+        facts.UNIT_RATIO: "Share",
+    },
+    LANGUAGE_ARABIC: {
+        facts.UNIT_MONETARY: "عملة",
+        facts.UNIT_COUNT: "عدد",
+        facts.UNIT_RATIO: "نصيب",
+    },
+}
+
+#: The unit kinds an axis label must cover, read from `facts` by **introspection**
+#: rather than restated.
+#:
+#: An earlier form listed the three constants by hand. That spelled them from
+#: governed names but fixed the *membership* here, so a fourth unit kind admitted in
+#: `facts` left this set at three, the guard below still passed, and the missing axis
+#: label would have surfaced as a `KeyError` mid-render under `StrictUndefined` --
+#: exactly the failure `_CHART_DESCRIPTION_CODES` above avoids by iterating
+#: `GOVERNED_CHART_KINDS`, and exactly the tautology a hand-listed expectation always
+#: is: both sides move together and no mutant can separate them.
+#:
+#: Reading `vars(facts)` makes the extent the *source's*, not this module's. A
+#: `UNIT_` constant added there and not given a word here fails at import.
+_GOVERNED_UNIT_KINDS = frozenset(
+    value
+    for name, value in vars(facts).items()
+    if name.startswith("UNIT_") and isinstance(value, str)
+)
+
+
+def _assert_axis_units_complete() -> None:
+    # Flat, for the reason `_assert_chart_descriptions_complete` gives: the nested
+    # form is CodeScene's "Bumpy Road" and this module is already near the gate.
+    if set(AXIS_UNITS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("axis units must cover every governed language")
+    incomplete = [
+        language
+        for language, entries in AXIS_UNITS.items()
+        if set(entries) != _GOVERNED_UNIT_KINDS
+    ]
+    if incomplete:
+        message = (
+            "every governed unit kind needs an axis label in every language "
+            f"(languages={sorted(incomplete)})"
+        )
+        raise RuntimeError(message)
+
+
+_assert_axis_units_complete()
+
+
 def category_of(figure: CitedFigure) -> ChartCategory:
     """A mark's category if the figure has one, otherwise the code for its metric.
 

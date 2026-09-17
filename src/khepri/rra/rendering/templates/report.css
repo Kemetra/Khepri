@@ -298,6 +298,40 @@ article {
   stroke-linecap: round;
 }
 
+.chart__baseline {
+  /*
+   * The zero line. `charts._Domain` always includes zero, so this is inside the
+   * canvas for every drawable series, and a negative bar hangs from it rather
+   * than being drawn as a positive one somewhere else.
+   *
+   * Muted rather than the accent: it is the reference a reader measures against,
+   * not one of the figures. Thinner than the curve for the same reason -- a
+   * baseline as heavy as a mark competes with the data it exists to anchor.
+   */
+  stroke: var(--report-rule);
+  stroke-width: 1;
+}
+
+.chart__axis-unit {
+  /*
+   * What the value axis is measured in, placed at the canvas foot beside the
+   * category labels. The word arrives from the governed chrome; this rule only
+   * says where it sits and how it reads.
+   *
+   * `text-anchor: start` names no physical side, which is why this sheet is
+   * direction-agnostic. It does NOT place the label: an earlier version of this
+   * comment claimed `start` made a hardcoded `x="0"` follow the reading order, and
+   * that was wrong -- `dir` reaches the SVG by inheritance, so under `rtl` the
+   * text's start edge anchored at canvas zero and the glyphs painted leftward, off
+   * the canvas. The anchor is geometry and `charts._mirror` decides it; the macro
+   * reads `view.axis_unit_x`. This rule only says how the label reads.
+   */
+  fill: var(--report-muted);
+  font-size: 0.75rem;
+  text-anchor: start;
+  dominant-baseline: text-after-edge;
+}
+
 .chart__label {
   /*
    * `charts._label` places every label at `y = CHART_HEIGHT`, horizontally

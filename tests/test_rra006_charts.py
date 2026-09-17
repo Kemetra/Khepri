@@ -13,8 +13,11 @@ template source, which is trusted because it is source.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
+from pathlib import Path
 
+from khepri.rra import facts
 from khepri.rra.bundle import (
     CHART_BAR,
     CHART_GROUPED_BAR,
@@ -37,7 +40,14 @@ from khepri.rra.rendering.charts import (
     ChartView,
     build_chart,
 )
-from khepri.rra.rendering.wording import LABEL_WORDING, category_of, worded
+from khepri.rra.rendering.wording import (
+    LABEL_WORDING,
+    category_of,
+    worded,
+)
+
+#: The unit kind the shared chart fixture uses, so a parity assertion names one key.
+DEFAULT_UNIT = facts.UNIT_MONETARY
 
 
 def figure(figure_id: str, value: Decimal | None, label: str) -> CitedFigure:
@@ -83,6 +93,35 @@ def chart_of(
         figures_for_chart(values),
         direction=LANGUAGE_DIRECTION[language],
     )
+
+
+
+def _chart_macro_source() -> str:
+    """The chart macro as template source, for the two deferral guards.
+
+    Both deferrals -- no period on the axis, no legend -- are only load-bearing if
+    they reach the thing a reader sees. `ChartView.__dataclass_fields__` does not:
+    an element written directly into the macro needs no field, and that is exactly
+    the route a later slice would take. So the source is scanned as well.
+    """
+    source = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "khepri"
+        / "rra"
+        / "rendering"
+        / "templates"
+        / "_chart.svg.j2"
+    ).read_text(encoding="utf-8")
+    assert source.strip(), "the chart macro is empty, so these guards prove nothing"
+    # Jinja comments are stripped: this macro's prose explains WHY there is no period
+    # and no legend, and a guard that reads the explanation as the violation is a
+    # guard the next slice narrows. `journey.css` taught the same lesson on the shell
+    # side, where a header comment naming the other surface's tokens tripped an
+    # `FR-201` scan.
+    without_comments = re.sub(r"\{#.*?#\}", "", source, flags=re.DOTALL)
+    assert without_comments.strip(), "stripping comments emptied the macro"
+    return without_comments
 
 
 def test_a_drawable_series_yields_one_mark_per_figure() -> None:
