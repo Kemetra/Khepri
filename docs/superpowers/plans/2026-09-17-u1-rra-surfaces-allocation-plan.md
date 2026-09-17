@@ -138,6 +138,25 @@ Recorded because a later slice must not re-derive them, and because one corrects
    `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` is a responsive expression, not a raw literal, and
    flattening it would change behaviour rather than tokenize it. An execution plan must re-verify
    every selector and line against the tree on the day it runs.
+4. **`FR-183`'s three chrome requirements are slice 6's real build, and `FR-189`'s chart clause is
+   already green.** Verified at `e915af8`:
+
+   | `FR-183` / `FR-189` element | State today |
+   |---|---|
+   | `role="img"` with `<title>` and `<desc>` from governed codes | **Already ships** — `_chart.svg.j2:25-29`, `aria-labelledby` pointing at both. Slice 6 must not re-add it |
+   | The domain always includes zero, negatives hanging from the baseline | **Already ships** — `_Domain.zero` (`charts.py:162-180`), documented at `:45` |
+   | A **visible** zero baseline element | **Missing.** The domain knows where zero falls; nothing draws a line there |
+   | An axis labelled with its **unit** and its **period** | **Missing.** `ChartView` carries `labels` for categories only — no axis, unit or period field |
+   | A **legend**, rendered only with two or more series | **Missing.** No legend field, and no series count on `ChartView` |
+   | A **truncated axis on a comparison is refused** | **Missing.** No such refusal exists |
+
+   So slice 6's build is: three new `ChartView` fields (baseline geometry, axis labelling with unit
+   and period, legend eligibility), their governed chrome codes in `wording.py`, their markup in
+   `_chart.svg.j2`, their rules in `report.css`/`report.print.css`, and the truncated-axis refusal.
+   **`ChartView` gains fields rather than parameters** — it already has nine, and CodeScene gates
+   on arguments >4, so an execution plan that adds three positional parameters to `build_chart`
+   will fail the gate. `build_chart`'s own docstring records the precedent: a parameter the module
+   does not use was **removed** rather than kept.
 5. **Part of slice 6's chart-kind evidence already ships — and the real gap is `_GEOMETRY`.**
    Verified: `tests/test_rra006_bundle_sections.py:197` already asserts
    `frozenset({CHART_BAR, CHART_GROUPED_BAR, CHART_LINE}) == GOVERNED_CHART_KINDS`, and
