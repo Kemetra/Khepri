@@ -224,7 +224,7 @@ Period comparison, reachable through the composition root since `44d54a7` (`#470
 | Field | Value |
 |---|---|
 | Goal | Decide, with the trust state of each figure visible |
-| Trust states | verified · caveated · refused · unavailable (`RCA-008` FR-162) — **four, not three** |
+| Trust states | verified · caveated · refused · unavailable — **four, not three.** `RCA-008` FR-162 names them as one of twelve things a metric card exposes, and requires the status be **selected** from `MetricAvailabilityView`'s governed availability and reason, the outcome kind, and whether the projection carries caveats — "never counted, scored, or otherwise derived" |
 | Unavailable | Content-free by `FR-165`: it says *that*, and no *why* |
 | Filters | Seven views, not eight — `SURFACE_VIEWS` excludes `PeriodComparisonView` by design |
 | Print | `decision_print.html.j2` |
@@ -267,7 +267,9 @@ appear only where a resolved organization was passed.
 2. A destination enters navigation in the slice that implements it (`FR-049`).
 3. `aria-current="page"` on exactly one nav item; `aria-current="step"` on exactly one journey step.
 4. **No literal directional glyph as a navigation affordance** — an arrow does not mirror.
-5. The language switch preserves position: same surface, other language segment (`FR-047`).
+5. Language is a property of the address, under a single language-parameterised prefix (`FR-047`);
+   the switch **preserves the actor's position** — same surface, other language segment (`FR-055`,
+   scenario 11).
 
 ### D.4 Tabs vs pages vs drawers
 
@@ -1045,7 +1047,10 @@ Run against this document at `6cea330`, 2026-09-17:
 
 ## 22. Maintaining this document
 
-- **A new surface enters §C and §F in the slice that implements it**, never before (`FR-049`).
+- **A new surface enters §C and §F in the slice that implements it**, never before. This is this
+  document's own maintenance rule; the governed requirement it mirrors is `FR-049`, which forbids
+  *introducing* a surface with no capability behind it and *rendering a navigation entry* for one
+  with no implementation.
 - **A contradiction with a predecessor is corrected in place in both documents**, never deleted —
   within the design-language layer this document reaches. Above that layer the predecessor wins and
   **this** document is corrected (§A.4).
