@@ -28,6 +28,7 @@ delete it.
 from __future__ import annotations
 
 import re
+from importlib.resources import files
 
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.runtime.shell_frame import (
@@ -105,6 +106,47 @@ def test_the_navigation_names_exactly_the_frames_roster() -> None:
     }
     expected = {destination for _label, destination in _FRAME_ROSTER}
     assert surfaces == expected, f"navigation names {surfaces}, roster is {expected}"
+
+    # **The assertion above is two-sided drift detection, not independence, and
+    # saying so is the point.** The template renders whatever `shell_frame.py`
+    # computes, so dropping a destination from the roster moves BOTH sides together
+    # and the equality still holds -- verified by mutation, which passed. It catches
+    # a template that stops rendering what the roster names, which is real drift, and
+    # it cannot catch the roster itself shrinking.
+    #
+    # What does catch that is the templates on disk: a destination the navigation
+    # names must have a template that renders it, and `shell_templates/` is a
+    # directory no roster derives from. A roster shrunk by one leaves a template with
+    # no entry pointing at it.
+    templates = {
+        entry.name.removesuffix(".html.j2")
+        for entry in files("khepri.runtime").joinpath("shell_templates").iterdir()
+        if entry.name.endswith(".html.j2")
+    }
+    assert templates, "no templates found, so this half proves nothing"
+    missing = sorted(expected - templates)
+    assert missing == [], f"navigation names a destination with no template: {missing}"
+
+    # Every destination-shaped template is named by the navigation. The exemptions
+    # are stated rather than inferred: the frame itself, two partials, the print
+    # surface, the POST-only result, and the surfaces reachable without a resolved
+    # organization. A template added outside those fails here, which is what makes
+    # this the independent half.
+    exempt = {
+        "shell",
+        "_decision_cards",
+        "_decision_sections",
+        "decision_print",
+        "invitation_issued",
+        "no_membership",
+        "switcher",
+        "unavailable",
+        "analysis",
+        "decision",
+        "compare",
+    }
+    unnamed = sorted(templates - expected - exempt)
+    assert unnamed == [], f"a destination-shaped template is in no navigation: {unnamed}"
 
 
 def test_at_most_one_entry_claims_to_be_the_current_page() -> None:
