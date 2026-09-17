@@ -93,6 +93,28 @@ to `journey.css`.
 
 ---
 
+## The scan logic is pre-validated
+
+Run against the tree at `c2e2e9a` before this plan was committed, so the execution does not
+discover a broken approach at RED. Five cases, using `importlib.resources`, comment-stripping, and
+a regex matching `font` **and** `font-size` while excluding `font: inherit`:
+
+| Case | Result | What it proves |
+|---|---|---|
+| Baseline | 1 base `.skip-link` rule, one `:focus` variant, 2 raw sizes | matches the tree-state table above |
+| A second `.skip-link { … }` appended | base count → **2** | the count assertion catches the defect it exists for |
+| A commented-out `.skip-link` appended | base count stays **1** | comment-stripping works; a commented rule is not a mechanism |
+| The GREEN fix applied | raw sizes → **[]** | the intended fix actually satisfies the scan |
+| `font: 600 .9rem/1 monospace` appended | **caught** | the shorthand form is seen — the failure a `font-size`-only scan would miss |
+
+**The fourth and fifth rows are the load-bearing ones.** The fourth shows the fix and the guard
+agree, so Task 4 cannot pass by weakening Task 3. The fifth is the defect the allocation plan's
+original wording carried: a scan worded for `font-size` alone passes over a size inside the `font`
+shorthand, and `journey.css` has five such sizes on the companion plan's side.
+
+**Comment-stripping is required, not optional.** Without it, a rule inside a `/* … */` block counts
+as a live mechanism and the count assertion reports a defect that does not exist.
+
 ## Tasks
 
 ### Task 1 — RED: the skip-link mechanism is not counted
