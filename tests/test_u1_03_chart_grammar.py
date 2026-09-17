@@ -35,6 +35,7 @@ from khepri.rra.rendering.charts import (
 )
 from khepri.rra.rendering.wording import AXIS_UNITS
 from tests.test_rra006_charts import DEFAULT_UNIT, _chart_macro_source, chart_of
+from tests.test_rra006_html_sections import page
 
 _TEMPLATES = (
     Path(__file__).resolve().parent.parent
@@ -363,24 +364,30 @@ def test_a_value_survives_the_chart_with_its_precision_intact() -> None:
 
 
 def test_the_axis_unit_renders_in_both_languages_on_a_real_surface() -> None:
-    """`FR-184`, `FR-188`: the chrome key reaches both `_CHROME` branches.
+    """`FR-184`, `FR-188`: the localized unit reaches the rendered SVG, both languages.
 
-    The macro resolves `chrome.axis_units` under `StrictUndefined`, so a key
-    registered in one language only raises on that language's render alone -- and a
-    test comparing table key sets would never drive it. This renders the chart macro
-    through the real environment in both languages instead.
+    **An earlier form of this test was named for a surface it never rendered.** It
+    compared `view.axis_unit_kind` against the `AXIS_UNITS` keys, which is a lookup
+    in the same table the macro reads -- so a `chrome.axis_units` entry missing from
+    one `_CHROME` branch would have passed it. The macro resolves chrome under
+    `StrictUndefined`, and the only thing that observes that is a render.
+
+    So this drives the production renderer for both documents and asserts the word
+    itself is in the markup. The two words differ, which is what makes it a parity
+    check rather than a restatement of one table.
     """
-    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
-        view = chart_of(language=language)
-        assert view is not None
-        assert view.axis_unit_kind in AXIS_UNITS[language]
-        # The word differs between the two, which is what makes this a parity check
-        # rather than a restatement of one table.
-        assert AXIS_UNITS[language][view.axis_unit_kind].strip()
-    assert (
-        AXIS_UNITS[LANGUAGE_ENGLISH][DEFAULT_UNIT]
-        != AXIS_UNITS[LANGUAGE_ARABIC][DEFAULT_UNIT]
-    )
+    english = AXIS_UNITS[LANGUAGE_ENGLISH][DEFAULT_UNIT]
+    arabic = AXIS_UNITS[LANGUAGE_ARABIC][DEFAULT_UNIT]
+    assert english != arabic, "identical words would make this assertion vacuous"
+
+    for language, expected in (
+        (LANGUAGE_ENGLISH, english),
+        (LANGUAGE_ARABIC, arabic),
+    ):
+        rendered = page(language, published=True)
+        assert "<svg" in rendered, "no chart rendered, so this proves nothing"
+        assert 'class="chart__axis-unit"' in rendered
+        assert expected in rendered, f"{language} is missing its axis unit"
 
 
 def test_the_new_chart_rules_carry_no_hardcoded_colour() -> None:
