@@ -483,11 +483,31 @@ def _shell_component_css() -> str:
         .joinpath("assets", "shell-components.css")
         .read_text(encoding="utf-8")
     )
+    # A `/*` or `*/` inside a CSS string literal disarms the stripper: with
+    # `content: "/*"` above a rule and `content: "*/"` below it, the non-greedy
+    # `/\*.*?\*/` eats the real rule between them and every scan over the result goes
+    # blind. Refuse that shape outright rather than trying to parse around it -- this
+    # sheet has no legitimate reason to put a comment delimiter in a string.
+    assert not re.search(r"""["'][^"'\n]*(/\*|\*/)[^"'\n]*["']""", text), (
+        "a comment delimiter inside a string literal would disarm comment-stripping"
+    )
     return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
 
-def _selectors(css: str) -> list[str]:
-    return [selector.strip() for selector in re.findall(r"([^{}]+)\{", css)]
+def _selector_parts(css: str) -> list[str]:
+    """Every comma-separated selector part, with `:is()`/`:where()` unwrapped.
+
+    Equality on the whole captured selector string is what an earlier form of the
+    skip-link count used, and it missed a second mechanism three ways: a grouped
+    selector (`.skip-link, .alt`), an `:is(.skip-link, .alt)` wrapper, and the
+    string-literal comment escape above. Counting *parts* is what the assertion
+    actually means.
+    """
+    unwrapped = re.sub(r":(?:is|where)\(([^)]*)\)", r"\1", css, flags=re.IGNORECASE)
+    parts: list[str] = []
+    for selector in re.findall(r"([^{}]+)\{", unwrapped):
+        parts.extend(part.strip() for part in selector.split(",") if part.strip())
+    return parts
 
 
 def test_the_shell_declares_exactly_one_skip_link_mechanism() -> None:
@@ -499,11 +519,28 @@ def test_the_shell_declares_exactly_one_skip_link_mechanism() -> None:
     either. The count is the assertion; presence is already covered above.
     """
     css = _shell_component_css()
-    selectors = _selectors(css)
+    parts = _selector_parts(css)
 
-    assert selectors, "no rules found in shell-components.css, so this test proves nothing"
-    base = [selector for selector in selectors if selector == ".skip-link"]
-    assert len(base) == 1, f"expected one .skip-link mechanism, found {len(base)}"
+    assert parts, "no rules found in shell-components.css, so this test proves nothing"
+    # A *mechanism* is a distinct thing the sheet styles as a skip link, so the
+    # pseudo-class variants of one selector are one mechanism: `.skip-link` and
+    # `.skip-link:focus` are the shipped pair. What must stay at one is the number of
+    # distinct base selectors whose target *is* a skip link -- a second class name
+    # standing in for the same affordance is the drift this counts, and a grouped or
+    # `:is()`-wrapped selector no longer hides it.
+    mechanisms = {
+        part for part in parts if re.split(r"::?", part, maxsplit=1)[0] == ".skip-link"
+    }
+    bases = {re.split(r"::?", part, maxsplit=1)[0] for part in mechanisms}
+    assert bases == {".skip-link"}, f"unexpected skip-link selectors: {sorted(bases)}"
+    skip_like = {
+        base
+        for part in parts
+        if "skip" in (base := re.split(r"::?", part, maxsplit=1)[0]).lower()
+    }
+    assert skip_like == {".skip-link"}, (
+        f"expected one skip-link mechanism, found {len(skip_like)}: {sorted(skip_like)}"
+    )
 
 
 def test_the_shell_component_layer_declares_no_raw_type_size() -> None:
@@ -586,3 +623,104 @@ def test_the_shell_component_layer_draws_no_artwork() -> None:
     }
     found = sorted(name for name, present in forbidden.items() if present)
     assert found == [], f"forbidden asset constructs in shell-components.css: {found}"
+
+
+def _linked_shell_css() -> str:
+    """All three sheets, in the order `shell.html.j2:7-9` links them.
+
+    Injecting only one measures an unstyled document, which is how an earlier form of
+    the viewport test reported every target as too small.
+    """
+    journey_assets = files("khepri.rra.journey").joinpath("assets")
+    return "\n".join(
+        (
+            journey_assets.joinpath("shell.css").read_text(encoding="utf-8"),
+            journey_assets.joinpath("shell-components.css").read_text(encoding="utf-8"),
+            files("khepri.runtime")
+            .joinpath("shell_assets", "workspace.css")
+            .read_text(encoding="utf-8"),
+        )
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_the_shell_skip_link_is_visible_only_when_focused(language: str) -> None:
+    """`RCA-010` §Scope and §Verification: measured in the browser, not read off CSS.
+
+    The stylesheet-level tests beside this one prove there is exactly **one**
+    skip-link mechanism and that it is first in the document. Neither observes
+    behaviour: a `.skip-link` rule could move off-screen and stay there on focus, and
+    every static scan would still pass. This is the slice's only behavioural
+    assertion, so it measures the bounding box in both languages -- the off-screen
+    idiom is `inset-inline-start`, which resolves to opposite sides under `rtl`.
+    """
+    html = _html("team", language)
+    css = _linked_shell_css()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(html, wait_until="domcontentloaded")
+            page.add_style_tag(content=css)
+            skip = page.locator(".skip-link").first
+
+            unfocused = skip.bounding_box()
+            assert unfocused is not None, "the skip link must exist to be measured"
+            width = page.evaluate("innerWidth")
+            off_screen = unfocused["x"] + unfocused["width"] <= 0 or unfocused["x"] >= width
+            assert off_screen, f"the skip link must start off-screen, got x={unfocused['x']}"
+
+            skip.focus()
+            focused = skip.bounding_box()
+            assert focused is not None
+            assert 0 <= focused["x"] < width, (
+                f"a focused skip link must be inside the viewport, got x={focused['x']}"
+            )
+            assert focused["height"] >= 44, (
+                f"the skip link is a pointer target: {focused['height']}px < 44px"
+            )
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+def test_the_team_surface_type_sizes_resolve_from_the_token_scale() -> None:
+    """`RCA-010` §Scope: the computed size, not the declaration.
+
+    `var(--text-sm)` resolves to nothing if the token sheet is absent or the name is
+    misspelled, and the element would silently inherit. Reading the stylesheet cannot
+    see that; a computed style can. The expected value is the token's own -- 0.82rem
+    at a 16px root -- which is 0.88px below the `0.875rem` this slice replaced.
+    """
+    html = _html("team", "en")
+    css = _linked_shell_css()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(html, wait_until="domcontentloaded")
+            page.add_style_tag(content=css)
+
+            declared = page.evaluate(
+                "getComputedStyle(document.documentElement)"
+                ".getPropertyValue('--text-sm').trim()"
+            )
+            assert declared == "0.82rem", f"--text-sm must be declared, got {declared!r}"
+
+            for selector in (".member-role", ".invitation-role"):
+                locator = page.locator(selector).first
+                if locator.count() == 0:
+                    continue
+                size = page.evaluate(
+                    "s => getComputedStyle(document.querySelector(s)).fontSize", selector
+                )
+                assert size == "13.12px", f"{selector} computed {size}, expected 13.12px"
+        finally:
+            browser.close()
