@@ -132,13 +132,13 @@
   padding-inline: var(--space-2, 0.5rem);
   border: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .member-role,
 .invitation-role {
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .empty-state {
