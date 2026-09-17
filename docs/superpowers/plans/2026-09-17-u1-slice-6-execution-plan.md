@@ -289,7 +289,7 @@ pin that behaviour, not to build it.
 |---|---|---|
 | The axis's **period** | No governed period is reachable from `build_chart`'s input; composing one violates `FR-182`, and reaching for one needs `bundle.py`, outside §Scope | An `RRA-006` slice, or an artifact putting a governed period on the bundle |
 | A **legend** | No series concept exists; `_bars` and `_grouped_bars` differ only by fill | A slice giving `_Plot` series grouping, which needs `ChartSpec` to name membership — `RRA-006`'s |
-| A **per-point data gap** (`FR-185`) | `_resolve` returns `None` when any value is missing (`charts.py:278`), so the whole chart refuses and there is no per-point gap to carry a reason. Giving one a gap is per-point geometry, a different shape of `charts.py` change | Recorded for the owner; this slice asserts what ships |
+| A **per-point data gap** (`FR-185`) | `_resolve` returns `None` when any value is missing, so the whole chart refuses. **`FR-185`'s "visible gap carrying its stated reason" is satisfied by that refusal**: `CAVEAT_CHART_NOT_DRAWN` (`bundle.py:179`) is attached at `bundle.py:1036`, carries governed bilingual prose in `wording.py`, and renders as a chrome label ("No chart" / "لا يوجد رسم"). So the requirement is MET, not deferred — what is deferred is only a *per-point* gap inside a drawn chart | Recorded for the owner; per-point geometry is a different shape of change |
 
 **Each is a deferral with a named owner, not a silent narrowing** — and each is asserted negatively
 (no period rendered, no legend rendered) so a later slice cannot quietly ship the thing this one

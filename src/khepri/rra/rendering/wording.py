@@ -1248,11 +1248,23 @@ AXIS_UNITS: dict[str, dict[str, str]] = {
     },
 }
 
-#: The unit kinds an axis label must cover, read from `facts` rather than restated.
-#: A fourth unit kind admitted there leaves this set at three, the guard below fails
-#: at import, and the gap is a build error rather than a blank axis on one surface.
+#: The unit kinds an axis label must cover, read from `facts` by **introspection**
+#: rather than restated.
+#:
+#: An earlier form listed the three constants by hand. That spelled them from
+#: governed names but fixed the *membership* here, so a fourth unit kind admitted in
+#: `facts` left this set at three, the guard below still passed, and the missing axis
+#: label would have surfaced as a `KeyError` mid-render under `StrictUndefined` --
+#: exactly the failure `_CHART_DESCRIPTION_CODES` above avoids by iterating
+#: `GOVERNED_CHART_KINDS`, and exactly the tautology a hand-listed expectation always
+#: is: both sides move together and no mutant can separate them.
+#:
+#: Reading `vars(facts)` makes the extent the *source's*, not this module's. A
+#: `UNIT_` constant added there and not given a word here fails at import.
 _GOVERNED_UNIT_KINDS = frozenset(
-    (facts.UNIT_MONETARY, facts.UNIT_COUNT, facts.UNIT_RATIO)
+    value
+    for name, value in vars(facts).items()
+    if name.startswith("UNIT_") and isinstance(value, str)
 )
 
 

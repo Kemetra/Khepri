@@ -147,6 +147,12 @@ class ChartView:
     deliberately no period: nothing this module receives carries one, and composing
     one would be a chart-derived fact.
 
+    `axis_unit_x` is where that label is anchored. It mirrors, because the category
+    axis mirrors and this label sits on it: a hardcoded `x="0"` in the template would
+    anchor the text's start edge at canvas zero and paint it off the canvas under
+    `direction: rtl`, leaving the Arabic page with no axis unit at all while the
+    English one reads correctly. Mirroring is geometry, so it is decided here.
+
     `baseline` is where zero falls from the top of the canvas, as an exact decimal
     string. The domain always includes zero, so it is always inside the canvas; a
     consumer draws the line rather than deriving its position, because a second
@@ -168,6 +174,7 @@ class ChartView:
     labels: tuple[ChartLabel, ...]
     polyline: str
     axis_unit_kind: str
+    axis_unit_x: str
     baseline: str
 
 
@@ -244,6 +251,7 @@ def build_chart(
         # parameter keeps `build_chart`'s signature at four, which the code-health
         # gate on argument count requires.
         axis_unit_kind=resolved[0].unit_kind,
+        axis_unit_x=_coordinate(_mirror(plot, Decimal(0), Decimal(0))),
         baseline=_coordinate(plot.domain.zero),
     )
 

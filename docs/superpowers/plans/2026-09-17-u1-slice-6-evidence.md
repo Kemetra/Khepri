@@ -174,7 +174,7 @@ clean status, missing content. Check the branch **first**.
 |---|---|---|
 | The axis's **period** (`FR-183`) | No governed period is reachable from `build_chart`'s input | An `RRA-006` slice, or an artifact putting a governed period on the bundle |
 | A **legend** (`FR-183`) | No series concept; `_bars`/`_grouped_bars` differ only by fill | A slice giving `_Plot` series grouping, which needs `ChartSpec` to name membership — `RRA-006`'s |
-| A **per-point data gap** (`FR-185`) | `_resolve` returns `None` when any value is missing, so the whole chart refuses | Recorded for the owner; per-point geometry is a different shape of change |
+| A **per-point data gap** (`FR-185`) | The whole chart refuses, and **that refusal carries its stated reason**: `CAVEAT_CHART_NOT_DRAWN` (`bundle.py:179`, attached `:1036`) with governed bilingual prose and a chrome label. `FR-185` is therefore MET; only a *per-point* gap inside a drawn chart is deferred | Recorded for the owner; per-point geometry is a different shape of change |
 
 **Both `FR-183` deferrals are asserted negatively** — no `axis_period` field, no `legend` field — so
 a later slice cannot quietly ship what this one declined to invent. A deferral that is only prose

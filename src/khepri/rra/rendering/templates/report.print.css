@@ -189,6 +189,24 @@
     white-space: nowrap;
   }
 
+  /*
+   * The chart's axis unit, and the one chart rule this sheet needs.
+   *
+   * Everything else about a chart inherits correctly: `report.css` states the
+   * baseline and label colours as `var(--report-rule)` and `var(--report-muted)`,
+   * and the palette above redefines both for paper, so neither needs restating.
+   * `stroke-width` is in user units and scales with the viewBox.
+   *
+   * The axis unit's size does not inherit usefully. `0.75rem` against this sheet's
+   * `10.5pt` root resolves to about 7.9pt, which is below what a reader can be
+   * expected to read on paper, and no test renders a chart to catch it. A point
+   * value rather than a relative one, because the page's root size is the thing
+   * being corrected for.
+   */
+  .chart__axis-unit {
+    font-size: 9pt;
+  }
+
   .provenance {
     /* Long digests need the full measure on paper. */
     grid-template-columns: minmax(14rem, auto) 1fr;

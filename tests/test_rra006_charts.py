@@ -13,8 +13,12 @@ template source, which is trusted because it is source.
 
 from __future__ import annotations
 
+import ast
+import re
 from decimal import Decimal
 from pathlib import Path
+
+from jinja2 import Environment, nodes
 
 from khepri.rra import facts
 from khepri.rra.bundle import (
@@ -95,6 +99,35 @@ def chart_of(
         figures_for_chart(values),
         direction=LANGUAGE_DIRECTION[language],
     )
+
+
+
+def _chart_macro_source() -> str:
+    """The chart macro as template source, for the two deferral guards.
+
+    Both deferrals -- no period on the axis, no legend -- are only load-bearing if
+    they reach the thing a reader sees. `ChartView.__dataclass_fields__` does not:
+    an element written directly into the macro needs no field, and that is exactly
+    the route a later slice would take. So the source is scanned as well.
+    """
+    source = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "khepri"
+        / "rra"
+        / "rendering"
+        / "templates"
+        / "_chart.svg.j2"
+    ).read_text(encoding="utf-8")
+    assert source.strip(), "the chart macro is empty, so these guards prove nothing"
+    # Jinja comments are stripped: this macro's prose explains WHY there is no period
+    # and no legend, and a guard that reads the explanation as the violation is a
+    # guard the next slice narrows. `journey.css` taught the same lesson on the shell
+    # side, where a header comment naming the other surface's tokens tripped an
+    # `FR-201` scan.
+    without_comments = re.sub(r"\{#.*?#\}", "", source, flags=re.DOTALL)
+    assert without_comments.strip(), "stripping comments emptied the macro"
+    return without_comments
 
 
 def test_a_drawable_series_yields_one_mark_per_figure() -> None:
@@ -580,6 +613,10 @@ def test_the_axis_states_no_period() -> None:
     assert view is not None
     assert not hasattr(view, "axis_period")
     assert not any("period" in field for field in ChartView.__dataclass_fields__)
+    # A field-name check cannot see the surface. A period rendered straight into the
+    # macro needs no `ChartView` field at all, and that is the shape a later slice
+    # would reach for -- so the macro source is scanned too.
+    assert "period" not in _chart_macro_source().lower()
 
 
 def test_a_chart_renders_no_legend() -> None:
@@ -598,46 +635,137 @@ def test_a_chart_renders_no_legend() -> None:
     view = chart_of(kind=CHART_GROUPED_BAR)
     assert view is not None
     assert not any("legend" in field for field in ChartView.__dataclass_fields__)
+    # Same reason as the period: the macro is what a reader sees, and a legend drawn
+    # there passes every check on the view model. Verified by mutation -- a
+    # `<g class="chart__legend">` appended to the macro passed all 37 tests before
+    # this line existed.
+    assert "legend" not in _chart_macro_source().lower()
 
 
-def test_the_chart_module_derives_no_figure() -> None:
-    """`FR-182` and §Verification: a chart computes no figure.
-
-    A static scan over the two authorized chart paths. The distinction it must draw
-    is between *geometry over given values* -- which is this module's whole job --
-    and *deriving a new fact*, which is a defect whatever its size. Scaling a value
-    to a canvas offset is the former; summing two values is the latter.
-
-    So the scan looks for the arithmetic that produces a new figure: `sum(`,
-    `mean`, `average`, `median`, and a percentage composed here. It deliberately
-    admits `-`, `*` and `/`, because `_Domain.offset` and `_rank` cannot express a
-    scale without them.
-
-    Anchored to `__file__` rather than a CWD-relative path: `Path("src")` resolves to
-    nothing when pytest runs from `tests/`, and a scan over nothing passes every
-    claim it makes.
-    """
-    root = Path(__file__).resolve().parent.parent / "src" / "khepri" / "rra" / "rendering"
-    sources = {
-        "charts.py": (root / "charts.py").read_text(encoding="utf-8"),
-        "_chart.svg.j2": (root / "templates" / "_chart.svg.j2").read_text(
-            encoding="utf-8"
-        ),
+#: The functions in `charts.py` that may contain arithmetic, because scaling a value
+#: to a canvas offset cannot be expressed without it. Every other function must be
+#: arithmetic-free, and a NEW arithmetic-bearing function fails by construction
+#: rather than by a reviewer noticing.
+#:
+#: This is an allowlist of *names*, which makes it the independent expectation: the
+#: subject is what `ast` finds in the module, and widening the subject cannot widen
+#: this list.
+_ARITHMETIC_ALLOWED = frozenset(
+    {
+        "span",
+        "offset",
+        "slot",
+        "_resolve",
+        "_plot",
+        "_rank",
+        "_columns",
+        "_top",
+        "_height",
+        "_mirror",
+        "_centre",
+        "_coordinate",
+        "_line",
+        "_label",
+        "_polyline",
     }
-    assert sources, "the scan found no sources, so it proves nothing"
-    for name, text in sources.items():
-        assert text.strip(), f"{name} is empty, so this scan proves nothing"
+)
 
-    forbidden = ("sum(", "statistics.", "mean(", "median(", "round(")
-    for name, text in sources.items():
-        # Comments and docstrings discuss the arithmetic this module refuses, so the
-        # scan reads code lines only -- a guard that fires on the prose explaining it
-        # is a guard the next slice narrows.
-        code = "\n".join(
-            line for line in text.splitlines() if not line.lstrip().startswith(("#", "*"))
-        )
-        found = [token for token in forbidden if token in code]
-        assert found == [], f"{name} derives a figure: {found}"
+
+def test_the_chart_module_confines_arithmetic_to_geometry() -> None:
+    """`FR-182` and §Verification: no figure is derived here.
+
+    **A token grep cannot make this assertion, and an earlier form of this test
+    tried.** It forbade the strings `sum(`, `mean(`, `median(`, `round(` and
+    `statistics.`, and three real derivations walked past it: `+=` accumulation in a
+    new helper, a Jinja percentage in the macro, and a `|sum` filter. Verified by
+    mutation -- each passed before this rewrite.
+
+    So the module is parsed instead. Every `BinOp` and `AugAssign` must sit inside a
+    function this specification admits arithmetic in, because geometry over given
+    values *is* this module's job: `_Domain.offset` scales a value to a canvas
+    offset, and it cannot do that without division. What must not exist is a new
+    function that derives a figure, and a name not on the allowlist is exactly that.
+    """
+    source = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "khepri"
+        / "rra"
+        / "rendering"
+        / "charts.py"
+    ).read_text(encoding="utf-8")
+    assert source.strip(), "charts.py is empty, so this scan proves nothing"
+
+    tree = ast.parse(source)
+    enclosing: dict[ast.AST, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            for child in ast.walk(node):
+                enclosing.setdefault(child, node.name)
+
+    # `ast.BitOr` is not arithmetic: `ChartView | None` is a type union, and an
+    # earlier form of this test reported `build_chart` as an offender for its own
+    # return annotation. The operators that can derive a figure are named instead.
+    deriving_ops = (
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.FloorDiv,
+        ast.Mod,
+        ast.Pow,
+    )
+
+    def _derives(node: ast.AST) -> bool:
+        if isinstance(node, ast.BinOp):
+            return isinstance(node.op, deriving_ops)
+        if isinstance(node, ast.AugAssign):
+            return isinstance(node.op, deriving_ops)
+        return False
+
+    offenders = sorted(
+        {enclosing.get(node, "<module level>") for node in ast.walk(tree) if _derives(node)}
+        - _ARITHMETIC_ALLOWED
+    )
+    assert offenders == [], f"arithmetic outside geometry: {offenders}"
+    # The scan must actually have found arithmetic, or an empty parse would satisfy
+    # every claim it makes.
+    assert any(_derives(node) for node in ast.walk(tree)), (
+        "no arithmetic found at all, so this scan proves nothing"
+    )
+
+
+def test_the_chart_macro_derives_nothing() -> None:
+    """`FR-182`: the template composes no value either.
+
+    The macro is where a percentage is cheapest to add and hardest to notice -- it
+    renders, it looks right, and no Python test reads it. Parsed with Jinja's own
+    parser rather than grepped: `{{ view.marks|length * 100 / 4 }}%` passed a token
+    scan, and `|sum` did too.
+    """
+    source = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "khepri"
+        / "rra"
+        / "rendering"
+        / "templates"
+        / "_chart.svg.j2"
+    ).read_text(encoding="utf-8")
+    assert source.strip(), "the macro is empty, so this scan proves nothing"
+
+    parsed = Environment(autoescape=True).parse(source)
+    arithmetic = [
+        type(node).__name__
+        for node in parsed.find_all((nodes.Add, nodes.Sub, nodes.Mul, nodes.Div))
+    ]
+    assert arithmetic == [], f"the macro derives a value: {arithmetic}"
+
+    deriving = {"sum", "round", "int", "float", "abs", "map", "select", "reject"}
+    filters = sorted(
+        {node.name for node in parsed.find_all(nodes.Filter)} & deriving
+    )
+    assert filters == [], f"the macro applies a deriving filter: {filters}"
 
 
 def test_a_value_survives_the_chart_with_its_precision_intact() -> None:
@@ -721,3 +849,58 @@ def test_the_new_chart_rules_carry_no_hardcoded_colour() -> None:
         block = sheet[start : sheet.index("}", start)]
         assert "var(--report-" in block, f"{selector} must take the report palette"
         assert "#" not in block, f"{selector} hardcodes a colour: {block!r}"
+
+
+def test_the_axis_unit_anchor_mirrors_with_the_category_axis() -> None:
+    """`FR-188`: the Arabic axis unit is present, not painted off the canvas.
+
+    The label sits on the category axis, and that axis mirrors. An earlier form
+    hardcoded `x="0"` in the macro with a stylesheet comment claiming
+    `text-anchor: start` made it follow the reading order. It does not: `dir` reaches
+    the SVG by inheritance, so under `rtl` the text's start edge anchors at canvas
+    zero and the glyphs paint leftward, outside the viewBox. The English page read
+    correctly and the Arabic page lost its axis unit -- which `FR-188` forbids, since
+    a label present in one language must be present in the other.
+
+    Mirroring is geometry, so `_mirror` decides it and the view carries the result.
+    """
+    ltr = chart_of(language=LANGUAGE_ENGLISH)
+    rtl = chart_of(language=LANGUAGE_ARABIC)
+    assert ltr is not None and rtl is not None
+
+    assert ltr.axis_unit_x == "0.0000"
+    assert rtl.axis_unit_x == str(CHART_WIDTH.quantize(Decimal("0.0001")))
+    assert ltr.axis_unit_x != rtl.axis_unit_x
+
+    # Inside the canvas in both directions, which is the property a reader depends on.
+    for view in (ltr, rtl):
+        assert Decimal(0) <= Decimal(view.axis_unit_x) <= CHART_WIDTH
+
+
+def test_the_print_sheet_sizes_the_axis_unit_for_paper() -> None:
+    """`RRA-015` §Scope admits "the chart's print behaviour only", and this needs it.
+
+    `report.print.css` is layered onto `report.css`, so the chart's colours inherit
+    correctly -- the print palette redefines the two tokens the new rules use. One
+    property does not inherit usefully: `0.75rem` against print's `10.5pt` root is
+    about 7.9pt, too small to read on paper, and no test renders a chart to paper to
+    notice.
+
+    So the print sheet names `.chart__axis-unit` with a point size, and this asserts
+    it does. The rest of the chart deliberately has no print rule.
+    """
+    sheet = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "khepri"
+        / "rra"
+        / "rendering"
+        / "templates"
+        / "report.print.css"
+    ).read_text(encoding="utf-8")
+    assert sheet.strip(), "the print stylesheet is empty, so this proves nothing"
+
+    start = sheet.index(".chart__axis-unit")
+    block = sheet[start : sheet.index("}", start)]
+    assert "pt" in block, "the print axis unit must be sized in points, not rem"
+    assert "0.75rem" not in block, "the screen size would render ~7.9pt on paper"
