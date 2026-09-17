@@ -21,6 +21,7 @@ from khepri.rra.bundle import (
     CHART_LINE,
     DIRECTION_LTR,
     DIRECTION_RTL,
+    GOVERNED_CHART_KINDS,
     GOVERNED_FIGURE_LABELS,
     KIND_VALUE,
     LANGUAGE_DIRECTION,
@@ -30,6 +31,7 @@ from khepri.rra.bundle import (
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.charts import (
+    _GEOMETRY,  # the table under test
     CHART_HEIGHT,
     CHART_WIDTH,
     POINT_SIZE,
@@ -435,3 +437,50 @@ def test_a_customer_value_is_never_run_through_the_wording_table() -> None:
     assert category.localize is False
     for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
         assert worded(category, language) == "Water"
+
+
+def test_the_geometry_table_covers_exactly_the_governed_kinds() -> None:
+    """`FR-181`: the table that decides whether a kind renders, asserted for extent.
+
+    `_GEOMETRY` is reached only from `build_chart`, and no test asserted it: a kind
+    admitted in `bundle` with no row here raises `KeyError` at render time, and a row
+    here for a kind `bundle` does not admit is a fourth kind this specification
+    forbids. **The expectation is `GOVERNED_CHART_KINDS`, which lives in `bundle.py`
+    and is outside `RRA-015` §Scope** -- a slice under this specification cannot widen
+    it to match a mistake, which is what makes it an independent source rather than a
+    restatement.
+
+    Two assertions already ship and are deliberately not repeated: the frozenset
+    identity (`test_rra006_bundle_sections.py`) and the `stacked_bar` sentinel
+    mutation (`test_rra009_wording.py`).
+    """
+    assert set(_GEOMETRY) == GOVERNED_CHART_KINDS
+    assert _GEOMETRY, "an empty geometry table would satisfy any subset claim"
+
+
+def test_the_domain_always_includes_zero_whatever_the_series() -> None:
+    """`FR-183`: the invariant behind "an axis truncated on a comparison is refused".
+
+    No input can reach a truncated axis -- `_Domain` is built with `Decimal(0)` in
+    both bounds, so zero is always inside it. A test driving a "truncated" series
+    would therefore be a run that can only produce the null case, which is NOT
+    EXERCISED rather than PASS. The property worth asserting is the construction
+    itself, and the mutation that proves it is replacing either bound's `Decimal(0)`
+    with the bare series.
+
+    Measured through the rendered marks rather than the private domain: an
+    all-positive series must leave the baseline at the canvas foot, so every bar
+    rises from it and none floats.
+    """
+    rising = chart_of(values=(Decimal(100), Decimal(300)))
+    assert rising is not None
+    # Zero is the low bound, so the tallest bar reaches the top and both sit on the
+    # canvas foot: y + height == CHART_HEIGHT for every mark.
+    for mark in rising.marks:
+        assert Decimal(mark.y) + Decimal(mark.height) == CHART_HEIGHT
+
+    falling = chart_of(values=(Decimal(-300), Decimal(-100)))
+    assert falling is not None
+    # Zero is the high bound, so every bar hangs from the canvas top.
+    for mark in falling.marks:
+        assert Decimal(mark.y) == Decimal(0)
