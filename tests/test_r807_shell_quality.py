@@ -16,6 +16,7 @@ case here fails rather than going unmeasured.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from importlib.resources import files
@@ -162,9 +163,24 @@ class _StubOrganizations:
         ]
 
 
+@dataclass(frozen=True)
+class _PendingInvitation:
+    """What `team.html.j2` reads off an invitation, and nothing more.
+
+    A real `Invitation` is `Sealed` and must be minted through its own door; the
+    template needs three attributes, so a stand-in keeps this fixture from reaching
+    into another family's constructor. One pending invitation is what makes
+    `.invitation-role` render, which `U1` slice 2b retokenized and must measure.
+    """
+
+    invitation_id: str = "inv-1"
+    target_identity: str = "invited@example.test"
+    intended_role: str = "member"
+
+
 class _StubInvitations:
     def invitations_for_organization(self, organization_id: str, *, now: object = None):
-        return ()
+        return (_PendingInvitation(),)
 
     def issue(self, offer: object, *, expires_at: object, now: object) -> str:  # pragma: no cover
         raise AssertionError("the browser cases drive GETs only")
@@ -468,3 +484,305 @@ def test_the_skip_link_is_first_in_the_document() -> None:
         html = _html(surface, "en")
         body = html.split("<body", 1)[1]
         assert body.index("skip-link") < body.index("<main")
+
+
+#: Type values that name no size, so they carry no raw literal to tokenize.
+_INHERITED_TYPE_VALUES = frozenset({"inherit", "initial", "unset", "revert"})
+
+#: A `font` shorthand may carry a numeric weight and line-height that are not sizes:
+#: `font: 700 var(--text-sm)/1 monospace` is fully tokenized. Strip those parts before
+#: looking for a raw size, so the scan flags the size and not the weight.
+_NON_SIZE_NUMERICS = re.compile(
+    r"(?:\b[1-9]00\b|\bnormal\b|\bbold\b|/\s*[\d.]+)", flags=re.IGNORECASE
+)
+
+
+def _without_comments(text: str, name: str) -> str:
+    """CSS with comments removed, refusing the one input that disarms the removal.
+
+    A `/*` or `*/` inside a CSS string literal turns the non-greedy `/\\*.*?\\*/` into a
+    weapon: with `content: "/*"` above a rule and `content: "*/"` below it, the real
+    rule between them is deleted before any scan sees it, and every guard built on
+    this helper reports green over a file it never read. Refuse that shape outright --
+    no shell stylesheet has a legitimate reason to put a comment delimiter in a
+    string -- rather than trying to parse around it.
+
+    Every caller shares this, because a second stripper without the guard reopens the
+    hole for whichever file it reads.
+    """
+    assert text.strip(), f"{name} is empty, so this test proves nothing"
+    assert not re.search(r"""["'][^"'\n]*(?:/\*|\*/)[^"'\n]*["']""", text), (
+        f"{name}: a comment delimiter inside a string literal would disarm stripping"
+    )
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
+def _shell_component_css() -> str:
+    """The shell's component rules, with comments removed.
+
+    Comment-stripping is load-bearing rather than hygiene: a rule inside a `/* ... */`
+    block is not a live mechanism, and a count that included one would report a defect
+    that does not exist. A guard that cries wolf is a guard the next slice narrows.
+    """
+    text = (
+        files("khepri.rra.journey")
+        .joinpath("assets", "shell-components.css")
+        .read_text(encoding="utf-8")
+    )
+    # A `/*` or `*/` inside a CSS string literal disarms the stripper: with
+    # `content: "/*"` above a rule and `content: "*/"` below it, the non-greedy
+    # `/\*.*?\*/` eats the real rule between them and every scan over the result goes
+    # blind. Refuse that shape outright rather than trying to parse around it -- this
+    # sheet has no legitimate reason to put a comment delimiter in a string.
+    return _without_comments(text, "shell-components.css")
+
+
+def _selector_parts(css: str) -> list[str]:
+    """Every comma-separated selector part, with `:is()`/`:where()` unwrapped.
+
+    Equality on the whole captured selector string is what an earlier form of the
+    skip-link count used, and it missed a second mechanism three ways: a grouped
+    selector (`.skip-link, .alt`), an `:is(.skip-link, .alt)` wrapper, and the
+    string-literal comment escape above. Counting *parts* is what the assertion
+    actually means.
+    """
+    unwrapped = re.sub(r":(?:is|where)\(([^)]*)\)", r"\1", css, flags=re.IGNORECASE)
+    parts: list[str] = []
+    for selector in re.findall(r"([^{}]+)\{", unwrapped):
+        parts.extend(part.strip() for part in selector.split(",") if part.strip())
+    return parts
+
+
+def test_the_shell_declares_exactly_one_skip_link_mechanism() -> None:
+    """`RCA-010` §Scope, master specification §19 slice 2b.
+
+    The existing test proves a skip link is *reachable*. It cannot see a **second**
+    mechanism added beside the first, which is the drift slice 2b exists to close:
+    `journey.css` and `shell-components.css` each defined one, and nothing counted
+    either. The count is the assertion; presence is already covered above.
+    """
+    css = _shell_component_css()
+    parts = _selector_parts(css)
+
+    assert parts, "no rules found in shell-components.css, so this test proves nothing"
+    # A *mechanism* is a distinct thing the sheet styles as a skip link, so the
+    # pseudo-class variants of one selector are one mechanism: `.skip-link` and
+    # `.skip-link:focus` are the shipped pair. What must stay at one is the number of
+    # distinct base selectors whose target *is* a skip link -- a second class name
+    # standing in for the same affordance is the drift this counts, and a grouped or
+    # `:is()`-wrapped selector no longer hides it.
+    mechanisms = {
+        part for part in parts if re.split(r"::?", part, maxsplit=1)[0] == ".skip-link"
+    }
+    bases = {re.split(r"::?", part, maxsplit=1)[0] for part in mechanisms}
+    assert bases == {".skip-link"}, f"unexpected skip-link selectors: {sorted(bases)}"
+    skip_like = {
+        base
+        for part in parts
+        if "skip" in (base := re.split(r"::?", part, maxsplit=1)[0]).lower()
+    }
+    assert skip_like == {".skip-link"}, (
+        f"expected one skip-link mechanism, found {len(skip_like)}: {sorted(skip_like)}"
+    )
+
+
+def test_the_shell_component_layer_declares_no_raw_type_size() -> None:
+    """`RCA-010` §Scope, master specification §G.1.
+
+    Scans `font-size` **and** the `font` shorthand. A scan worded for `font-size`
+    alone passes over a size hidden in the shorthand -- the defect the allocation
+    plan carried in its first draft, and the reason `journey.css` has five such
+    sizes on the companion plan's side. `font: inherit` carries no size.
+    """
+    css = _shell_component_css()
+    assert css.strip(), "shell-components.css is empty, so this test proves nothing"
+
+    # Case-insensitive: CSS property names and unit identifiers are, so a scan that
+    # is not lets `FONT-SIZE: 0.9REM` through. Found by mutating this test.
+    offenders = [
+        match.group(0).strip()
+        for match in re.finditer(
+            r"\bfont(?:-size)?\s*:\s*([^;}]+)", css, flags=re.IGNORECASE
+        )
+        if match.group(1).strip().lower() not in _INHERITED_TYPE_VALUES
+        # ANY numeric literal, not an allowlist of three units: `font-size: 12pt` is
+        # valid CSS and bypassed a `(rem|px|em)` check entirely, as do `pc`, `ch`,
+        # `ex`, `vw`, `%` and a bare `0`. A raw number in a type declaration is the
+        # defect; which unit it wears is not the question.
+        and re.search(r"\d", _NON_SIZE_NUMERICS.sub("", match.group(1)))
+    ]
+    assert offenders == [], f"raw type sizes must use the token scale: {offenders}"
+
+
+def test_the_shell_and_journey_type_scales_stay_separate() -> None:
+    """`RCA-010` `FR-201`: a shell presentation value is the shell's.
+
+    Asserted in **both** directions, because a leak either way breaks the boundary
+    both allocation plans rely on and neither previously measured. The two scales are
+    a deliberate separation, not a duplication: `journey.css` records that its two
+    small tokens are "a separate decision, not a rounding of the same one".
+    """
+    # Comments are stripped on every side. Each sheet's header prose *names* the other
+    # surface's tokens to explain the separation -- `journey.css:37` says its names are
+    # "distinct from the shell's own `--text-*`" -- and a substring check over raw text
+    # reads that explanation as the violation it warns against.
+    journey_assets = files("khepri.rra.journey").joinpath("assets")
+
+    def _rules(name: str) -> str:
+        text = journey_assets.joinpath(name).read_text(encoding="utf-8")
+        return _without_comments(text, name)
+
+    shell_tokens = _rules("shell.css")
+    shell_components = _rules("shell-components.css")
+    journey = _rules("journey.css")
+
+    assert "--journey-" not in shell_tokens, "shell.css names a journey property"
+    assert "--journey-" not in shell_components, (
+        "shell-components.css names a journey property"
+    )
+    # Symmetry is the point, and an earlier form of this test did not have it: it
+    # forbade only a *declaration* on the journey side, so `journey.css` could carry
+    # `var(--text-sm)` -- a reference to a shell token -- and pass. `FR-201` forbids
+    # naming another surface's value at all, not merely declaring it. Found by
+    # mutating this test rather than by reading it.
+    assert "--text-" not in journey, "journey.css names a shell type token"
+
+
+def test_the_shell_component_layer_draws_no_artwork() -> None:
+    """`RCA-010` `FR-206`: the master specification §7 asset policy, unrelaxed.
+
+    The shell has no admitted programmatic-drawing exception -- unlike the `RRA`
+    side, where a data-driven chart is the one expected drawing -- so this scan needs
+    no carve-out. Scoping it to the stylesheet also keeps it clear of the two
+    `aria-hidden` change separators in `analysis.html.j2`, which are template content
+    and `FR-194`-compliant.
+    """
+    css = _shell_component_css()
+
+    # At-rule names, property names, function names and URL schemes are all
+    # case-insensitive in CSS, so `@IMPORT` and `URL(HTTPS://...)` evaded the
+    # substring checks entirely. Fold once and check the folded text.
+    folded = css.lower()
+    forbidden = {
+        "@import": "@import" in folded,
+        "external url()": bool(re.search(r"url\(\s*['\"]?https?://", folded)),
+        "background-image": "background-image" in folded,
+        "content artwork": bool(
+            re.search(r"content\s*:\s*['\"][^'\"]*[^\x00-\x7F]", css)
+        ),
+        "non-ascii glyph": bool(re.search(r"[←-➿\U0001f300-\U0001faff]", css)),
+    }
+    found = sorted(name for name, present in forbidden.items() if present)
+    assert found == [], f"forbidden asset constructs in shell-components.css: {found}"
+
+
+def _linked_shell_css() -> str:
+    """All three sheets, in the order `shell.html.j2:7-9` links them.
+
+    Injecting only one measures an unstyled document, which is how an earlier form of
+    the viewport test reported every target as too small.
+    """
+    journey_assets = files("khepri.rra.journey").joinpath("assets")
+    return "\n".join(
+        (
+            journey_assets.joinpath("shell.css").read_text(encoding="utf-8"),
+            journey_assets.joinpath("shell-components.css").read_text(encoding="utf-8"),
+            files("khepri.runtime")
+            .joinpath("shell_assets", "workspace.css")
+            .read_text(encoding="utf-8"),
+        )
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_the_shell_skip_link_is_visible_only_when_focused(language: str) -> None:
+    """`RCA-010` §Scope and §Verification: measured in the browser, not read off CSS.
+
+    The stylesheet-level tests beside this one prove there is exactly **one**
+    skip-link mechanism and that it is first in the document. Neither observes
+    behaviour: a `.skip-link` rule could move off-screen and stay there on focus, and
+    every static scan would still pass. This is the slice's only behavioural
+    assertion, so it measures the bounding box in both languages -- the off-screen
+    idiom is `inset-inline-start`, which resolves to opposite sides under `rtl`.
+    """
+    html = _html("team", language)
+    css = _linked_shell_css()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(html, wait_until="domcontentloaded")
+            page.add_style_tag(content=css)
+            skip = page.locator(".skip-link").first
+
+            unfocused = skip.bounding_box()
+            assert unfocused is not None, "the skip link must exist to be measured"
+            width = page.evaluate("innerWidth")
+            off_screen = unfocused["x"] + unfocused["width"] <= 0 or unfocused["x"] >= width
+            assert off_screen, f"the skip link must start off-screen, got x={unfocused['x']}"
+
+            skip.focus()
+            focused = skip.bounding_box()
+            assert focused is not None
+            # The whole link, not just its leading edge: a wide one whose left edge is
+            # on-screen can still run off the far side, and the requirement is that a
+            # keyboard reader can see what they have focused.
+            assert focused["x"] >= 0, (
+                f"focused skip link starts off-screen: {focused['x']}"
+            )
+            assert focused["x"] + focused["width"] <= width, (
+                "a focused skip link must fit inside the viewport: "
+                f"x={focused['x']} width={focused['width']} viewport={width}"
+            )
+            assert focused["height"] >= 44, (
+                f"the skip link is a pointer target: {focused['height']}px < 44px"
+            )
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+def test_the_team_surface_type_sizes_resolve_from_the_token_scale() -> None:
+    """`RCA-010` §Scope: the computed size, not the declaration.
+
+    `var(--text-sm)` resolves to nothing if the token sheet is absent or the name is
+    misspelled, and the element would silently inherit. Reading the stylesheet cannot
+    see that; a computed style can. The expected value is the token's own -- 0.82rem
+    at a 16px root -- which is 0.88px below the `0.875rem` this slice replaced.
+    """
+    html = _html("team", "en")
+    css = _linked_shell_css()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(html, wait_until="domcontentloaded")
+            page.add_style_tag(content=css)
+
+            declared = page.evaluate(
+                "getComputedStyle(document.documentElement)"
+                ".getPropertyValue('--text-sm').trim()"
+            )
+            assert declared == "0.82rem", f"--text-sm must be declared, got {declared!r}"
+
+            # Every selector this slice retokenized must be PRESENT and measured. An
+            # earlier form skipped an absent one, so it measured `.member-role` alone
+            # and would have passed with the other two declarations deleted. The
+            # fixture renders all three: a disabled member gives `.member-state`, and
+            # `_StubInvitations` yields one pending invitation for `.invitation-role`.
+            for selector in (".member-state", ".member-role", ".invitation-role"):
+                locator = page.locator(selector).first
+                assert locator.count() == 1, f"{selector} must render to be measured"
+                size = page.evaluate(
+                    "s => getComputedStyle(document.querySelector(s)).fontSize", selector
+                )
+                assert size == "13.12px", f"{selector} computed {size}, expected 13.12px"
+        finally:
+            browser.close()
