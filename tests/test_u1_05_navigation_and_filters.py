@@ -82,6 +82,21 @@ def _navigation_regions(markup: str) -> list[str]:
     return re.findall(r"<nav\b.*?</nav>", markup, flags=re.DOTALL)
 
 
+def _destination_tails(markup: str) -> list[str]:
+    """The destinations the navigation names, **in the order it renders them**.
+
+    A list rather than a set, deliberately. `shell_frame.py:110-114` builds the roster
+    as an ordered tuple and `FR-121` fixes that order, so a set comparison would admit
+    a navigation that shuffled its entries, named one twice, or dropped a duplicate --
+    three defects a reader would see immediately and the assertion would not.
+    """
+    return [
+        tail
+        for region in _navigation_regions(markup)
+        for tail in re.findall(r'href="[^"]*?/([a-z-]+)"', region)
+    ]
+
+
 def _current_page_count(markup: str) -> int:
     return len(re.findall(r'aria-current="page"', markup))
 
@@ -90,8 +105,9 @@ def test_the_navigation_names_exactly_the_frames_roster() -> None:
     """`FR-193`, `FR-194`: the extent, against a source this slice cannot edit.
 
     Equality plus non-empty, never `>=`: a membership check that only ever weakens
-    cannot see a destination added. The expectation is `shell_frame.py`'s roster and
-    the subject is what the template renders, so neither side can move the other.
+    cannot see a destination added. The comparison is **ordered**: `FR-121` fixes the
+    sequence and `shell_frame.py:110-114` renders it from an ordered tuple, so a set
+    would admit a shuffled navigation as equal to a correct one.
     """
     assert _FRAME_ROSTER, "an empty roster would satisfy any subset claim"
 
@@ -99,13 +115,10 @@ def test_the_navigation_names_exactly_the_frames_roster() -> None:
     regions = _navigation_regions(markup)
     assert regions, "no navigation rendered, so this test proves nothing"
 
-    surfaces = {
-        tail.rsplit("/", 1)[-1]
-        for region in regions
-        for tail in re.findall(r'href="[^"]*?/([a-z-]+)"', region)
-    }
-    expected = {destination for _label, destination in _FRAME_ROSTER}
-    assert surfaces == expected, f"navigation names {surfaces}, roster is {expected}"
+    rendered = _destination_tails(markup)
+    ordered = [destination for _label, destination in _FRAME_ROSTER]
+    assert rendered == ordered, f"navigation renders {rendered}, roster is {ordered}"
+    expected = set(ordered)
 
     # **The assertion above is two-sided drift detection, not independence, and
     # saying so is the point.** The template renders whatever `shell_frame.py`
@@ -222,8 +235,21 @@ def test_the_change_arrows_survive_the_glyph_rule() -> None:
     to whole templates and then "fixing" reviewed behaviour to satisfy it.
     """
     markup = _html("analysis", LANGUAGE_ENGLISH)
-    assert 'class="change-arrow"' in markup, "the change separators must still render"
-    assert "→" in markup
+    arrows = re.findall(
+        r'<span\b[^>]*class="[^"]*\bchange-arrow\b[^"]*"[^>]*>.*?</span>',
+        markup,
+        flags=re.DOTALL,
+    )
+    # Both of them, and each one's hidden state. A substring check for the class and
+    # a separate one for the glyph pass with one arrow deleted, or with `aria-hidden`
+    # stripped off the pair -- the glyph would still be somewhere in the markup and
+    # the class would still be on something. Neither is what this test claims to pin.
+    assert len(arrows) == 2, f"expected two change separators, found {len(arrows)}"
+    for arrow in arrows:
+        assert "→" in arrow, f"a change separator lost its glyph: {arrow}"
+        assert 'aria-hidden="true"' in arrow, (
+            f"a change separator is exposed to assistive technology: {arrow}"
+        )
     for region in _navigation_regions(markup):
         assert "change-arrow" not in region, "a change separator is not navigation"
 
@@ -264,18 +290,32 @@ def test_the_navigation_renders_in_both_languages() -> None:
     The roster is the same in both languages because it is the same roster; what
     differs is the words. A surface that named fewer destinations in Arabic would
     be a capability difference dressed as a translation gap.
+
+    Counts alone would not say that: two languages can agree on four entries while
+    naming different ones, or the same ones in a different order. So the addresses
+    are compared as **ordered sequences**, against the roster in both languages. The
+    anchor count is kept beside it because it covers the whole landmark -- including
+    the decision surface's source selector, whose entries carry no destination tail.
     """
+    ordered = [destination for _label, destination in _FRAME_ROSTER]
     for surface in _NAVIGATING_SURFACES:
         counts = {}
+        rendered = {}
         for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
-            regions = _navigation_regions(_html(surface, language))
+            markup = _html(surface, language)
+            regions = _navigation_regions(markup)
             assert regions, f"{surface} renders no navigation in {language}"
             counts[language] = sum(
                 len(re.findall(r"<a\b", region)) for region in regions
             )
+            rendered[language] = _destination_tails(markup)
         assert counts[LANGUAGE_ENGLISH] == counts[LANGUAGE_ARABIC], (
             f"{surface} offers {counts} entries -- the languages disagree"
         )
+        for language, tails in rendered.items():
+            assert tails == ordered, (
+                f"{surface} names {tails} in {language}, roster is {ordered}"
+            )
 
 
 def test_the_measured_surfaces_cover_every_navigating_one() -> None:

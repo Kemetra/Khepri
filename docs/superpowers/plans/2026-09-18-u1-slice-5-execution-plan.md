@@ -561,8 +561,15 @@ gating nothing.
 
       The last row is the load-bearing one: it is a real gap in the obvious pattern, found by running
       it rather than by reading it.
-- [ ] Non-emptiness assertions: each file read is non-empty **and** the set of declarations parsed
-      is non-empty, so a broken parser cannot pass by finding nothing anywhere.
+- [ ] Non-emptiness assertions: **each file read is non-empty**, so a renamed or moved sheet cannot
+      make the scan vacuously clean.
+
+      **Not the match set.** Task 5 defines motion-declaration patterns only — there is no
+      separate parser for all declarations — and finding 4 is that the clean baseline yields
+      **zero** matches. Requiring the match set to be non-empty would require that baseline to be
+      both empty and non-empty, so the assertion could never hold. What rules out a scanner that
+      finds nothing anywhere is the **four mutation cases below**: three must fail and the commented
+      one must pass, which no broken parser satisfies.
 - [ ] Docstring records: **this invariant is a superset of `FR-203`'s enumerated prohibitions**
       (bounce, elastic `cubic-bezier` outside `[0,1]`, parallax, infinite
       `animation-iteration-count`, counting numbers). A sheet with no motion satisfies every one,

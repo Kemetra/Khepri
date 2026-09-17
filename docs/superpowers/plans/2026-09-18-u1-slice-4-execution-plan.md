@@ -55,8 +55,20 @@ evidence than a registry.
 specification can **read** it and cannot **edit** it. That is exactly the property that made
 `GOVERNED_CHART_KINDS` a valid expectation for slice 6, and it is the same shape here.
 
-**Use it.** The subject is what `shell.html.j2` renders; the expectation is the roster
-`shell_frame.py` decides. Neither side can move the other.
+**Use it — and be exact about what it proves.** The flow is registry-driven in one direction:
+`shell_frame.py` *decides* the roster, `shell_api.py` hands it to the frame, and `shell.html.j2`
+renders whatever it is given. The expectation and the subject therefore sit on the **same** side of
+that flow, so equality between them is **two-sided drift detection, not independence**. It catches a
+template that stops rendering what the roster names, which is real drift. It cannot catch the roster
+itself shrinking: drop a destination and both sides move together, and the equality still holds.
+
+**The independent evidence is the destination-template inventory.** A destination the navigation
+names must have a `shell_templates/*.html.j2` that renders it, and that directory derives from no
+roster — so a roster shrunk by one leaves a template with no entry pointing at it. The reverse
+direction holds too: a destination-shaped template in no navigation is a defect, with the exemptions
+(the frame, the two partials, the print surface, the `POST`-only result, the surfaces reachable
+without a resolved organization, and the detail surfaces reached *through* a destination) stated
+rather than inferred.
 
 ### 3. `FR-194` is already satisfied, and a naive guard would break it
 
@@ -150,9 +162,19 @@ imported, never copied.
 - [ ] **Read the expectation from `shell_frame.py`** — `_WORKSPACE_DESTINATIONS`,
       `_ANALYSES_DESTINATION`, `_TEAM_DESTINATION`. It is outside `RCA-010` §Scope, so this slice
       cannot widen it to match a mistake. Assert **equality plus non-empty**, never `>=`.
-- [ ] Mutate **both** directions, separately — one mutant leaves the other unproven:
+- [ ] Compare the destinations as an **ordered sequence**, not a set. `FR-121` fixes the order and
+      `shell_frame.py:110-114` renders it from an ordered tuple, so a set comparison would admit a
+      shuffled navigation, a destination named twice, or a dropped duplicate.
+- [ ] **Build the independent half: the destination-template inventory** (rationale 2). Equality
+      against the roster is drift detection only, because the roster determines what the template
+      renders. So also assert that every destination named has a template of its own under
+      `shell_templates/`, and that every destination-shaped template is named by the navigation,
+      with the exemptions listed explicitly. That directory derives from no roster, which is the
+      whole of what makes this half independent.
+- [ ] Mutate **three** ways, separately — each mutant leaves the others unproven:
       drop a destination from the rendered nav → must fail; add an entry the roster does not name
-      → must fail.
+      → must fail; **drop a destination from `shell_frame.py`'s roster** → must fail **on the
+      inventory half**, and is the mutant the equality alone cannot catch.
 - [ ] Commit: `test(u1-05): assert the navigation's extent against the frame's roster`
 
 ### Task 2 — RED: exactly one `aria-current="page"`, and distinctly named landmarks
