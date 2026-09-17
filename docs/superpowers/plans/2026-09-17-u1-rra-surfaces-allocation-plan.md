@@ -184,10 +184,25 @@ binding, and `_CHROME` registration only; `wording.py` at chart chrome codes onl
 - `_chart.svg.j2` adds no `|safe` and no `Markup` (§Scope).
 - A chart exposes `role="img"` with `<title>` and `<desc>` from governed codes (`FR-189`).
 
-**Extent assertion required.** Per the repository's recurring defect, a per-kind or per-field test
-leaves the next one open: derive the admitted chart-kind set and the chart chrome code set from
-their own definitions and assert **equality plus non-empty**, never `>=`. A membership table needs
-an extent assertion or a widening passes unseen.
+**Extent assertion required, and its source must be independent.** A per-kind or per-field test
+leaves the next one open, so the admitted chart-kind set and the chart chrome code set each need an
+extent assertion: **equality plus non-empty**, never `>=`. A membership table without one cannot
+see a row added.
+
+**But deriving both sides from one source is a tautology** — it passes every mutant, because adding
+an entry updates the expectation and the subject together. Each extent assertion names a source
+the slice under this plan **cannot edit**:
+
+| Extent assertion | Subject (under test, editable here) | Independent expectation (not editable here) |
+|---|---|---|
+| Chart kinds | the dispatch table in `charts.py:399-401` | **`GOVERNED_CHART_KINDS`**, a `frozenset` at `src/khepri/rra/bundle.py:383`. `bundle.py` is `RRA-006`'s and is **outside `RRA-015` §Scope**, so no slice here can widen it to match a mistake. `FR-181` names the three kinds in governance prose as a third, human-reviewed check |
+| Chart chrome codes | the new chart entries in `wording.py` | the `_CHROME` registration in `html.py` **plus** the import-time completeness assertion across both languages — a code present in one and absent from the other fails, so the two tables check each other |
+| Report surface list (slice 9a) | the surfaces the tests drive | the section-to-chart mapping already in `bundle.py:400-404` and the bundle's own render targets, both `RRA-006`'s |
+
+Where no independent source exists for a set a slice introduces, the execution plan **says so** and
+the reviewer supplies the expectation by hand rather than a test deriving it from the code it
+measures. A hand-reviewed literal is weaker evidence than an independent registry and stronger
+evidence than a tautology.
 
 ---
 
@@ -269,8 +284,12 @@ failure it hid is still in the product.
 - `lang` and `dir` are **server-computed**, never inferred in a template.
 - A chart exposes `role="img"` with `<title>` and `<desc>` from governed codes.
 
-**Extent assertion required.** Derive the surface list from its own definition and assert equality,
-so a report surface added later cannot ship unmeasured. A subset assertion hides a forgotten entry.
+**Extent assertion required, from an independent source.** Assert **equality plus non-empty** over
+the report and evidence surfaces, so one added later cannot ship unmeasured — a subset assertion
+hides a forgotten entry. **Do not derive the expectation from the list the tests themselves drive**;
+that is the tautology slice 6's extent table rules out. Take the expectation from the bundle's own
+render targets and the section-to-chart mapping in `src/khepri/rra/bundle.py:400-404` — `RRA-006`'s
+file, outside `RRA-015` §Scope and so not editable by any slice here.
 
 ---
 

@@ -212,9 +212,19 @@ only), `workspace.css`, `shell-components.css`.
   own destinations rather than against a list a test happens to remember" (§Verification). Read
   `shell_controls.SURFACE_VIEWS`; do not hand-list. **A guard that names its own scope disarms
   itself.**
-- **Extent assertion:** derive the destination set from its own definition and assert **equality
-  plus non-empty**, never `>=`. A membership table without an extent assertion cannot see a row
-  added.
+- **Extent assertion, from an independent source.** Assert **equality plus non-empty**, never `>=`
+  — a membership table without one cannot see a row added. **Deriving both sides from one source is
+  a tautology** that passes every mutant, so the expectation comes from something a slice here
+  cannot edit:
+
+  | Subject (under test) | Independent expectation |
+  |---|---|
+  | the navigation entries rendered by `shell_templates/shell.html.j2` | the **template files on disk** in `shell_templates/`, enumerated by `importlib.resources` — the pattern `test_every_shell_template_is_measured` already uses, cross-checked against the test-side `SHELL_SURFACES` map at `tests/test_r807_shell_quality.py:63` |
+  | the destinations the shell serves | `shell_controls.SURFACE_VIEWS` (`shell_controls.py:73`), which is **outside `RCA-010` §Scope** and may be read but never edited by a slice here |
+
+  Note the two are **not interchangeable**: `SURFACE_VIEWS` holds the seven *semantic views*, while
+  the navigation's destinations are shell *surfaces*. A test that conflates them asserts a real
+  signal at the wrong granularity, which is always wrong. Name which one each assertion measures.
 - No literal directional glyph serves as a navigation affordance, "because an arrow does not
   mirror" (`FR-194`).
 - No "coming soon" entry, no disabled control standing in for a future surface, no result count the
@@ -254,8 +264,11 @@ word." It presents states that already exist.
   real code path, not merely that an exception type is raised.
 - The two governed empty rules stay distinguishable, exactly as `RCA-008` `FR-163` requires —
   `stated_no_rows` versus the other admitted rule.
-- No new state, cause, or governed word is introduced — derive the state set and the reason-code
-  set from their own definitions and assert **equality**, so a widening fails.
+- No new state, cause, or governed word is introduced — assert **equality plus non-empty** over the
+  state set and the reason-code set. **The expectation must not come from the same table the slice
+  edits**: the states and reason codes are `RCA-008`'s and `RRA-009`'s, both **outside `RCA-010`
+  §Scope**, so read them from there and assert the shell's presentation covers exactly that set. A
+  widening of a table this plan cannot edit then fails here rather than passing silently.
 - A governed caveat or reason that reaches no code path is a defect — sweep for **defined but never
   attached**, in both languages.
 - Motion explains change and does not advertise: no bounce, elastic easing, parallax, decorative
@@ -327,9 +340,13 @@ extent assertion over `legal_templates/` with its own emptiness check.
 - Text scales to 200% without loss of content or function.
 - Errors are **announced**, not only coloured.
 
-**Extent assertion required.** Derive the surface list from the shell's own destinations and assert
-**equality**, so a shell surface added later cannot ship unmeasured. Extend
-`test_every_shell_template_is_measured` rather than adding a parallel list beside it.
+**Extent assertion required, from an independent source.** Assert **equality plus non-empty** so a
+shell surface added later cannot ship unmeasured. Extend `test_every_shell_template_is_measured`
+rather than adding a parallel list beside it — and keep its existing shape, which is already
+independent in the right way: it enumerates the **template files on disk** and compares them
+against the test-side `SHELL_SURFACES` map plus the three exemption sets. **Do not replace that
+with a list derived from the surfaces the tests happen to drive**; that is the tautology slice 4's
+extent table rules out. Widen the scan to `legal_templates/` per the note above.
 
 ---
 
@@ -370,8 +387,11 @@ test passes.
   or hosted baseline store (`FR-204`).
 - No test reads a figure, route, capability, refusal reason or governed word out of a baseline or
   reference image (`FR-205`) — a scan with an emptiness assertion.
-- The **named representative set** is derived and asserted for extent, so a representative dropped
-  later fails rather than silently shrinking the measured surface.
+- The **named representative set** is asserted for extent, so a representative dropped later fails
+  rather than silently shrinking the measured surface. **Name the representatives as a reviewed
+  literal in the test**, cross-checked against the covered references §16.4 enumerates — the
+  reference pack is the independent artifact here, and it is not editable by a code slice. Deriving
+  the set from the surfaces the test drives would pass every mutant.
 - A surface whose visual language drifts fails, even with every other test green.
 
 **A run that can only produce the null case is not a pass.** If a named representative cannot be
