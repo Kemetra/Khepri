@@ -517,11 +517,15 @@ def test_the_shell_component_layer_declares_no_raw_type_size() -> None:
     css = _shell_component_css()
     assert css.strip(), "shell-components.css is empty, so this test proves nothing"
 
+    # Case-insensitive: CSS property names and unit identifiers are, so a scan that
+    # is not lets `FONT-SIZE: 0.9REM` through. Found by mutating this test.
     offenders = [
         match.group(0).strip()
-        for match in re.finditer(r"\bfont(?:-size)?\s*:\s*([^;}]+)", css)
-        if match.group(1).strip() != "inherit"
-        and re.search(r"\d*\.?\d+(rem|px|em)\b", match.group(1))
+        for match in re.finditer(
+            r"\bfont(?:-size)?\s*:\s*([^;}]+)", css, flags=re.IGNORECASE
+        )
+        if match.group(1).strip().lower() != "inherit"
+        and re.search(r"\d*\.?\d+(rem|px|em)\b", match.group(1), flags=re.IGNORECASE)
     ]
     assert offenders == [], f"raw type sizes must use the token scale: {offenders}"
 
@@ -534,26 +538,31 @@ def test_the_shell_and_journey_type_scales_stay_separate() -> None:
     a deliberate separation, not a duplication: `journey.css` records that its two
     small tokens are "a separate decision, not a rounding of the same one".
     """
+    # Comments are stripped on every side. Each sheet's header prose *names* the other
+    # surface's tokens to explain the separation -- `journey.css:37` says its names are
+    # "distinct from the shell's own `--text-*`" -- and a substring check over raw text
+    # reads that explanation as the violation it warns against.
     journey_assets = files("khepri.rra.journey").joinpath("assets")
-    shell_tokens = journey_assets.joinpath("shell.css").read_text(encoding="utf-8")
-    shell_components = journey_assets.joinpath("shell-components.css").read_text(
-        encoding="utf-8"
-    )
-    journey = journey_assets.joinpath("journey.css").read_text(encoding="utf-8")
 
-    for name, text in (
-        ("shell.css", shell_tokens),
-        ("shell-components.css", shell_components),
-        ("journey.css", journey),
-    ):
+    def _rules(name: str) -> str:
+        text = journey_assets.joinpath(name).read_text(encoding="utf-8")
         assert text.strip(), f"{name} is empty, so this test proves nothing"
+        return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+    shell_tokens = _rules("shell.css")
+    shell_components = _rules("shell-components.css")
+    journey = _rules("journey.css")
 
     assert "--journey-" not in shell_tokens, "shell.css names a journey property"
     assert "--journey-" not in shell_components, (
         "shell-components.css names a journey property"
     )
-    declared = re.findall(r"(--text-[a-z0-9-]+)\s*:", journey)
-    assert declared == [], f"journey.css declares shell type tokens: {declared}"
+    # Symmetry is the point, and an earlier form of this test did not have it: it
+    # forbade only a *declaration* on the journey side, so `journey.css` could carry
+    # `var(--text-sm)` -- a reference to a shell token -- and pass. `FR-201` forbids
+    # naming another surface's value at all, not merely declaring it. Found by
+    # mutating this test rather than by reading it.
+    assert "--text-" not in journey, "journey.css names a shell type token"
 
 
 def test_the_shell_component_layer_draws_no_artwork() -> None:
