@@ -148,7 +148,8 @@ rather than asserted.
 ## Commands, with their output
 
 ```text
-$ ./.venv/Scripts/python.exe -m pytest tests/test_r807_shell_quality.py -k "<the four static guards>" -q
+$ ./.venv/Scripts/python.exe -m pytest tests/test_r807_shell_quality.py \
+    -k "skip_link_mechanism or raw_type_size or scales_stay_separate or draws_no_artwork" -q
 # before the CSS fix — Task 3's RED
 1 failed, 3 passed, 53 deselected in 2.49s
 AssertionError: raw type sizes must use the token scale: ['font-size: 0.875rem', 'font-size: 0.875rem']
@@ -233,3 +234,52 @@ own lessons turn on.
 | "Discharges master specification §19 slice 2b, the last non-owner item in §18.3" | **Wrong twice.** §18.3's skip-link row is already struck through and marked "**Discharged**" — by `RCA-010`'s own merge at `e915af8` (`#477`), before this slice existed. And §18.3 still carries an open non-owner row: `DIRECTION_PROPOSAL` absorption (`cdfa024`, `#369`), which §19 slice 1 classes as **Docs**. Correct statement: this slice **implements** §19 slice 2b under the authority `RCA-010` established. |
 | "the Team destination and the invitation-issued page" | **One surface.** All three classes are in `team.html.j2` only. |
 | "three of four guards pass on arrival, each proved by mutation" | True as stated, but four of the five skip-link escape shapes were **not** caught by the first version of that guard, and the uppercase and journey-reference cases escaped two others. All are closed above. |
+
+---
+
+## Second review round — six CodeRabbit findings, eleven mutants
+
+All six verified against the tree before acting; all held. Every revert left
+`git status --short src/` empty.
+
+| Finding | Mutant | Before | After |
+|---|---|---|---|
+| Raw-size scan allowlisted three units | `font-size: 12pt` | passed | **FAILS** |
+| …and missed a unitless zero | `font-size: 0` | passed | **FAILS** |
+| …must not flag a legitimate weight | `font: 700 var(--text-sm)/1 monospace` | — | passes (no false positive) |
+| Artwork scan case-sensitive | `@IMPORT url("x.css")` | passed | **FAILS** |
+| …URL scheme too | `background: URL(HTTPS://example.invalid/a.png)` | passed | **FAILS** |
+| String-escape guard covered one of three paths | `content: "/*"` … `content: "*/"` in `journey.css` | passed | **FAILS** (refused) |
+| Focus assertion checked only the leading edge | `inline-size: 3000px` on `.skip-link:focus` | passed | **FAILS** in `en` **and** `ar` |
+| Type measurement skipped absent selectors | delete the `font-size` from `.member-role, .invitation-role` | passed | **FAILS** |
+
+**The last one was the consequential gap.** The loop `continue`d over an absent selector, so it
+measured `.member-role` alone — `.invitation-role` was absent because `_StubInvitations` returned an
+empty tuple, and `.member-state` was never in the loop. **The test would have passed with two of
+the three declarations deleted.** All three must now render and be measured, asserted with
+`count() == 1` rather than skipped, and `_StubInvitations` yields one `_PendingInvitation` so
+`.invitation-role` exists.
+
+**The unit allowlist is the instructive one.** `rem|px|em` looked exhaustive and was not: `pt`,
+`pc`, `ch`, `ex`, `vw`, `%` and a bare `0` all bypassed it. The scan now rejects any numeric
+literal in a type declaration, with `_NON_SIZE_NUMERICS` first stripping the parts of a `font`
+shorthand that are legitimately numeric — a weight and a line-height — so a fully tokenized
+shorthand still passes.
+
+**The string-escape guard protected one of three paths.** `_rules()` in the `FR-201` test read all
+three stylesheets through its own stripper with no guard. Both paths now share
+`_without_comments()`; a second stripper without the guard reopens the hole for whichever file it
+reads.
+
+```text
+$ ./.venv/Scripts/python.exe -m pytest -q
+5585 passed, 77 skipped, 1 xfailed, 65 warnings in 521.86s (0:08:41)
+
+$ ./.venv/Scripts/python.exe -m pytest tests/test_r807_shell_quality.py tests/test_r801_shell_tokens.py -q
+86 passed in 49.59s
+```
+
+The fixture change — one pending invitation, so `.invitation-role` renders — touches every test in
+the module, which is why the full suite was re-run rather than the targeted one.
+
+**Running total: 23 mutants across 6 guards, every one caught.**
