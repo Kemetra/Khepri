@@ -307,21 +307,48 @@ companion plan's slice 2b. **Unifying across both surfaces is authorized by neit
 **Design:** master specification §G.1.
 **Depends on:** nothing.
 
-**Files:** `src/khepri/rra/journey/assets/journey.css` at `:82`, `:115`, `:165`, `:171`.
+**Files:** `src/khepri/rra/journey/assets/journey.css`, at the nine declarations below.
 
-**Targets by selector as well as line**, because line numbers drift: `.step-nav a` (`:82`,
-`.75rem`), `.contract-row label` (`:115`, `.86rem`), `th` (`:165`, `.78rem`), and `.report-meta dt`
-(`:171`, `.76rem`). Note `.step-nav a` also carries `min-block-size: 44px` — the **logical**
-property, which slice 3 must leave untouched.
+**All nine targets, by selector and by line** — line numbers are hints, selectors are the anchors.
+**The five `font`-shorthand rows are in this slice's mandate, not deferred**; listing only the four
+`font-size` rows is how an executor leaves five raw sizes in place.
 
-**Mapping:** `.75rem` → the nearest journey token; `.86rem`, `.78rem`, `.76rem` →
-`--journey-text-sm` (`0.82rem`) or `--journey-text-xs` (`0.7rem`) per §G.1's scale. The execution
-plan states the chosen mapping per line and its computed pixel delta at a 16px root, following the
-precedent already set in `journey.css:102`'s own comment and `shell.css:107-108`.
+| # | Selector | Line | Form | Raw size | Maps to |
+|---|---|---|---|---|---|
+| 1 | `.step-nav a` | `:82` | `font-size` | `.75rem` | `--journey-text-xs` (`0.7rem`) |
+| 2 | `.contract-row label` | `:115` | `font-size` | `.86rem` | `--journey-text-sm` (`0.82rem`) |
+| 3 | `th` | `:165` | `font-size` | `.78rem` | `--journey-text-sm` (`0.82rem`) |
+| 4 | `.report-meta dt` | `:171` | `font-size` | `.76rem` | `--journey-text-sm` (`0.82rem`) |
+| 5 | `.brand` | `:78` | `font` shorthand | `.84rem` | `--journey-text-sm` (`0.82rem`) |
+| 6 | `.intake-facts dt` | `:101` | `font` shorthand | `.68rem` | `--journey-text-xs` (`0.7rem`) |
+| 7 | `.meta` | `:145` | `font` shorthand | `.76rem` | `--journey-text-sm` (`0.82rem`) |
+| 8 | `.report-meta` | `:169` | `font` shorthand | `.83rem` | `--journey-text-sm` (`0.82rem`) |
+| 9 | `.report-group h2` | `:179` | `font` shorthand | `.78rem` | `--journey-text-sm` (`0.82rem`) |
 
-**Out of scope:** `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` — a responsive expression, not a raw
-literal. `:96`, `:98`, `:106`, `:182`, `:189`, `:198` already use tokens. The two raw sizes in
-`shell-components.css:135,141` are the companion plan's.
+The mapping follows the run `shell.css:107` already states — "`.68/.7rem` -> `--text-xs`.
+`.82/.83/.84/.86rem` -> `--text-sm`" — applied to the journey's own scale, which `FR-201` keeps
+separate from the shell's.
+
+**The shorthand rows need more care than a size swap.** `font: 700 .84rem/1 ui-monospace, monospace`
+carries weight, line-height and family in one declaration. Replacing only the size means either
+keeping the shorthand with a `var()` inside it — `font: 700 var(--journey-text-sm)/1 ui-monospace,
+monospace`, which is valid — **or** splitting it into longhand. **The execution plan picks one and
+states why**; splitting changes the cascade for any property the shorthand was resetting, so the
+`var()`-inside-shorthand form is the smaller change and the recommended default.
+
+**Two things slice 3 must not touch:**
+- `.step-nav a` also carries `min-block-size: 44px` — the **logical** property, correct as it is.
+- `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` is a responsive expression, not a raw literal; flattening
+  it would change behaviour rather than tokenize it.
+
+**Out of scope:** `:72` and `:116` are `font: inherit`, which carries no size. `:96`, `:98`,
+`:106`, `:182`, `:189`, `:198` already use `var(--journey-text-*)`. The two raw sizes in
+`shell-components.css:135,141` are the companion plan's slice 2b.
+
+**Per-row evidence required.** The execution plan records, for each of the nine, the chosen token
+and the computed pixel delta at a 16px root — the precedent `journey.css:102` and `shell.css:107-108`
+already set for this repository. A row whose delta the plan cannot state is a row it has not
+checked.
 
 **Mandate: all nine, or a stated deferral.** The four `font-size` declarations are slice 3's floor.
 The five `font`-shorthand sizes (tree-state finding 3) are **in the same mandate**; if an execution
