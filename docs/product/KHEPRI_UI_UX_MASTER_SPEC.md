@@ -89,7 +89,11 @@ what changed.
    does not resolve it — absorbing it is a design-language edit, not a UI specification — but a slice
    touching either file must close it.
 
-2. **This document's §16 overrides a settled clause.** See §16.1.
+2. **This document's §16 overrides a settled clause — and corrects it here, not later.** §16.1
+   supersedes `KHEPRI_DESIGN_LANGUAGE.md` §0's visual-authority restriction, and **the correction to
+   §0 ships in this same change** rather than being deferred to an implementation slice. A document
+   that created a contradiction and scheduled its own repair would violate §A.4's reconciliation
+   rule on its first application. See §16.1 and §19 slice 1.
 
 ---
 
@@ -528,10 +532,18 @@ accessibility, misuse:
 | Progress | `processing` | determinate | Reduced motion fills | A fabricated percentage |
 | Export | download, print | idle, preparing, failed | Named format and scope | Export above the explanation (**B2**) |
 
-**Known live defect to resolve in a components slice:** `.skip-link` is **two mechanisms** —
-`journey.css:75` (`fixed`, `translateY(-180%)`) versus `shell-components.css:45` (`absolute`,
-`-9999px`), with inverted colors. `RRA-010` authorizes the journey to settle on one of its own;
-adopting the shell's is excluded.
+**Known live defect, and its authority splits across two surfaces:** `.skip-link` is **two
+mechanisms** — `journey.css:75` (`fixed`, `translateY(-180%)`) versus `shell-components.css:45`
+(`absolute`, `-9999px`), with inverted colors.
+
+`RRA-010` §73 authorizes "one skip-link mechanism" **for the journey**, and `RRA-010` is explicit
+that adopting the shell's is excluded. But `RRA-010:30` states that
+`src/khepri/rra/journey/assets/shell.css` and `shell-components.css` are "**outside this scope**" —
+they sit in the journey's asset directory and are the shell's, because `shell.html.j2` is their sole
+linking template and ownership follows the linking template rather than the folder.
+
+**So `RRA-010` authorizes only the journey half.** Changing the shell's mechanism, or unifying the
+two, needs authority that names the shell stylesheet. See §19 slices 2 and 2b.
 
 ---
 
@@ -844,9 +856,13 @@ clause and this section cannot both govern.
 
 **Recorded plainly rather than left implicit:** this is an owner decision taken on 2026-09-17, and
 per Constitution Article II it becomes governing **only when this document is merged to `main`.**
-Until that merge, `DESIGN_LANGUAGE` §0 remains in force and the shipped tokens remain the visual
-authority. On merge, `DESIGN_LANGUAGE` §0 must be **corrected in place**, not deleted, so the
-transition is legible to a later reader.
+
+**`DESIGN_LANGUAGE` §0 is corrected in the same change that creates this override**, not in a later
+slice — §A.4's reconciliation rule applies to this document's own divergences first. The correction
+sits under §0's "The visual authority is code that already ships" heading: it retains the three
+sources' verdict as the historical record at `b19f365`/`65579bc`, marks it no longer the operative
+restriction, and names this section as its successor. Corrected in place, never deleted, so a reader
+arriving from an older note sees what changed.
 
 **What the override does not reach:** it does not authorize a new typeface or icon family to bypass
 the licence-plus-audited-digest process, an external font host or CDN (CSP-blocked), a dark palette
@@ -937,8 +953,9 @@ Determined from `governance/registry.yaml` and the roadmap at `6cea330`.
 | Item | Nature |
 |---|---|
 | `RRA-010` journey-adoption reading | **OWNER DECISION, not yet taken.** Filed at `docs/superpowers/plans/2026-09-03-rra010-journey-adoption-reading.md`. It recommends no amendment; **the filing decides nothing, and no slice may act as though option A were chosen.** This document does not recommend an answer |
-| §16's override of design language §0 | Governing on merge of this document (§16.1) |
-| `DIRECTION_PROPOSAL` absorption | Merged `cdfa024` (`#369`), unabsorbed (§A.5) |
+| §16's override of design language §0 | Governing on merge of this document (§16.1). **Not a follow-up task** — §0 is corrected in the same change |
+| `DIRECTION_PROPOSAL` absorption | Merged `cdfa024` (`#369`), unabsorbed (§A.5 item 1) |
+| Cross-surface `.skip-link` unification | **No active authority names the shell stylesheet.** `RRA-010:30` excludes `shell.css` and `shell-components.css` by name; §19 slice 2b is blocked until owner-authored authority covers them |
 
 ### 18.4 Minimum authority to enable the design-system work
 
@@ -961,9 +978,10 @@ ship** and are not reopened.
 
 | # | Slice | Authority | Note |
 |---|---|---|---|
-| 1 | Absorb `#369` into the design language; correct §0 per §16.1 | Docs | Closes §A.5 |
-| 2 | Resolve the `.skip-link` double mechanism | `RRA-010` active | Named live defect (§G.2) |
-| 3 | Collapse remaining raw font sizes onto the type scale | `RRA-010` | Recorded drift |
+| 1 | Absorb `#369` into the design language | Docs | **§0's visual-authority correction is already discharged by this document's own change (§16.1); what remains of slice 1 is absorbing the merged proposal, which is a separate defect (§A.5 item 1)** |
+| 2 | Unify the `.skip-link` mechanism on the **journey** side | `RRA-010` active — §73 authorizes "one skip-link mechanism" | Journey half only (§G.2) |
+| 2b | Unify the **shell** side, or unify across both surfaces | **BLOCKED — no active authority** | `RRA-010:30`: `shell.css` and `shell-components.css` are "**outside this scope**". Needs authority naming the shell stylesheet |
+| 3 | Collapse remaining raw font sizes onto the type scale — **journey only** (4 in `journey.css`) | `RRA-010` active | The 2 in `shell-components.css` are outside it (`RRA-010:30`) and ride slice 2b's authority |
 | 4 | Navigation and filter patterns | **`U1-05` — blocked** | §18.2 |
 | 5 | State grammar: the §13 matrix as components | `RCA-008` where in scope | Otherwise blocked |
 | 6 | Chart grammar | **`U1-03` — blocked** | §8 |

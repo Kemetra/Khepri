@@ -45,6 +45,27 @@ Three independent sources agree. **This document therefore preserves and extends
 replace.** Every token below is either already shipping, or derived from one that is with its
 derivation stated.
 
+**Corrected in place, 2026-09-17, by `KHEPRI_UI_UX_MASTER_SPEC.md` §16 (`#475`).** The paragraph
+above records what was true until that merge, and the three sources said it accurately at the time.
+It is **no longer the operative restriction on future visual-reference work.** The owner has taken
+the decision that an approved Visual Reference Pack governs the full visual language — composition,
+hierarchy, typography, density, spacing, asset treatment, and interaction cues — and becomes
+acceptance evidence for it. So "no visual-world replacement is warranted" is retained as the
+*historical* verdict at `b19f365`/`65579bc`, not as a standing prohibition.
+
+**Four things this correction does not change.** It confers **no implementation authority**: product
+code still changes only under an active specification naming the files (Constitution Article IV), and
+`U1-03`, `U1-05`, `U1-06` and `U1-07` remain unauthorized. It does not waive the
+licence-plus-audited-digest process for a new typeface or icon family. It does not admit an external
+font host or CDN, which stay unreachable under the shipped `default-src 'none'` CSP. It does not
+decide the dark palette, which remains an unmade product decision. And it reaches nothing in the
+governed layers — facts, privacy, evidence, provenance, retention, or organization isolation are
+untouched by any presentation decision.
+
+Until an approved pack exists, **the shipped light token set remains the working visual reference**
+in practice, because it is what ships. The change is that it is no longer *authority* against which a
+replacement must be refused.
+
 The authority files, in precedence order within the visual layer:
 
 | File | Role |
@@ -983,7 +1004,10 @@ anywhere owns it*.
 ## 9. What this document does not do
 
 - **No implementation authority.** Design direction only.
-- **No visual-world replacement.** Three independent sources say the shipped world is the authority.
+- **No visual-world replacement *by this document*.** Three independent sources said the shipped
+  world is the authority, and that held until 2026-09-17; **superseded for future visual-reference
+  work by `KHEPRI_UI_UX_MASTER_SPEC.md` §16 (`#475`)** — see §0. This document still does not itself
+  replace the visual world; it preserves and extends.
 - **No new colour, no new typeface, no icon set, no elevation ramp, no dark palette.**
 - **No customer-facing trust labels beyond `RRA-012`'s chrome** — *Answered / Answered with caveats /
   Refused / Not stated* are shipped and governed; nothing finer has authority (§8.3).
