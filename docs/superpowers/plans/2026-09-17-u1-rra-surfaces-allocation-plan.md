@@ -345,10 +345,32 @@ states why**; splitting changes the cascade for any property the shorthand was r
 `:106`, `:182`, `:189`, `:198` already use `var(--journey-text-*)`. The two raw sizes in
 `shell-components.css:135,141` are the companion plan's slice 2b.
 
-**Per-row evidence required.** The execution plan records, for each of the nine, the chosen token
-and the computed pixel delta at a 16px root — the precedent `journey.css:102` and `shell.css:107-108`
-already set for this repository. A row whose delta the plan cannot state is a row it has not
-checked.
+**Per-row deltas, computed at a 16px root.** Stated here so slice 3's execution plan starts from
+measured values rather than deriving them again; it must re-verify against the tree on the day it
+runs.
+
+| Selector | Raw → token | Delta |
+|---|---|---|
+| `.brand` | `.84rem` → `0.82rem` | +0.32px |
+| `.intake-facts dt` | `.68rem` → `0.7rem` | +0.32px |
+| `.report-meta` | `.83rem` → `0.82rem` | +0.16px |
+| `.contract-row label` | `.86rem` → `0.82rem` | +0.64px |
+| `th` | `.78rem` → `0.82rem` | +0.64px |
+| `.report-group h2` | `.78rem` → `0.82rem` | +0.64px |
+| `.step-nav a` | `.75rem` → `0.7rem` | +0.80px |
+| `.report-meta dt` | `.76rem` → `0.82rem` | +0.96px |
+| `.meta` | `.76rem` → `0.82rem` | +0.96px |
+
+**Every delta is sub-pixel at a 16px root**, the largest being 0.96px. A row whose delta the
+execution plan cannot state is a row nobody checked.
+
+**One warning the token declaration itself carries.** `journey.css:57-58` records that
+`--journey-text-xs` and `--journey-text-sm` are "a separate decision, not a rounding of the same
+one; collapsing them would restyle every paragraph in the journey, which this slice has no mandate
+for." Slice 3 maps each raw size onto the **nearer** of the two and **does not merge the tokens** —
+nine substitutions, no change to the scale itself. Two rows (`.step-nav a`, `.intake-facts dt`) go
+to `xs` and seven to `sm`; a slice that sent all nine to one token would be doing the collapse that
+comment forbids.
 
 **Mandate: all nine, or a stated deferral.** The four `font-size` declarations are slice 3's floor.
 The five `font`-shorthand sizes (tree-state finding 3) are **in the same mandate**; if an execution
