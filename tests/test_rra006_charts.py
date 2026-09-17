@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from khepri.rra import facts
 from khepri.rra.bundle import (
     CHART_BAR,
     CHART_GROUPED_BAR,
@@ -39,7 +40,12 @@ from khepri.rra.rendering.charts import (
     ChartView,
     build_chart,
 )
-from khepri.rra.rendering.wording import LABEL_WORDING, category_of, worded
+from khepri.rra.rendering.wording import (
+    AXIS_UNITS,
+    LABEL_WORDING,
+    category_of,
+    worded,
+)
 
 
 def figure(figure_id: str, value: Decimal | None, label: str) -> CitedFigure:
@@ -484,3 +490,107 @@ def test_the_domain_always_includes_zero_whatever_the_series() -> None:
     # Zero is the high bound, so every bar hangs from the canvas top.
     for mark in falling.marks:
         assert Decimal(mark.y) == Decimal(0)
+
+
+def test_a_chart_carries_the_zero_baseline_the_domain_computes() -> None:
+    """`FR-183`: a negative value hangs below a visible zero baseline.
+
+    The domain already knew where zero fell; nothing drew it. The view now carries
+    the position so a consumer renders the line rather than deriving the offset a
+    second time -- two derivations are two chances to disagree about where zero sits.
+
+    Asserted against the mark geometry rather than a remembered number: the bar that
+    straddles zero must meet the baseline exactly, which is the property a reader
+    depends on and a recomputed offset would break.
+    """
+    view = chart_of(values=(Decimal(-100), Decimal(300)))
+    assert view is not None
+    loss, gain = view.marks
+
+    # Domain -100..300 over 320 units puts zero 240 units down, and the losing bar
+    # hangs from exactly there while the gaining bar rises to exactly there.
+    assert view.baseline == "240.0000"
+    assert loss.y == view.baseline
+    assert Decimal(gain.y) + Decimal(gain.height) == Decimal(view.baseline)
+
+
+def test_the_baseline_stays_inside_the_canvas_for_every_drawable_series() -> None:
+    """`FR-183`: the line is always drawable, because zero is always in the domain.
+
+    An all-positive series puts zero at the foot and an all-negative one puts it at
+    the head. Neither is outside the canvas, so no consumer has to decide what to do
+    with a baseline it cannot draw.
+    """
+    rising = chart_of(values=(Decimal(100), Decimal(300)))
+    falling = chart_of(values=(Decimal(-300), Decimal(-100)))
+    assert rising is not None and falling is not None
+
+    assert Decimal(rising.baseline) == CHART_HEIGHT
+    assert Decimal(falling.baseline) == Decimal(0)
+
+
+def test_the_axis_states_its_unit_as_a_code_the_surface_looks_up() -> None:
+    """`FR-183`, `FR-184`: the axis states its unit, and the word is governed.
+
+    The view carries the unit *kind*, not a word: a chart composes no text, and the
+    surface resolves it through the same chrome as every other label. `_resolve`
+    refuses a series mixing units, so one chart states one dimension and the kind is
+    unambiguous by construction.
+    """
+    view = chart_of()
+    assert view is not None
+    assert view.axis_unit_kind == "monetary"
+    # A kind, not a rendered word -- the surface's job, asserted by its absence here.
+    assert view.axis_unit_kind in AXIS_UNITS[LANGUAGE_ENGLISH]
+    assert view.axis_unit_kind in AXIS_UNITS[LANGUAGE_ARABIC]
+
+
+def test_every_governed_unit_kind_has_an_axis_label_in_both_languages() -> None:
+    """`FR-184`: the extent of the axis-unit table, from an independent source.
+
+    The expectation is `facts`' three unit-kind constants, which live outside
+    `RRA-015` §Scope: a slice under this specification cannot widen them to match a
+    mistake here. That is what makes this an extent assertion rather than a
+    restatement of the table it measures.
+    """
+    governed = {facts.UNIT_MONETARY, facts.UNIT_COUNT, facts.UNIT_RATIO}
+    assert governed, "an empty unit set would satisfy any subset claim"
+    assert set(AXIS_UNITS) == {LANGUAGE_ENGLISH, LANGUAGE_ARABIC}
+    for language, entries in AXIS_UNITS.items():
+        assert set(entries) == governed, f"{language} is missing a unit kind"
+        assert all(word.strip() for word in entries.values())
+
+
+def test_the_axis_states_no_period() -> None:
+    """`FR-183`'s period half is deferred, and this is what holds the deferral.
+
+    Nothing `build_chart` receives carries a period: a `ChartSpec` is a kind and
+    figure identifiers, and a `CitedFigure` has none. A chart that stated one would
+    be stating a fact it was never given, which `FR-182` forbids. The owner of the
+    other half is an artifact that puts a governed period on the bundle.
+
+    Without this assertion the deferral is an invitation: a later slice could
+    synthesize a period from a run timestamp and nothing would object.
+    """
+    view = chart_of()
+    assert view is not None
+    assert not hasattr(view, "axis_period")
+    assert not any("period" in field for field in ChartView.__dataclass_fields__)
+
+
+def test_a_chart_renders_no_legend() -> None:
+    """`FR-183`'s legend half is deferred, and this is what holds that deferral.
+
+    A legend "renders only where two or more series exist", and there is no series
+    concept to count: `_Plot.values` is flat, and `_bars` and `_grouped_bars` differ
+    only by a fill constant. `_resolve` already refuses fewer than two *values*, so
+    "two or more" is always true of values and cannot be the test.
+
+    So no chart renders a legend, and this asserts it -- a decorative legend naming
+    nothing would be worse than none, and is exactly what a later slice might add if
+    the deferral were only prose. The owner is a slice giving `_Plot` series
+    grouping, which needs `ChartSpec` to name series membership.
+    """
+    view = chart_of(kind=CHART_GROUPED_BAR)
+    assert view is not None
+    assert not any("legend" in field for field in ChartView.__dataclass_fields__)

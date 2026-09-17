@@ -298,6 +298,36 @@ article {
   stroke-linecap: round;
 }
 
+.chart__baseline {
+  /*
+   * The zero line. `charts._Domain` always includes zero, so this is inside the
+   * canvas for every drawable series, and a negative bar hangs from it rather
+   * than being drawn as a positive one somewhere else.
+   *
+   * Muted rather than the accent: it is the reference a reader measures against,
+   * not one of the figures. Thinner than the curve for the same reason -- a
+   * baseline as heavy as a mark competes with the data it exists to anchor.
+   */
+  stroke: var(--report-rule);
+  stroke-width: 1;
+}
+
+.chart__axis-unit {
+  /*
+   * What the value axis is measured in, placed at the canvas foot beside the
+   * category labels. The word arrives from the governed chrome; this rule only
+   * says where it sits and how it reads.
+   *
+   * `text-anchor: start` rather than a physical side: the macro places it at
+   * `x="0"`, and under `direction: rtl` the inline start edge is the right one,
+   * so the label follows the reading order without this sheet naming a side.
+   */
+  fill: var(--report-muted);
+  font-size: 0.75rem;
+  text-anchor: start;
+  dominant-baseline: text-after-edge;
+}
+
 .chart__label {
   /*
    * `charts._label` places every label at `y = CHART_HEIGHT`, horizontally
