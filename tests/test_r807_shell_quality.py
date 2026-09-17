@@ -16,6 +16,7 @@ case here fails rather than going unmeasured.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from importlib.resources import files
@@ -468,3 +469,111 @@ def test_the_skip_link_is_first_in_the_document() -> None:
         html = _html(surface, "en")
         body = html.split("<body", 1)[1]
         assert body.index("skip-link") < body.index("<main")
+
+
+def _shell_component_css() -> str:
+    """The shell's component rules, with comments removed.
+
+    Comment-stripping is load-bearing rather than hygiene: a rule inside a `/* ... */`
+    block is not a live mechanism, and a count that included one would report a defect
+    that does not exist. A guard that cries wolf is a guard the next slice narrows.
+    """
+    text = (
+        files("khepri.rra.journey")
+        .joinpath("assets", "shell-components.css")
+        .read_text(encoding="utf-8")
+    )
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
+def _selectors(css: str) -> list[str]:
+    return [selector.strip() for selector in re.findall(r"([^{}]+)\{", css)]
+
+
+def test_the_shell_declares_exactly_one_skip_link_mechanism() -> None:
+    """`RCA-010` §Scope, master specification §19 slice 2b.
+
+    The existing test proves a skip link is *reachable*. It cannot see a **second**
+    mechanism added beside the first, which is the drift slice 2b exists to close:
+    `journey.css` and `shell-components.css` each defined one, and nothing counted
+    either. The count is the assertion; presence is already covered above.
+    """
+    css = _shell_component_css()
+    selectors = _selectors(css)
+
+    assert selectors, "no rules found in shell-components.css, so this test proves nothing"
+    base = [selector for selector in selectors if selector == ".skip-link"]
+    assert len(base) == 1, f"expected one .skip-link mechanism, found {len(base)}"
+
+
+def test_the_shell_component_layer_declares_no_raw_type_size() -> None:
+    """`RCA-010` §Scope, master specification §G.1.
+
+    Scans `font-size` **and** the `font` shorthand. A scan worded for `font-size`
+    alone passes over a size hidden in the shorthand -- the defect the allocation
+    plan carried in its first draft, and the reason `journey.css` has five such
+    sizes on the companion plan's side. `font: inherit` carries no size.
+    """
+    css = _shell_component_css()
+    assert css.strip(), "shell-components.css is empty, so this test proves nothing"
+
+    offenders = [
+        match.group(0).strip()
+        for match in re.finditer(r"\bfont(?:-size)?\s*:\s*([^;}]+)", css)
+        if match.group(1).strip() != "inherit"
+        and re.search(r"\d*\.?\d+(rem|px|em)\b", match.group(1))
+    ]
+    assert offenders == [], f"raw type sizes must use the token scale: {offenders}"
+
+
+def test_the_shell_and_journey_type_scales_stay_separate() -> None:
+    """`RCA-010` `FR-201`: a shell presentation value is the shell's.
+
+    Asserted in **both** directions, because a leak either way breaks the boundary
+    both allocation plans rely on and neither previously measured. The two scales are
+    a deliberate separation, not a duplication: `journey.css` records that its two
+    small tokens are "a separate decision, not a rounding of the same one".
+    """
+    journey_assets = files("khepri.rra.journey").joinpath("assets")
+    shell_tokens = journey_assets.joinpath("shell.css").read_text(encoding="utf-8")
+    shell_components = journey_assets.joinpath("shell-components.css").read_text(
+        encoding="utf-8"
+    )
+    journey = journey_assets.joinpath("journey.css").read_text(encoding="utf-8")
+
+    for name, text in (
+        ("shell.css", shell_tokens),
+        ("shell-components.css", shell_components),
+        ("journey.css", journey),
+    ):
+        assert text.strip(), f"{name} is empty, so this test proves nothing"
+
+    assert "--journey-" not in shell_tokens, "shell.css names a journey property"
+    assert "--journey-" not in shell_components, (
+        "shell-components.css names a journey property"
+    )
+    declared = re.findall(r"(--text-[a-z0-9-]+)\s*:", journey)
+    assert declared == [], f"journey.css declares shell type tokens: {declared}"
+
+
+def test_the_shell_component_layer_draws_no_artwork() -> None:
+    """`RCA-010` `FR-206`: the master specification §7 asset policy, unrelaxed.
+
+    The shell has no admitted programmatic-drawing exception -- unlike the `RRA`
+    side, where a data-driven chart is the one expected drawing -- so this scan needs
+    no carve-out. Scoping it to the stylesheet also keeps it clear of the two
+    `aria-hidden` change separators in `analysis.html.j2`, which are template content
+    and `FR-194`-compliant.
+    """
+    css = _shell_component_css()
+    assert css.strip(), "shell-components.css is empty, so this test proves nothing"
+
+    forbidden = {
+        "@import": "@import" in css,
+        "external url()": bool(re.search(r"url\(\s*['\"]?https?://", css)),
+        "background-image": "background-image" in css,
+        "content artwork": bool(re.search(r"content\s*:\s*['\"][^'\"]*[^\x00-\x7F]", css)),
+        "non-ascii glyph": bool(re.search(r"[←-➿\U0001f300-\U0001faff]", css)),
+    }
+    found = sorted(name for name, present in forbidden.items() if present)
+    assert found == [], f"forbidden asset constructs in shell-components.css: {found}"
