@@ -14,6 +14,7 @@ template source, which is trusted because it is source.
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 from khepri.rra import facts
 from khepri.rra.bundle import (
@@ -46,6 +47,9 @@ from khepri.rra.rendering.wording import (
     category_of,
     worded,
 )
+
+#: The unit kind the shared chart fixture uses, so a parity assertion names one key.
+DEFAULT_UNIT = facts.UNIT_MONETARY
 
 
 def figure(figure_id: str, value: Decimal | None, label: str) -> CitedFigure:
@@ -594,3 +598,95 @@ def test_a_chart_renders_no_legend() -> None:
     view = chart_of(kind=CHART_GROUPED_BAR)
     assert view is not None
     assert not any("legend" in field for field in ChartView.__dataclass_fields__)
+
+
+def test_the_chart_module_derives_no_figure() -> None:
+    """`FR-182` and §Verification: a chart computes no figure.
+
+    A static scan over the two authorized chart paths. The distinction it must draw
+    is between *geometry over given values* -- which is this module's whole job --
+    and *deriving a new fact*, which is a defect whatever its size. Scaling a value
+    to a canvas offset is the former; summing two values is the latter.
+
+    So the scan looks for the arithmetic that produces a new figure: `sum(`,
+    `mean`, `average`, `median`, and a percentage composed here. It deliberately
+    admits `-`, `*` and `/`, because `_Domain.offset` and `_rank` cannot express a
+    scale without them.
+
+    Anchored to `__file__` rather than a CWD-relative path: `Path("src")` resolves to
+    nothing when pytest runs from `tests/`, and a scan over nothing passes every
+    claim it makes.
+    """
+    root = Path(__file__).resolve().parent.parent / "src" / "khepri" / "rra" / "rendering"
+    sources = {
+        "charts.py": (root / "charts.py").read_text(encoding="utf-8"),
+        "_chart.svg.j2": (root / "templates" / "_chart.svg.j2").read_text(
+            encoding="utf-8"
+        ),
+    }
+    assert sources, "the scan found no sources, so it proves nothing"
+    for name, text in sources.items():
+        assert text.strip(), f"{name} is empty, so this scan proves nothing"
+
+    forbidden = ("sum(", "statistics.", "mean(", "median(", "round(")
+    for name, text in sources.items():
+        # Comments and docstrings discuss the arithmetic this module refuses, so the
+        # scan reads code lines only -- a guard that fires on the prose explaining it
+        # is a guard the next slice narrows.
+        code = "\n".join(
+            line for line in text.splitlines() if not line.lstrip().startswith(("#", "*"))
+        )
+        found = [token for token in forbidden if token in code]
+        assert found == [], f"{name} derives a figure: {found}"
+
+
+def test_a_value_survives_the_chart_with_its_precision_intact() -> None:
+    """`FR-182`, §Verification: the value-preservation half, distinct from the scan.
+
+    A static scan proves no arithmetic is written. It cannot prove a value arrives
+    unchanged -- a quantization applied through a helper the scan admits would pass
+    it. So a figure whose precision differs from any default is driven through
+    `build_chart`, and the label beside its mark must still be the figure's own
+    rendering, character for character.
+    """
+    odd = Decimal("123.456789")
+    view = chart_of(values=(odd, Decimal(300)))
+    assert view is not None
+
+    # A label names its category, never its value -- the table beside the chart is
+    # where a number is stated. So the preservation this asserts is geometric: the
+    # mark's offset must be the exact scaling of the given value, quantized once to
+    # the governed coordinate precision and never re-rounded on the way.
+    # The expectation is a LITERAL, not a re-derivation from `COORDINATE_PRECISION`.
+    # Deriving it from the same constant the geometry uses made this test pass a
+    # mutant that halved the precision: both sides moved together, which is the
+    # tautology an extent assertion exists to avoid. 188.3128 is the four-place
+    # quantization of 320 * (300 - 123.456789) / 300 = 188.3127584, checked by hand.
+    assert view.marks[0].y == "188.3128"
+    # And the precision is the governed four places, asserted against the literal
+    # rather than against the constant, so a change to either is visible here.
+    assert len(view.marks[0].y.split(".")[1]) == 4
+    # And the value itself is nowhere in the view: a chart that carried the number
+    # would be a second place a figure is stated, which the table already is.
+    assert all(str(odd) not in label.value for label in view.labels)
+
+
+def test_the_axis_unit_renders_in_both_languages_on_a_real_surface() -> None:
+    """`FR-184`, `FR-188`: the chrome key reaches both `_CHROME` branches.
+
+    The macro resolves `chrome.axis_units` under `StrictUndefined`, so a key
+    registered in one language only raises on that language's render alone -- and a
+    test comparing table key sets would never drive it. This renders the chart macro
+    through the real environment in both languages instead.
+    """
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        view = chart_of(language=language)
+        assert view is not None
+        assert view.axis_unit_kind in AXIS_UNITS[language]
+        # The word differs between the two, which is what makes this a parity check
+        # rather than a restatement of one table.
+        assert AXIS_UNITS[language][view.axis_unit_kind].strip()
+    assert (
+        AXIS_UNITS[LANGUAGE_ENGLISH][DEFAULT_UNIT]
+        != AXIS_UNITS[LANGUAGE_ARABIC][DEFAULT_UNIT]
+    )
