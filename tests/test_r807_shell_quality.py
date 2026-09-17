@@ -163,9 +163,24 @@ class _StubOrganizations:
         ]
 
 
+@dataclass(frozen=True)
+class _PendingInvitation:
+    """What `team.html.j2` reads off an invitation, and nothing more.
+
+    A real `Invitation` is `Sealed` and must be minted through its own door; the
+    template needs three attributes, so a stand-in keeps this fixture from reaching
+    into another family's constructor. One pending invitation is what makes
+    `.invitation-role` render, which `U1` slice 2b retokenized and must measure.
+    """
+
+    invitation_id: str = "inv-1"
+    target_identity: str = "invited@example.test"
+    intended_role: str = "member"
+
+
 class _StubInvitations:
     def invitations_for_organization(self, organization_id: str, *, now: object = None):
-        return ()
+        return (_PendingInvitation(),)
 
     def issue(self, offer: object, *, expires_at: object, now: object) -> str:  # pragma: no cover
         raise AssertionError("the browser cases drive GETs only")
@@ -471,6 +486,37 @@ def test_the_skip_link_is_first_in_the_document() -> None:
         assert body.index("skip-link") < body.index("<main")
 
 
+#: Type values that name no size, so they carry no raw literal to tokenize.
+_INHERITED_TYPE_VALUES = frozenset({"inherit", "initial", "unset", "revert"})
+
+#: A `font` shorthand may carry a numeric weight and line-height that are not sizes:
+#: `font: 700 var(--text-sm)/1 monospace` is fully tokenized. Strip those parts before
+#: looking for a raw size, so the scan flags the size and not the weight.
+_NON_SIZE_NUMERICS = re.compile(
+    r"(?:\b[1-9]00\b|\bnormal\b|\bbold\b|/\s*[\d.]+)", flags=re.IGNORECASE
+)
+
+
+def _without_comments(text: str, name: str) -> str:
+    """CSS with comments removed, refusing the one input that disarms the removal.
+
+    A `/*` or `*/` inside a CSS string literal turns the non-greedy `/\\*.*?\\*/` into a
+    weapon: with `content: "/*"` above a rule and `content: "*/"` below it, the real
+    rule between them is deleted before any scan sees it, and every guard built on
+    this helper reports green over a file it never read. Refuse that shape outright --
+    no shell stylesheet has a legitimate reason to put a comment delimiter in a
+    string -- rather than trying to parse around it.
+
+    Every caller shares this, because a second stripper without the guard reopens the
+    hole for whichever file it reads.
+    """
+    assert text.strip(), f"{name} is empty, so this test proves nothing"
+    assert not re.search(r"""["'][^"'\n]*(?:/\*|\*/)[^"'\n]*["']""", text), (
+        f"{name}: a comment delimiter inside a string literal would disarm stripping"
+    )
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
 def _shell_component_css() -> str:
     """The shell's component rules, with comments removed.
 
@@ -488,10 +534,7 @@ def _shell_component_css() -> str:
     # `/\*.*?\*/` eats the real rule between them and every scan over the result goes
     # blind. Refuse that shape outright rather than trying to parse around it -- this
     # sheet has no legitimate reason to put a comment delimiter in a string.
-    assert not re.search(r"""["'][^"'\n]*(/\*|\*/)[^"'\n]*["']""", text), (
-        "a comment delimiter inside a string literal would disarm comment-stripping"
-    )
-    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return _without_comments(text, "shell-components.css")
 
 
 def _selector_parts(css: str) -> list[str]:
@@ -561,8 +604,12 @@ def test_the_shell_component_layer_declares_no_raw_type_size() -> None:
         for match in re.finditer(
             r"\bfont(?:-size)?\s*:\s*([^;}]+)", css, flags=re.IGNORECASE
         )
-        if match.group(1).strip().lower() != "inherit"
-        and re.search(r"\d*\.?\d+(rem|px|em)\b", match.group(1), flags=re.IGNORECASE)
+        if match.group(1).strip().lower() not in _INHERITED_TYPE_VALUES
+        # ANY numeric literal, not an allowlist of three units: `font-size: 12pt` is
+        # valid CSS and bypassed a `(rem|px|em)` check entirely, as do `pc`, `ch`,
+        # `ex`, `vw`, `%` and a bare `0`. A raw number in a type declaration is the
+        # defect; which unit it wears is not the question.
+        and re.search(r"\d", _NON_SIZE_NUMERICS.sub("", match.group(1)))
     ]
     assert offenders == [], f"raw type sizes must use the token scale: {offenders}"
 
@@ -583,8 +630,7 @@ def test_the_shell_and_journey_type_scales_stay_separate() -> None:
 
     def _rules(name: str) -> str:
         text = journey_assets.joinpath(name).read_text(encoding="utf-8")
-        assert text.strip(), f"{name} is empty, so this test proves nothing"
-        return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        return _without_comments(text, name)
 
     shell_tokens = _rules("shell.css")
     shell_components = _rules("shell-components.css")
@@ -612,13 +658,18 @@ def test_the_shell_component_layer_draws_no_artwork() -> None:
     and `FR-194`-compliant.
     """
     css = _shell_component_css()
-    assert css.strip(), "shell-components.css is empty, so this test proves nothing"
 
+    # At-rule names, property names, function names and URL schemes are all
+    # case-insensitive in CSS, so `@IMPORT` and `URL(HTTPS://...)` evaded the
+    # substring checks entirely. Fold once and check the folded text.
+    folded = css.lower()
     forbidden = {
-        "@import": "@import" in css,
-        "external url()": bool(re.search(r"url\(\s*['\"]?https?://", css)),
-        "background-image": "background-image" in css,
-        "content artwork": bool(re.search(r"content\s*:\s*['\"][^'\"]*[^\x00-\x7F]", css)),
+        "@import": "@import" in folded,
+        "external url()": bool(re.search(r"url\(\s*['\"]?https?://", folded)),
+        "background-image": "background-image" in folded,
+        "content artwork": bool(
+            re.search(r"content\s*:\s*['\"][^'\"]*[^\x00-\x7F]", css)
+        ),
         "non-ascii glyph": bool(re.search(r"[←-➿\U0001f300-\U0001faff]", css)),
     }
     found = sorted(name for name, present in forbidden.items() if present)
@@ -677,8 +728,15 @@ def test_the_shell_skip_link_is_visible_only_when_focused(language: str) -> None
             skip.focus()
             focused = skip.bounding_box()
             assert focused is not None
-            assert 0 <= focused["x"] < width, (
-                f"a focused skip link must be inside the viewport, got x={focused['x']}"
+            # The whole link, not just its leading edge: a wide one whose left edge is
+            # on-screen can still run off the far side, and the requirement is that a
+            # keyboard reader can see what they have focused.
+            assert focused["x"] >= 0, (
+                f"focused skip link starts off-screen: {focused['x']}"
+            )
+            assert focused["x"] + focused["width"] <= width, (
+                "a focused skip link must fit inside the viewport: "
+                f"x={focused['x']} width={focused['width']} viewport={width}"
             )
             assert focused["height"] >= 44, (
                 f"the skip link is a pointer target: {focused['height']}px < 44px"
@@ -714,10 +772,14 @@ def test_the_team_surface_type_sizes_resolve_from_the_token_scale() -> None:
             )
             assert declared == "0.82rem", f"--text-sm must be declared, got {declared!r}"
 
-            for selector in (".member-role", ".invitation-role"):
+            # Every selector this slice retokenized must be PRESENT and measured. An
+            # earlier form skipped an absent one, so it measured `.member-role` alone
+            # and would have passed with the other two declarations deleted. The
+            # fixture renders all three: a disabled member gives `.member-state`, and
+            # `_StubInvitations` yields one pending invitation for `.invitation-role`.
+            for selector in (".member-state", ".member-role", ".invitation-role"):
                 locator = page.locator(selector).first
-                if locator.count() == 0:
-                    continue
+                assert locator.count() == 1, f"{selector} must render to be measured"
                 size = page.evaluate(
                     "s => getComputedStyle(document.querySelector(s)).fontSize", selector
                 )
