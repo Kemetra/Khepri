@@ -250,6 +250,13 @@ literal. `:96`, `:98`, `:106`, `:182`, `:189`, `:198` already use tokens. The tw
 **Files:** `tests/` only. **This slice changes no source file**; where a floor fails, the fix lands
 in the slice that owns that file, not here.
 
+**Where a floor fails after its build slice has merged.** Slices 6, 2 and 3 close before this one
+runs, so there may be no open slice to take the fix. **A floor failure discovered here opens a
+follow-on slice under `RRA-015`** — or under `RRA-010` where the failing file is the journey's —
+named for the file that fails, and does **not** widen this slice past `tests/`. An evidence slice
+that edits a stylesheet or a template to make its own assertion pass has left its scope, and the
+failure it hid is still in the product.
+
 **RED shapes — asserted per surface, in both languages** (`FR-189`):
 - A visible focus on every tab stop.
 - Focus order follows document order, with **no positive `tabindex`**.

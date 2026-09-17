@@ -119,6 +119,17 @@ Recorded because a later slice must not re-derive them.
    `no_membership`, `unavailable`, plus the partials `_decision_cards` and `_decision_sections`.
    Navigation and accessibility extent must be derived from the shell's own destinations, **not
    from a hand-written list** (§Verification).
+7. **`legal_templates/` is in scope and is measured by nothing today.** It holds two templates —
+   `legal.html.j2` and `legal_page.html.j2` — and `RCA-010` §Scope admits the directory with its
+   reason stated: those pages "link the shell's stylesheets and would otherwise drift from them."
+   But `test_every_shell_template_is_measured` scans **only** `shell_templates/`
+   (`files("khepri.runtime").joinpath("shell_templates")` at `tests/test_r807_shell_quality.py:380`),
+   so **no existing extent assertion reaches the legal pages at all**. A slice that extends that
+   test without widening its scan inherits the blind spot — the exact "subset assertions hide a
+   forgotten entry" defect. **Slices 9b and 10b must cover `legal_templates/` explicitly**, and an
+   execution plan that cannot bring a legal page to a measurable state records it as NOT EXERCISED
+   rather than omitting it. Slice 8 already lists the directory; the evidence slices must match
+   that reach or slice 8 hardens surfaces nothing measures.
 3. **`.skip-link` is duplicated across families**: `shell-components.css:45,56` and
    `journey.css:75-76`. Slice 2b takes the **shell** half. **Unifying across the two surfaces stays
    out** — `FR-201` keeps each surface's values its own, and `RRA-010:30` puts
@@ -290,6 +301,17 @@ word." It presents states that already exist.
 **Files:** `tests/` only — extend `test_r807_shell_quality.py`. **This slice changes no source
 file**; where a floor fails, the fix lands in the slice that owns that file, not here.
 
+**Where a floor fails after its build slice has merged.** The build slices close before this one
+runs, so there may be no open slice to take the fix. **A floor failure discovered here opens a
+follow-on slice under `RCA-010`** — named for the file that fails — and does **not** widen this
+slice past `tests/`. An evidence slice that edits a stylesheet or a template to make its own
+assertion pass has left its scope, and the failure it hid is still in the product.
+
+**Surface extent includes `legal_templates/`.** `test_every_shell_template_is_measured` scans only
+`shell_templates/` (tree-state finding 7), so extending it as written would leave `legal.html.j2`
+and `legal_page.html.j2` unmeasured while slice 8 hardens them. Widen the scan, or add a second
+extent assertion over `legal_templates/` with its own emptiness check.
+
 **RED shapes — per shell surface, in both languages, at the supported viewports** (`FR-200`):
 - A visible focus on every tab stop, **including scrollable regions**.
 - Focus order follows document order, with **no positive `tabindex`**.
@@ -318,6 +340,10 @@ file**; where a floor fails, the fix lands in the slice that owns that file, not
 **Depends on:** slices 2b, 4, 5, 8, 9b.
 
 **Files:** `tests/` only.
+
+**Representatives are named from the full in-scope set**, which includes `legal_templates/`
+(tree-state finding 7). A representative set drawn only from `shell_templates/` leaves a directory
+`RCA-010` §Scope admits, and that slice 8 hardens, outside every visual assertion.
 
 **Bounded extent, and why this is a bound rather than a blocker.** `FR-204` compares "**named
 representative rendered shell surfaces**" — a per-surface acceptance rule naming representatives,
