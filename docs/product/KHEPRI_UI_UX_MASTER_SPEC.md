@@ -74,10 +74,21 @@ future reader knows what to reconcile:
 | §G.2 Components | design language §4 |
 | §9 RTL and bilingual, §10 Responsive | design language §5, §6; blueprint §14, §15 |
 
-**Reconciliation rule.** When a rule in this document and its predecessor disagree, **this document
-wins for implementation** and the predecessor is corrected in place in the same slice that discovers
-the divergence. Corrected in place, never deleted: a reader arriving from an older note needs to see
-what changed.
+**Reconciliation rule — and its ceiling.** This rule reaches **only the design-language layer**: the
+visual and component direction in `KHEPRI_DESIGN_LANGUAGE.md`, and the presentation detail of the
+blueprint sections named in the table above. Within that layer, when a rule here and its predecessor
+disagree, **this document wins for implementation** and the predecessor is corrected in place in the
+same slice that discovers the divergence. Corrected in place, never deleted: a reader arriving from
+an older note needs to see what changed.
+
+**It cannot reach above that layer.** This document does not override
+`governance/CONSTITUTION.md`, `governance/registry.yaml`, or any active specification — per Article
+IV, implementation authority belongs to an active specification naming the files, and this document
+is not one. Nor does it override the roadmap or the blueprint as **product direction**: the roadmap
+outranks the blueprint, both outrank this document on what the product *is* and *does*, and neither
+is implementation authority either. Where a disagreement is about product direction rather than
+design detail, **the predecessor wins and this document is corrected** — the same rule, running the
+other way.
 
 ### A.5 Two recorded defects in the current document set
 
@@ -1035,7 +1046,8 @@ Run against this document at `6cea330`, 2026-09-17:
 ## 22. Maintaining this document
 
 - **A new surface enters §C and §F in the slice that implements it**, never before (`FR-049`).
-- **A contradiction with a predecessor is corrected in place in both documents**, never deleted
-  (§A.4).
+- **A contradiction with a predecessor is corrected in place in both documents**, never deleted —
+  within the design-language layer this document reaches. Above that layer the predecessor wins and
+  **this** document is corrected (§A.4).
 - **A blocked item leaves §18.2 only when a registry entry exists** — not when a plan is filed.
 - Re-measure §G.1's computed contrast whenever type or color changes. The 0.22 margin has no room.
