@@ -369,13 +369,21 @@ word." It presents states that already exist.
   elastic/overshoot easing (`cubic-bezier` with a coefficient outside `[0,1]`), `parallax`, infinite
   `animation-iteration-count`, or a counting-number animation — with an **emptiness assertion** so
   it cannot pass by scanning nothing. Prose alone is not an instrument.
-- **`prefers-reduced-motion` must be asserted, not assumed.** Verified at `e915af8`, re-verified at `30b4848`: a
-  `prefers-reduced-motion` block exists in `journey.css:206` and `landing.css:232` but in
-  **neither** `workspace.css` nor `shell-components.css`, while `workspace.css` contains three
-  `transition`/`animation` declarations. So "no transition is load-bearing under
-  `prefers-reduced-motion`" is currently **untested on the shell**. Slice 5's execution plan states
-  which it establishes: that the three declarations are non-load-bearing and a reduced-motion block
-  is unnecessary, **or** that one must be added. Either is acceptable; assuming it is not.
+- **`prefers-reduced-motion`: this bullet's own premise was WRONG, and the correction inverts the
+  task.** It claimed `workspace.css` "contains three `transition`/`animation` declarations." It
+  contains **zero**. Re-verified at `b26de23` and at `e915af8`, the commit the claim cited:
+  `grep -nE "(^|[{;[:space:]])(transition|animation)[[:space:]]*:"` over `workspace.css` and
+  `shell-components.css` returns **nothing**. The "three" was a `grep -c` counting the *word* — the
+  class name `.change-transition` plus two prose comments. **A word count is not a declaration
+  count**, and this is the same error shape as the `FR-199` premise two bullets up.
+
+  A `prefers-reduced-motion` block does exist in `journey.css:206` and `landing.css:232`, and in
+  neither shell sheet — but over **zero motion** such a block would be dead CSS gating nothing,
+  which is the defined-but-never-attached defect. **So slice 5 must NOT add one.** The invariant to
+  assert is the stronger superset: **the shell sheets declare no motion at all**, which makes every
+  `FR-203` prohibition (bounce, elastic easing, parallax, infinite iteration, counting numbers)
+  true by construction and fails the moment one is introduced. A scan for that must also catch a
+  bare `@keyframes` at-rule, which a declaration-shaped pattern misses.
 - A positional transition on a drawer or dialog is short (`FR-203`) — allocated here, and measured
   at the same time as the drawer's full-screen-sheet behaviour in slice 8.
 
