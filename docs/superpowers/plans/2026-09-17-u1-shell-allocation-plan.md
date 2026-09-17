@@ -134,7 +134,10 @@ Recorded because a later slice must not re-derive them.
    `journey.css:75-76`. Slice 2b takes the **shell** half. **Unifying across the two surfaces stays
    out** — `FR-201` keeps each surface's values its own, and `RRA-010:30` puts
    `shell-components.css` outside `RRA-010`.
-4. **Two raw font sizes remain in `shell-components.css`** at `:135` and `:141`, both `0.875rem`.
+4. **Two raw font sizes remain in `shell-components.css`** at `:135` and `:141`, both `0.875rem`,
+   on `.member-state` and on the `.member-role, .invitation-role` pair — team-surface labels, so
+   slice 2b's visible effect is on the Team destination and the invitation-issued page. Identify
+   them by selector as well as by line, because line numbers drift.
    `shell.css:109-128` declares the `--text-xs` … `--text-display` scale, with `--text-sm: 0.82rem`
    the nearest token. These are the "2 in `shell-components.css`" master specification §19 slice 3
    assigns to 2b's authority.
@@ -191,6 +194,17 @@ companion plan's slice 2. **Unifying across both surfaces is authorized by neith
   the supported viewports rather than by reading the stylesheet.
 - `shell.css` still declares no rules (`test_r801_shell_tokens.py` stays passing).
 - No physical directional property is introduced (`FR-199`).
+
+**`min-height` is not a directional property, and a scan must not flag it.**
+`shell-components.css` uses `min-height: 44px` at six places (`:50`, `:97`, `:111`, `:117`, `:183`,
+`:223`) and **none violates `FR-199`**. That requirement concerns the properties an RTL layout must
+mirror, as the file's own header comment at `:8` states: "an RTL layout that mirrors correctly
+cannot be built from `left`/`right`/`margin-left`." A block size has no direction to mirror. An
+`FR-199` scan therefore targets `left`, `right`, `margin-left`, `margin-right`, `padding-left`,
+`padding-right` and `text-align: left|right` — **not** `min-height` — or it reports six defects
+that are not defects and invites a later slice to "fix" working code. Verified at `e915af8`: the
+file contains **no** directional property, so the scan's correct initial result is zero findings
+with its emptiness assertion satisfied by the file being non-empty.
 
 ---
 

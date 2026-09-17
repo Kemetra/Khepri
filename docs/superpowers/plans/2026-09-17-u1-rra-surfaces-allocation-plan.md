@@ -237,7 +237,12 @@ companion plan's slice 2b. **Unifying across both surfaces is authorized by neit
 
 **Files:** `src/khepri/rra/journey/assets/journey.css` at `:82`, `:115`, `:165`, `:171`.
 
-**Targets, verified above:** `.75rem` → the nearest journey token; `.86rem`, `.78rem`, `.76rem` →
+**Targets by selector as well as line**, because line numbers drift: `.step-nav a` (`:82`,
+`.75rem`), `.contract-row label` (`:115`, `.86rem`), `th` (`:165`, `.78rem`), and `.report-meta dt`
+(`:171`, `.76rem`). Note `.step-nav a` also carries `min-block-size: 44px` — the **logical**
+property, which slice 3 must leave untouched.
+
+**Mapping:** `.75rem` → the nearest journey token; `.86rem`, `.78rem`, `.76rem` →
 `--journey-text-sm` (`0.82rem`) or `--journey-text-xs` (`0.7rem`) per §G.1's scale. The execution
 plan states the chosen mapping per line and its computed pixel delta at a 16px root, following the
 precedent already set in `journey.css:102`'s own comment and `shell.css:107-108`.
