@@ -8,11 +8,18 @@
 > `superpowers:executing-plans`.
 >
 > **Companion plan:** the shell half is
-> `docs/superpowers/plans/2026-09-17-u1-shell-allocation-plan.md`. The two are separate documents
-> because `governance/templates/specification.md` admits exactly one family per specification and
-> `khepri_gov`'s `_validate_family_links` enforces it; `RRA-012` §Outcome reads that rule as
-> forbidding one artifact across two families' surfaces. **Neither plan may cite the other's
-> authority for a file.**
+> `docs/superpowers/plans/2026-09-17-u1-shell-allocation-plan.md`.
+>
+> **Why two plans: one plan per governing specification**, following the `D1-02`–`D1-10`
+> precedent, so **no slice can cite the wrong document's §Scope for a file**. That is the whole
+> benefit, and it is a property of the plans, not of any validator. **Neither plan may cite the
+> other's authority for a file.**
+>
+> The one-family rule in `governance/templates/specification.md`, enforced by `khepri_gov`'s
+> `_validate_family_links`, is the reason **the two specifications are two** — it governs a
+> *specification*'s `depends_on` in `governance/`. It does **not** reach a plan in
+> `docs/superpowers/plans/`, which no validator checks. Stated precisely so a later agent does not
+> cargo-cult an inapplicable rule as though a plan were governed by it.
 
 **Goal:** Give the `RRA` report and evidence surfaces the approved chart grammar, one skip-link
 mechanism on the journey, a type scale with no raw literals, and accessibility and visual evidence
@@ -96,7 +103,7 @@ orchestration, persistence and composition path in the repository.
 `RRA-010`'s, `FR-095a` component chrome `RRA-012`'s, and figure construction, cell building and
 audit projection are unchanged.
 
-### Tree-state findings — verified 2026-09-17 at `e915af8`
+### Tree-state findings — verified 2026-09-17 at `e915af8`, re-verified at `30b4848` (`#478`)
 
 Recorded because a later slice must not re-derive them, and because one corrects a count.
 
@@ -108,13 +115,60 @@ Recorded because a later slice must not re-derive them, and because one corrects
    `journey.css:75-76` and `shell-components.css:45,56`. Slice 2 takes the journey half under
    `RRA-010` §73. **Unifying *across* the two surfaces stays out of scope** — `FR-201` keeps each
    surface's values its own, and `RRA-010:30` puts `shell-components.css` outside `RRA-010`.
-3. **§19 slice 3's count of four raw journey font sizes is correct.** Verified at
-   `journey.css:82` (`.75rem`), `:115` (`.86rem`), `:165` (`.78rem`), `:171` (`.76rem`). Lines
-   96, 98, 106, 182, 189 and 198 already use `var(--journey-text-*)` and are **not** in scope;
-   `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` is a responsive expression, not a raw literal, and a
-   slice that flattens it would change behaviour rather than tokenize it. An execution plan must
-   re-verify these four line numbers against the tree on the day it runs.
-4. **`charts.py` already ships the disciplines `RRA-015` §Scope says are preserved, not reopened.**
+3. **§19 slice 3's count of four is right about `font-size` and misses five more in the `font`
+   shorthand.** The four `font-size` declarations are real: `.step-nav a` (`:82`, `.75rem`),
+   `.contract-row label` (`:115`, `.86rem`), `th` (`:165`, `.78rem`), `.report-meta dt` (`:171`,
+   `.76rem`). **But `journey.css` carries five further raw type sizes inside the `font`
+   shorthand**, which is not a `font-size` declaration and which a scan worded for `font-size`
+   passes straight over:
+
+   | Selector | Line | Size in shorthand |
+   |---|---|---|
+   | `.brand` | `:78` | `.84rem` |
+   | `.intake-facts dt` | `:101` | `.68rem` |
+   | `.meta` | `:145` | `.76rem` |
+   | `.report-meta` | `:169` | `.83rem` |
+   | `.report-group h2` | `:179` | `.78rem` |
+
+   That the repository already regards these as collapsible is on the record: `shell.css:107`'s own
+   comment maps `.84rem` and `.68/.7rem` onto `--text-sm`/`--text-xs`. **So the real count is nine,
+   not four**, and a slice claiming "no raw literals" on the strength of a `font-size`-only scan
+   would ship with five still present and invisible. Lines 96, 98, 106, 182, 189 and 198 already
+   use `var(--journey-text-*)`; `:72` and `:116` are `font: inherit`, which carries no size;
+   `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` is a responsive expression, not a raw literal, and
+   flattening it would change behaviour rather than tokenize it. An execution plan must re-verify
+   every selector and line against the tree on the day it runs.
+4. **`FR-183`'s three chrome requirements are slice 6's real build, and `FR-189`'s chart clause is
+   already green.** Verified at `e915af8`:
+
+   | `FR-183` / `FR-189` element | State today |
+   |---|---|
+   | `role="img"` with `<title>` and `<desc>` from governed codes | **Already ships** — `_chart.svg.j2:25-29`, `aria-labelledby` pointing at both. Slice 6 must not re-add it |
+   | The domain always includes zero, negatives hanging from the baseline | **Already ships** — `_Domain.zero` (`charts.py:162-180`), documented at `:45` |
+   | A **visible** zero baseline element | **Missing.** The domain knows where zero falls; nothing draws a line there |
+   | An axis labelled with its **unit** and its **period** | **Missing.** `ChartView` carries `labels` for categories only — no axis, unit or period field |
+   | A **legend**, rendered only with two or more series | **Missing.** No legend field, and no series count on `ChartView` |
+   | A **truncated axis on a comparison is refused** | **Missing.** No such refusal exists |
+
+   So slice 6's build is: three new `ChartView` fields (baseline geometry, axis labelling with unit
+   and period, legend eligibility), their governed chrome codes in `wording.py`, their markup in
+   `_chart.svg.j2`, their rules in `report.css`/`report.print.css`, and the truncated-axis refusal.
+   **`ChartView` gains fields rather than parameters** — it already has nine, and CodeScene gates
+   on arguments >4, so an execution plan that adds three positional parameters to `build_chart`
+   will fail the gate. `build_chart`'s own docstring records the precedent: a parameter the module
+   does not use was **removed** rather than kept.
+5. **Part of slice 6's chart-kind evidence already ships — and the real gap is `_GEOMETRY`.**
+   Verified: `tests/test_rra006_bundle_sections.py:197` already asserts
+   `frozenset({CHART_BAR, CHART_GROUPED_BAR, CHART_LINE}) == GOVERNED_CHART_KINDS`, and
+   `tests/test_rra009_wording.py:730-733` already monkeypatches `GOVERNED_CHART_KINDS` with a
+   `"stacked_bar"` sentinel — the mutation slice 6's first RED shape describes. **A RED step that
+   is already green is scaffolding, and an unevaluated proof reports as a passed one.** What does
+   **not** exist is any assertion over the dispatch table itself: `_GEOMETRY` at `charts.py:398`
+   is referenced only by `charts.py:216` and is asserted by **no test**. So slice 6's genuine new
+   evidence is `set(_GEOMETRY) == GOVERNED_CHART_KINDS` — the table that actually decides whether a
+   kind renders, checked against the out-of-scope registry. An execution plan states which existing
+   test it relies on and which assertion is new.
+6. **`charts.py` already ships the disciplines `RRA-015` §Scope says are preserved, not reopened.**
    `build_chart` at `:197`; `mirrored` plot flag at `:190`, `:213`, `:264`, `:287`, `:367`; the
    kind dispatch table at `:399-401`; `Decimal` canvas constants at `:78-79`. The `mirrored` flag
    is the existing seam `FR-188` names for Arabic, so slice 6 extends it rather than inventing one.
@@ -151,8 +205,14 @@ binding, and `_CHROME` registration only; `wording.py` at chart chrome codes onl
 
 **RED shapes — each must fail before its implementation exists:**
 
-- A chart kind outside `{CHART_BAR, CHART_GROUPED_BAR, CHART_LINE}` is refused rather than rendered
-  (`FR-181`). Name a sentinel kind the dispatch table cannot serve, not the next plausible real one.
+- **`set(_GEOMETRY) == GOVERNED_CHART_KINDS`** — the dispatch table at `charts.py:398` is asserted
+  by no test today (tree-state finding 5), and it is the table that decides whether a kind renders.
+  This is slice 6's genuine new chart-kind evidence; the frozenset identity and the `"stacked_bar"`
+  sentinel mutation **already ship** (`test_rra006_bundle_sections.py:197`,
+  `test_rra009_wording.py:730-733`) and must not be re-added as though new.
+- A chart kind outside `GOVERNED_CHART_KINDS` is refused rather than rendered (`FR-181`). Name a
+  sentinel kind the dispatch table cannot serve, not the next plausible real one — and check
+  whether the existing sentinel test already covers the path before writing a second.
 - A static check over the authorized paths asserts no sum, difference, ratio, ranking or percentage
   is derived in `charts.py` or `_chart.svg.j2` (`FR-182`, §Verification). **Anchor the scan to
   `__file__`, not to a CWD-relative `Path("src")`**, and assert the scan is non-empty so it cannot
@@ -182,6 +242,14 @@ binding, and `_CHROME` registration only; `wording.py` at chart chrome codes onl
 - A chart rule introduces no physical directional property (`FR-188`) — a scan over the chart rules
   in `report.css`/`report.print.css`, with an emptiness assertion.
 - `_chart.svg.j2` adds no `|safe` and no `Markup` (§Scope).
+- **`FR-192` asset policy — slice 6 owns the instrument.** A scan over the chart paths asserting
+  none of: a `background-image`/`content` rule drawing artwork, an emoji or Unicode glyph standing
+  in for an icon, a pseudo-element used as artwork, an `@import`, or any external `url(...)` host —
+  with an **emptiness assertion**. Verified at `e915af8`, re-verified at `30b4848`: no test anywhere greps for the §7
+  prohibitions, so this is a new guard, not an extension. **The chart itself is the one admitted
+  programmatic drawing** (`FR-192` says so explicitly), so the scan must permit the chart's own
+  SVG geometry and forbid decorative drawing beside it — a scan that cannot tell those apart is
+  useless here.
 - A chart exposes `role="img"` with `<title>` and `<desc>` from governed codes (`FR-189`).
 
 **Extent assertion required, and its source must be independent.** A per-kind or per-field test
@@ -196,13 +264,36 @@ the slice under this plan **cannot edit**:
 | Extent assertion | Subject (under test, editable here) | Independent expectation (not editable here) |
 |---|---|---|
 | Chart kinds | the dispatch table in `charts.py:399-401` | **`GOVERNED_CHART_KINDS`**, a `frozenset` at `src/khepri/rra/bundle.py:383`. `bundle.py` is `RRA-006`'s and is **outside `RRA-015` §Scope**, so no slice here can widen it to match a mistake. `FR-181` names the three kinds in governance prose as a third, human-reviewed check |
-| Chart chrome codes | the new chart entries in `wording.py` | the `_CHROME` registration in `html.py` **plus** the import-time completeness assertion across both languages — a code present in one and absent from the other fails, so the two tables check each other |
-| Report surface list (slice 9a) | the surfaces the tests drive | the section-to-chart mapping already in `bundle.py:400-404` and the bundle's own render targets, both `RRA-006`'s |
+| Chart chrome codes | the new chart entries in `wording.py` | **key the code set off `GOVERNED_CHART_KINDS`**, the way `wording.py:1190` already builds `_CHART_DESCRIPTION_CODES`. Not `_CHROME` — see the correction below |
+| Report surface list (slice 9a) | the surfaces the tests drive | **no independent source exists — use a reviewed literal.** See the correction below |
 
-Where no independent source exists for a set a slice introduces, the execution plan **says so** and
-the reviewer supplies the expectation by hand rather than a test deriving it from the code it
-measures. A hand-reviewed literal is weaker evidence than an independent registry and stronger
-evidence than a tautology.
+**Correction: `_CHROME` is not independent of `wording.py`, and the parity assertion is the wrong
+instrument.** An earlier draft of this plan claimed the two "check each other". They do not.
+`RRA-015` §Scope admits **both** `html.py` (at "the chart chrome table's registration point") and
+`wording.py` (at "chart chrome codes only"), so **one slice edits expectation and subject
+together** — the tautology this table exists to rule out. And the import-time assertion is a
+**parity** check, not an extent check: `_assert_chart_descriptions_complete` (`wording.py:1196`)
+compares each language's key set against `_CHART_DESCRIPTION_CODES` and the language set against
+`{LANGUAGE_ARABIC, LANGUAGE_ENGLISH}`. It catches a code present in one language and absent from
+the other; it **cannot** see a code added to both that should not exist, nor one absent from both.
+
+**The repository already does this correctly, and slice 6 follows that pattern.**
+`wording.py:1190` builds `_CHART_DESCRIPTION_CODES` by iterating `GOVERNED_CHART_KINDS` — which
+lives in `bundle.py`, outside `RRA-015` §Scope — and the comment above it states the reason in the
+repository's own words: "An earlier form listed the three constants by hand, which … fixed the
+*membership* here: a fourth kind admitted in `bundle` would leave this set at three … a guard
+naming its own scope cannot see the scope grow." Chart chrome codes that are **per chart kind**
+must therefore be derived from `GOVERNED_CHART_KINDS` the same way. Chrome codes that are **not**
+per kind (an axis-unit or period label, say) have no such registry, and for those the rule below
+applies.
+
+**Where no independent source exists, the plan and the execution plan say so plainly.** The
+reviewer supplies the expectation as a hand-checked literal rather than a test deriving it from the
+code it measures. A reviewed literal is weaker evidence than an independent registry and stronger
+than a tautology — and naming which of the three a given assertion is, is itself part of the
+evidence. **Of the assertions in this plan, exactly one — chart kinds — has a genuinely
+independent source.** The others are reviewed literals or two-sided drift checks, and are labelled
+as such.
 
 ---
 
@@ -235,20 +326,82 @@ companion plan's slice 2b. **Unifying across both surfaces is authorized by neit
 **Design:** master specification §G.1.
 **Depends on:** nothing.
 
-**Files:** `src/khepri/rra/journey/assets/journey.css` at `:82`, `:115`, `:165`, `:171`.
+**Files:** `src/khepri/rra/journey/assets/journey.css`, at the nine declarations below.
 
-**Targets, verified above:** `.75rem` → the nearest journey token; `.86rem`, `.78rem`, `.76rem` →
-`--journey-text-sm` (`0.82rem`) or `--journey-text-xs` (`0.7rem`) per §G.1's scale. The execution
-plan states the chosen mapping per line and its computed pixel delta at a 16px root, following the
-precedent already set in `journey.css:102`'s own comment and `shell.css:107-108`.
+**All nine targets, by selector and by line** — line numbers are hints, selectors are the anchors.
+**The five `font`-shorthand rows are in this slice's mandate, not deferred**; listing only the four
+`font-size` rows is how an executor leaves five raw sizes in place.
 
-**Out of scope:** `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` — a responsive expression, not a raw
-literal. `:96`, `:98`, `:106`, `:182`, `:189`, `:198` already use tokens. The two raw sizes in
-`shell-components.css:135,141` are the companion plan's.
+| # | Selector | Line | Form | Raw size | Maps to |
+|---|---|---|---|---|---|
+| 1 | `.step-nav a` | `:82` | `font-size` | `.75rem` | `--journey-text-xs` (`0.7rem`) |
+| 2 | `.contract-row label` | `:115` | `font-size` | `.86rem` | `--journey-text-sm` (`0.82rem`) |
+| 3 | `th` | `:165` | `font-size` | `.78rem` | `--journey-text-sm` (`0.82rem`) |
+| 4 | `.report-meta dt` | `:171` | `font-size` | `.76rem` | `--journey-text-sm` (`0.82rem`) |
+| 5 | `.brand` | `:78` | `font` shorthand | `.84rem` | `--journey-text-sm` (`0.82rem`) |
+| 6 | `.intake-facts dt` | `:101` | `font` shorthand | `.68rem` | `--journey-text-xs` (`0.7rem`) |
+| 7 | `.meta` | `:145` | `font` shorthand | `.76rem` | `--journey-text-sm` (`0.82rem`) |
+| 8 | `.report-meta` | `:169` | `font` shorthand | `.83rem` | `--journey-text-sm` (`0.82rem`) |
+| 9 | `.report-group h2` | `:179` | `font` shorthand | `.78rem` | `--journey-text-sm` (`0.82rem`) |
+
+The mapping follows the run `shell.css:107` already states — "`.68/.7rem` -> `--text-xs`.
+`.82/.83/.84/.86rem` -> `--text-sm`" — applied to the journey's own scale, which `FR-201` keeps
+separate from the shell's.
+
+**The shorthand rows need more care than a size swap.** `font: 700 .84rem/1 ui-monospace, monospace`
+carries weight, line-height and family in one declaration. Replacing only the size means either
+keeping the shorthand with a `var()` inside it — `font: 700 var(--journey-text-sm)/1 ui-monospace,
+monospace`, which is valid — **or** splitting it into longhand. **The execution plan picks one and
+states why**; splitting changes the cascade for any property the shorthand was resetting, so the
+`var()`-inside-shorthand form is the smaller change and the recommended default.
+
+**Two things slice 3 must not touch:**
+- `.step-nav a` also carries `min-block-size: 44px` — the **logical** property, correct as it is.
+- `:191`'s `clamp(1.75rem, 8vw, 2.15rem)` is a responsive expression, not a raw literal; flattening
+  it would change behaviour rather than tokenize it.
+
+**Out of scope:** `:72` and `:116` are `font: inherit`, which carries no size. `:96`, `:98`,
+`:106`, `:182`, `:189`, `:198` already use `var(--journey-text-*)`. The two raw sizes in
+`shell-components.css:135,141` are the companion plan's slice 2b.
+
+**Per-row deltas, computed at a 16px root.** Stated here so slice 3's execution plan starts from
+measured values rather than deriving them again; it must re-verify against the tree on the day it
+runs.
+
+| Selector | Raw → token | Delta |
+|---|---|---|
+| `.brand` | `.84rem` → `0.82rem` | +0.32px |
+| `.intake-facts dt` | `.68rem` → `0.7rem` | +0.32px |
+| `.report-meta` | `.83rem` → `0.82rem` | +0.16px |
+| `.contract-row label` | `.86rem` → `0.82rem` | +0.64px |
+| `th` | `.78rem` → `0.82rem` | +0.64px |
+| `.report-group h2` | `.78rem` → `0.82rem` | +0.64px |
+| `.step-nav a` | `.75rem` → `0.7rem` | +0.80px |
+| `.report-meta dt` | `.76rem` → `0.82rem` | +0.96px |
+| `.meta` | `.76rem` → `0.82rem` | +0.96px |
+
+**Every delta is sub-pixel at a 16px root**, the largest being 0.96px. A row whose delta the
+execution plan cannot state is a row nobody checked.
+
+**One warning the token declaration itself carries.** `journey.css:57-58` records that
+`--journey-text-xs` and `--journey-text-sm` are "a separate decision, not a rounding of the same
+one; collapsing them would restyle every paragraph in the journey, which this slice has no mandate
+for." Slice 3 maps each raw size onto the **nearer** of the two and **does not merge the tokens** —
+nine substitutions, no change to the scale itself. Two rows (`.step-nav a`, `.intake-facts dt`) go
+to `xs` and seven to `sm`; a slice that sent all nine to one token would be doing the collapse that
+comment forbids.
+
+**Mandate: all nine, or a stated deferral.** The four `font-size` declarations are slice 3's floor.
+The five `font`-shorthand sizes (tree-state finding 3) are **in the same mandate**; if an execution
+plan defers any, it names which and why in the plan, because silently excluding part of the
+population is the defect this repository keeps rediscovering.
 
 **RED shapes:**
-- No `font-size` declaration in `journey.css` carries a raw numeric literal — a scan with an
-  emptiness assertion, so it cannot pass by scanning nothing.
+- **No raw numeric type size remains in `journey.css` — scanning `font-size` declarations *and*
+  `font` shorthands**, with an emptiness assertion so it cannot pass by scanning nothing. A scan
+  worded for `font-size` alone passes green over all five shorthand sizes and would certify a
+  false claim; the scan must therefore match typographic declarations generally, and must not
+  count `font: inherit` (`:72`, `:116`), which carries no size.
 - Computed type size is unchanged beyond the stated per-line delta, asserted in a real browser at
   the supported viewports rather than by reading the stylesheet.
 - §G.1's computed contrast is re-measured, per master specification §22 — "the 0.22 margin has no
@@ -284,12 +437,26 @@ failure it hid is still in the product.
 - `lang` and `dir` are **server-computed**, never inferred in a template.
 - A chart exposes `role="img"` with `<title>` and `<desc>` from governed codes.
 
-**Extent assertion required, from an independent source.** Assert **equality plus non-empty** over
-the report and evidence surfaces, so one added later cannot ship unmeasured — a subset assertion
-hides a forgotten entry. **Do not derive the expectation from the list the tests themselves drive**;
-that is the tautology slice 6's extent table rules out. Take the expectation from the bundle's own
-render targets and the section-to-chart mapping in `src/khepri/rra/bundle.py:400-404` — `RRA-006`'s
-file, outside `RRA-015` §Scope and so not editable by any slice here.
+**Extent assertion required, and no independent source exists for it — so say so.** Assert
+**equality plus non-empty** over the report and evidence surfaces, so one added later cannot ship
+unmeasured; a subset assertion hides a forgotten entry. **Do not derive the expectation from the
+list the tests themselves drive** — that is the tautology slice 6's extent table rules out.
+
+**Do not use `SECTION_CHART_KINDS` either.** An earlier draft of this plan named
+`src/khepri/rra/bundle.py`'s section-to-chart mapping as the independent source. That is wrong in
+kind: `SECTION_CHART_KINDS` maps **five sections** (`SECTION_OVERVIEW`, `SECTION_COMPARISON`,
+`SECTION_CONCENTRATION`, `SECTION_GROWTH`, `SECTION_BASKET`) to chart kinds, while `FR-189` requires
+the floors on "the report **and evidence** surfaces". The evidence drawer and the refusal
+presentation are not sections and appear in that dict nowhere. A section roster asserted as a
+surface roster is a real signal at the wrong granularity, which is always wrong — the companion
+plan's slice 4 warns against exactly this for `SURFACE_VIEWS`, and this plan committed the error
+the companion names.
+
+**So:** the surface roster is a **reviewed literal** in the test, listing every report and evidence
+surface `FR-189` reaches, with the reviewer confirming the list against `FR-189`'s wording rather
+than against any code the slice can edit. Weaker evidence than a registry, stronger than a
+tautology — and honest about which it is. If a future artifact publishes a report-surface roster
+outside `RRA-015` §Scope, an execution plan may switch to it and say so.
 
 ---
 
@@ -342,8 +509,12 @@ reporting green.
   schedulable here.
 - Slice 11 (final polish against the pack) — §19 gates it on §16, and §16.4 records six references
   as absent. An asset dependency.
-- Slice 7 (§F contracts) — per surface, conditional on that surface's own authority. It rides
-  whichever slice touches the surface; it is not a slice of its own in this family.
+- Slice 7 (§F contracts) — **not a slice of its own, and therefore an obligation inside slices 6, 2
+  and 3 rather than a deferral.** "It rides whichever slice touches the surface" is not a discharge:
+  if no slice's RED shapes mention §F, every slice can drop §F work while pointing at the others.
+  So: **a slice that changes a surface named in master specification §F asserts that surface's §F
+  contract as part of its own evidence**, and an execution plan that finds the contract already met
+  records that rather than skipping it.
 - Any new chart kind, forecast, trend line, or refusal cause (`FR-181`, `RRA-015` §Exclusions).
 - Any telemetry event of any kind. `KHEPRI-DEC-015` §3 stands unamended.
 - The `/beta` journey-adoption reading, which remains **OWNER DECISION, not yet taken**

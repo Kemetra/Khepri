@@ -8,11 +8,18 @@
 > `superpowers:executing-plans`.
 >
 > **Companion plan:** the `RRA` half is
-> `docs/superpowers/plans/2026-09-17-u1-rra-surfaces-allocation-plan.md`. The two are separate
-> documents because `governance/templates/specification.md` admits exactly one family per
-> specification and `khepri_gov`'s `_validate_family_links` enforces it; `RRA-012` §Outcome reads
-> that rule as forbidding one artifact across two families' surfaces. **Neither plan may cite the
+> `docs/superpowers/plans/2026-09-17-u1-rra-surfaces-allocation-plan.md`.
+>
+> **Why two plans: one plan per governing specification**, following the `D1-02`–`D1-10`
+> precedent, so **no slice can cite the wrong document's §Scope for a file**. That is the whole
+> benefit, and it is a property of the plans, not of any validator. **Neither plan may cite the
 > other's authority for a file.**
+>
+> The one-family rule in `governance/templates/specification.md`, enforced by `khepri_gov`'s
+> `_validate_family_links`, is the reason **the two specifications are two** — it governs a
+> *specification*'s `depends_on` in `governance/`. It does **not** reach a plan in
+> `docs/superpowers/plans/`, which no validator checks. Stated precisely so a later agent does not
+> cargo-cult an inapplicable rule as though a plan were governed by it.
 
 **Goal:** Give the commercial shell the approved navigation and filter presentation, one skip-link
 mechanism, a state grammar in which refusal/empty/loading/error are four distinguishable screen
@@ -57,11 +64,52 @@ this plan is corrected in place.
   shared token layer across the two — the question `RRA-012` left open stays open, and answering it
   needs its own artifact naming both families' paths." **Neither this plan nor its companion is
   that artifact.**
-- **Logical CSS properties only** (`FR-199`). "The shell's stylesheets currently contain no
-  physical directional property and a slice under this document does not introduce one." `lang` and
+- **Logical CSS properties only** (`FR-199`), with one factual correction stated below. `lang` and
   `dir` "remain server-computed and are never inferred in a template"; `dir="auto"` continues to
   isolate customer-controlled mixed-script values; truncation is in character units with the full
   value retained in the DOM so the accessible name stays complete.
+
+  **`FR-199`'s premise is not true of `workspace.css`, and a slice must not act as though it
+  were.** The requirement states "the shell's stylesheets currently contain no physical directional
+  property." Verified at `e915af8`, re-verified at `30b4848`, **`workspace.css` contains two `direction: ltr` declarations**,
+  both deliberate and both pre-approved:
+
+  | Line | Selector | Why |
+  |---|---|---|
+  | `:310` | `.change-transition` | The comment at `:301` states it: the separator is a hard-coded `→`, and under RTL the row "would otherwise place the earlier value on the right of it and read as later → earlier (review on `#377`)". Only the order of the three parts is pinned |
+  | `:372` | `.decision-formula, .decision-citation` | `direction: ltr; unicode-bidi: isolate;` — ASCII identifiers |
+
+  (`:401`'s `flex-direction: column` is a flex axis, not a text direction, and is irrelevant here.)
+
+  **Consequence for slice 8.** A scan written from `FR-199`'s sentence fires on two lines a review
+  deliberately landed. The implementer then either "fixes" working code or quietly narrows the scan
+  until it proves nothing — the guard-that-disarms-itself failure. So: **slice 8's scan carves out
+  `.change-transition`, `.decision-formula` and `.decision-citation` by name**, cites `#377` for
+  the first, and any *new* `direction:` declaration outside that list is a defect. This plan defers
+  to the specification wherever the specification is factually correct; where it is not, the plan
+  records the tree and the discrepancy rather than propagating it. Whether `RCA-010` `FR-199`
+  should be corrected in place is the owner's call and is **not** a task in this plan.
+
+- **`min-height` is not a directional property, and a scan must not flag it.** `shell-components.css`
+  uses `min-height: 44px` at six places (`:50`, `:97`, `:111`, `:117`, `:183`, `:223`) and **none
+  violates `FR-199`**, which concerns the properties an RTL layout must *mirror* — as that file's
+  own header comment at `:8` puts it, "an RTL layout that mirrors correctly cannot be built from
+  `left`/`right`/`margin-left`." A block size has no direction to mirror. A scan that flags
+  `min-height` reports six defects that are not defects and invites a later slice to change working
+  code. Note the two sheets differ in idiom — `journey.css` uses `min-block-size`,
+  `shell-components.css` uses `min-height` — and **this plan does not harmonize them**; that is a
+  style question, not an `FR-199` one. Verified at `e915af8`, re-verified at `30b4848`: `shell-components.css` contains no
+  directional property at all.
+
+- **The existing physical-property scanner covers one file and misses `direction:` entirely.**
+  `tests/test_r801_shell_tokens.py:53-70` defines `_PHYSICAL` with sixteen entries — the
+  `margin-*`, `padding-*`, `border-*` sides, `text-align: left|right`, `left:` and `right:` — and
+  `:256-265` parametrizes it against `SHELL.read_text(...)` where `SHELL = _ASSETS / "shell.css"`
+  (`:21`). So **`shell-components.css` and `workspace.css` are scanned by nothing**, and
+  **`direction:` is absent from `_PHYSICAL`**, meaning even extending the scanner verbatim would
+  miss both real declarations. Slice 8's execution plan therefore states which files its widened
+  scan covers, adds `direction:` to the property list, and applies the carve-out above. Anything
+  less newly authors a guard over files that already violate it.
 - **`shell.css` stays tokens-only** (§Scope, §Verification). "The test asserting it declares no
   rules stays passing."
 - **Filters stay what `RCA-008` `FR-166` already models them as** (`FR-197`): the period is a
@@ -107,7 +155,7 @@ orchestration and persistence path in the repository.
 at `shell_controls.py:73` may be **read** by a test asserting navigation extent, and may not be
 edited by any slice in this plan.
 
-### Tree-state findings — verified 2026-09-17 at `e915af8`
+### Tree-state findings — verified 2026-09-17 at `e915af8`, re-verified at `30b4848` (`#478`)
 
 Recorded because a later slice must not re-derive them.
 
@@ -119,7 +167,7 @@ Recorded because a later slice must not re-derive them.
    `no_membership`, `unavailable`, plus the partials `_decision_cards` and `_decision_sections`.
    Navigation and accessibility extent must be derived from the shell's own destinations, **not
    from a hand-written list** (§Verification).
-7. **`legal_templates/` is in scope and is measured by nothing today.** It holds two templates —
+3. **`legal_templates/` is in scope and is measured by nothing today.** It holds two templates —
    `legal.html.j2` and `legal_page.html.j2` — and `RCA-010` §Scope admits the directory with its
    reason stated: those pages "link the shell's stylesheets and would otherwise drift from them."
    But `test_every_shell_template_is_measured` scans **only** `shell_templates/`
@@ -130,18 +178,21 @@ Recorded because a later slice must not re-derive them.
    execution plan that cannot bring a legal page to a measurable state records it as NOT EXERCISED
    rather than omitting it. Slice 8 already lists the directory; the evidence slices must match
    that reach or slice 8 hardens surfaces nothing measures.
-3. **`.skip-link` is duplicated across families**: `shell-components.css:45,56` and
+4. **`.skip-link` is duplicated across families**: `shell-components.css:45,56` and
    `journey.css:75-76`. Slice 2b takes the **shell** half. **Unifying across the two surfaces stays
    out** — `FR-201` keeps each surface's values its own, and `RRA-010:30` puts
    `shell-components.css` outside `RRA-010`.
-4. **Two raw font sizes remain in `shell-components.css`** at `:135` and `:141`, both `0.875rem`.
+5. **Two raw font sizes remain in `shell-components.css`** at `:135` and `:141`, both `0.875rem`,
+   on `.member-state` and on the `.member-role, .invitation-role` pair — team-surface labels, so
+   slice 2b's visible effect is on the Team destination and the invitation-issued page. Identify
+   them by selector as well as by line, because line numbers drift.
    `shell.css:109-128` declares the `--text-xs` … `--text-display` scale, with `--text-sm: 0.82rem`
    the nearest token. These are the "2 in `shell-components.css`" master specification §19 slice 3
    assigns to 2b's authority.
-5. **The journey and the shell carry separate type scales** — `--journey-text-*` in `journey.css:59-62`
+6. **The journey and the shell carry separate type scales** — `--journey-text-*` in `journey.css:59-62`
    versus `--text-*` in `shell.css:109-128`. `FR-201` keeps them separate; **slice 2b and the
    companion plan's slice 3 must not be merged.**
-6. **`test_r807_shell_quality.py` already ships five relevant tests**:
+7. **`test_r807_shell_quality.py` already ships five relevant tests**:
    `test_every_shell_template_is_measured`, `test_shell_surfaces_are_operable_at_every_viewport`,
    `test_every_surface_renders_in_both_languages`,
    `test_a_latin_run_inside_arabic_prose_carries_its_direction`, and
@@ -190,7 +241,22 @@ companion plan's slice 2. **Unifying across both surfaces is authorized by neith
 - Computed type size is unchanged beyond the stated per-line delta, measured in the real browser at
   the supported viewports rather than by reading the stylesheet.
 - `shell.css` still declares no rules (`test_r801_shell_tokens.py` stays passing).
-- No physical directional property is introduced (`FR-199`).
+- **`FR-201` cross-family token leak — slice 2b owns the instrument.** A scan asserting the shell
+  sheets declare no `--journey-*` custom property and `journey.css` declares no `--text-*`, each
+  with an **emptiness assertion**. Verified at `e915af8`, re-verified at `30b4848`: the two scales are separate and nothing
+  tests that they stay separate, so a slice could declare `--text-sm` in `journey.css` and no test
+  would notice. This is the instrument for the boundary both plans assert everywhere and neither
+  previously measured.
+- **`FR-206` asset policy — slice 2b owns the instrument.** A scan over the shell sheets and
+  templates asserting none of: a rule drawing artwork, an emoji or Unicode glyph standing in for an
+  icon, a pseudo-element used as artwork, an `@import`, or an external `url(...)` host — with an
+  **emptiness assertion**. Verified: no test greps the §7 prohibitions today. Unlike the `RRA`
+  side, the shell has **no** admitted programmatic-drawing exception, so the scan needs no
+  chart carve-out. It must, however, permit the two `aria-hidden` `→` change separators
+  (`analysis.html.j2:59`, `:82`) — see slice 4's glyph note.
+- No physical directional property is introduced (`FR-199`), under the Global Constraints reading
+  above — which carves out the two approved `direction: ltr` declarations and excludes
+  `min-height`.
 
 ---
 
@@ -217,16 +283,31 @@ only), `workspace.css`, `shell-components.css`.
   a tautology** that passes every mutant, so the expectation comes from something a slice here
   cannot edit:
 
-  | Subject (under test) | Independent expectation |
-  |---|---|
-  | the navigation entries rendered by `shell_templates/shell.html.j2` | the **template files on disk** in `shell_templates/`, enumerated by `importlib.resources` — the pattern `test_every_shell_template_is_measured` already uses, cross-checked against the test-side `SHELL_SURFACES` map at `tests/test_r807_shell_quality.py:63` |
-  | the destinations the shell serves | `shell_controls.SURFACE_VIEWS` (`shell_controls.py:73`), which is **outside `RCA-010` §Scope** and may be read but never edited by a slice here |
+  | Subject (under test) | Expectation | What kind of evidence this is |
+  |---|---|---|
+  | the navigation entries rendered by `shell.html.j2` | the **template files on disk** in `shell_templates/`, enumerated via `importlib.resources`, cross-checked against the test-side `SHELL_SURFACES` map (`tests/test_r807_shell_quality.py:63`) | **Two-sided drift detection, not independence.** `RCA-010` §Scope admits *both* `shell_templates/` and `tests/`, so one slice can edit both sides. It still catches forgetting *one* side, which is most real drift — but it is not tamper-proof, and calling it independent would overstate it |
+  | the destinations the shell serves | a **reviewed literal** in the test | No independent roster exists at the right granularity (below) |
 
-  Note the two are **not interchangeable**: `SURFACE_VIEWS` holds the seven *semantic views*, while
-  the navigation's destinations are shell *surfaces*. A test that conflates them asserts a real
-  signal at the wrong granularity, which is always wrong. Name which one each assertion measures.
+  **`SURFACE_VIEWS` is not the source, and the reason matters.** It is genuinely outside
+  `RCA-010` §Scope (`shell_controls.py:73`, readable by a test, never editable here) — but it holds
+  the **seven semantic views** (`EXECUTIVE_OVERVIEW`, `METRIC_AVAILABILITY`, `REPORT_EVIDENCE`,
+  `BRANCH_PERFORMANCE`, `PRODUCT_CATEGORY`, `BASKET`, `CONCENTRATION`), while the navigation's
+  destinations are shell **surfaces**. Asserting one as the other is a real signal at the wrong
+  granularity, which is always wrong. So slice 4 has **no** independent source: one candidate is
+  editable and the other is the wrong kind of thing. **State that plainly rather than presenting a
+  table as if independence were achieved.**
+
+  Across both plans, exactly **one** extent assertion has a genuinely independent source — chart
+  kinds against `GOVERNED_CHART_KINDS`. Every other is a reviewed literal or a two-sided drift
+  check, and each is now labelled as such.
 - No literal directional glyph serves as a navigation affordance, "because an arrow does not
-  mirror" (`FR-194`).
+  mirror" (`FR-194`). **Scope the scan to navigation regions, not whole templates.**
+  `analysis.html.j2:59` and `:82` render `<span class="change-arrow" aria-hidden="true">→</span>` —
+  two literal arrows that are **`FR-194`-compliant**: they are change separators inside a
+  transition row, not navigation affordances; they are `aria-hidden`; and they are the documented
+  reason `.change-transition` pins `direction: ltr` (`analysis.html.j2:75-76`,
+  `workspace.css:301`, review on `#377`). A template-wide glyph scan fires on them and sends a
+  slice to break reviewed behaviour.
 - No "coming soon" entry, no disabled control standing in for a future surface, no result count the
   governed set does not fix (`FR-193`).
 - **No route, handler, destination, or capability changed** — static scope evidence over the
@@ -247,6 +328,16 @@ only), `workspace.css`, `shell-components.css`.
 
 **Authority:** `RCA-010` `FR-202` for the shell's presentation of those states; `RCA-008` where in
 scope, and `RCA-008` `FR-163` as the model presented.
+
+**Start authorization, named explicitly because §19's list omits this slice.** Master specification
+§19 says "§18.4's authority exists, so slices **2b, 4, 6, 9, and 10** may start" — **slice 5 is not
+in that list**, and `FR-202` is a *requirement*, not a start authorization. The enabling clause is
+`RCA-010` §"What is now authorized, stated plainly": "**The shell presentation files named in
+§Scope may be changed to realize the approved design language.**" Slice 5 changes only those files
+and only their presentation, so it is schedulable under that bullet. Recorded because the
+repository's rule is to read the enabling clause rather than infer permission from a requirement —
+and because a future reader comparing this plan against §19's list will otherwise think a slice was
+smuggled in.
 **Design:** master specification §13, §F.
 **Depends on:** slice 4.
 
@@ -262,8 +353,11 @@ word." It presents states that already exist.
 - A refusal **never shares an element or a class with an error**, never carries error paint, and
   **keeps the position the answer would have occupied** (`FR-202`). Assert the **effect** on the
   real code path, not merely that an exception type is raised.
-- The two governed empty rules stay distinguishable, exactly as `RCA-008` `FR-163` requires —
-  `stated_no_rows` versus the other admitted rule.
+- The two governed empty rules stay distinguishable, exactly as `RCA-008` `FR-163` requires, and
+  **both are named**: `stated_no_rows` — "the admitted request matched nothing" — and
+  `stated_absence` — "the source published no value". `FR-163` calls them "different findings with
+  different remedies, and a surface that renders both as an empty table misstates the customer's
+  data." A plan that cannot name the second value cannot bound the assertion.
 - No new state, cause, or governed word is introduced — assert **equality plus non-empty** over the
   state set and the reason-code set. **The expectation must not come from the same table the slice
   edits**: the states and reason codes are `RCA-008`'s and `RRA-009`'s, both **outside `RCA-010`
@@ -271,9 +365,19 @@ word." It presents states that already exist.
   widening of a table this plan cannot edit then fails here rather than passing silently.
 - A governed caveat or reason that reaches no code path is a defect — sweep for **defined but never
   attached**, in both languages.
-- Motion explains change and does not advertise: no bounce, elastic easing, parallax, decorative
-  floating element, constant motion, or animated number counting; no transition is load-bearing
-  under `prefers-reduced-motion` (`FR-203`).
+- **`FR-203` motion, with a named scan.** A scan over the shell sheets asserting none of: `bounce`,
+  elastic/overshoot easing (`cubic-bezier` with a coefficient outside `[0,1]`), `parallax`, infinite
+  `animation-iteration-count`, or a counting-number animation — with an **emptiness assertion** so
+  it cannot pass by scanning nothing. Prose alone is not an instrument.
+- **`prefers-reduced-motion` must be asserted, not assumed.** Verified at `e915af8`, re-verified at `30b4848`: a
+  `prefers-reduced-motion` block exists in `journey.css:206` and `landing.css:232` but in
+  **neither** `workspace.css` nor `shell-components.css`, while `workspace.css` contains three
+  `transition`/`animation` declarations. So "no transition is load-bearing under
+  `prefers-reduced-motion`" is currently **untested on the shell**. Slice 5's execution plan states
+  which it establishes: that the three declarations are non-load-bearing and a reduced-motion block
+  is unnecessary, **or** that one must be added. Either is acceptable; assuming it is not.
+- A positional transition on a drawer or dialog is short (`FR-203`) — allocated here, and measured
+  at the same time as the drawer's full-screen-sheet behaviour in slice 8.
 
 ---
 
@@ -321,7 +425,7 @@ slice past `tests/`. An evidence slice that edits a stylesheet or a template to 
 assertion pass has left its scope, and the failure it hid is still in the product.
 
 **Surface extent includes `legal_templates/`.** `test_every_shell_template_is_measured` scans only
-`shell_templates/` (tree-state finding 7), so extending it as written would leave `legal.html.j2`
+`shell_templates/` (tree-state finding 3), so extending it as written would leave `legal.html.j2`
 and `legal_page.html.j2` unmeasured while slice 8 hardens them. Widen the scan, or add a second
 extent assertion over `legal_templates/` with its own emptiness check.
 
@@ -342,11 +446,14 @@ extent assertion over `legal_templates/` with its own emptiness check.
 
 **Extent assertion required, from an independent source.** Assert **equality plus non-empty** so a
 shell surface added later cannot ship unmeasured. Extend `test_every_shell_template_is_measured`
-rather than adding a parallel list beside it — and keep its existing shape, which is already
-independent in the right way: it enumerates the **template files on disk** and compares them
-against the test-side `SHELL_SURFACES` map plus the three exemption sets. **Do not replace that
-with a list derived from the surfaces the tests happen to drive**; that is the tautology slice 4's
-extent table rules out. Widen the scan to `legal_templates/` per the note above.
+rather than adding a parallel list beside it — and keep its existing shape, which is
+**two-sided drift detection**: it enumerates the template files on disk and compares them against
+`measured | _LAYOUT_TEMPLATES | _POST_ONLY_TEMPLATES | _PRINT_TEMPLATES`
+(`tests/test_r807_shell_quality.py:378-388`), so forgetting either side fails. That is stronger
+than a tautology and **weaker than independence** — `tests/` is in `RCA-010` §Scope, so a slice can
+edit both sides. Label it accurately; do not call it independent. **Do not replace it with a list
+derived from the surfaces the tests happen to drive**, which would be the tautology slice 4's table
+rules out. Widen the scan to `legal_templates/` per the note above.
 
 ---
 
@@ -359,7 +466,7 @@ extent table rules out. Widen the scan to `legal_templates/` per the note above.
 **Files:** `tests/` only.
 
 **Representatives are named from the full in-scope set**, which includes `legal_templates/`
-(tree-state finding 7). A representative set drawn only from `shell_templates/` leaves a directory
+(tree-state finding 3). A representative set drawn only from `shell_templates/` leaves a directory
 `RCA-010` §Scope admits, and that slice 8 hardens, outside every visual assertion.
 
 **Bounded extent, and why this is a bound rather than a blocker.** `FR-204` compares "**named
@@ -415,8 +522,13 @@ than reporting green.
 - Slice 1 (`#369` absorption) — master specification §18.3 **Blocked on the owner**.
 - Slice 11 (final polish against the pack) — gated on §16; six references absent. An asset
   dependency.
-- Slice 7 (§F contracts) — per surface, conditional on that surface's own authority; it rides
-  whichever slice touches the surface.
+- Slice 7 (§F contracts) — **not a slice of its own, and therefore an obligation inside slices 4, 5
+  and 8 rather than a deferral.** "It rides whichever slice touches the surface" is not a discharge:
+  if no slice's RED shapes mention §F, every slice can drop §F work while pointing at the others.
+  So: **a slice that changes a surface named in master specification §F asserts that surface's §F
+  contract as part of its own evidence**, and an execution plan that finds the contract already met
+  records that rather than skipping it. If the owner prefers §F deferred outright, that is a
+  one-line decision and this bullet is where it lands.
 - The `/beta` journey-adoption reading, which remains **OWNER DECISION, not yet taken**. It bears on
   the `/beta` surface alone and blocks no slice here. **No slice may act as though option A were
   chosen.**
