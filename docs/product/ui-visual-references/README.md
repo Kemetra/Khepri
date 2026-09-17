@@ -64,8 +64,10 @@ here because these images will tempt exactly that:
 **non-binding without exception**. Until an icon family passes the licence-plus-audited-digest
 process, surfaces ship **without icons rather than with invented ones**.
 
-Data-driven charts remain code-generated and follow the §8 chart grammar — but **`U1-03` is not
-authorized** (§18.2), so no chart work may begin on the strength of this pack.
+Data-driven charts remain code-generated and follow the §8 chart grammar. **`U1-03` is now
+authorized** by active `RRA-015`, which discharged §18.2's blocker — so chart work may begin, but it
+begins on the strength of **`RRA-015` §Scope and the §8 grammar**, never on the strength of this
+pack. No chart in an image here is a source of a figure, an axis value, a kind, or a label.
 
 ---
 
@@ -127,7 +129,9 @@ because no reference is manufactured merely to fill a sequence.
 - Every icon (§7.1 — no approved family).
 - Photographic Cairo/Nile imagery — permitted only as reviewed committed assets (§7.2), forbidden
   in analytical regions (§7.3).
-- Chart forms and styling — `U1-03` unauthorized (§18.2).
+- Chart forms and styling — still non-binding, for a new reason. `U1-03` is authorized by active
+  `RRA-015`, so the blocker §18.2 recorded is gone; the chart grammar an implementer follows is §8's
+  and `RRA-015`'s, and a chart drawn in an image here fixes no kind, axis, scale, or label.
 - The exact navy of the rail. §16.1 states the override does **not** reach "a dark palette (an unmade
   product decision)," and §15.12 forbids colors outside the token set. The rail is binding as
   composition; its hue awaits token work. **This is not authorization for a dark theme.**

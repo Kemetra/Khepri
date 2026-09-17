@@ -358,6 +358,15 @@ artifacts:
       - RRA-011
       - RRA-013
   - type: specification
+    id: RRA-015
+    state: active
+    document: governance/specifications/RRA-015.md
+    depends_on:
+      - RRA
+      - RRA-006
+      - RRA-009
+      - RRA-012
+  - type: specification
     id: RCA-001
     state: active
     document: governance/specifications/RCA-001.md
@@ -445,3 +454,12 @@ artifacts:
       - RRA-006
       - RRA-008
       - RRA-014
+  - type: specification
+    id: RCA-010
+    state: active
+    document: governance/specifications/RCA-010.md
+    depends_on:
+      - RCA
+      - RCA-002
+      - RCA-005
+      - RCA-008

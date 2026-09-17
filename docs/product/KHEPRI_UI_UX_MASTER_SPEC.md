@@ -555,8 +555,11 @@ that adopting the shell's is excluded. But `RRA-010:30` states that
 they sit in the journey's asset directory and are the shell's, because `shell.html.j2` is their sole
 linking template and ownership follows the linking template rather than the folder.
 
-**So `RRA-010` authorizes only the journey half.** Changing the shell's mechanism, or unifying the
-two, needs authority that names the shell stylesheet. See §19 slices 2 and 2b.
+**So `RRA-010` authorizes only the journey half.** Changing the shell's mechanism needs authority
+that names the shell stylesheet, and **active `RCA-010` §Scope now does.** Unifying the *two* into
+one shared mechanism still does not follow from that: `RCA-010` `FR-201` keeps each surface's
+presentation values its own, and a shared layer across both families' paths needs its own artifact.
+See §19 slices 2 and 2b.
 
 ---
 
@@ -609,10 +612,15 @@ Charts are generated programmatically because they are data-driven. They follow 
 
 ## 8. Data visualization grammar
 
-**Authority note: `U1-03` is not authorized.** `RRA-012` excludes "a chart grammar, a chart type, or
-any charting behavior — `U1-03` names that work and it needs its own authority" (`RRA-012:229`), and
-`RRA-012:267` names `U1-03`, `U1-05`, `U1-06`, and `U1-07` **not authorized here.** This section is
-written as specification and **may not be implemented** until successor authority exists (§18).
+**Authority note — discharged. `U1-03` is authorized by active `RRA-015`.** The blocker this note
+recorded was real and is kept as the record of what changed: `RRA-012` excludes "a chart grammar, a
+chart type, or any charting behavior — `U1-03` names that work and it needs its own authority"
+(`RRA-012:229`), and `RRA-012:267` names `U1-03`, `U1-05`, `U1-06`, and `U1-07` **not authorized
+here.** Both statements remain the accurate reading of `RRA-012` alone. `RRA-015` is the successor
+authority they call for: it names `charts.py`, `_chart.svg.j2`, the chart rules in `report.css` and
+`report.print.css`, the chart binding points in `html.py` and `wording.py`, and the focused test
+paths, and it authorizes this section as implementation. **This section may now be implemented**
+within `RRA-015` §Scope (§18).
 
 ### 8.1 Form selection
 
@@ -710,8 +718,9 @@ never authored in JavaScript.
 
 ## 11. Accessibility
 
-**Floors, not aspirations. `U1-06` accessibility evidence is not authorized (§18); these are stated
-as requirements now and asserted when authority exists.**
+**Floors, not aspirations — and now assertable. `U1-06` accessibility evidence is authorized**:
+active `RRA-015` covers the `RRA` report and evidence surfaces and active `RCA-010` the commercial
+shell surfaces; the `/beta` journey surfaces remain `RRA-010`'s, as they already were (§18).
 
 - **44px minimum target**, applied to the element a finger lands on rather than a padded wrapper, in
   both languages at every supported viewport.
@@ -951,7 +960,11 @@ drift is not acceptable.**
 
 The mechanical detector runs **once**, after the change is finished, over the changed targets.
 
-**The visual-regression half of this methodology is `U1-07` and is not authorized** (§18).
+**The visual-regression half of this methodology is `U1-07` and is now authorized** — by active
+`RRA-015` for the `RRA` report and evidence surfaces and active `RCA-010` for named representative
+shell surfaces, under each document's acceptance rule, which is this section's: hierarchy, density,
+spacing rhythm, typography, visual states, RTL, responsive behaviour, and asset fidelity, with no
+pixel-identical requirement where responsive layout legitimately adapts (§18).
 
 ---
 
@@ -968,15 +981,32 @@ Determined from `governance/registry.yaml` and the roadmap at `6cea330`.
 | Evidence drawer and metric detail (`U1-04`) | `RRA-012`, `RRA-013` active | `#352`, `#356`, `#358` |
 | Decision workspace surfaces | `RCA-008` active | `D1-02` … `D1-10`, `D1-12` |
 | Period comparison reachability | `RCA-009` active | `44d54a7` (`#470`) |
+| Chart grammar (`U1-03`) and the `RRA` report surfaces' accessibility and visual evidence | `RRA-015` active | §8, §11, §17; authority merged, implementation not started |
+| Navigation and filters (`U1-05`), shell presentation, and the shell surfaces' accessibility and visual evidence | `RCA-010` active | §D, §11, §17, §19 slice 2b; authority merged, implementation not started |
 
-### 18.2 Specification-ready but implementation-blocked
+**"Authorized" is not "implemented."** The last two rows record that a slice may now start, not
+that one has. No `U1-03`, `U1-05`, `U1-06` or `U1-07` code exists on `main`.
 
-| Item | Specified here | Blocker |
-|---|---|---|
-| Chart grammar (`U1-03`) | §8 | `RRA-012:229` excludes charting; `RRA-012:267` names `U1-03` **not** authorized; `RCA-008:161` says it needs its own authority |
-| Global navigation and filter patterns (`U1-05`) | §D | `RRA-012:267` |
-| Accessibility evidence (`U1-06`) | §11 | `RRA-012:267`; `RCA-008:161` |
-| Visual regression (`U1-07`) | §17 | `RRA-012:267`; `RCA-008:161` |
+### 18.2 Specification-ready, and no longer implementation-blocked
+
+**All four blockers this table recorded are discharged.** The predecessors' statements are unchanged
+and remain accurate readings of those documents alone; what changed is that the successor authority
+each called for now exists and is `active`. Kept in place rather than deleted, per §22.
+
+| Item | Specified here | Blocker as recorded | Discharged by |
+|---|---|---|---|
+| Chart grammar (`U1-03`) | §8 | `RRA-012:229` excludes charting; `RRA-012:267` names `U1-03` **not** authorized; `RCA-008:161` says it needs its own authority | `RRA-015` §Scope, §What is now authorized, `FR-181`–`FR-188` |
+| Global navigation and filter patterns (`U1-05`) | §D | `RRA-012:267` | `RCA-010` §Scope, `FR-193`–`FR-197` |
+| Accessibility evidence (`U1-06`) | §11 | `RRA-012:267`; `RCA-008:161` | `RRA-015` `FR-189` (report surfaces); `RCA-010` `FR-200` (shell surfaces); `RRA-010` already covers `/beta` |
+| Visual regression (`U1-07`) | §17 | `RRA-012:267`; `RCA-008:161` | `RRA-015` `FR-190`–`FR-191`; `RCA-010` `FR-204`–`FR-205` |
+
+**What stayed unauthorized, deliberately.** No new calculation, semantic view, metric, route,
+capability, persistence, schema, telemetry, or backend change; no billing, agency, connector or
+natural-language surface; no change to evidence derivation, provenance, privacy, retention,
+organization isolation, authorization, or refusal semantics; no accessibility or visual-regression
+programme over surfaces outside the two documents' Scopes; and no shared token layer across the
+shell and the journey or report surfaces, which `RRA-012` left open and `RCA-010` `FR-201` keeps
+open.
 
 ### 18.3 Blocked on the owner
 
@@ -985,19 +1015,32 @@ Determined from `governance/registry.yaml` and the roadmap at `6cea330`.
 | `RRA-010` journey-adoption reading | **OWNER DECISION, not yet taken.** Filed at `docs/superpowers/plans/2026-09-03-rra010-journey-adoption-reading.md`. It recommends no amendment; **the filing decides nothing, and no slice may act as though option A were chosen.** This document does not recommend an answer |
 | §16's override of design language §0 | Governing on merge of this document (§16.1). **Not a follow-up task** — §0 is corrected in the same change |
 | `DIRECTION_PROPOSAL` absorption | Merged `cdfa024` (`#369`), unabsorbed (§A.5 item 1) |
-| Cross-surface `.skip-link` unification | **No active authority names the shell stylesheet.** `RRA-010:30` excludes `shell.css` and `shell-components.css` by name; §19 slice 2b is blocked until owner-authored authority covers them |
+| ~~Cross-surface `.skip-link` unification~~ | **Discharged.** The gap was real: `RRA-010:30` excludes `shell.css` and `shell-components.css` by name, and no active authority named them. Active `RCA-010` §Scope is the owner-authored authority that now does, so §19 slice 2b may start. `RRA-010` keeps the journey half (slice 2) |
 
-### 18.4 Minimum authority to enable the design-system work
+### 18.4 Minimum authority to enable the design-system work — supplied
 
-**One successor specification** naming `src/khepri/rra/rendering/charts.py`,
+This section asked for **one successor specification** naming `src/khepri/rra/rendering/charts.py`,
 `rendering/templates/_chart.svg.j2`, the shell stylesheets, and the affected test paths, and
-authorizing `U1-03`, `U1-05`, `U1-06`, and `U1-07` — the four programs this document specifies and
-cannot license.
+authorizing `U1-03`, `U1-05`, `U1-06`, and `U1-07`.
+
+**It is supplied as two, and the reason is a repository rule rather than a change of plan.**
+`governance/templates/specification.md` requires a specification to "include exactly one family in
+`depends_on`", and `khepri_gov`'s `_validate_family_links` fails a specification that names zero or
+two families. `RRA-012` §Outcome reads that rule as forbidding one document across two families'
+surfaces and, on that reading, declined the shell's stylesheets and assigned them to `RCA`.
+`U1-03`'s files are `RRA` rendering paths and `U1-05`'s are the commercial shell's, so a single
+artifact would have contradicted an active specification on the day it merged. The split follows
+the boundary the repository already draws:
+
+| Artifact | Family | Carries |
+|---|---|---|
+| `RRA-015` | `RRA` | `U1-03`; the `RRA` report and evidence surfaces' share of `U1-06` and `U1-07` |
+| `RCA-010` | `RCA` | `U1-05`; shell presentation including §19 slice 2b; the shell surfaces' share of `U1-06` and `U1-07` |
 
 **No new governance programme is proposed and no governance structure is redesigned.** `U1` already
-exists in the roadmap; what it lacks is a registry entry. Standing constraint to respect: `W1`, `T1`,
-`G2`, `G3`, and `U1` have **zero registry entries** — they are roadmap programs, not registered
-authority.
+exists in the roadmap; what it lacked is a registry entry, and it now has two in existing families.
+Standing constraint to respect: `W1`, `T1`, `G2`, and `G3` have **zero registry entries** — they are
+roadmap programs, not registered authority.
 
 ---
 
@@ -1010,19 +1053,21 @@ ship** and are not reopened.
 |---|---|---|---|
 | 1 | Absorb `#369` into the design language | Docs | **§0's visual-authority correction is already discharged by this document's own change (§16.1); what remains of slice 1 is absorbing the merged proposal, which is a separate defect (§A.5 item 1)** |
 | 2 | Unify the `.skip-link` mechanism on the **journey** side | `RRA-010` active — §73 authorizes "one skip-link mechanism" | Journey half only (§G.2) |
-| 2b | Unify the **shell** side, or unify across both surfaces | **BLOCKED — no active authority** | `RRA-010:30`: `shell.css` and `shell-components.css` are "**outside this scope**". Needs authority naming the shell stylesheet |
-| 3 | Collapse remaining raw font sizes onto the type scale — **journey only** (4 in `journey.css`) | `RRA-010` active | The 2 in `shell-components.css` are outside it (`RRA-010:30`) and ride slice 2b's authority |
-| 4 | Navigation and filter patterns | **`U1-05` — blocked** | §18.2 |
-| 5 | State grammar: the §13 matrix as components | `RCA-008` where in scope | Otherwise blocked |
-| 6 | Chart grammar | **`U1-03` — blocked** | §8 |
+| 2b | Unify the **shell** side, or unify across both surfaces | `RCA-010` active | `RRA-010:30` keeps `shell.css` and `shell-components.css` "**outside this scope**"; `RCA-010` §Scope names them. Unifying *across* both surfaces stays out: `RCA-010` `FR-201` keeps each surface's values its own |
+| 3 | Collapse remaining raw font sizes onto the type scale — **journey only** (4 in `journey.css`) | `RRA-010` active | The 2 in `shell-components.css` are outside it (`RRA-010:30`) and ride slice 2b's authority, which is now `RCA-010` |
+| 4 | Navigation and filter patterns | `RCA-010` active (`U1-05`) | §18.2; `FR-193`–`FR-197` |
+| 5 | State grammar: the §13 matrix as components | `RCA-008` where in scope; `RCA-010` `FR-202` for the shell's presentation of those states | Neither adds a state, a cause, or a governed word |
+| 6 | Chart grammar | `RRA-015` active (`U1-03`) | §8; `FR-181`–`FR-188` |
 | 7 | Apply §F contracts to shipped surfaces | Per surface | Incremental |
-| 8 | RTL and responsive hardening | `RRA-010` partial | §9, §10 |
-| 9 | Accessibility evidence | **`U1-06` — blocked** | §11 |
-| 10 | Visual regression | **`U1-07` — blocked** | §17 |
+| 8 | RTL and responsive hardening | `RRA-010` for `/beta`; `RCA-010` for the shell | §9, §10; `RCA-010` `FR-198`–`FR-199` closes the shell half `RRA-010` could not reach |
+| 9 | Accessibility evidence | `RRA-015` / `RCA-010` active (`U1-06`) | §11; `RRA-015` `FR-189`, `RCA-010` `FR-200` |
+| 10 | Visual regression | `RRA-015` / `RCA-010` active (`U1-07`) | §17; `RRA-015` `FR-190`–`FR-191`, `RCA-010` `FR-204`–`FR-205` |
 | 11 | Final polish against the reference pack | After §16 is approved | §17 |
 
-**Slices 4, 6, 9, and 10 cannot start until §18.4's authority exists.** No slice is implemented by
-this document.
+**§18.4's authority exists, so slices 2b, 4, 6, 9, and 10 may start.** Each takes its scope from
+`RRA-015` or `RCA-010` and from no other document, and stays inside that document's §Scope. No slice
+is implemented by this document, and none is implemented by either successor — they are permission
+to implement, not implementation.
 
 ---
 
@@ -1038,7 +1083,7 @@ Could a competent frontend engineer implement Khepri from this specification wit
 | Component behavior? | No | §G.2 |
 | Error and refusal behavior? | No | §13, §F |
 | SVG and image rules? | No | §7 |
-| Chart behavior? | No — blocked, not unspecified | §8 |
+| Chart behavior? | No — and no longer blocked (`RRA-015`) | §8 |
 | RTL behavior? | No | §9 |
 | Accessibility behavior? | No | §11 |
 | Visual acceptance rules? | **Partly — pending the §16 pack** | §16.0, §16.3, §17 |
