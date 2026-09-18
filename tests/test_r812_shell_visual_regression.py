@@ -215,8 +215,15 @@ def test_the_body_typeface_is_the_shell_token_not_a_browser_default(surface: str
     `shell.css` declares `--font-body`, and before `shell-components.css` applied it to `body`
     every shell and legal page rendered in the browser's default serif -- measured by this slice
     as `"Times New Roman"`. The assertion reads the **declared** list rather than the resolved
-    face, so it is stable across platforms: the Noto face itself loads from `/beta/assets/`, which
-    the shell does not serve, and the cascade falls through to the sans fallbacks by design.
+    face, so it is stable across platforms and across whichever families a host has installed.
+
+    **This test is not font-load evidence, and was never able to be.** It builds the page with
+    `set_content` plus `add_style_tag`, so there is no HTTP origin for a relative `url()` in an
+    `@font-face` to resolve against and no face is ever fetched here. Since `RCA-011` the shell
+    serves its own Noto Sans Arabic from `/app/assets/` rather than the journey's `/beta/assets/`;
+    that the browser really requests and loads it is proven from a real origin in
+    `test_rca011_shell_font_load.py`. What this case still proves is that the governed chain
+    reaches `body`, which is exactly what `#489` found missing.
     """
     from playwright.sync_api import sync_playwright
 

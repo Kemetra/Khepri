@@ -51,6 +51,13 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.contracts import RUN_COMPLETED
 from khepri.rra.journey.security import SECURITY_HEADERS
+from khepri.rra.rendering.fonts import (
+    ARABIC_FILE,
+    FONT_DIRECTORY,
+    FONT_MEDIA_TYPE,
+    FONT_PACKAGE,
+    LATIN_FILE,
+)
 from khepri.runtime.shell_analysis import (
     RunRecord,
     availability_key,
@@ -93,20 +100,34 @@ SHELL_ASSETS = f"{SHELL_PREFIX}/assets"
 
 _DEFAULT_LANGUAGE = "en"
 
-#: What the shell serves, by exact name, and the package and directory each is read from.
-#: `shell.css` and `shell-components.css` ship from `R8-01` and `R8-07` beside the journey's
+_STYLESHEET = "text/css; charset=utf-8"
+
+#: What the shell serves, by exact name, and the package, directory and media type each is read
+#: from. `shell.css` and `shell-components.css` ship from `R8-01` and `R8-07` beside the journey's
 #: assets and are read from there rather than copied, because two copies of a stylesheet are two
 #: things to keep in step and `test_r801_shell_tokens.py` asserts against the original.
 #: `workspace.css` is `W1-05`'s and lives here, in the runtime package: `RCA-005` names
 #: `src/khepri/rra/journey/` as not in its scope, so a slice under it may not write into that tree
-#: (review on `#373`). Every entry is a stylesheet; the allowlist is a `dict` rather than a
-#: directory listing so a file dropped into either package is not served by arriving.
+#: (review on `#373`). The allowlist is a `dict` rather than a directory listing so a file dropped
+#: into any of these packages is not served by arriving.
+#:
+#: **The two typefaces are `RCA-011` `FR-207`.** They are read from `khepri.rra.rendering`'s
+#: `typefaces/` rather than copied here, for the same reason the stylesheets are: `rendering/
+#: fonts.py` verifies those exact bytes against the repository's SHA-256 manifest, and a second
+#: copy would be a face nothing checks. Naming them here moves the *asset* into the shell's
+#: ownership, which is what `FR-208` requires -- it does not let a shell stylesheet reach for the
+#: journey's `/beta/assets/` address, and `FR-201` is unrelaxed.
+#:
+#: Each entry carries its own media type because a `.woff2` served as `text/css` is not served.
+#: `FR-211`: naming a face here adds no capability -- the route below stays one read of a named
+#: file, answering the same way for every caller, with no authorization path and no access record.
 _ASSETS = {
-    "shell.css": ("khepri.rra.journey", "assets"),
-    "shell-components.css": ("khepri.rra.journey", "assets"),
-    "workspace.css": ("khepri.runtime", "shell_assets"),
+    "shell.css": ("khepri.rra.journey", "assets", _STYLESHEET),
+    "shell-components.css": ("khepri.rra.journey", "assets", _STYLESHEET),
+    "workspace.css": ("khepri.runtime", "shell_assets", _STYLESHEET),
+    ARABIC_FILE: (FONT_PACKAGE, FONT_DIRECTORY, FONT_MEDIA_TYPE),
+    LATIN_FILE: (FONT_PACKAGE, FONT_DIRECTORY, FONT_MEDIA_TYPE),
 }
-_STYLESHEET = "text/css; charset=utf-8"
 
 
 class ActorResolver(Protocol):
@@ -870,11 +891,11 @@ def add_shell_routes(
             return _unavailable(
                 environment, language=_DEFAULT_LANGUAGE, language_switch=False
             )
-        package, directory = home
+        package, directory, media_type = home
         content = files(package).joinpath(directory, name).read_bytes()
         return Response(
             content=content,
-            media_type=_STYLESHEET,
+            media_type=media_type,
             headers=dict(SECURITY_HEADERS),
         )
 

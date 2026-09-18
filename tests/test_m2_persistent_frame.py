@@ -745,6 +745,15 @@ class TestTheBetaJourneyIsUntouched:
         could not do, and a list that drifts is how the single-filename version came to
         under-cover.
 
+        **Two match rules, chosen by the entry's own media type rather than by a hand-list.**
+        `RCA-011` added the two Noto Sans Arabic subsets to the allowlist, and the journey has
+        always served files of the *same name* from its own `/beta/assets/`. A bare-name scan
+        therefore reports the journey referencing its own font as a shell leak. Stylesheets keep
+        the bare-name rule -- unchanged, and still the thing that catches `/beta/assets/shell.css`
+        on a journey page -- while a typeface is matched by the shell's address. Splitting on
+        `media_type` rather than on a list of filenames keeps this guard from naming its own
+        scope, which is how a scan reproduces the drift it was written to catch.
+
         **Markup alone is not the boundary.** Two ways a shell asset could load while the HTML
         named only journey-owned files: the response could be an error page that mentions no asset
         at all, and the journey's own stylesheet could pull one in transitively. So the page is
@@ -756,7 +765,7 @@ class TestTheBetaJourneyIsUntouched:
         assertion, which this in-process frame test is the wrong place for; no journey script
         constructs a stylesheet link today.
         """
-        from khepri.runtime.shell_api import _ASSETS
+        from khepri.runtime.shell_api import _ASSETS, _STYLESHEET, SHELL_ASSETS
         from tests.test_rra_journey_api import client
 
         assert _ASSETS, "the shell serves no assets; this guard would assert nothing"
@@ -774,9 +783,23 @@ class TestTheBetaJourneyIsUntouched:
         )
         assert "@import" not in stylesheet, "an @import can pull in an asset the markup never names"
 
-        for asset in _ASSETS:
-            assert asset not in html, f"{asset} reached /beta/{language}/{step}"
-            assert asset not in stylesheet, f"journey.css references {asset}"
+        for asset, (_package, _directory, media_type) in _ASSETS.items():
+            # A stylesheet is matched by BARE NAME, which is what closed the original hole: a
+            # journey template linking `/beta/assets/shell.css` -- the journey's own address for a
+            # file that is the shell's -- must fail, and an address-scoped scan would pass it.
+            if media_type == _STYLESHEET:
+                assert asset not in html, f"{asset} reached /beta/{language}/{step}"
+                assert asset not in stylesheet, f"journey.css references {asset}"
+                continue
+
+            # A typeface is matched by ADDRESS, because `RCA-011` put the two Noto subsets in this
+            # allowlist and the journey has always served files of the same NAME from its own
+            # `/beta/assets/`. Both surfaces now serve the same bytes from their own addresses,
+            # which is the intended end state -- so the boundary this guard defends is the shell's
+            # address appearing on a journey page, not the filename being shared.
+            address = f"{SHELL_ASSETS}/{asset}"
+            assert address not in html, f"{address} reached /beta/{language}/{step}"
+            assert address not in stylesheet, f"journey.css references {address}"
 
 
 class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
