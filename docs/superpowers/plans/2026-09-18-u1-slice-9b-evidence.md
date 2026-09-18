@@ -15,11 +15,11 @@
 
 ---
 
-## The three open findings, stated before the passes
+## The three findings, stated before the passes
 
 An evidence slice that reports only what passed has hidden what it could not measure. All three
-are carried to the owner. Findings 1 and 2 are not closable inside `tests/`; Finding 3 is a real
-product defect whose fix belongs to the slice owning `shell-components.css`.
+are carried to the owner. Findings 1 and 2 are not closable inside `tests/`; Finding 3 was a real
+product defect, and the slice owning `shell-components.css` has since fixed it.
 
 ### Finding 1 — `FR-200`'s computed-contrast floor does not run in CI
 
@@ -68,6 +68,11 @@ when the floor becomes live and the pin should go.
 does not arise on these fixtures.
 
 ### Finding 3 — 200% text overflows three surfaces at 390px (`shell-components.css`)
+
+> **CLOSED.** Fixed by the follow-on slice this finding called for — `overflow-wrap:
+> break-word` on `.document-card`. See
+> `docs/superpowers/plans/2026-09-18-shell-components-scaling-overflow-evidence.md`.
+> The account below is left as written, because it is the record of what this slice found.
 
 **This one IS a product defect**, and the only one this slice found. `FR-200` requires text to
 scale "to 200% without loss of content or function". At the 390px viewport, in **English only**:
