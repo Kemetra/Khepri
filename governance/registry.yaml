@@ -245,6 +245,13 @@ artifacts:
       - FND
       - FND-002
   - type: specification
+    id: FND-004
+    state: active
+    document: governance/specifications/FND-004.md
+    depends_on:
+      - FND
+      - FND-001
+  - type: specification
     id: RRA-001
     state: active
     document: governance/specifications/RRA-001.md
