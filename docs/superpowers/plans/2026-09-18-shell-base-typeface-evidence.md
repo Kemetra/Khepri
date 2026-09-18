@@ -65,7 +65,7 @@ one surface over:
 
 The overflowing element is `span.member-identity` — a member's email address:
 
-```
+```text
 member-identity width: 304px (serif, fits a 308px box)  ->  338px (sans, overflows)
 ```
 
