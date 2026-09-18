@@ -34,8 +34,12 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from khepri.rca.semantic_queries import ports
 from khepri.rca.workspace.decision import card, seam
+from khepri.rra.semantic_views import contracts
+from khepri.runtime import shell_decisions
 from tests import d105_support as support
 
 #: `FR-202`'s four states, as a **reviewed literal**, because no constant enumerates
@@ -86,18 +90,24 @@ def _admitted_surface() -> dict[str, ports.ViewOutcome]:
             (support.STATED, support.UNSTATED), support.UNSTATED_ABSENCES
         ),
         seam.BRANCH_PERFORMANCE.view_id: support.breakdown(
-            seam.BRANCH_PERFORMANCE, support.BRANCH_FIELDS, (("branch", "revenue", "1", "done"),)
+            seam.BRANCH_PERFORMANCE,
+            support.BRANCH_FIELDS,
+            (("store-a", "revenue_by_store", "700.00", "complete"),),
         ),
         seam.PRODUCT_CATEGORY.view_id: support.breakdown(
-            seam.PRODUCT_CATEGORY, support.PRODUCT_FIELDS, (("cat", "revenue", "1", "done"),)
+            seam.PRODUCT_CATEGORY,
+            support.PRODUCT_FIELDS,
+            (("category", "drinks", "revenue_by_category", "120.00", "complete"),),
         ),
         seam.BASKET.view_id: support.breakdown(
-            seam.BASKET, support.BASKET_FIELDS, (("basket_attach_rate", "0.25", "done", ()),)
+            seam.BASKET,
+            support.BASKET_FIELDS,
+            (("basket_attach_rate", "0.25", "complete", ()),),
         ),
         seam.CONCENTRATION.view_id: support.breakdown(
             seam.CONCENTRATION,
             support.CONCENTRATION_FIELDS,
-            (("product", "concentration_top_decile_share", "0.60", "done"),),
+            (("product", "concentration_top_decile_share", "0.60", "complete"),),
         ),
     }
 
@@ -194,3 +204,131 @@ def test_the_shell_state_classes_are_mutually_exclusive() -> None:
             assert classes is not None
             found = [token for token in classes.group(1).split() if _ERROR_TOKEN.search(token)]
             assert found == [], f"the refusal carries an error-shaped class {found} in {language}"
+
+
+def _section_markup(body: str, section: str) -> str:
+    """One `<section data-section="...">` subtree, so a sentence can be located in it."""
+    match = re.search(
+        r'<section[^>]*data-section="' + re.escape(section) + r'".*?</section>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert match is not None, f"the {section} section did not render"
+    return match.group(0)
+
+
+def test_the_two_governed_empty_rules_reach_the_shell_from_an_independent_source() -> None:
+    """`FR-163`: the shell's empty wording covers exactly the governed rules, no more.
+
+    **The expectation is `contracts.EMPTY_RULES`** (`khepri/rra/semantic_views`), which
+    is `SV1`/`RRA`'s and sits outside `RCA-010` §Scope, so this slice can read it and
+    cannot edit it. A third rule invented there fails here; a rule renamed there is an
+    import error rather than a silent pass.
+
+    **Distinct from `test_d105_decision_sections.py:272`**, which derives the same
+    extent from `seam.py`. This asserts that the `RRA` registry and the shell's wording
+    agree -- which nothing checks today. Two modules deriving from two sources is the
+    point; deriving both from one would be the tautology this repository keeps finding.
+
+    Equality and non-empty, never a subset: a subset assertion "only ever weakens" and
+    cannot see a rule **added**.
+    """
+    assert contracts.EMPTY_RULES, "an empty rule set would satisfy any subset claim"
+    for language in ("en", "ar"):
+        wording = shell_decisions.EMPTY_WORDING[language]
+        assert set(wording) == set(contracts.EMPTY_RULES), (
+            f"{language} wording covers {sorted(wording)}, "
+            f"governed rules are {sorted(contracts.EMPTY_RULES)}"
+        )
+        assert all(sentence.strip() for sentence in wording.values()), (
+            f"{language} carries a blank governed sentence"
+        )
+
+
+def test_the_two_empty_rules_render_as_two_sentences_on_the_breakdown_sections() -> None:
+    """`FR-163` on the **sections** path, which is the half that is correct.
+
+    Extends `test_d105_decision_sections.py:142` rather than duplicating it: that test
+    asserts both sentences reach one English page. This adds **Arabic**, and adds the
+    stronger claim that each sentence appears **only in the section whose rule it is** --
+    a page rendering both sentences everywhere would satisfy the weaker check while
+    telling every reader both things about every section.
+
+    `BRANCH_PERFORMANCE` is `stated_no_rows` and `BASKET` is `stated_absence`
+    (`seam.py`), and those rules are read from the views rather than written out here.
+    """
+    outcomes = _admitted_surface()
+    outcomes[seam.BRANCH_PERFORMANCE.view_id] = support.breakdown(
+        seam.BRANCH_PERFORMANCE, support.BRANCH_FIELDS, (), is_empty=True
+    )
+    outcomes[seam.BASKET.view_id] = support.breakdown(
+        seam.BASKET, support.BASKET_FIELDS, (), is_empty=True
+    )
+
+    for language in ("en", "ar"):
+        body = _rendered(outcomes, language)
+        wording = shell_decisions.EMPTY_WORDING[language]
+        no_rows = wording[seam.EMPTY_STATED_NO_ROWS]
+        absence = wording[seam.EMPTY_STATED_ABSENCE]
+        assert no_rows != absence, f"the two governed rules share a sentence in {language}"
+
+        branches = _section_markup(body, shell_decisions.SECTION_BRANCHES)
+        basket = _section_markup(body, shell_decisions.SECTION_BASKET)
+        assert no_rows in branches, f"branches ({seam.BRANCH_PERFORMANCE.empty_rule}) in {language}"
+        assert absence not in branches, f"branches states the other rule's sentence in {language}"
+        assert absence in basket, f"basket ({seam.BASKET.empty_rule}) in {language}"
+        assert no_rows not in basket, f"basket states the other rule's sentence in {language}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "The cards path discards the governed empty rule at the view-model boundary. "
+        "`_DecisionView.empty` is a `bool` (`shell_decisions.py:494`, "
+        "`empty=reading.empty_rule is not None`) and `_decision_cards.html.j2:26` renders "
+        "the fixed chrome sentence `decision.no_rows`. "
+        "`ExecutiveOverviewView.empty_rule` is `EMPTY_STATED_ABSENCE` (`seam.py:86`, applied "
+        "at `card.py:255`), so the surface states NEITHER governed sentence -- not the "
+        "wrong one of the two, but a third, non-governed sentence. `FR-163` is violated "
+        "there. Every fix needs `shell_decisions.py`, a `src/khepri/runtime/*.py` module "
+        "explicitly outside `RCA-010` §Scope, and a second sentence in `shell_copy.py` is "
+        "barred twice (chrome labels only; this slice adds no governed word). "
+        "OWNER: an `RCA-008` slice -- `RCA-008` owns both `FR-163` and the module."
+    ),
+)
+def test_the_cards_path_states_its_governed_empty_rule() -> None:
+    """`FR-163` on the **cards** path, asserted as it SHOULD be, not as it is.
+
+    **A strict xfail, deliberately, and not a pin on today's output.** A test pinned to
+    the pre-fix behaviour dies as scaffolding: the successor slice that fixes the defect
+    reads its failure as a regression rather than as the signal it is. So this asserts
+    the correct behaviour and marks it expected-to-fail.
+
+    `strict=True` is the load-bearing part. Today it fails and is reported `xfailed`.
+    When the `RCA-008` slice lands the fix it passes, and `strict=True` turns that XPASS
+    into a **failure**, telling the successor to delete the marker rather than leaving a
+    dead test behind. That hooks the surviving seam instead of the defect.
+
+    Deliberately does **not** also assert that today's wrong sentence is present -- that
+    assertion would be the scaffolding this shape exists to avoid.
+    """
+    outcomes = _admitted_surface()
+    outcomes[seam.EXECUTIVE_OVERVIEW.view_id] = ports.ViewOutcome(
+        kind=ports.KIND_ADMITTED,
+        projection=ports.ViewProjection(
+            view_id=seam.EXECUTIVE_OVERVIEW.view_id,
+            view_version=seam.EXECUTIVE_OVERVIEW.view_version,
+            fields=support.OVERVIEW_FIELDS,
+            rows=(),
+            is_empty=True,
+        ),
+        effective=ports.EffectiveRequest(dimensions=("period",)),
+    )
+
+    for language in ("en", "ar"):
+        body = _rendered(outcomes, language)
+        expected = shell_decisions.EMPTY_WORDING[language][seam.EXECUTIVE_OVERVIEW.empty_rule]
+        assert expected in body, (
+            f"the cards path did not state its governed rule "
+            f"({seam.EXECUTIVE_OVERVIEW.empty_rule}) in {language}"
+        )
