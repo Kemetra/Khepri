@@ -71,6 +71,15 @@
   padding: var(--space-4, 1rem);
   border: 1px solid var(--line);
   background: var(--surface);
+  /* `FR-200`: text scales to 200% without loss of content or function. The padding here and on
+   * `.shell-main` is in `rem`, so it doubles with the text and the card's content box narrows
+   * -- at 390px a 244px box has to hold a 345px word. `break-word` lets a word that cannot fit
+   * break rather than push the page wider, and inherits to the headings and prose inside.
+   *
+   * `break-word` rather than `anywhere`: both clear all three surfaces, and this one leaves
+   * intrinsic sizing alone. It changes nothing at 100% -- verified across all ten surfaces in
+   * both languages -- because it only acts on a word that would otherwise overflow. */
+  overflow-wrap: break-word;
 }
 
 .lede {
