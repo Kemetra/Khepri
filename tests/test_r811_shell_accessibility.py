@@ -136,3 +136,59 @@ def test_every_surface_has_exactly_one_main_landmark(surface: str, language: str
     """`FR-200`: semantic landmarks. One `main` is what the skip link targets."""
     found = _parse(_html(surface, language)).found
     assert len([tag for tag, _ in found if tag == "main"]) == 1
+
+
+class _Controls(HTMLParser):
+    """Tracks whether each labellable control is inside a `<label>` or carries an explicit name."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.depth = 0
+        self.controls: list[dict[str, str | bool | None]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "label":
+            self.depth += 1
+        if tag in {"input", "select", "textarea"}:
+            if values.get("type") in {"hidden", "submit", "button"}:
+                return
+            self.controls.append(
+                {
+                    "wrapped": self.depth > 0,
+                    "id": values.get("id"),
+                    "aria-label": values.get("aria-label"),
+                    "aria-labelledby": values.get("aria-labelledby"),
+                }
+            )
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "label":
+            self.depth = max(0, self.depth - 1)
+
+
+def _controls(html: str) -> list[dict[str, str | bool | None]]:
+    parser = _Controls()
+    parser.feed(html)
+    return parser.controls
+
+
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_every_control_has_a_label_that_is_not_its_placeholder(surface: str, language: str) -> None:
+    """`FR-200`: a placeholder is a value hint and disappears on input; it is never the label.
+
+    `decision`'s three filter inputs carry `placeholder="Any"` and are each wrapped in a
+    `<label>` with visible text -- so the placeholder describes the *default*, not the field.
+    This asserts the wrapping label is what names them, which is the part that could regress.
+    """
+    html = _html(surface, language)
+    for control in _controls(html):
+        identifier = control["id"]
+        named = (
+            control["wrapped"]
+            or control["aria-label"]
+            or control["aria-labelledby"]
+            or (identifier is not None and f'for="{identifier}"' in html)
+        )
+        assert named, f"{surface}/{language}: a control is named only by its placeholder"
