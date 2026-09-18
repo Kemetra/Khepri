@@ -12,7 +12,8 @@ surface carrying two is proving something else.
   governed rules of `FR-163`, on **both** render paths.
 - **Unavailable** (`FR-165`, content-free) -- `.decision-unavailable` and
   `.decision-evidence-unavailable`. Asserted for mutual exclusivity.
-- **Loading** -- **none, and none can occur.** The invariant is asserted, not the state.
+- **Loading** -- **none ships, by choice.** The surfaces are server-rendered whole and
+  the shell carries no script at all. The invariant is asserted, not the state.
 - **Error** -- **none; no error class exists anywhere on the shell.** The absence is
   asserted, not the state.
 
@@ -554,12 +555,26 @@ _LOADING_MARKERS = (
 def test_no_shell_surface_carries_a_loading_affordance() -> None:
     """`FR-202`'s loading state is not presented, because it **cannot occur**.
 
-    The structural reason, not just the fact: every shell surface is server-rendered
-    whole, the shipped `default-src 'none'` CSP forbids the script a client-side
-    loading affordance would need, and `FR-206` forbids weakening that policy. A state
-    that cannot occur is not a state to present, and driving one would be a run that
-    can only produce the null case -- NOT EXERCISED, not PASS. So the **invariant** is
-    asserted in its place.
+    The reason is **choice, not prohibition** -- and an earlier form of this docstring
+    got that wrong. It claimed the shipped `default-src 'none'` CSP "forbids the script
+    a client-side loading affordance would need". **It does not.** The policy is
+    `default-src 'none'; script-src 'self'; style-src 'self'; ...`
+    (`rra/journey/security.py`), which the shell imports rather than restates, and
+    `script-src 'self'` explicitly **permits** same-origin script -- `default-src` is
+    only the fallback for directives not otherwise named. The journey ships five `.js`
+    files under that identical policy.
+
+    What is true, and is what this guard holds: every shell surface is server-rendered
+    whole and the commercial shell ships **no script at all**, by choice. A loading
+    affordance would be the first, and it would have to be argued for rather than
+    slipped in. `FR-206` forbids weakening the policy, which remains true and is simply
+    not what makes this invariant hold.
+
+    Stating it correctly matters because a guard resting on a false reason invites the
+    next author to "fix" the CSP when the CSP was never the constraint.
+    `test_r810_shell_responsive_rtl.py`'s
+    `test_the_shell_ships_no_script_by_choice_not_by_policy` asserts the policy still
+    permits script, so this correction cannot silently rot back.
 
     A later slice that ships a decorative spinner naming no stage fails here, which is
     what master specification §F.4 forbids even on the journey's own processing surface.
