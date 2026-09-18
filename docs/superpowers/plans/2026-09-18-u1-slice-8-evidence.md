@@ -9,7 +9,7 @@ before any test was written.
 
 ---
 
-## `FR-198` is asserted in CI by nothing, and that decided the module's shape
+## `FR-198`'s LAYOUT half is asserted in CI by nothing, and that decided the module's shape
 
 The repository marks browser cases `@pytest.mark.browser`, whose own description reads "skipped when
 it is not installed". CI (`.github/workflows/governance.yml:87`) runs `uv run pytest` with **no
@@ -21,8 +21,12 @@ $ pytest tests/test_r807_shell_quality.py -m browser -rs
 ```
 
 So the pre-existing overflow assertion — `document.documentElement.scrollWidth <= innerWidth`, which
-is `FR-198`'s central claim — **has never executed in CI**. Adding more browser-only assertions would
-have added more guards that never run.
+is `FR-198`'s central **layout** claim — **has never executed in CI**. Adding more browser-only
+assertions would have added more guards that never run.
+
+**To be exact about the scope of that gap:** it is the layout half only. `FR-198`'s other
+obligations — the table, chart and drawer-shape absences — are static and this slice asserts them
+without a browser, so they do run in CI, including on the runner that skips everything else here.
 
 **Consequence for this slice, and it is structural, not cosmetic.** As much of `FR-198`/`FR-199` as
 possible is asserted **without a browser**: the three absences, the stylesheet scan, `lang`/`dir`,
@@ -140,6 +144,48 @@ availability hoisted out of the card         expect=FAIL got=FAIL OK
 == FR-199 parity ==
 the evidence drawer in English only          expect=FAIL got=FAIL OK
 a RENDERING .empty-state in English only     expect=FAIL got=FAIL OK
+```
+
+### Review round: four findings, all four real
+
+CodeRabbit found four defects in the first push. Each was verified against the tree before acting,
+and each turned out to be a genuine gap rather than a style preference.
+
+| Finding | Verified how | Fix |
+|---|---|---|
+| The evidence heading claimed nothing asserts `FR-198` in CI | Read against this document's own lines 27-30: the table, chart and drawer guards are static and **do** run in CI | Heading restricted to the **layout** half |
+| Raw regex scans read one serialization | `<TABLE>` slipped a case-sensitive `<table\b`; `class='chart'` slipped a double-quoted pattern; **`data-href=` matched a bare `href=` substring**, counting a non-link as an action | All tag/class/attribute checks moved onto `html.parser` |
+| The `direction` carve-out was substring containment | `.change-transition, .new { direction: rtl }` passed — `.new` rode the exemption, and no check bound the value to `ltr` | Every selector **part** must be named, and the value must be `ltr` |
+| Trust-state adjacency accepted any card ancestor | An availability in a card carrying no figure would have passed | The closest card must hold **exactly one** `.decision-value` |
+
+The `data-href` one is the sharpest: a parity comparison built on that count could have balanced a
+real anchor in one language against a `data-href` carrier in the other and reported parity where
+none existed. No shell template uses `data-href` today, so the defect was latent — which is
+precisely the kind a guard is supposed to catch before it is not.
+
+**No production markup was changed to satisfy the fourth finding.** CodeRabbit proposed adding a
+stable card or figure identifier; each card already carries exactly one `.decision-value`, so
+asserting that count is the same pairing claim and needs no authority this slice does not have.
+
+Mutants added with the fixes, each of which **passed before them**:
+
+```text
+uppercase <TABLE> on data.html.j2            expect=FAIL got=FAIL OK
+single-quoted chart class                    expect=FAIL got=FAIL OK
+uppercase <SCRIPT>                           expect=FAIL got=FAIL OK
+grouped selector rides the carve-out         expect=FAIL got=FAIL OK
+an exempt selector declares rtl              expect=FAIL got=FAIL OK
+the figure removed from the card             expect=FAIL got=FAIL OK
+a second figure in the card                  expect=FAIL got=FAIL OK
+```
+
+And directly, on the helpers:
+
+```text
+data-href counted as action: (1, 0)          # was (2, 0)
+uppercase <TABLE> seen      : ['table']
+single-quoted chart class   : {'chart', 'x'}
+uppercase CLASS attribute   : {'chart'}
 ```
 
 ### Three of the first mutants were no-ops, and catching that is why they are run

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import re
+from html.parser import HTMLParser
 from importlib.resources import files
 from pathlib import Path
 
@@ -156,6 +157,53 @@ def _shell_css() -> str:
     )
 
 
+class _Elements(HTMLParser):
+    """Every element as `(tag, attrs)`, with tag and attribute names normalized.
+
+    **A parser rather than a regex, and the difference is not cosmetic.** A raw scan
+    over template source reads one serialization of the markup: `<TABLE>` slips past a
+    case-sensitive `<table\\b`, `class='chart'` past a double-quoted pattern, and
+    `data-href=` matches a bare `href=` substring so an element that is not a link
+    counts as an action. `HTMLParser` normalizes tag and attribute names to lowercase
+    and hands back attributes as keys, so each guard asks its real question.
+
+    Jinja control tags (`{% ... %}`) and expressions are text or attribute values to the
+    parser, so template source parses without pre-rendering it.
+    """
+
+    def __init__(self) -> None:
+        """Start with no elements collected."""
+        super().__init__(convert_charrefs=True)
+        self.elements: list[tuple[str, dict[str, str | None]]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Record a start tag and its attributes."""
+        self.elements.append((tag, dict(attrs)))
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Record a self-closing tag, which `handle_starttag` does not see."""
+        self.elements.append((tag, dict(attrs)))
+
+
+def _elements(markup: str) -> list[tuple[str, dict[str, str | None]]]:
+    """Parse markup into `(tag, attrs)` pairs, tag and attribute names lowercased."""
+    parser = _Elements()
+    parser.feed(markup)
+    parser.close()
+    return parser.elements
+
+
+def _classes_of(attrs: dict[str, str | None]) -> set[str]:
+    """The element's class attribute as a set of lowercased tokens."""
+    return set((attrs.get("class") or "").lower().split())
+
+
+def _tags_named(markup: str, *names: str) -> list[str]:
+    """Every tag in `names` this markup carries, parser-normalized."""
+    wanted = {name.lower() for name in names}
+    return [tag for tag, _attrs in _elements(markup) if tag in wanted]
+
+
 def test_no_shell_surface_renders_a_table() -> None:
     """`FR-198`'s table degradation has no subject on this shell, asserted rather than assumed.
 
@@ -167,7 +215,7 @@ def test_no_shell_surface_renders_a_table() -> None:
     **NOT EXERCISED, not PASS.** The day a table arrives on a shell surface it arrives against
     this guard, which says the degradation is now owed and must be built.
     """
-    offenders = [name for name, source in _templates() if re.search(r"<table\b", source)]
+    offenders = [name for name, source in _templates() if _tags_named(source, "table")]
     assert offenders == [], (
         f"a table reached a shell surface, so FR-198's scroll degradation is now owed: {offenders}"
     )
@@ -187,7 +235,8 @@ def test_no_shell_surface_renders_a_chart() -> None:
     offenders = [
         name
         for name, source in _templates()
-        if re.search(r"<svg\b|<canvas\b", source) or 'class="chart' in source
+        if _tags_named(source, "svg", "canvas")
+        or any("chart" in _classes_of(attrs) for _tag, attrs in _elements(source))
     ]
     assert offenders == [], (
         f"a chart reached a shell surface, so FR-198's chart degradation is now owed: {offenders}"
@@ -213,10 +262,13 @@ def test_the_drawer_stays_a_native_disclosure_needing_no_focus_trap() -> None:
     ]
     assert drawers, "no drawer found, so this guard proves nothing"
     for name, source in drawers:
-        assert re.search(r"<details[^>]*class=\"decision-drawer\"", source), (
-            f"{name}: the drawer is no longer a native <details> disclosure"
+        carriers = [
+            tag for tag, attrs in _elements(source) if "decision-drawer" in _classes_of(attrs)
+        ]
+        assert carriers and set(carriers) == {"details"}, (
+            f"{name}: the drawer is no longer a native <details> disclosure: {carriers}"
         )
-        assert "<summary" in source, f"{name}: the drawer lost its <summary> control"
+        assert _tags_named(source, "summary"), f"{name}: the drawer lost its <summary> control"
 
 
 def test_the_shell_ships_no_script_by_choice_not_by_policy() -> None:
@@ -236,7 +288,7 @@ def test_the_shell_ships_no_script_by_choice_not_by_policy() -> None:
     assert "script-src 'self'" in SECURITY_HEADERS["Content-Security-Policy"], (
         "the policy no longer permits same-origin script, so this test's premise has changed"
     )
-    offenders = [name for name, source in _templates() if re.search(r"<script\b", source)]
+    offenders = [name for name, source in _templates() if _tags_named(source, "script")]
     assert offenders == [], f"a script reached a shell surface: {offenders}"
 
 
@@ -275,15 +327,26 @@ def test_only_the_reviewed_direction_declarations_ship() -> None:
     found = []
     for name, css in _sheet_sources():
         for match in re.finditer(r"([^{}]*)\{([^{}]*)\}", css):
-            if re.search(r"(?:[{;]\s*)direction\s*:", "{" + match.group(2)):
-                found.append((name, match.group(1).strip()))
+            values = re.findall(r"(?:[{;]\s*)direction\s*:\s*([a-z-]+)", "{" + match.group(2))
+            if values:
+                found.append((name, match.group(1).strip(), values))
 
     assert found, "no direction declaration found at all, so the carve-out proves nothing"
-    unreviewed = [
-        f"{name}: {selector!r}"
-        for name, selector in found
-        if not any(exempt in selector for exempt in _DIRECTION_EXEMPT)
-    ]
+
+    unreviewed = []
+    for name, selector, values in found:
+        # **Every part of a grouped selector must be named.** Substring containment on
+        # the whole selector lets `.change-transition, .new` carry `.new` in on the
+        # exemption -- the carve-out becoming a hole, which is the failure this guard
+        # exists to prevent.
+        parts = [part.strip() for part in selector.split(",") if part.strip()]
+        if not all(any(exempt in part for exempt in _DIRECTION_EXEMPT) for part in parts):
+            unreviewed.append(f"{name}: {selector!r} is not the reviewed set")
+        # And the exemption is for `ltr` specifically: `#377` landed an LTR run of
+        # digits inside Arabic prose, which is not a licence for any direction at all.
+        if any(value != "ltr" for value in values):
+            unreviewed.append(f"{name}: {selector!r} declares direction {values}, not ltr")
+
     assert unreviewed == [], (
         f"a direction declaration ships that review #377 did not land: {unreviewed}"
     )
@@ -404,12 +467,22 @@ def test_the_trust_state_stays_adjacent_to_its_figure(width: int) -> None:
             page = browser.new_page(viewport={"width": width, "height": 900})
             page.set_content(markup, wait_until="domcontentloaded")
             page.add_style_tag(content=css)
+            # Paired with the figure, not merely inside some card. Each card carries
+            # exactly one `.decision-value`, so "the closest card holds one figure" is
+            # the pairing -- and it needs no identifier added to production markup,
+            # which this slice has no authority to change.
             qualified = page.evaluate(
-                "Array.from(document.querySelectorAll('.decision-availability'))"
-                ".map(s => s.closest('.decision-card') !== null)"
+                "Array.from(document.querySelectorAll('.decision-availability')).map(s => {"
+                "  const card = s.closest('.decision-card');"
+                "  return card === null"
+                "    ? 0"
+                "    : card.querySelectorAll('.decision-value').length;"
+                "})"
             )
             assert qualified, f"no trust state rendered at {width}px, so this proves nothing"
-            assert all(qualified), f"a trust state left its figure's card at {width}px"
+            assert all(count == 1 for count in qualified), (
+                f"a trust state is not paired with exactly one figure at {width}px: {qualified}"
+            )
         finally:
             browser.close()
 
@@ -434,19 +507,25 @@ _PARITY_CLASSES = (
 
 
 def _class_census(markup: str) -> dict[str, int]:
-    """How many elements carry each parity-bearing class."""
-    return {
-        name: len(re.findall(r'class="[^"]*\b' + re.escape(name) + r'\b', markup))
-        for name in _PARITY_CLASSES
-    }
+    """How many elements carry each parity-bearing class, by parsed class token.
+
+    Tokenized rather than substring-matched, so `class='decision-empty'` and a
+    differently cased attribute are counted the same as the shipped spelling.
+    """
+    carried = [_classes_of(attrs) for _tag, attrs in _elements(markup)]
+    return {name: sum(name in classes for classes in carried) for name in _PARITY_CLASSES}
 
 
 def _action_census(markup: str) -> tuple[int, int]:
-    """How many actions the surface offers: anchors with an address, and buttons."""
-    return (
-        len([anchor for anchor in re.findall(r"<a\b[^>]*>", markup) if "href=" in anchor]),
-        len(re.findall(r"<button\b", markup)),
-    )
+    """How many actions the surface offers: anchors with an address, and buttons.
+
+    **`href` is read as a parsed attribute, never as a substring.** `data-href=`
+    contains the text `href=`, so a substring test counts an element that is not a link
+    at all -- and a parity comparison built on that count could balance a real anchor in
+    one language against a `data-href` carrier in the other.
+    """
+    anchors = [attrs for tag, attrs in _elements(markup) if tag == "a" and "href" in attrs]
+    return (len(anchors), len(_tags_named(markup, "button")))
 
 
 @pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
