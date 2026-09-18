@@ -46,6 +46,12 @@ This is `#486` **Finding 1** again, unchanged and still not closable here: `.git
 
 ### Finding 3 — the shell declares no base `font-family`
 
+> **CLOSED.** Fixed by the follow-on slice this finding called for — `body { font-family:
+> var(--font-body) }` in `shell-components.css`. See
+> `docs/superpowers/plans/2026-09-18-shell-base-typeface-evidence.md`. Applying the real
+> typeface then exposed a latent `FR-200` defect: a member email overflowed `team` at 200%,
+> which `#487`'s `break-word` could not break. The account below stays as written.
+
 `FR-204` names **typography** as a comparison dimension. Measured on `overview`, body text resolves
 to `"Times New Roman"` — the browser default. No sheet sets a family on `body` or `:root`;
 `workspace.css` uses `var(--font-mono, monospace)` and `var(--font-sans, inherit)` in seven places,
