@@ -143,38 +143,89 @@ def test_every_surface_has_exactly_one_main_landmark(surface: str, language: str
 
 
 class _Controls(HTMLParser):
-    """Tracks whether each labellable control is inside a `<label>` or carries an explicit name."""
+    """Resolves each labellable control's accessible NAME, not merely its association.
+
+    Association is not a name. A control inside an **empty** `<label>` is associated with nothing
+    a person can read, and an `aria-labelledby` naming a missing or empty element resolves to no
+    name at all. So this records the text of every open `<label>` and of every element carrying an
+    `id`, and the floor below requires the resolved name to be non-empty.
+    """
+
+    _LABELLABLE = frozenset({"input", "select", "textarea"})
+    _UNLABELLED_TYPES = frozenset({"hidden", "submit", "button"})
 
     def __init__(self) -> None:
         super().__init__()
-        self.depth = 0
-        self.controls: list[dict[str, str | bool | None]] = []
+        self._labels: list[list[str]] = []
+        self._ids: list[tuple[str, list[str]]] = []
+        self.controls: list[dict[str, object]] = []
+        #: Text by element `id`, so an `aria-labelledby` reference can be resolved.
+        self.text_by_id: dict[str, str] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
+        if (identifier := values.get("id")) is not None:
+            self._ids.append((identifier, []))
         if tag == "label":
-            self.depth += 1
-        if tag in {"input", "select", "textarea"}:
-            if values.get("type") in {"hidden", "submit", "button"}:
-                return
+            self._labels.append([])
+        if tag in self._LABELLABLE and values.get("type") not in self._UNLABELLED_TYPES:
             self.controls.append(
                 {
-                    "wrapped": self.depth > 0,
+                    # The list object itself, so text appended after this tag still counts.
+                    "label_texts": list(self._labels),
+                    "aria-label": (values.get("aria-label") or "").strip(),
+                    "aria-labelledby": (values.get("aria-labelledby") or "").strip(),
                     "id": values.get("id"),
-                    "aria-label": values.get("aria-label"),
-                    "aria-labelledby": values.get("aria-labelledby"),
                 }
             )
 
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_data(self, data: str) -> None:
+        if not (text := data.strip()):
+            return
+        for bucket in self._labels:
+            bucket.append(text)
+        for _, bucket in self._ids:
+            bucket.append(text)
+
     def handle_endtag(self, tag: str) -> None:
-        if tag == "label":
-            self.depth = max(0, self.depth - 1)
+        if tag == "label" and self._labels:
+            self._labels.pop()
+        if self._ids:
+            identifier, bucket = self._ids.pop()
+            self.text_by_id.setdefault(identifier, " ".join(bucket).strip())
 
 
-def _controls(html: str) -> list[dict[str, str | bool | None]]:
+def _controls(html: str) -> tuple[list[dict[str, object]], dict[str, str]]:
     parser = _Controls()
     parser.feed(html)
-    return parser.controls
+    return parser.controls, parser.text_by_id
+
+
+def _accessible_name(control: dict[str, object], text_by_id: dict[str, str], html: str) -> str:
+    """The name a screen reader would announce, or `""` when every mechanism resolves empty."""
+    if name := str(control["aria-label"]):
+        return name
+    if referenced := str(control["aria-labelledby"]):
+        resolved = " ".join(text_by_id.get(token, "") for token in referenced.split()).strip()
+        if resolved:
+            return resolved
+    wrapping = " ".join(" ".join(texts) for texts in control["label_texts"]).strip()  # type: ignore[arg-type]
+    if wrapping:
+        return wrapping
+    identifier = control["id"]
+    if identifier is not None and f'for="{identifier}"' in html:
+        # The `for` target's own text, not the mere presence of the attribute.
+        return text_by_id.get(str(identifier), "") or _label_text_for(html, str(identifier))
+    return ""
+
+
+def _label_text_for(html: str, identifier: str) -> str:
+    """The text inside `<label for="...">`, which is a sibling rather than an ancestor."""
+    match = re.search(rf'<label[^>]*for="{re.escape(identifier)}"[^>]*>(.*?)</label>', html, re.S)
+    return re.sub(r"<[^>]+>", "", match.group(1)).strip() if match else ""
 
 
 @pytest.mark.parametrize("language", ["en", "ar"])
@@ -184,18 +235,16 @@ def test_every_control_has_a_label_that_is_not_its_placeholder(surface: str, lan
 
     `decision`'s three filter inputs carry `placeholder="Any"` and are each wrapped in a
     `<label>` with visible text -- so the placeholder describes the *default*, not the field.
-    This asserts the wrapping label is what names them, which is the part that could regress.
+
+    The floor is the resolved **name**, not the association: a control inside an empty `<label>`,
+    or carrying an `aria-labelledby` that resolves to nothing, is named by its placeholder alone
+    even though every association check passes.
     """
     html = _html(surface, language)
-    for control in _controls(html):
-        identifier = control["id"]
-        named = (
-            control["wrapped"]
-            or control["aria-label"]
-            or control["aria-labelledby"]
-            or (identifier is not None and f'for="{identifier}"' in html)
-        )
-        assert named, f"{surface}/{language}: a control is named only by its placeholder"
+    controls, text_by_id = _controls(html)
+    for control in controls:
+        name = _accessible_name(control, text_by_id, html)
+        assert name, f"{surface}/{language}: a control resolves to no accessible name"
 
 
 def _pinned_chromium() -> str | None:
@@ -288,6 +337,27 @@ _CONTRAST = """
 """
 
 
+#: The three cases where 200% text overflows the 390px viewport today -- an OPEN `FR-200` finding
+#: against `shell-components.css`, recorded rather than fixed.
+#:
+#: `.shell-main` (`:36`) and `.document-card` (`:68`) keep their padding at 200%, leaving the `h1`
+#: a 244px box for a 345px word run. English only: `"Comparison"` is a single unbreakable token,
+#: while every Arabic heading has shorter words and passes at the same width. The fix belongs to
+#: the slice that owns that sheet -- an evidence slice editing a stylesheet to make its own
+#: assertion pass would leave the defect in the product.
+#:
+#: Listed case by case, so this fails BOTH if a fourth surface starts overflowing and if one of
+#: these three is fixed. A blanket `xfail` would mark all 40 cases and hide both directions.
+_SCALING_OVERFLOW = frozenset({("compare", "en", 390), ("no_membership", "en", 390),
+                               ("switcher", "en", 390)})
+
+
+#: The two supported viewports, the pair the pre-existing `r807` browser case already measures.
+#: `FR-200` requires its floors "at the supported viewports", plural, so every browser floor below
+#: runs across this matrix rather than picking one width per floor.
+_VIEWPORTS = ((1180, 900), (390, 844))
+
+
 def _assert_contrast(measured: list[dict[str, float | str]], where: str) -> None:
     """Every measured node clears its floor, and something was measured at all."""
     assert measured, f"{where}: no text measured, so this proves nothing"
@@ -298,82 +368,117 @@ def _assert_contrast(measured: list[dict[str, float | str]], where: str) -> None
 
 
 @pytest.mark.browser
+@pytest.mark.parametrize("viewport", _VIEWPORTS)
 @pytest.mark.parametrize("language", ["en", "ar"])
 @pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
-def test_text_contrast_is_computed_and_meets_its_floor(surface: str, language: str) -> None:
-    """`FR-200` §Verification: contrast **computed** in the real browser, not asserted."""
-    from playwright.sync_api import sync_playwright
+def test_text_contrast_is_computed_and_meets_its_floor(
+    surface: str, language: str, viewport: tuple[int, int]
+) -> None:
+    """`FR-200` §Verification: contrast **computed** in the real browser, not asserted.
 
-    with sync_playwright() as playwright:
-        browser = _launch_chromium(playwright)
-        try:
-            page = browser.new_page(viewport={"width": 1180, "height": 900})
-            page.set_content(_html(surface, language), wait_until="domcontentloaded")
-            page.add_style_tag(content=_shell_css())
-            _assert_contrast(page.evaluate(_CONTRAST), f"{surface}/{language}")
-        finally:
-            browser.close()
-
-
-@pytest.mark.browser
-@pytest.mark.parametrize("language", ["en", "ar"])
-@pytest.mark.parametrize("page_name", ["about-us", "contact-us"])
-def test_legal_text_contrast_is_computed_and_meets_its_floor(page_name: str, language: str) -> None:
-    """One published page and one unpublished, so the non-null case is provably reached."""
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as playwright:
-        browser = _launch_chromium(playwright)
-        try:
-            page = browser.new_page(viewport={"width": 1180, "height": 900})
-            page.set_content(_legal_html(page_name, language), wait_until="domcontentloaded")
-            page.add_style_tag(content=_legal_css())
-            _assert_contrast(page.evaluate(_CONTRAST), f"{page_name}/{language}")
-        finally:
-            browser.close()
-
-
-@pytest.mark.browser
-@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
-def test_text_scales_to_two_hundred_percent_without_losing_content(surface: str) -> None:
-    """`FR-200`: 200% text loses neither content nor function."""
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as playwright:
-        browser = _launch_chromium(playwright)
-        try:
-            page = browser.new_page(viewport={"width": 1180, "height": 900})
-            page.set_content(_html(surface, "en"), wait_until="domcontentloaded")
-            page.add_style_tag(content=_shell_css())
-            before = page.evaluate("document.body.innerText.trim().length")
-            page.add_style_tag(content="html { font-size: 200% !important; }")
-            after = page.evaluate("document.body.innerText.trim().length")
-            assert after >= before, f"{surface}: text was lost at 200%"
-        finally:
-            browser.close()
-
-
-@pytest.mark.browser
-@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
-def test_a_pointer_target_is_measured_on_the_element_it_lands_on(surface: str) -> None:
-    """`FR-200`: at least 44px **on the element a pointer lands on**, not on an ancestor.
-
-    The existing `r807` case measures the same floor at two viewports; this one measures the
-    narrow viewport only and exists to state the "element a pointer lands on" half explicitly,
-    which is the part an ancestor-based measurement would hide.
+    Across both viewports: a narrow layout can reflow text onto a different background, so a
+    ratio measured only at 1180 does not establish the floor at 390.
     """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
         browser = _launch_chromium(playwright)
         try:
-            page = browser.new_page(viewport={"width": 390, "height": 844})
-            page.set_content(_html(surface, "en"), wait_until="domcontentloaded")
+            page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
+            page.set_content(_html(surface, language), wait_until="domcontentloaded")
             page.add_style_tag(content=_shell_css())
-            for locator in page.locator("a:visible, button:visible, select:visible").all():
+            _assert_contrast(page.evaluate(_CONTRAST), f"{surface}/{language}@{viewport[0]}")
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("viewport", _VIEWPORTS)
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("page_name", ["about-us", "contact-us"])
+def test_legal_text_contrast_is_computed_and_meets_its_floor(
+    page_name: str, language: str, viewport: tuple[int, int]
+) -> None:
+    """One published page and one unpublished, so the non-null case is provably reached."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
+            page.set_content(_legal_html(page_name, language), wait_until="domcontentloaded")
+            page.add_style_tag(content=_legal_css())
+            _assert_contrast(page.evaluate(_CONTRAST), f"{page_name}/{language}@{viewport[0]}")
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("viewport", _VIEWPORTS)
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_text_scales_to_two_hundred_percent_without_losing_content(
+    surface: str, language: str, viewport: tuple[int, int]
+) -> None:
+    """`FR-200`: 200% text loses neither content nor function.
+
+    Text length alone is not enough: CSS can clip content or push it off-screen while
+    `innerText` is unchanged. So this also asserts no page-level horizontal overflow appears,
+    which is how lost *function* actually presents.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
+            page.set_content(_html(surface, language), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            before = page.evaluate("document.body.innerText.trim().length")
+            page.add_style_tag(content="html { font-size: 200% !important; }")
+            after = page.evaluate("document.body.innerText.trim().length")
+            assert after >= before, f"{surface}/{language}@{viewport[0]}: text was lost at 200%"
+            fits = page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+            if (surface, language, viewport[0]) in _SCALING_OVERFLOW:
+                assert not fits, (
+                    f"{surface}/{language}@{viewport[0]} now fits at 200%: the "
+                    "`shell-components.css` finding is fixed, so remove it from _SCALING_OVERFLOW"
+                )
+            else:
+                assert fits, (
+                    f"{surface}/{language}@{viewport[0]}: 200% text introduced horizontal overflow"
+                )
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("viewport", _VIEWPORTS)
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_a_pointer_target_is_measured_on_the_element_it_lands_on(
+    surface: str, language: str, viewport: tuple[int, int]
+) -> None:
+    """`FR-200`: at least 44px **on the element a pointer lands on**, not on an ancestor.
+
+    States the "element a pointer lands on" half explicitly, which an ancestor-based measurement
+    would hide, and includes `input` -- a text field is a pointer target like any other.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
+            page.set_content(_html(surface, language), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            controls = "a:visible, button:visible, select:visible, input:visible"
+            for locator in page.locator(controls).all():
                 box = locator.bounding_box()
                 assert box is not None
-                assert box["height"] >= 44, f"{surface}: a target is {box['height']}px tall"
+                assert box["height"] >= 44, (
+                    f"{surface}/{language}@{viewport[0]}: a target is {box['height']}px tall"
+                )
         finally:
             browser.close()
 
