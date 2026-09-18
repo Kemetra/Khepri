@@ -404,6 +404,31 @@ def test_every_shell_template_is_measured() -> None:
     )
 
 
+#: `legal_page.html.j2` extends this, so it is never a surface of its own.
+_LEGAL_LAYOUT_TEMPLATES = {"legal.html.j2"}
+
+
+def test_every_legal_template_is_measured() -> None:
+    """`legal_templates/` is in `RCA-010` §Scope; the scan above reaches `shell_templates/` only.
+
+    Two-sided drift detection, the same shape as the assertion above: the files on disk are
+    compared against the measured set union the layouts, so forgetting either side fails. It is
+    **not independent** -- `tests/` is in the same §Scope, so a slice can edit both sides. It is
+    stronger than a tautology and weaker than independence, and is labelled as exactly that.
+
+    One template serves six pages, so this asserts template extent, not page extent. Page extent
+    is `test_the_legal_roster_matches_the_served_inventory` in `test_r811_shell_accessibility.py`.
+    """
+    templates = {
+        entry.name
+        for entry in files("khepri.runtime").joinpath("legal_templates").iterdir()
+        if entry.name.endswith(".html.j2")
+    }
+
+    assert templates, "no legal templates found, so this test proves nothing"
+    assert templates == {"legal_page.html.j2"} | _LEGAL_LAYOUT_TEMPLATES
+
+
 @pytest.mark.browser
 @pytest.mark.parametrize("viewport", [(1180, 900), (390, 844)])
 @pytest.mark.parametrize("language", ["en", "ar"])
