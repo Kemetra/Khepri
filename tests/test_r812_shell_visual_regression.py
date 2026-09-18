@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 #: The reference pack. Its own README states the rule this module enforces: "Visual composition is
 #: evidence. Generated product facts are not."
 _PACK = Path(__file__).resolve().parents[1] / "docs" / "product" / "ui-visual-references"
@@ -105,4 +107,101 @@ def test_the_refusal_reference_is_recorded_as_unreachable_not_covered() -> None:
     )
     assert rendering == [], (
         f"{rendering} now render a refusal: add §16.4 #9 to _REPRESENTATIVES and delete this test"
+    )
+
+
+#: Read in the page, so every value is what the browser resolved rather than what a sheet declares.
+#: One dict per surface, keyed by `FR-204`'s dimension names, so a failure says *which* of the
+#: eight drifted rather than only that something moved -- the property a pixel digest cannot have.
+_PROBE = """
+(() => {
+  const card = document.querySelector('.document-card');
+  const cardStyle = card ? getComputedStyle(card) : null;
+  return {
+    hierarchy: {
+      h1: document.querySelectorAll('h1').length,
+      h2: document.querySelectorAll('h2').length,
+      landmarks: document.querySelectorAll('nav, main, header').length,
+    },
+    density: {
+      cards: document.querySelectorAll('.document-card').length,
+      actions: document.querySelectorAll('a, button').length,
+    },
+    spacing_rhythm: cardStyle ? {
+      padding: cardStyle.paddingTop,
+      gap: cardStyle.marginBlockEnd,
+    } : null,
+    rtl: {
+      dir: document.documentElement.getAttribute('dir'),
+    },
+  };
+})()
+"""
+
+
+def _measure(surface: str, language: str) -> dict[str, object]:
+    """One surface's measured dimensions, in a real browser at the wide viewport."""
+    from playwright.sync_api import sync_playwright
+
+    from tests.test_r807_shell_quality import _html
+    from tests.test_r811_shell_accessibility import _launch_chromium, _shell_css
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(_html(surface, language), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            return page.evaluate(_PROBE)
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("surface", sorted(_REPRESENTATIVES))
+def test_the_measured_dimensions_are_deterministic_across_two_runs(surface: str) -> None:
+    """`FR-204` §Verification: the evidence is reproducible and deterministic across two runs.
+
+    This is the property that makes measurement usable as evidence at all. It is asserted rather
+    than assumed, because a measurement that varied between runs would report drift that is not
+    there and hide drift that is.
+    """
+    first = _measure(surface, "en")
+    assert first["hierarchy"], f"{surface}: nothing measured, so this proves nothing"
+    assert first == _measure(surface, "en"), f"{surface}: the measurement is not deterministic"
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("surface", sorted(_REPRESENTATIVES))
+def test_the_spacing_rhythm_comes_from_the_token_scale(surface: str) -> None:
+    """`FR-204` spacing rhythm: the card's padding and gap sit on the 4px rhythm.
+
+    Asserted against the rhythm the token scale declares, never against a value read out of a
+    reference image -- which `FR-205` forbids and which would make the picture the source.
+    """
+    measured = _measure(surface, "en")["spacing_rhythm"]
+    assert measured is not None, f"{surface}: no card measured, so this proves nothing"
+    for name, value in measured.items():
+        pixels = float(str(value).removesuffix("px"))
+        assert pixels % 4 == 0, f"{surface}: spacing_rhythm {name} is {value}, off the 4px rhythm"
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("surface", sorted(_REPRESENTATIVES))
+def test_the_right_to_left_rendering_mirrors_rather_than_reflows(surface: str) -> None:
+    """`FR-204` RTL: Arabic is the same page mirrored, not a different composition.
+
+    Hierarchy and density are language-invariant by construction -- the same template renders
+    both -- so a divergence here is a real visual-language drift rather than a translation
+    artifact. This is the dimension §16.4 covers outright (#10).
+    """
+    english, arabic = _measure(surface, "en"), _measure(surface, "ar")
+    assert english["rtl"]["dir"] == "ltr", f"{surface}: English is not ltr"
+    assert arabic["rtl"]["dir"] == "rtl", f"{surface}: Arabic is not rtl"
+    assert english["hierarchy"] == arabic["hierarchy"], (
+        f"{surface}: hierarchy differs by language -- "
+        f"{english['hierarchy']} vs {arabic['hierarchy']}"
+    )
+    assert english["density"] == arabic["density"], (
+        f"{surface}: density differs by language -- {english['density']} vs {arabic['density']}"
     )
