@@ -30,8 +30,18 @@
     </li>
     {% endfor %}
   </ul>
+  {#
+    `role="status"`, not `role="alert"`. Master specification §13 classes an
+    analytical refusal as "**Governed, not error**", and `role="alert"` is an
+    *assertive* live region -- the role the journey reserves for its **transport
+    error** (`test_rra_journey_accessibility.py:64`), while the journey's own
+    refusal is `role="status"` (`:67`, recorded by name in §F.3). Polite is the
+    correct grammar for a result the reader is entitled to, and it aligns the two
+    families' semantics without sharing a class, a token or a sheet, so `FR-201`
+    is untouched.
+  #}
   {% if view.refusal %}
-  <p class="compare-refusal">{{ view.refusal }}</p>
+  <p class="compare-refusal" role="status">{{ view.refusal }}</p>
   {% else %}
   {#
     The three surfaces are handoffs, as every Analyses artifact is. The shell's policy is
