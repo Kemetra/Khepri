@@ -33,6 +33,7 @@ what each surface *contracts to show* are different subjects.
 from __future__ import annotations
 
 import re
+from importlib.resources import files
 
 import pytest
 
@@ -41,6 +42,7 @@ from khepri.rca.workspace.decision import card, seam
 from khepri.rra.semantic_views import contracts
 from khepri.runtime import shell_decisions
 from tests import d105_support as support
+from tests.test_r807_shell_quality import _selector_parts, _without_comments
 
 #: `FR-202`'s four states, as a **reviewed literal**, because no constant enumerates
 #: them: `FR-202` names them in prose and the repository holds no enum, table or
@@ -332,3 +334,161 @@ def test_the_cards_path_states_its_governed_empty_rule() -> None:
             f"the cards path did not state its governed rule "
             f"({seam.EXECUTIVE_OVERVIEW.empty_rule}) in {language}"
         )
+
+
+#: Every class the shell uses to mark a governed screen state, across both partials,
+#: the decision and compare surfaces, and the four workspace surfaces. Wider than
+#: `_STATE_CLASSES`, which is only the three that can share one page.
+_ALL_STATE_CLASSES = (
+    "decision-refusal",
+    "decision-unsupported",
+    "compare-refusal",
+    "decision-empty",
+    "decision-unavailable",
+    "decision-absence",
+    "decision-evidence-absent",
+    "decision-evidence-unavailable",
+    "empty-state",
+)
+
+#: The `--danger` family, which paints a destructive action and never a screen state.
+_DANGER_TOKENS = ("--danger", "--danger-border", "--danger-surface", "--danger-ink")
+
+#: `.invitation-warning` (`shell-components.css:158`, `color: var(--danger)`) is a
+#: warning on a **destructive action**, not a screen state, so it is carved out by
+#: name. Without the carve-out the scan reports a defect that is not one, and the next
+#: slice narrows the scan until it proves nothing -- the guard-that-disarms-itself
+#: failure this repository has already paid for once.
+_DANGER_EXEMPT = ("invitation-warning",)
+
+#: The shell's three stylesheets, as `(package, path parts)` -- the same set and the
+#: same link order `test_r807_shell_quality.py:404-430` injects into the browser.
+_SHELL_SHEETS = (
+    ("khepri.rra.journey", ("assets", "shell.css")),
+    ("khepri.rra.journey", ("assets", "shell-components.css")),
+    ("khepri.runtime", ("shell_assets", "workspace.css")),
+)
+
+#: Both template directories `RCA-010` §Scope admits. `legal_templates/` is included
+#: deliberately: `test_every_shell_template_is_measured` scans only `shell_templates/`,
+#: so the legal pages are reached by no extent assertion -- slice 2b's recorded lesson.
+_TEMPLATE_PACKAGES = (("khepri.runtime", "shell_templates"), ("khepri.runtime", "legal_templates"))
+
+
+def _sheet_sources() -> list[tuple[str, str]]:
+    """Each shell sheet as `(name, comment-stripped text)`, each proven non-empty."""
+    sources = []
+    for package, parts in _SHELL_SHEETS:
+        name = parts[-1]
+        text = files(package).joinpath(*parts).read_text(encoding="utf-8")
+        assert text.strip(), f"{name} is empty, so this scan proves nothing"
+        sources.append((name, _without_comments(text, name)))
+    assert len(sources) == len(_SHELL_SHEETS)
+    return sources
+
+
+def _rules(css: str) -> list[tuple[str, str]]:
+    """Every `(selector, declaration block)` pair in a comment-stripped sheet."""
+    return [
+        (match.group(1).strip(), match.group(2))
+        for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", css)
+    ]
+
+
+def _templates() -> list[tuple[str, str]]:
+    """Every template in both admitted directories, as `(name, source)`."""
+    found = []
+    for package, directory in _TEMPLATE_PACKAGES:
+        for entry in files(package).joinpath(directory).iterdir():
+            if entry.name.endswith(".html.j2"):
+                text = entry.read_text(encoding="utf-8")
+                assert text.strip(), f"{entry.name} is empty, so this scan proves nothing"
+                found.append((f"{directory}/{entry.name}", text))
+    assert found, "no templates found, so this scan proves nothing"
+    return found
+
+
+def test_no_shell_state_rule_carries_error_paint() -> None:
+    """`FR-202`: a governed state "never carries error paint".
+
+    **Holds today by ABSENCE, and that is the fragile part.** No shell sheet carries a
+    rule for `.decision-refusal`, `.decision-empty`, `.decision-unavailable` or
+    `.compare-refusal` at all; the only state rule that exists is
+    `.empty-state { color: var(--muted) }`. A refusal is unpainted body text. So this
+    guard is what stops the first such rule arriving painted.
+
+    Comments are stripped with the **shared** `_without_comments()` rather than a local
+    stripper: slice 2b's evidence records that a second stripper without the
+    string-literal guard reopens the hole where `content: "/*"` blinds the scan.
+    """
+    sources = _sheet_sources()
+    all_rules = [
+        (name, selector, block)
+        for name, css in sources
+        for selector, block in _rules(css)
+    ]
+    assert all_rules, "no rules parsed from any shell sheet, so this test proves nothing"
+
+    # **Asserted over every rule, not only the rules naming a state class** -- and that
+    # is what makes the `.invitation-warning` carve-out load-bearing rather than
+    # decorative. Scoped to state-class selectors, the exemption would never be
+    # reached, because `.invitation-warning` names no state: it would be a
+    # defined-but-never-attached shape in a guard written to catch exactly that.
+    # Scoped to every rule, the exemption is the one thing standing between the scan
+    # and a false positive, and the invariant is stronger: the `--danger` family
+    # reaches ONE rule in the shell, a warning on a destructive action.
+    #
+    # `var(--danger...)` rather than the bare token, so `shell.css`'s `:root` block,
+    # which *defines* the family at `:68-71`, is not read as a usage of it.
+    painted = [
+        f"{name}: {selector!r}"
+        for name, selector, block in all_rules
+        if re.search(r"var\(\s*--danger", block)
+        and not any(exempt in selector for exempt in _DANGER_EXEMPT)
+    ]
+    assert painted == [], (
+        f"the --danger family reached a rule that is not a destructive action: {painted}"
+    )
+
+    # And the carve-out is not a blanket: an exempt selector may warn, never paint a
+    # state. A rule naming both would be exempted by its own name, so check it here.
+    for name, selector, _block in all_rules:
+        if not any(exempt in selector for exempt in _DANGER_EXEMPT):
+            continue
+        parts = _selector_parts(selector + "{}")
+        states = [state for part in parts for state in _ALL_STATE_CLASSES if state in part]
+        assert states == [], f"{name}: the exempt rule {selector!r} also names a state {states}"
+
+    # No `.error-*` rule can arrive unnoticed, whether or not it names a state class.
+    for name, css in sources:
+        offenders = [part for part in _selector_parts(css) if "error" in part.lower()]
+        assert offenders == [], f"{name}: an error selector reached a shell sheet: {offenders}"
+
+
+def test_no_shell_template_gives_a_governed_state_an_error_role() -> None:
+    """`FR-202` and master specification §13: a refusal is "Governed, not error".
+
+    **This is the one assertion in the slice that is genuinely RED on arrival.**
+    `role="alert"` -- an *assertive* live region, which is the journey's **transport
+    error** role (`test_rra_journey_accessibility.py:64`) -- ships today on
+    `_decision_cards.html.j2:13`, `_decision_sections.html.j2:11` and
+    `decision.html.j2:30`. Task 8's build changes all three to `role="status"`, the
+    polite role the journey already uses for its own refusal (`:67`).
+
+    Scanned over **both** admitted template directories, so a state given an error role
+    on a legal page would fail here too.
+    """
+    offenders = []
+    for name, source in _templates():
+        for element in re.finditer(r"<[a-z]+\b[^>]*>", source):
+            markup = element.group(0)
+            if 'role="alert"' not in markup:
+                continue
+            carried = [
+                state
+                for state in _ALL_STATE_CLASSES
+                if re.search(r"\b" + state + r"\b", markup)
+            ]
+            if carried:
+                offenders.append(f"{name}: {carried} carries role=alert")
+    assert offenders == [], "a governed state carries an error role:\n" + "\n".join(offenders)
