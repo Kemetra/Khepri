@@ -460,3 +460,23 @@ def test_a_trust_state_is_not_carried_by_colour_alone(surface: str, language: st
         for _, inner in matches:
             text = re.sub(r"<[^>]+>", "", inner).strip()
             assert text, f"{surface}/{language}: {fragment} carries colour but no text"
+
+
+def test_the_browser_floors_are_not_silently_unmeasured() -> None:
+    """The browser-gated floors skip in CI, and a skip is not a pass.
+
+    CI runs a bare `uv run pytest` with no browser install step
+    (`.github/workflows/governance.yml`), so every `@pytest.mark.browser` case -- including the
+    computed-contrast floor `FR-200` §Verification requires to run in a real browser -- reports
+    `skipped` there. Closing that needs a workflow edit, and `.github/` is not in `RCA-010`
+    §Scope, so this slice records the gap rather than hiding it.
+
+    What this pins: the marker still gates a non-zero number of cases. Removing the marker to
+    make CI appear to cover them, or deleting the cases, fails here.
+    """
+    source = Path(__file__).read_text(encoding="utf-8")
+    marked = source.count("@pytest.mark.browser")
+    assert marked >= 4, (
+        f"only {marked} browser-gated cases remain; the computed-contrast floor may have been "
+        "removed or silently de-marked"
+    )
