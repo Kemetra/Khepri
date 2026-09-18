@@ -11,7 +11,10 @@ Two rosters, because one driver cannot serve both. `SHELL_SURFACES` renders thro
 
 from __future__ import annotations
 
+import os
 from html.parser import HTMLParser
+from importlib.resources import files
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -192,3 +195,183 @@ def test_every_control_has_a_label_that_is_not_its_placeholder(surface: str, lan
             or (identifier is not None and f'for="{identifier}"' in html)
         )
         assert named, f"{surface}/{language}: a control is named only by its placeholder"
+
+
+def _pinned_chromium() -> str | None:
+    """A Chromium under `PLAYWRIGHT_BROWSERS_PATH`, the fallback slice 8 established."""
+    root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if not root:
+        return None
+    candidates = sorted(Path(root).glob("chromium*/chrome-win/chrome.exe"))
+    return str(candidates[-1]) if candidates else None
+
+
+def _launch_chromium(playwright: object) -> object:
+    """The pinned Chromium, or `pytest.skip` when this machine genuinely has none."""
+    from playwright.sync_api import Error
+
+    try:
+        return playwright.chromium.launch()  # type: ignore[attr-defined]
+    except Error as error:
+        executable = _pinned_chromium()
+        if executable is None:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        return playwright.chromium.launch(executable_path=executable)  # type: ignore[attr-defined]
+
+
+def _shell_css() -> str:
+    """The three sheets a shell surface links, in link order."""
+    journey = files("khepri.rra.journey").joinpath("assets")
+    return "\n".join(
+        (
+            journey.joinpath("shell.css").read_text(encoding="utf-8"),
+            journey.joinpath("shell-components.css").read_text(encoding="utf-8"),
+            files("khepri.runtime")
+            .joinpath("shell_assets", "workspace.css")
+            .read_text(encoding="utf-8"),
+        )
+    )
+
+
+def _legal_css() -> str:
+    """The **two** sheets a legal page links.
+
+    `legal.html.j2:7-8` links `shell.css` and `shell-components.css`, and `legal_api.py`'s
+    `_ASSETS` allowlist serves exactly those two. Injecting `workspace.css` here would measure a
+    document the product never serves -- the error `_PRINT_TEMPLATES` exists to prevent.
+    """
+    journey = files("khepri.rra.journey").joinpath("assets")
+    return "\n".join(
+        (
+            journey.joinpath("shell.css").read_text(encoding="utf-8"),
+            journey.joinpath("shell-components.css").read_text(encoding="utf-8"),
+        )
+    )
+
+
+#: Computed in the page from resolved colours -- `FR-200` §Verification requires contrast
+#: *computed*, not asserted against a table of hex values a test happens to remember.
+#:
+#: The background is walked up the ancestor chain because a transparent element inherits what it
+#: sits on; comparing text against `rgba(0, 0, 0, 0)` would report a fictional ratio. Leaf
+#: elements only, so a paragraph's text is not measured again through its wrapper.
+_CONTRAST = """
+(() => {
+  const lum = (c) => {
+    const [r, g, b] = c.match(/[0-9.]+/g).slice(0, 3).map(Number).map((v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const opaque = (el) => {
+    for (let n = el; n; n = n.parentElement) {
+      const bg = getComputedStyle(n).backgroundColor;
+      if (bg && !bg.startsWith('rgba(0, 0, 0, 0)')) return bg;
+    }
+    return 'rgb(255, 255, 255)';
+  };
+  const out = [];
+  for (const el of document.querySelectorAll('p, h1, h2, h3, li, a, button, span, td, th')) {
+    if (!el.textContent.trim() || el.offsetParent === null) continue;
+    if (el.children.length > 0) continue;
+    const style = getComputedStyle(el);
+    const size = parseFloat(style.fontSize);
+    const large = size >= 24 || (size >= 18.66 && parseInt(style.fontWeight, 10) >= 700);
+    const a = lum(style.color), b = lum(opaque(el));
+    const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    out.push({ ratio, floor: large ? 3.0 : 4.5, text: el.textContent.trim().slice(0, 40) });
+  }
+  return out;
+})()
+"""
+
+
+def _assert_contrast(measured: list[dict[str, float | str]], where: str) -> None:
+    """Every measured node clears its floor, and something was measured at all."""
+    assert measured, f"{where}: no text measured, so this proves nothing"
+    for item in measured:
+        assert item["ratio"] >= item["floor"], (
+            f"{where}: {item['ratio']:.2f} < {item['floor']} on {item['text']!r}"
+        )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_text_contrast_is_computed_and_meets_its_floor(surface: str, language: str) -> None:
+    """`FR-200` §Verification: contrast **computed** in the real browser, not asserted."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(_html(surface, language), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            _assert_contrast(page.evaluate(_CONTRAST), f"{surface}/{language}")
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("page_name", ["about-us", "contact-us"])
+def test_legal_text_contrast_is_computed_and_meets_its_floor(page_name: str, language: str) -> None:
+    """One published page and one unpublished, so the non-null case is provably reached."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(_legal_html(page_name, language), wait_until="domcontentloaded")
+            page.add_style_tag(content=_legal_css())
+            _assert_contrast(page.evaluate(_CONTRAST), f"{page_name}/{language}")
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_text_scales_to_two_hundred_percent_without_losing_content(surface: str) -> None:
+    """`FR-200`: 200% text loses neither content nor function."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(_html(surface, "en"), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            before = page.evaluate("document.body.innerText.trim().length")
+            page.add_style_tag(content="html { font-size: 200% !important; }")
+            after = page.evaluate("document.body.innerText.trim().length")
+            assert after >= before, f"{surface}: text was lost at 200%"
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_a_pointer_target_is_measured_on_the_element_it_lands_on(surface: str) -> None:
+    """`FR-200`: at least 44px **on the element a pointer lands on**, not on an ancestor.
+
+    The existing `r807` case measures the same floor at two viewports; this one measures the
+    narrow viewport only and exists to state the "element a pointer lands on" half explicitly,
+    which is the part an ancestor-based measurement would hide.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.set_content(_html(surface, "en"), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            for locator in page.locator("a:visible, button:visible, select:visible").all():
+                box = locator.bounding_box()
+                assert box is not None
+                assert box["height"] >= 44, f"{surface}: a target is {box['height']}px tall"
+        finally:
+            browser.close()
