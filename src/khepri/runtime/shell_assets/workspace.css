@@ -382,10 +382,23 @@
 }
 
 /* An absence is a *statement*, not a failure, and is styled as one: the muted
- * treatment the other stated findings carry, never the refusal's. Every view's
- * `required_evidence` is `()` at v1, so an absence arrives as data on an
- * admitted projection -- painting it as an error would say in CSS what
- * `FR-141` forbids the read model from saying in code. */
+ * treatment the other stated findings carry. Every view's `required_evidence` is
+ * `()` at v1, so an absence arrives as data on an admitted projection -- painting
+ * it as an error would say in CSS what `FR-141` forbids the read model from
+ * saying in code.
+ *
+ * An earlier form of this comment contrasted the muted treatment with "the
+ * refusal's", which asserted a refusal treatment THAT DOES NOT EXIST. No shell
+ * sheet carries a rule for `.decision-refusal`, `.decision-empty`,
+ * `.decision-unavailable` or `.compare-refusal` at all -- a refusal is unpainted
+ * body text, and that absence is how `FR-202`'s "never carries error paint"
+ * holds. A described-but-unattached treatment reads to the next author as shipped
+ * behaviour, which is the defect this correction removes.
+ *
+ * The absence is deliberate and is guarded forward by
+ * `test_no_shell_state_rule_carries_error_paint`
+ * (`tests/test_r808_shell_state_grammar.py`), which fails if the `--danger` family
+ * reaches any rule other than `.invitation-warning`. */
 .decision-absence,
 .decision-evidence-absent,
 .decision-evidence-unavailable {
