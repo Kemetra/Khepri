@@ -12,6 +12,7 @@ Two rosters, because one driver cannot serve both. `SHELL_SURFACES` renders thro
 from __future__ import annotations
 
 import os
+import re
 from html.parser import HTMLParser
 from importlib.resources import files
 from pathlib import Path
@@ -375,3 +376,87 @@ def test_a_pointer_target_is_measured_on_the_element_it_lands_on(surface: str) -
                 assert box["height"] >= 44, f"{surface}: a target is {box['height']}px tall"
         finally:
             browser.close()
+
+
+#: The classes `FR-200`'s `role="status"` clause governs: **refusal and progress**.
+#:
+#: Taken from slice 5's state grammar (`test_r808_shell_state_grammar.py:8-17`), which bound
+#: `FR-202`'s four states to classes, rather than from a grep of the rendered pages. The first
+#: draft here used `empty-state` and `decision-availability` and failed on correct markup: an
+#: empty result is `FR-202`'s state and slice 5's, not a refusal, and a trust state is measured
+#: by the non-colour floor below under its own `FR-200` clause. Applying the announcement clause
+#: to either is a guard answering a different question.
+#:
+#: The shell authors no progress affordance at all -- slice 5's
+#: `test_no_shell_surface_carries_a_loading_affordance` records that it cannot occur -- so this
+#: tuple carries refusals only.
+_ANNOUNCING = ("decision-refusal", "decision-unsupported", "compare-refusal")
+
+#: Regions carrying a trust state, which `FR-200` governs under its non-colour clause rather
+#: than its announcement clause. `empty-state` is a governed empty rule (`FR-202`, slice 5's).
+_TRUST_STATES = ("empty-state", "decision-availability")
+
+
+def _regions(html: str, classes: tuple[str, ...]) -> list[str]:
+    return [fragment for fragment in classes if f'class="{fragment}' in html]
+
+
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_a_refusal_or_progress_region_announces_itself(surface: str, language: str) -> None:
+    """`FR-200`: `role="status"` for refusals and progress.
+
+    Conditional because the clause has no reachable subject on these fixtures, not because the
+    product omits something. No surface in `SHELL_SURFACES` renders any of slice 5's three
+    refusal classes, and the shell authors no progress affordance at all. So this asserts the
+    implication -- a surface that *does* carry a refusal announces it -- and the test below
+    records that the antecedent is never true today, which is NOT EXERCISED rather than PASS.
+    """
+    html = _html(surface, language)
+    regions = _regions(html, _ANNOUNCING)
+    if not regions:
+        pytest.skip(f"{surface}/{language} renders no refusal or progress region")
+    assert 'role="status"' in html, f"{surface}/{language} renders {regions} without role=status"
+
+
+def test_the_announcement_clause_has_no_reachable_subject_today() -> None:
+    """Pinned so "not exercised" cannot be read later as "passed".
+
+    `FR-200`'s announcement clause governs refusals and progress. These fixtures reach neither,
+    so the floor above skips every case -- and a skipped floor proves nothing about the product.
+    The day a surface renders a refusal, this fails, and that is the signal that the floor above
+    has become live and this pin should go.
+    """
+    carrying = sorted(
+        f"{surface}/{language}"
+        for surface in SHELL_SURFACES
+        for language in ("en", "ar")
+        if _regions(_html(surface, language), _ANNOUNCING)
+    )
+    assert carrying == [], (
+        f"{carrying} now render a refusal: the floor above is live, so delete this pin and "
+        "record the result rather than the absence"
+    )
+
+
+@pytest.mark.parametrize("language", ["en", "ar"])
+@pytest.mark.parametrize("surface", sorted(SHELL_SURFACES))
+def test_a_trust_state_is_not_carried_by_colour_alone(surface: str, language: str) -> None:
+    """`FR-200`: non-colour differentiation for every trust state.
+
+    A state carried only by a class that paints it is invisible to a person who cannot see the
+    paint. The floor is that the region carries text of its own -- the thing a screen reader
+    announces and a monochrome display still shows.
+    """
+    html = _html(surface, language)
+    for fragment in _regions(html, _TRUST_STATES):
+        # EVERY occurrence, not the first: `overview` renders two `empty-state` regions, and a
+        # `re.search` over the first passed a mutant that emptied one of them.
+        pattern = rf'<(\w+)[^>]*class="{fragment}[^"]*"[^>]*>(.*?)</\1>'
+        matches = re.findall(pattern, html, re.S)
+        assert len(matches) == html.count(f'class="{fragment}'), (
+            f"{surface}/{language}: a {fragment} region went unmatched, so this proves nothing"
+        )
+        for _, inner in matches:
+            text = re.sub(r"<[^>]+>", "", inner).strip()
+            assert text, f"{surface}/{language}: {fragment} carries colour but no text"
