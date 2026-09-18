@@ -317,38 +317,55 @@ def test_the_shell_stylesheets_use_no_physical_directional_property() -> None:
     )
 
 
+def _direction_rules(sources: list[tuple[str, str]]) -> list[tuple[str, str, list[str]]]:
+    """Every rule declaring `direction`, as `(sheet, selector, declared values)`."""
+    return [
+        (name, match.group(1).strip(), values)
+        for name, css in sources
+        for match in re.finditer(r"([^{}]*)\{([^{}]*)\}", css)
+        if (values := re.findall(r"(?:[{;]\s*)direction\s*:\s*([a-z-]+)", "{" + match.group(2)))
+    ]
+
+
+def _selector_is_reviewed(selector: str) -> bool:
+    """Whether **every part** of a possibly grouped selector names a carved-out class.
+
+    Substring containment on the whole selector is what this replaces: it let
+    `.change-transition, .new` carry `.new` in on `#377`'s justification, turning the
+    carve-out into the hole it was written to prevent.
+    """
+    parts = [part.strip() for part in selector.split(",") if part.strip()]
+    return bool(parts) and all(
+        any(exempt in part for exempt in _DIRECTION_EXEMPT) for part in parts
+    )
+
+
 def test_only_the_reviewed_direction_declarations_ship() -> None:
     """The `direction: ltr` carve-out, held to exactly the two the review landed.
 
-    Without this the exemption above is a blanket: any new `direction` declaration would inherit
-    a justification written for two specific, reviewed lines. Counted and attributed, so a third
-    one fails here and has to be argued for on its own terms rather than riding `#377`.
-    """
-    found = []
-    for name, css in _sheet_sources():
-        for match in re.finditer(r"([^{}]*)\{([^{}]*)\}", css):
-            values = re.findall(r"(?:[{;]\s*)direction\s*:\s*([a-z-]+)", "{" + match.group(2))
-            if values:
-                found.append((name, match.group(1).strip(), values))
+    Without this the exemption in the scan above is a blanket: any new `direction`
+    declaration would inherit a justification written for two specific, reviewed lines.
+    Attributed instead, so a third has to be argued for on its own terms.
 
+    Two independent ways to fail, reported together rather than short-circuiting: a
+    selector the review did not land, and a value other than `ltr`. `#377` landed an
+    LTR run of digits inside Arabic prose, which is not a licence for any direction.
+    """
+    found = _direction_rules(_sheet_sources())
     assert found, "no direction declaration found at all, so the carve-out proves nothing"
 
-    unreviewed = []
-    for name, selector, values in found:
-        # **Every part of a grouped selector must be named.** Substring containment on
-        # the whole selector lets `.change-transition, .new` carry `.new` in on the
-        # exemption -- the carve-out becoming a hole, which is the failure this guard
-        # exists to prevent.
-        parts = [part.strip() for part in selector.split(",") if part.strip()]
-        if not all(any(exempt in part for exempt in _DIRECTION_EXEMPT) for part in parts):
-            unreviewed.append(f"{name}: {selector!r} is not the reviewed set")
-        # And the exemption is for `ltr` specifically: `#377` landed an LTR run of
-        # digits inside Arabic prose, which is not a licence for any direction at all.
-        if any(value != "ltr" for value in values):
-            unreviewed.append(f"{name}: {selector!r} declares direction {values}, not ltr")
-
-    assert unreviewed == [], (
-        f"a direction declaration ships that review #377 did not land: {unreviewed}"
+    unreviewed = [
+        f"{name}: {selector!r} is not the reviewed set"
+        for name, selector, _values in found
+        if not _selector_is_reviewed(selector)
+    ]
+    mis_valued = [
+        f"{name}: {selector!r} declares direction {values}, not ltr"
+        for name, selector, values in found
+        if any(value != "ltr" for value in values)
+    ]
+    assert unreviewed + mis_valued == [], (
+        f"a direction declaration ships that review #377 did not land: {unreviewed + mis_valued}"
     )
 
 
