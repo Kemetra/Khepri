@@ -353,21 +353,6 @@ _CONTRAST = """
 """
 
 
-#: The three cases where 200% text overflows the 390px viewport today -- an OPEN `FR-200` finding
-#: against `shell-components.css`, recorded rather than fixed.
-#:
-#: `.shell-main` (`:36`) and `.document-card` (`:68`) keep their padding at 200%, leaving the `h1`
-#: a 244px box for a 345px word run. English only: `"Comparison"` is a single unbreakable token,
-#: while every Arabic heading has shorter words and passes at the same width. The fix belongs to
-#: the slice that owns that sheet -- an evidence slice editing a stylesheet to make its own
-#: assertion pass would leave the defect in the product.
-#:
-#: Listed case by case, so this fails BOTH if a fourth surface starts overflowing and if one of
-#: these three is fixed. A blanket `xfail` would mark all 40 cases and hide both directions.
-_SCALING_OVERFLOW = frozenset({("compare", "en", 390), ("no_membership", "en", 390),
-                               ("switcher", "en", 390)})
-
-
 #: The two supported viewports, the pair the pre-existing `r807` browser case already measures.
 #: `FR-200` requires its floors "at the supported viewports", plural, so every browser floor below
 #: runs across this matrix rather than picking one width per floor.
@@ -454,16 +439,9 @@ def test_text_scales_to_two_hundred_percent_without_losing_content(
             page.add_style_tag(content="html { font-size: 200% !important; }")
             after = page.evaluate("document.body.innerText.trim().length")
             assert after >= before, f"{surface}/{language}@{viewport[0]}: text was lost at 200%"
-            fits = page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
-            if (surface, language, viewport[0]) in _SCALING_OVERFLOW:
-                assert not fits, (
-                    f"{surface}/{language}@{viewport[0]} now fits at 200%: the "
-                    "`shell-components.css` finding is fixed, so remove it from _SCALING_OVERFLOW"
-                )
-            else:
-                assert fits, (
-                    f"{surface}/{language}@{viewport[0]}: 200% text introduced horizontal overflow"
-                )
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), (
+                f"{surface}/{language}@{viewport[0]}: 200% text introduced horizontal overflow"
+            )
         finally:
             browser.close()
 
