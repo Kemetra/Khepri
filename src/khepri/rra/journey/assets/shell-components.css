@@ -17,6 +17,20 @@
  * shipped without a component layer to apply them.
  */
 
+/* `FR-204` typography: the shell's own typeface token, applied. `shell.css:158` declares
+ * `--font-body` and, before this rule, nothing consumed it -- so every shell and legal page
+ * rendered in the browser's default serif. Slice 10b measured it as `"Times New Roman"`.
+ *
+ * The `@font-face` rules for Noto Sans Arabic live in `journey.css` and load from `/beta/assets/`,
+ * which the shell does not link or serve (`shell_api.py`'s three-stylesheet allowlist). So Noto is
+ * named but unavailable here and the cascade falls through to `"Segoe UI", Tahoma, sans-serif`.
+ * That is the intended fallback behaviour, not a broken declaration -- and the day the face
+ * reaches the shell this rule picks it up with no further change. Wiring the face is an asset
+ * question owned elsewhere; naming a journey-served asset here would breach `FR-201`. */
+body {
+  font-family: var(--font-body);
+}
+
 .shell-identity {
   display: flex;
   align-items: center;
@@ -129,6 +143,16 @@
   background: var(--accent-surface);
   color: var(--accent-dark);
   cursor: pointer;
+}
+
+/* `FR-200`: text scales to 200% without loss of function. An email address is a single token with
+ * no space to break at, so `.document-card`'s `overflow-wrap: break-word` cannot help it and the
+ * address pushed the `team` page wider in both languages once the real typeface made it 34px
+ * wider (304px -> 338px in a 308px box). `anywhere` is needed rather than `break-word` precisely
+ * because there is no break opportunity to find; it is scoped to this one element so no prose
+ * elsewhere breaks mid-word. */
+.member-identity {
+  overflow-wrap: anywhere;
 }
 
 /* A disabled member is shown and marked rather than hidden, so the list agrees with the

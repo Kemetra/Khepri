@@ -205,3 +205,36 @@ def test_the_right_to_left_rendering_mirrors_rather_than_reflows(surface: str) -
     assert english["density"] == arabic["density"], (
         f"{surface}: density differs by language -- {english['density']} vs {arabic['density']}"
     )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("surface", sorted(_REPRESENTATIVES))
+def test_the_body_typeface_is_the_shell_token_not_a_browser_default(surface: str) -> None:
+    """`FR-204` typography: the shell's declared typeface reaches the page.
+
+    `shell.css` declares `--font-body`, and before `shell-components.css` applied it to `body`
+    every shell and legal page rendered in the browser's default serif -- measured by this slice
+    as `"Times New Roman"`. The assertion reads the **declared** list rather than the resolved
+    face, so it is stable across platforms: the Noto face itself loads from `/beta/assets/`, which
+    the shell does not serve, and the cascade falls through to the sans fallbacks by design.
+    """
+    from playwright.sync_api import sync_playwright
+
+    from tests.test_r807_shell_quality import _html
+    from tests.test_r811_shell_accessibility import _launch_chromium, _shell_css
+
+    with sync_playwright() as playwright:
+        browser = _launch_chromium(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 1180, "height": 900})
+            page.set_content(_html(surface, "en"), wait_until="domcontentloaded")
+            page.add_style_tag(content=_shell_css())
+            declared = page.evaluate("getComputedStyle(document.body).fontFamily")
+            assert "Noto Sans Arabic" in declared, (
+                f"{surface}: body resolves to {declared!r}, not the shell's `--font-body`"
+            )
+            assert "serif" not in declared.replace("sans-serif", ""), (
+                f"{surface}: body falls back to a serif -- {declared!r}"
+            )
+        finally:
+            browser.close()
