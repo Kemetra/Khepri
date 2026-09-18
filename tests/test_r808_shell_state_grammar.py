@@ -162,7 +162,29 @@ def _elements_carrying(body: str, state_class: str) -> list[str]:
     ]
 
 
-def test_the_shell_state_classes_are_mutually_exclusive() -> None:
+def _collisions_on(element: str, state: str) -> list[str]:
+    """Every OTHER state class sharing this element, which `FR-202` forbids.
+
+    Compared as a rendered element rather than by counting classes: two states merged
+    onto one `<p>` keeps both counts at one, so a count-based check passes the very
+    defect it exists to catch.
+    """
+    return [
+        other
+        for other in _STATE_CLASSES
+        if other != state and re.search(r"\b" + other + r"\b", element)
+    ]
+
+
+def _error_tokens_on(element: str) -> list[str]:
+    """Every class token on this element that would make it read as a failure."""
+    classes = re.search(r'class="([^"]*)"', element)
+    assert classes is not None, f"a state element carries no class attribute: {element}"
+    return [token for token in classes.group(1).split() if _ERROR_TOKEN.search(token)]
+
+
+@pytest.mark.parametrize("language", ("en", "ar"))
+def test_the_shell_state_classes_are_mutually_exclusive(language: str) -> None:
     """`FR-202`: a governed state "never shares an element or a class with an error".
 
     Driven through the real render path on the decision surface, in both languages,
@@ -176,36 +198,33 @@ def test_the_shell_state_classes_are_mutually_exclusive() -> None:
     """
     assert len(_FR202_STATES) == 4, "FR-202 names four states"
 
-    for language in ("en", "ar"):
-        body = _rendered(_three_state_surface(), language)
-        assert body.strip(), f"the decision surface rendered nothing in {language}"
-        assert "decision-refusal" in body, f"no refusal reached the page in {language}"
+    body = _rendered(_three_state_surface(), language)
+    assert body.strip(), f"the decision surface rendered nothing in {language}"
+    assert "decision-refusal" in body, f"no refusal reached the page in {language}"
 
-        carriers = {state: _elements_carrying(body, state) for state in _STATE_CLASSES}
-        for state, elements in carriers.items():
-            assert elements, f"{state} did not render in {language}"
-            assert all(element.startswith("<p") for element in elements), (
-                f"{state} is not on a <p> element in {language}: {elements}"
-            )
+    carriers = {state: _elements_carrying(body, state) for state in _STATE_CLASSES}
+    for state, elements in carriers.items():
+        assert elements, f"{state} did not render in {language}"
+        assert all(element.startswith("<p") for element in elements), (
+            f"{state} is not on a <p> element in {language}: {elements}"
+        )
 
-        # No element carries two of them. Compared as rendered elements rather than by
-        # counting classes: two states merged onto one `<p>` keeps both counts at one.
-        for state, elements in carriers.items():
-            others = [other for other in _STATE_CLASSES if other != state]
-            for element in elements:
-                collisions = [
-                    other for other in others if re.search(r"\b" + other + r"\b", element)
-                ]
-                assert collisions == [], (
-                    f"{state} shares an element with {collisions} in {language}: {element}"
-                )
+    shared = [
+        f"{state} shares an element with {_collisions_on(element, state)}: {element}"
+        for state, elements in carriers.items()
+        for element in elements
+        if _collisions_on(element, state)
+    ]
+    assert shared == [], f"state classes share an element in {language}:\n" + "\n".join(shared)
 
-        # The refusal carries no token that would read as a failure.
-        for element in carriers["decision-refusal"]:
-            classes = re.search(r'class="([^"]*)"', element)
-            assert classes is not None
-            found = [token for token in classes.group(1).split() if _ERROR_TOKEN.search(token)]
-            assert found == [], f"the refusal carries an error-shaped class {found} in {language}"
+    mislabelled = [
+        f"{_error_tokens_on(element)} on {element}"
+        for element in carriers["decision-refusal"]
+        if _error_tokens_on(element)
+    ]
+    assert mislabelled == [], (
+        f"the refusal carries an error-shaped class in {language}: {mislabelled}"
+    )
 
 
 def _section_markup(body: str, section: str) -> str:
@@ -408,6 +427,63 @@ def _templates() -> list[tuple[str, str]]:
     return found
 
 
+def _all_rules(sources: list[tuple[str, str]]) -> list[tuple[str, str, str]]:
+    """Every `(sheet, selector, block)` triple across the shell's three sheets."""
+    return [
+        (name, selector, block)
+        for name, css in sources
+        for selector, block in _rules(css)
+    ]
+
+
+def _rules_using_danger(all_rules: list[tuple[str, str, str]]) -> list[str]:
+    """Every rule referencing the `--danger` family that is not a carved-out warning.
+
+    **Checked over every rule, not only the rules naming a state class** -- and that is
+    what makes the `.invitation-warning` carve-out load-bearing rather than decorative.
+    Scoped to state-class selectors the exemption could never be reached, because
+    `.invitation-warning` names no state: it would be a defined-but-never-attached
+    shape inside a guard written to catch exactly that. Scoped to every rule, the
+    exemption is the one thing standing between this scan and a false positive, and the
+    invariant is stronger -- the family reaches ONE rule in the shell.
+
+    Matched on `var(--danger...)` rather than the bare token, so `shell.css`'s `:root`
+    block, which *defines* the family at `:68-71`, is not read as a usage of it.
+    """
+    return [
+        f"{name}: {selector!r}"
+        for name, selector, block in all_rules
+        if re.search(r"var\(\s*--danger", block)
+        and not any(exempt in selector for exempt in _DANGER_EXEMPT)
+    ]
+
+
+def _exempt_rules_naming_a_state(all_rules: list[tuple[str, str, str]]) -> list[str]:
+    """The carve-out is not a blanket: an exempt rule may warn, never paint a state.
+
+    A rule naming both `.invitation-warning` and a state class would be exempted by its
+    own name, which is the one way the carve-out could be turned into a hole.
+    """
+    return [
+        f"{name}: {selector!r} names {state}"
+        for name, selector, _block in all_rules
+        if any(exempt in selector for exempt in _DANGER_EXEMPT)
+        for part in _selector_parts(selector + "{}")
+        for state in _ALL_STATE_CLASSES
+        if state in part
+    ]
+
+
+def _error_selectors(sources: list[tuple[str, str]]) -> list[str]:
+    """Any selector naming an error, so an `.error-*` rule cannot arrive unnoticed."""
+    return [
+        f"{name}: {part}"
+        for name, css in sources
+        for part in _selector_parts(css)
+        if "error" in part.lower()
+    ]
+
+
 def test_no_shell_state_rule_carries_error_paint() -> None:
     """`FR-202`: a governed state "never carries error paint".
 
@@ -422,47 +498,19 @@ def test_no_shell_state_rule_carries_error_paint() -> None:
     string-literal guard reopens the hole where `content: "/*"` blinds the scan.
     """
     sources = _sheet_sources()
-    all_rules = [
-        (name, selector, block)
-        for name, css in sources
-        for selector, block in _rules(css)
-    ]
+    all_rules = _all_rules(sources)
     assert all_rules, "no rules parsed from any shell sheet, so this test proves nothing"
 
-    # **Asserted over every rule, not only the rules naming a state class** -- and that
-    # is what makes the `.invitation-warning` carve-out load-bearing rather than
-    # decorative. Scoped to state-class selectors, the exemption would never be
-    # reached, because `.invitation-warning` names no state: it would be a
-    # defined-but-never-attached shape in a guard written to catch exactly that.
-    # Scoped to every rule, the exemption is the one thing standing between the scan
-    # and a false positive, and the invariant is stronger: the `--danger` family
-    # reaches ONE rule in the shell, a warning on a destructive action.
-    #
-    # `var(--danger...)` rather than the bare token, so `shell.css`'s `:root` block,
-    # which *defines* the family at `:68-71`, is not read as a usage of it.
-    painted = [
-        f"{name}: {selector!r}"
-        for name, selector, block in all_rules
-        if re.search(r"var\(\s*--danger", block)
-        and not any(exempt in selector for exempt in _DANGER_EXEMPT)
-    ]
+    painted = _rules_using_danger(all_rules)
     assert painted == [], (
         f"the --danger family reached a rule that is not a destructive action: {painted}"
     )
 
-    # And the carve-out is not a blanket: an exempt selector may warn, never paint a
-    # state. A rule naming both would be exempted by its own name, so check it here.
-    for name, selector, _block in all_rules:
-        if not any(exempt in selector for exempt in _DANGER_EXEMPT):
-            continue
-        parts = _selector_parts(selector + "{}")
-        states = [state for part in parts for state in _ALL_STATE_CLASSES if state in part]
-        assert states == [], f"{name}: the exempt rule {selector!r} also names a state {states}"
+    overreaching = _exempt_rules_naming_a_state(all_rules)
+    assert overreaching == [], f"an exempt rule also names a governed state: {overreaching}"
 
-    # No `.error-*` rule can arrive unnoticed, whether or not it names a state class.
-    for name, css in sources:
-        offenders = [part for part in _selector_parts(css) if "error" in part.lower()]
-        assert offenders == [], f"{name}: an error selector reached a shell sheet: {offenders}"
+    errors = _error_selectors(sources)
+    assert errors == [], f"an error selector reached a shell sheet: {errors}"
 
 
 def test_no_shell_template_gives_a_governed_state_an_error_role() -> None:
