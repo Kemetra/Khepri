@@ -204,28 +204,44 @@ def _controls(html: str) -> tuple[list[dict[str, object]], dict[str, str]]:
     return parser.controls, parser.text_by_id
 
 
+def _from_aria_labelledby(control: dict[str, object], text_by_id: dict[str, str], _: str) -> str:
+    """Each referenced element's own text. A reference to a missing or empty node names nothing."""
+    tokens = str(control["aria-labelledby"]).split()
+    return " ".join(text_by_id.get(token, "") for token in tokens).strip()
+
+
+def _from_wrapping_label(control: dict[str, object], _: dict[str, str], __: str) -> str:
+    """The text of every `<label>` open around the control."""
+    texts: list[list[str]] = control["label_texts"]  # type: ignore[assignment]
+    return " ".join(" ".join(part) for part in texts).strip()
+
+
+def _from_label_for(control: dict[str, object], _: dict[str, str], html: str) -> str:
+    """The text inside `<label for="...">`, which is a sibling rather than an ancestor."""
+    if (identifier := control["id"]) is None:
+        return ""
+    pattern = rf'<label[^>]*for="{re.escape(str(identifier))}"[^>]*>(.*?)</label>'
+    match = re.search(pattern, html, re.S)
+    return re.sub(r"<[^>]+>", "", match.group(1)).strip() if match else ""
+
+
+#: The naming mechanisms in ARIA precedence. Each returns the **resolved text**, so a mechanism
+#: that is present but resolves to nothing falls through to the next rather than counting as a
+#: name -- which is the whole point of the floor.
+_NAME_SOURCES = (
+    lambda control, _, __: str(control["aria-label"]),
+    _from_aria_labelledby,
+    _from_wrapping_label,
+    _from_label_for,
+)
+
+
 def _accessible_name(control: dict[str, object], text_by_id: dict[str, str], html: str) -> str:
     """The name a screen reader would announce, or `""` when every mechanism resolves empty."""
-    if name := str(control["aria-label"]):
-        return name
-    if referenced := str(control["aria-labelledby"]):
-        resolved = " ".join(text_by_id.get(token, "") for token in referenced.split()).strip()
-        if resolved:
-            return resolved
-    wrapping = " ".join(" ".join(texts) for texts in control["label_texts"]).strip()  # type: ignore[arg-type]
-    if wrapping:
-        return wrapping
-    identifier = control["id"]
-    if identifier is not None and f'for="{identifier}"' in html:
-        # The `for` target's own text, not the mere presence of the attribute.
-        return text_by_id.get(str(identifier), "") or _label_text_for(html, str(identifier))
+    for source in _NAME_SOURCES:
+        if name := source(control, text_by_id, html):
+            return name
     return ""
-
-
-def _label_text_for(html: str, identifier: str) -> str:
-    """The text inside `<label for="...">`, which is a sibling rather than an ancestor."""
-    match = re.search(rf'<label[^>]*for="{re.escape(identifier)}"[^>]*>(.*?)</label>', html, re.S)
-    return re.sub(r"<[^>]+>", "", match.group(1)).strip() if match else ""
 
 
 @pytest.mark.parametrize("language", ["en", "ar"])
