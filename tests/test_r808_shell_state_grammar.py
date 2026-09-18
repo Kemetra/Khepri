@@ -492,3 +492,39 @@ def test_no_shell_template_gives_a_governed_state_an_error_role() -> None:
             if carried:
                 offenders.append(f"{name}: {carried} carries role=alert")
     assert offenders == [], "a governed state carries an error role:\n" + "\n".join(offenders)
+
+
+#: What a client-side loading affordance would need, none of which the shell has.
+_LOADING_MARKERS = (
+    re.compile(r"<script\b", re.IGNORECASE),
+    re.compile(r"\baria-busy\b", re.IGNORECASE),
+    re.compile(r"\bon[a-z]+\s*=", re.IGNORECASE),
+    re.compile(r'class="[^"]*\b(?:spinner|skeleton|loading|progress)\b', re.IGNORECASE),
+)
+
+
+def test_no_shell_surface_carries_a_loading_affordance() -> None:
+    """`FR-202`'s loading state is not presented, because it **cannot occur**.
+
+    The structural reason, not just the fact: every shell surface is server-rendered
+    whole, the shipped `default-src 'none'` CSP forbids the script a client-side
+    loading affordance would need, and `FR-206` forbids weakening that policy. A state
+    that cannot occur is not a state to present, and driving one would be a run that
+    can only produce the null case -- NOT EXERCISED, not PASS. So the **invariant** is
+    asserted in its place.
+
+    A later slice that ships a decorative spinner naming no stage fails here, which is
+    what master specification §F.4 forbids even on the journey's own processing surface.
+
+    **The CSP header itself is `test_r802_shell_unavailable_surface.py:290`'s**, which
+    asserts `'unsafe-inline'` is absent, and `:281` asserts the shell policy *is* the
+    journey policy, imported rather than restated. This asserts the **template** half
+    only; a second policy assertion would be a second definition, and two definitions
+    drift.
+    """
+    offenders = []
+    for name, source in _templates():
+        for marker in _LOADING_MARKERS:
+            if marker.search(source):
+                offenders.append(f"{name}: {marker.pattern}")
+    assert offenders == [], "a loading affordance reached a shell surface:\n" + "\n".join(offenders)
