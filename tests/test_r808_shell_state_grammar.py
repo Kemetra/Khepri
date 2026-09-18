@@ -528,3 +528,57 @@ def test_no_shell_surface_carries_a_loading_affordance() -> None:
             if marker.search(source):
                 offenders.append(f"{name}: {marker.pattern}")
     assert offenders == [], "a loading affordance reached a shell surface:\n" + "\n".join(offenders)
+
+
+#: `FR-203`'s motion properties, matched at a **declaration boundary** rather than at
+#: the line start. A declaration follows either `{` or `;`, which occurs mid-line in a
+#: packed one-liner, so `.x { transition: all 1s }` is caught while
+#: `.change-transition {` is not -- there the word is *followed* by `{`, never preceded
+#: by one. `journey.css:153` proves the packed idiom exists in this repository.
+_MOTION_DECLARATION = re.compile(
+    r"(?:[{;]\s*)(transition|animation|transform|will-change|scroll-behavior)[-a-z]*\s*:"
+)
+
+#: `@keyframes` carries no property-colon, so the declaration pattern cannot see it.
+#: A second pattern, or a bare `@keyframes pulse { ... }` walks straight through.
+_KEYFRAMES = re.compile(r"@keyframes\b")
+
+
+def test_the_shell_stylesheets_declare_no_motion() -> None:
+    """`FR-203`, asserted as the **superset** of its enumerated prohibitions.
+
+    `FR-203` names bounce, elastic `cubic-bezier` outside `[0,1]`, parallax, infinite
+    `animation-iteration-count` and counting numbers. Rather than scanning for those,
+    this asserts that the shell sheets declare **no motion at all**, which subsumes
+    every one of them and cannot be slipped past by a "tasteful" transition the
+    enumeration happens to miss.
+
+    **The allocation plan's premise for this task is false.** It records that
+    `workspace.css` "contains three `transition`/`animation` declarations". It contains
+    **zero**: the three matches for the *word* are the class name `.change-transition`
+    and two prose comments. The plan counted the word, not declarations.
+
+    **So no `prefers-reduced-motion` block is added, and none is needed.** Over zero
+    motion declarations it would be dead CSS gating nothing -- the
+    defined-but-never-attached defect. `journey.css:206` and `landing.css:232` carry
+    such blocks because those sheets **have** motion; the shell does not, and this test
+    is what keeps that true.
+
+    `FR-203`'s "a positional transition on a drawer or dialog is short" is vacuous
+    here: the drawer is a `<details>` that opens in place with no transition
+    (`workspace.css:346-352`). Slice 8 measures one if it ever ships.
+
+    Non-emptiness is asserted on **each file read** by `_sheet_sources()`, so a renamed
+    or moved sheet cannot make the scan vacuously clean. It is deliberately **not**
+    asserted on the match set: this scan defines motion patterns only, and a clean
+    baseline yields zero matches, so requiring the matches to be non-empty would
+    require the baseline to be both empty and non-empty. What rules out a scanner that
+    finds nothing anywhere is the mutation record.
+    """
+    offenders = []
+    for name, css in _sheet_sources():
+        for match in _MOTION_DECLARATION.finditer(css):
+            offenders.append(f"{name}: {match.group(1)} declared")
+        if _KEYFRAMES.search(css):
+            offenders.append(f"{name}: @keyframes")
+    assert offenders == [], "the shell sheets declare motion:\n" + "\n".join(offenders)
