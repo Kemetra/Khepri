@@ -61,11 +61,20 @@ needs_chromium = pytest.mark.skipif(
 )
 
 
-def _free_port() -> int:
-    """A port the OS just confirmed is free, so two runs in one tree do not collide."""
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
+def _listener() -> socket.socket:
+    """A bound, listening socket, handed to uvicorn rather than a port number.
+
+    Probing for a free port and closing the probe leaves a window in which the port is free again
+    but nothing holds it, and a parallel worker in the same tree can take it -- after which uvicorn
+    exits on bind and every assertion below measures a server that never started. Keeping the
+    listener open and passing it to `Server.run(sockets=...)` closes that window: the port this
+    function returns is bound continuously from here until the caller tears it down.
+    """
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    return listener
 
 
 def _app() -> FastAPI:
@@ -102,18 +111,22 @@ def _served(app: FastAPI, path: str) -> object:
 def _origin() -> Iterator[str]:
     """The application on a loopback port, torn down whatever happens.
 
+    The socket is bound here and handed to uvicorn already listening, so no other process can take
+    the port between choosing it and serving on it.
+
     `install_signal_handlers` is disabled because uvicorn installs them on the main thread only and
     raises off it. The server is polled rather than slept at, so a slow machine waits longer rather
     than flaking.
     """
     import uvicorn
 
-    port = _free_port()
+    listener = _listener()
+    port = int(listener.getsockname()[1])
     server = uvicorn.Server(
         uvicorn.Config(_app(), host="127.0.0.1", port=port, log_level="warning")
     )
     server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
-    thread = threading.Thread(target=server.run, daemon=True)
+    thread = threading.Thread(target=lambda: server.run(sockets=[listener]), daemon=True)
     thread.start()
     try:
         deadline = time.monotonic() + 30
@@ -127,6 +140,8 @@ def _origin() -> Iterator[str]:
     finally:
         server.should_exit = True
         thread.join(timeout=30)
+        # uvicorn closes the sockets it was handed; this is the path where it never got that far.
+        listener.close()
 
 
 @contextmanager
