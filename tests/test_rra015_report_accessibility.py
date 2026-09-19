@@ -60,13 +60,40 @@ _TARGET_FLOOR_FAILURES = {
         "FR-189 floor failure in report.css, the Arabic report surface. Same cause as the "
         "English one: no minimum target size is declared."
     ),
-    ("evidence", "ar"): (
-        "FR-189 floor failure on the ARABIC evidence surface only: a tab stop measures "
-        "135x21px against the 44x44 floor. `evidence/en` PASSES at 47px, so this is a "
-        "language-specific layout failure, not a missing rule -- which is why the marker "
-        "is keyed by (surface, language) and not by surface."
-    ),
 }
+
+#: A `set_content` page has no HTTP origin, so its `@font-face` rules never fetch and every
+#: text metric depends on what the HOST happens to have installed. That made one assertion
+#: below environment-dependent: 49 of 50 Arabic evidence links measure 21px on a Windows
+#: developer machine and 0 of 50 do on `ubuntu-latest`, which ships the governed faces.
+#:
+#: Forcing a metric-stable family was tried and REJECTED: `* { font-family: monospace }`
+#: made `evidence/en` measure 35.8px, a box that exists in no real browser. A reproducible
+#: measurement of something the product never renders is not evidence about the product.
+#:
+#: What this module does instead: assert the floor where the host renders the governed
+#: face, and record the host dependency rather than pinning a machine-specific number as a
+#: defect. Proving the floor under the SHIPPED faces needs an HTTP origin so `@font-face`
+#: fetches -- `tests/test_rca011_shell_font_load.py` is the worked example -- and that is a
+#: follow-on slice, not a widening of this one.
+
+#: `evidence/ar` is deliberately NOT in the table above, and the reason is worth recording.
+#:
+#: It was, briefly. A local run measured its tab stops at 135x21px and it was pinned as a
+#: third defect. CI then reported `XPASS(strict)`: the same case **passes** on
+#: `ubuntu-latest`. The strict marker is what caught it -- a non-strict xfail would have
+#: absorbed the divergence silently and this module would carry a permanent false defect.
+#:
+#: Cause: the Arabic stack is `"Noto Sans Arabic", "IBM Plex Sans Arabic", Cairo`. The CI
+#: image ships those faces; a Windows developer machine falls through to a shorter
+#: fallback, so 49 of 50 links render at 21px locally and 0 of 50 do in CI. The English
+#: surface is unaffected in both.
+#:
+#: So the floor holds where the governed typeface is installed, and this module asserts it
+#: unconditionally rather than pinning a machine-specific measurement as a product defect.
+#: See `khepri-set-content-browser-tests-cannot-prove-an-asset-loads`: a `set_content` page
+#: has no HTTP origin, so `@font-face` never fetches and the measurement depends entirely
+#: on what the host has installed.
 
 #: `FR-189` reflow failures at 200% text, keyed the same way. Both languages fail on the
 #: evidence surface at the narrow viewport; the wide viewport passes.
@@ -92,6 +119,49 @@ def _surfaces(*, published: bool = True) -> dict[tuple[str, str], str]:
         for language in _LANGUAGES:
             out[(surface, language)] = mapping[language]
     return out
+
+
+def _renders_the_governed_face(page: object, language: str) -> bool:
+    """Whether this host resolves the governed Arabic face, rather than a fallback.
+
+    `FR-189`'s target floor is measured from a rendered box, and a box's height depends on
+    the face that resolved. A `set_content` page has no HTTP origin, so `@font-face` never
+    fetches and the answer is a property of the HOST, not of the product. CI ships the
+    faces; a Windows developer machine does not.
+
+    English is unaffected -- its stack resolves everywhere -- so only Arabic is gated.
+    `document.fonts.check` is the question actually being asked: can this browser render
+    this family at all?
+    """
+    if language != "ar":
+        return True
+    # NOT `document.fonts.check`: it answers "may this family be used?", which is true for a
+    # family the host does not have, and this module's first attempt at the gate passed on a
+    # machine that renders the fallback. Measure instead -- render the same Arabic string in
+    # the governed stack and in a family the host certainly lacks, and compare widths. Equal
+    # widths mean both fell through to the same fallback.
+    return bool(
+        page.evaluate(  # type: ignore[attr-defined]
+            """() => {
+                const measure = (family) => {
+                    const el = document.createElement('span');
+                    el.style.cssText =
+                        'position:absolute;visibility:hidden;white-space:nowrap;'
+                        + 'font-size:64px;font-family:' + family;
+                    el.textContent = '\\u0627\\u0644\\u0645\\u062D\\u062A\\u0648\\u0649';
+                    document.body.appendChild(el);
+                    const width = el.getBoundingClientRect().width;
+                    el.remove();
+                    return width;
+                };
+                const governed = measure(
+                    '"Noto Sans Arabic","IBM Plex Sans Arabic",Cairo,sans-serif'
+                );
+                const absent = measure('"KhepriNoSuchFace12345",sans-serif');
+                return Math.abs(governed - absent) > 0.5;
+            }"""
+        )
+    )
 
 
 def _refusal_bearing_surfaces() -> dict[tuple[str, str], str]:
@@ -456,9 +526,25 @@ def test_every_tab_stop_meets_the_target_floor(
                 "a[href]:visible, button:visible, [tabindex='0']:visible"
             ).all()
             assert stops, f"{surface}/{language} has no tab stop, so this proves nothing"
+            # Gated for ONE case, not for Arabic generally. CI proved the two Arabic cases
+            # differ in kind: `documents/ar` xfails there WITH the governed face -- a real
+            # `report.css` defect, since no minimum target size is declared at all -- while
+            # `evidence/ar` passes there and fails only where the face is missing. A gate
+            # covering both would suppress a genuine failure along with the artifact.
+            host_dependent = (surface, language) == ("evidence", "ar") and not (
+                _renders_the_governed_face(page, language)
+            )
             for stop in stops:
                 box = stop.bounding_box()
                 assert box is not None, f"{surface}/{language}: a tab stop has no box"
+                if host_dependent:
+                    # A fallback's metrics, not the product's. Assert what holds
+                    # host-independently and leave the floor to the environment that
+                    # renders what ships.
+                    assert box["width"] > 0 and box["height"] > 0, (
+                        f"{surface}/{language}: a tab stop has a zero-area box"
+                    )
+                    continue
                 assert box["height"] >= 44 and box["width"] >= 44, (
                     f"{surface}/{language}: a tab stop is "
                     f"{box['width']}x{box['height']}px, below the 44x44 floor"

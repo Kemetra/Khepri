@@ -152,3 +152,46 @@ Every mutant restored by `git checkout`, after committing the module — see
 | `uv run khepri-gov validate` | passed |
 | `uv run pytest` (full suite) | see the pull request |
 | CodeScene, new module | see the pull request |
+
+
+---
+
+## Post-merge correction — one pin was an environment artifact
+
+`main`'s `governance` run on `9342720` FAILED with `XPASS(strict)` on
+`test_every_tab_stop_meets_the_target_floor[ar-evidence]`. **The strict marker is what caught it.**
+A non-strict xfail would have absorbed the divergence silently and this module would carry a
+permanent false defect.
+
+| Case | Local (Windows) | CI (`ubuntu-latest`) | Verdict |
+|---|---|---|---|
+| `documents/en` | fails 21px | **xfail held** | real `report.css` defect |
+| `documents/ar` | fails 21px | **xfail held** | real `report.css` defect |
+| `evidence/ar` | fails 135x21px | **XPASSED** | **environment artifact** |
+| `evidence/en` | passes 47px | passes | sound |
+
+**Cause.** The Arabic stack is `"Noto Sans Arabic", "IBM Plex Sans Arabic", Cairo`. A
+`set_content` page has no HTTP origin, so `@font-face` never fetches and the metric depends on what
+the **host** has installed. CI ships those faces; a Windows developer machine falls through to a
+shorter fallback — 49 of 50 links at 21px locally, 0 of 50 in CI.
+
+**Two fixes were tried and rejected before the third.**
+
+1. `* { font-family: monospace !important; }` — made the measurement reproducible and **wrong**:
+   `evidence/en` then measured 35.8px, a box that exists in no real browser. A reproducible
+   measurement of something the product never renders is not evidence about the product.
+2. `document.fonts.check(...)` — returns **true** for a family the host lacks, because it answers
+   "may this family be used?", not "did it resolve?". The gate passed on a machine rendering the
+   fallback. `khepri-set-content-browser-tests-cannot-prove-an-asset-loads` records the same false
+   positive from the other direction.
+
+**What shipped.** Render the same Arabic string in the governed stack and in a deliberately absent
+family, and compare widths: equal widths mean both fell through to one fallback. The gate applies to
+**`evidence/ar` alone** — CI proved `documents/ar` fails *with* the governed face, so a gate covering
+Arabic generally would have suppressed a real defect alongside the artifact.
+
+**Three recorded failures remain, all confirmed in CI:** `report.css` target size (both languages)
+and the evidence surface's 390px reflow (both languages).
+
+Proving the floor under the **shipped** faces needs an HTTP origin so `@font-face` fetches —
+`tests/test_rca011_shell_font_load.py` is the worked example. That is a follow-on slice.
