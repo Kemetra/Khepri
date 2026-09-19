@@ -305,10 +305,28 @@ as such.
 
 **Files:** `src/khepri/rra/journey/assets/journey.css` (the `.skip-link` rules at `:75-76`).
 
-**Scope boundary, stated because it is easy to cross:** this slice unifies the **journey** half
-only. `shell-components.css:45,56` is outside `RRA-010` by `RRA-010:30` and belongs to the
-companion plan's slice 2b. **Unifying across both surfaces is authorized by neither plan**
-(`FR-201`).
+**Scope boundary, stated because it is easy to cross:** this slice covers the **journey** only.
+`shell-components.css` is outside `RRA-010` by `RRA-010:30` and belongs to the companion plan's
+slice 2b. **Unifying across both surfaces is authorized by neither plan** (`FR-201`).
+
+> **Corrected at execution, 2026-09-19.** This paragraph read "this slice unifies the journey half"
+> of a two-mechanism split. **There is no split on the journey.** Verified at `79a0557`:
+> `base.html.j2:7` links exactly one stylesheet, all five journey templates extend it, `journey.css`
+> declares no `@import`, and `shell-components.css` is linked only by `shell_templates/shell.html.j2:8`
+> and `legal_templates/legal.html.j2:8`. The two `.skip-link` definitions share a directory and are
+> **never delivered to the same page**, so §73's "consolidating two journey-internal mechanisms" has
+> **no subject** here. Per this plan's Global Constraints — "where this plan and a specification
+> disagree, the specification wins and this plan is corrected in place."
+>
+> Slice 2 is therefore an **evidence** slice: all four §73 clauses measured compliant before any test
+> was written, and it changes no production file. See
+> `docs/superpowers/plans/2026-09-19-u1-rra-slice-2-execution-plan.md`.
+>
+> **A guard for this clause must measure the binding, not the directory.** A scan of
+> `journey/assets/*.css` finds both sheets and fails a correct tree — the `#486` defect. The shipped
+> tests resolve their input from the `<link>` tags a rendered page carries, and a mutation proves the
+> guard fires on a second mechanism in `journey.css` and stays silent on one in
+> `shell-components.css`.
 
 **RED shapes:**
 - The journey's skip link is first in the document and reachable by keyboard before any other tab
