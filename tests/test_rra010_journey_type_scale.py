@@ -192,12 +192,16 @@ def test_the_shorthand_substitutions_kept_family_and_weight(language: str) -> No
     """
     from playwright.sync_api import sync_playwright
 
+    # Selector -> step, expected weight, and the shorthand's line-height ratio. The ratio is
+    # asserted because it is the component that changes SILENTLY: dropping `/1.3` from a
+    # shorthand is VALID CSS, so the declaration still parses, the family and weight survive,
+    # and only the leading collapses to `normal`. A mutation proved this guard blind to it.
     shorthands = {
-        ".brand": ("report", "700"),
-        ".intake-facts dt": ("upload", "400"),
-        ".meta": ("upload", "400"),
-        ".report-meta": ("report", "400"),
-        ".report-group h2": ("report", "600"),
+        ".brand": ("report", "700", 1.0),
+        ".intake-facts dt": ("upload", "400", 1.2),
+        ".meta": ("upload", "400", 1.4),
+        ".report-meta": ("report", "400", 1.5),
+        ".report-group h2": ("report", "600", 1.3),
     }
     css = _journey_css()
 
@@ -205,7 +209,7 @@ def test_the_shorthand_substitutions_kept_family_and_weight(language: str) -> No
         browser = _launch_chromium(playwright)
         try:
             page = browser.new_page(viewport={"width": 1180, "height": 900})  # type: ignore[attr-defined]
-            for selector, (step, weight) in shorthands.items():
+            for selector, (step, weight, ratio) in shorthands.items():
                 page.set_content(
                     client().get(f"/beta/{language}/{step}").text,
                     wait_until="domcontentloaded",
@@ -214,7 +218,8 @@ def test_the_shorthand_substitutions_kept_family_and_weight(language: str) -> No
                 assert page.locator(selector).count() > 0, f"{selector!r} matched nothing"
                 computed = page.evaluate(
                     "s => { const c = getComputedStyle(document.querySelector(s));"
-                    " return {family: c.fontFamily, weight: c.fontWeight}; }",
+                    " return {family: c.fontFamily, weight: c.fontWeight,"
+                    " size: parseFloat(c.fontSize), lh: c.lineHeight}; }",
                     selector,
                 )
                 assert "monospace" in computed["family"], (
@@ -223,6 +228,15 @@ def test_the_shorthand_substitutions_kept_family_and_weight(language: str) -> No
                 )
                 assert computed["weight"] == weight, (
                     f"{language}: {selector} weight is {computed['weight']}, expected {weight}"
+                )
+                assert computed["lh"] != "normal", (
+                    f"{language}: {selector} resolved line-height to 'normal'; the "
+                    "shorthand's ratio component was lost"
+                )
+                expected_lh = computed["size"] * ratio
+                assert abs(float(computed["lh"][:-2]) - expected_lh) < 0.05, (
+                    f"{language}: {selector} line-height is {computed['lh']}, expected "
+                    f"{expected_lh:.3f}px ({ratio} x {computed['size']}px)"
                 )
         finally:
             browser.close()  # type: ignore[attr-defined]
