@@ -8,9 +8,35 @@
 (`pytest -m browser --collect-only`), not by reading the source: a first draft said "4", written
 when there were two browser functions and not updated when the target-size floor was split into
 its own.
-**Result:** 16 passed, **2 xfailed** — the xfails are a recorded floor failure, below.
+**Result:** 20 passed, **6 xfailed** — every xfail is a recorded floor failure, below.
 
 **This slice changed no source file.**
+
+---
+
+## Review round: four findings, three of which found MORE defects
+
+CodeRabbit raised four substantive findings after the first push. Each was verified by running,
+and three exposed real failures the narrower tests could not see. The module went from
+**16 passed / 2 xfailed** to **20 passed / 6 xfailed** — widening did not create defects, it
+revealed ones already shipped.
+
+| Finding | Verified | Outcome |
+|---|---|---|
+| `role="status"` search keyed on the conclusion | refusal panels render `role="note"`, **4 on the unpublished fixture** | the "recorded absence" was FALSE; now a strict xfail |
+| function-level xfail hid the evidence surface | `evidence/ar` fails at **135x21px**; `evidence/en` PASSES at 47px | a second, language-specific defect |
+| reflow measured at 1180px only | `evidence` overflows by **184px** at 390px, both languages | a third defect |
+| `dir` scan was a denylist | `directions[language]` would have passed | tightened to an allowlist |
+
+**The refusal finding is the most serious, and it is `khepri-a-refused-section-still-renders`.**
+The first form of the status pin asked "does any `role=status|progressbar|alert` region exist?" —
+a search keyed on the *conclusion* the clause requires. A refusal panel is
+`data-component="refusal-panel"` with `role="note"`, so the search could never see its subject and
+the pin passed over a real failure while claiming the clause had none. The subject is now located
+by its own markup.
+
+**A width check was also missing.** A target 10px wide and 44px tall is not a 44px target; the
+first form asserted height alone.
 
 ---
 

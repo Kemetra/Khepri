@@ -42,6 +42,39 @@ _SURFACES = ("documents", "evidence")
 #: `dir` per language, the pairing a server computes from the language alone.
 _DIRECTION = {"ar": "rtl", "en": "ltr"}
 
+#: The supported viewports. `RRA-015` §Verification requires no page-level horizontal
+#: overflow "at any width", which a single width cannot establish: a responsive layout
+#: passes at 1180px and fails at 390px, where doubled text has a quarter of the room.
+_VIEWPORTS = ((1180, 900), (390, 844))
+
+#: `FR-189` target-floor failures, recorded not fixed, keyed by the exact case that fails.
+#: Both live in stylesheets a follow-on slice under `RRA-015` owns. An evidence slice that
+#: edited them to go green would hide the defect rather than record it.
+_TARGET_FLOOR_FAILURES = {
+    ("documents", "en"): (
+        "FR-189 floor failure in report.css. The report surface's 'On this page' nav "
+        "anchors render at 21px against the 44px floor; report.css declares no minimum "
+        "target size at all."
+    ),
+    ("documents", "ar"): (
+        "FR-189 floor failure in report.css, the Arabic report surface. Same cause as the "
+        "English one: no minimum target size is declared."
+    ),
+    ("evidence", "ar"): (
+        "FR-189 floor failure on the ARABIC evidence surface only: a tab stop measures "
+        "135x21px against the 44x44 floor. `evidence/en` PASSES at 47px, so this is a "
+        "language-specific layout failure, not a missing rule -- which is why the marker "
+        "is keyed by (surface, language) and not by surface."
+    ),
+}
+
+#: `FR-189` reflow failures at 200% text, keyed the same way. Both languages fail on the
+#: evidence surface at the narrow viewport; the wide viewport passes.
+_REFLOW_FAILURES = {
+    ("evidence", "ar", 390),
+    ("evidence", "en", 390),
+}
+
 
 def _surfaces(*, published: bool = True) -> dict[tuple[str, str], str]:
     """Every governed surface, keyed by (surface, language).
@@ -59,6 +92,18 @@ def _surfaces(*, published: bool = True) -> dict[tuple[str, str], str]:
         for language in _LANGUAGES:
             out[(surface, language)] = mapping[language]
     return out
+
+
+def _refusal_bearing_surfaces() -> dict[tuple[str, str], str]:
+    """The surfaces on the fixture that actually renders refusals.
+
+    A chart needs `published=True`; a refusal panel needs the opposite. `V-concentration`
+    closed the refusal window, so the published triple admits a family and draws a chart,
+    while the unpublished one refuses sections instead. Measured: unpublished renders 4
+    refusal panels on the report surface, published renders 0. Two clauses of `FR-189`
+    therefore need two fixtures, and asserting both against one would leave one unmeasured.
+    """
+    return _surfaces(published=False)
 
 
 def test_the_roster_reaches_every_governed_surface_in_both_languages() -> None:
@@ -135,15 +180,24 @@ def test_no_template_infers_direction_from_anything_but_the_passed_value() -> No
 
     templates = files("khepri.rra.rendering").joinpath("templates")
     checked = 0
+    found = 0
     for name in ("report.html.j2", "report.evidence.html.j2"):
         source = templates.joinpath(name).read_text(encoding="utf-8")
         checked += 1
         for match in re.findall(r'dir="\{\{([^}]*)\}\}"', source):
-            assert "if" not in match and "rtl" not in match.lower(), (
-                f"{name} computes direction inline ({match.strip()!r}); `FR-189` requires "
-                "it server-computed and passed in"
+            found += 1
+            # An allowlist, not a denylist. Rejecting `if` and `rtl` would admit
+            # `directions[language]` and `direction_for(language)` -- both template-side
+            # computations, both violating the same requirement. Requiring the expression
+            # to BE the passed name admits exactly one form and refuses every other.
+            assert match.strip() == "direction", (
+                f"{name} sets dir from {match.strip()!r}; `FR-189` requires the value "
+                "server-computed and passed in, so the expression must be `direction` "
+                "alone -- an index, a call, or a conditional all move the computation "
+                "into the presentation layer"
             )
     assert checked == 2, "the template roster changed; this scan measured the wrong set"
+    assert found, "no dir attribute found in either template, so this scan proves nothing"
 
 
 def test_every_chart_exposes_an_image_role_with_a_title_and_a_description() -> None:
@@ -160,8 +214,17 @@ def test_every_chart_exposes_an_image_role_with_a_title_and_a_description() -> N
         charts += len(svgs)
         for svg in svgs:
             assert 'role="img"' in svg, f"{surface}/{language}: a chart declares no img role"
-            assert "<title" in svg, f"{surface}/{language}: a chart carries no <title>"
-            assert "<desc" in svg, f"{surface}/{language}: a chart carries no <desc>"
+            # Presence is not the requirement: `FR-189` says the title and description are
+            # "resolved from governed codes", and an empty `<title></title>` satisfies a
+            # presence check while telling a screen reader nothing. Extract the text and
+            # require it to be non-empty.
+            for element in ("title", "desc"):
+                match = re.search(rf"<{element}\b[^>]*>(.*?)</{element}>", svg, flags=re.S)
+                assert match, f"{surface}/{language}: a chart carries no <{element}>"
+                assert match.group(1).strip(), (
+                    f"{surface}/{language}: a chart's <{element}> is empty, so it resolves "
+                    "no governed wording for a reader who cannot see the chart"
+                )
 
     assert charts > 0, (
         "no chart rendered on any surface, so this test proves nothing about FR-189's "
@@ -218,34 +281,56 @@ def test_only_the_report_surface_renders_trust_badges_today() -> None:
 # day a subject ships rather than passing over nothing. This is the shape `#486` established.
 
 
-def test_any_status_region_announces_itself() -> None:
+@pytest.mark.xfail(
+    reason=(
+        "FR-189 floor failure in _components.html.j2, recorded not fixed. A refusal panel "
+        "renders with role='note', not role='status'. Measured on the unpublished fixture: "
+        "4 refusal panels on the report surface, 0 status roles. The fix belongs to a "
+        "follow-on slice under RRA-015 that owns that template."
+    ),
+    strict=True,
+)
+def test_every_refusal_panel_announces_itself_with_a_status_role() -> None:
     """`FR-189`: `role="status"` for refusals and progress.
 
-    Conditional because the clause has no reachable subject, not because the product omits
-    something: neither surface renders a refusal region or a progress affordance. The
-    implication is asserted, and the companion test records that the antecedent is false.
+    **The subject is located by its own markup, not by the role the clause requires.** An
+    earlier form of this test asked "does any `role=status|progressbar|alert` region
+    exist?" and, finding none, recorded the clause as having no subject. That was wrong in
+    the way `khepri-a-refused-section-still-renders` describes: a refusal panel is
+    `data-component="refusal-panel"` with `role="note"`, so a search keyed on the
+    *conclusion* could never see the subject and the pin passed over a real failure.
+
+    Measured at `154348e`: the unpublished fixture renders **4** refusal panels on the
+    report surface and **0** status roles.
     """
-    for (surface, language), document in _surfaces().items():
-        regions = re.findall(r'role="(status|progressbar|alert)"', document)
-        if not regions:
-            continue
-        assert 'role="status"' in document, (
-            f"{surface}/{language} renders {regions} without a status role"
-        )
+    panels = 0
+    for (surface, language), document in _refusal_bearing_surfaces().items():
+        for panel in re.findall(
+            r'<[^>]*data-component="refusal-panel"[^>]*>', document
+        ):
+            panels += 1
+            assert 'role="status"' in panel, (
+                f"{surface}/{language} renders a refusal panel without a status role: "
+                f"{panel}"
+            )
+    assert panels, "no refusal panel rendered, so this test proves nothing"
 
 
-def test_the_report_surfaces_render_no_status_region_today() -> None:
-    """The antecedent of the pin above, recorded so the absence is visible.
+def test_a_refusal_panel_is_reachable_on_some_fixture() -> None:
+    """The subject of the pin above is real, asserted separately from its compliance.
 
-    This fails the day a refusal or progress affordance ships, which is the point: the
-    conditional test above would silently start passing over a real subject, and this one
-    forces the pair to be revisited.
+    Without this, the xfail could start passing because refusal panels stopped rendering
+    rather than because they gained a status role -- two very different facts that a single
+    assertion cannot distinguish.
     """
-    for (surface, language), document in _surfaces().items():
-        assert 'role="status"' not in document, (
-            f"{surface}/{language} now renders a status region; FR-189's refusal and "
-            "progress clause has a subject and its test must stop being conditional"
-        )
+    panels = sum(
+        document.count('data-component="refusal-panel"')
+        for document in _refusal_bearing_surfaces().values()
+    )
+    assert panels, (
+        "no fixture renders a refusal panel any more; FR-189's refusal clause has lost its "
+        "subject and the pin above must be revisited rather than left to pass"
+    )
 
 
 def test_any_form_control_is_associated_with_a_label() -> None:
@@ -330,75 +415,110 @@ def test_every_tab_stop_shows_focus(language: str) -> None:
 
 
 @pytest.mark.browser
-@pytest.mark.xfail(
-    reason=(
-        "FR-189 floor failure in report.css, recorded not fixed. The report surface's "
-        "'On this page' nav anchors render at 21px against the 44px floor, and report.css "
-        "declares no minimum target size at all. The fix belongs to a follow-on slice "
-        "under RRA-015 that owns that stylesheet; an evidence slice that edited it to go "
-        "green would hide the defect rather than record it."
-    ),
-    strict=True,
-)
+@pytest.mark.parametrize("surface", _SURFACES)
 @pytest.mark.parametrize("language", _LANGUAGES)
-def test_every_tab_stop_meets_the_target_floor(language: str) -> None:
+def test_every_tab_stop_meets_the_target_floor(
+    request: pytest.FixtureRequest, language: str, surface: str
+) -> None:
     """`FR-189`: "targets of at least 44px on the element a pointer lands on".
 
     **Measured on the element itself, not an ancestor.** That wording is deliberate: a 44px
     wrapper around a 21px link is a target a pointer misses, and asserting the wrapper's box
     would report it as passing.
 
-    `strict=True` so this fails the day the floor is met -- an xfail that silently starts
-    passing is a defect ledger that stops being read.
+    **Both dimensions.** A target 10px wide and 44px tall is not a 44px target; checking
+    height alone admits it.
+
+    **Parametrized per surface, and the xfail applied to `documents` only.** A
+    function-level xfail with the report surface measured first meant the evidence
+    surface -- which passes at 47px -- was never reached, so this module claimed evidence
+    it had not produced.
     """
     from playwright.sync_api import sync_playwright
 
-    surfaces = _surfaces()
+    # Two distinct recorded failures, marked per (surface, language) rather than per
+    # function. A function-level xfail stopped at the report surface and never measured the
+    # evidence one; a surface-level xfail would have hidden that `evidence/en` PASSES while
+    # `evidence/ar` does not. Marking the exact failing cases is what keeps the ledger able
+    # to say which subjects are broken and which are sound.
+    if (surface, language) in _TARGET_FLOOR_FAILURES:
+        request.node.add_marker(
+            pytest.mark.xfail(reason=_TARGET_FLOOR_FAILURES[(surface, language)], strict=True)
+        )
+
+    document = _surfaces()[(surface, language)]
     with sync_playwright() as playwright:
         browser = _launch_chromium(playwright)
         try:
             page = browser.new_page(viewport={"width": 1180, "height": 900})  # type: ignore[attr-defined]
-            for surface in _SURFACES:
-                page.set_content(surfaces[(surface, language)], wait_until="domcontentloaded")
-                stops = page.locator(
-                    "a[href]:visible, button:visible, [tabindex='0']:visible"
-                ).all()
-                for stop in stops:
-                    box = stop.bounding_box()
-                    assert box is not None and box["height"] >= 44, (
-                        f"{surface}/{language}: a tab stop is "
-                        f"{box['height'] if box else None}px, below the 44px floor"
-                    )
+            page.set_content(document, wait_until="domcontentloaded")
+            stops = page.locator(
+                "a[href]:visible, button:visible, [tabindex='0']:visible"
+            ).all()
+            assert stops, f"{surface}/{language} has no tab stop, so this proves nothing"
+            for stop in stops:
+                box = stop.bounding_box()
+                assert box is not None, f"{surface}/{language}: a tab stop has no box"
+                assert box["height"] >= 44 and box["width"] >= 44, (
+                    f"{surface}/{language}: a tab stop is "
+                    f"{box['width']}x{box['height']}px, below the 44x44 floor"
+                )
         finally:
             browser.close()  # type: ignore[attr-defined]
 
 
 @pytest.mark.browser
+@pytest.mark.parametrize("surface", _SURFACES)
+@pytest.mark.parametrize("viewport", _VIEWPORTS)
 @pytest.mark.parametrize("language", _LANGUAGES)
-def test_text_scales_to_200_percent_without_horizontal_overflow(language: str) -> None:
+def test_text_scales_to_200_percent_without_horizontal_overflow(
+    request: pytest.FixtureRequest,
+    language: str,
+    viewport: tuple[int, int],
+    surface: str,
+) -> None:
     """`FR-189`: text scales to 200% without loss of content or function.
 
-    `RRA-015` §Verification adds "no page-level horizontal overflow at any width". Doubling
-    the root font size is the reflow test: a layout built on fixed pixel widths pushes the
-    page wider instead of wrapping, and the content a reader needs moves off-screen.
+    `RRA-015` §Verification adds "no page-level horizontal overflow at **any** width".
+    Doubling the root font size is the reflow test: a layout built on fixed pixel widths
+    pushes the page wider instead of wrapping, and the content a reader needs moves
+    off-screen.
+
+    **Every supported viewport, not just the widest.** A responsive layout passes at 1180px
+    and fails at 390px, where the doubled text has a quarter of the horizontal room; a
+    single-width test cannot establish "at any width" and a first form of this one claimed
+    it from 1180px alone.
     """
     from playwright.sync_api import sync_playwright
 
-    surfaces = _surfaces()
+    if (surface, language, viewport[0]) in _REFLOW_FAILURES:
+        request.node.add_marker(
+            pytest.mark.xfail(
+                reason=(
+                    f"FR-189 reflow failure: {surface}/{language} overflows by ~184px at "
+                    f"{viewport[0]}px with 200% text. The wide viewport passes, so this is "
+                    "a narrow-width layout failure in the evidence surface's stylesheet, "
+                    "owned by a follow-on slice under RRA-015."
+                ),
+                strict=True,
+            )
+        )
+
+    document = _surfaces()[(surface, language)]
     with sync_playwright() as playwright:
         browser = _launch_chromium(playwright)
         try:
-            for surface in _SURFACES:
-                page = browser.new_page(viewport={"width": 1180, "height": 900})  # type: ignore[attr-defined]
-                page.set_content(surfaces[(surface, language)], wait_until="domcontentloaded")
-                page.add_style_tag(content="html { font-size: 200% !important; }")
-                overflow = page.evaluate(
-                    "() => document.documentElement.scrollWidth - window.innerWidth"
-                )
-                assert overflow <= 0, (
-                    f"{surface}/{language} overflows by {overflow}px at 200% text; content "
-                    "moves off-screen rather than reflowing"
-                )
-                page.close()
+            page = browser.new_page(  # type: ignore[attr-defined]
+                viewport={"width": viewport[0], "height": viewport[1]}
+            )
+            page.set_content(document, wait_until="domcontentloaded")
+            page.add_style_tag(content="html { font-size: 200% !important; }")
+            overflow = page.evaluate(
+                "() => document.documentElement.scrollWidth - window.innerWidth"
+            )
+            assert overflow <= 0, (
+                f"{surface}/{language} at {viewport[0]}px overflows by {overflow}px at "
+                "200% text; content moves off-screen rather than reflowing"
+            )
         finally:
             browser.close()  # type: ignore[attr-defined]
