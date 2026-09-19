@@ -3,7 +3,11 @@
 **Slice:** Accessibility evidence, `RRA` report and evidence surfaces (`U1-06`, this family's half).
 **Authority:** `RRA-015` `FR-189`, `active`, verified at `535b644`. Design: master specification §11.
 **Plan:** `docs/superpowers/plans/2026-09-19-u1-rra-slice-9a-execution-plan.md`.
-**Module:** `tests/test_rra015_report_accessibility.py` — 18 tests, 4 browser-marked.
+**Module:** `tests/test_rra015_report_accessibility.py` — 18 collected, **6 browser-marked**
+(three browser functions, each parametrized over `ar` and `en`). Counted by collection
+(`pytest -m browser --collect-only`), not by reading the source: a first draft said "4", written
+when there were two browser functions and not updated when the target-size floor was split into
+its own.
 **Result:** 16 passed, **2 xfailed** — the xfails are a recorded floor failure, below.
 
 **This slice changed no source file.**
