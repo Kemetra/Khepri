@@ -57,7 +57,19 @@ jobs:
   pytest:
     name: pytest
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 25, not 10. `FND-005` puts the 236 `browser`-marked tests on this job. The
+    # arithmetic, because it is not obvious: the marked subset runs TWICE -- once inside
+    # `uv run pytest` and again when the guard below re-runs it to prove none skipped.
+    #
+    #   suite without any browser test running   7m56s  (measured, run 35450552863)
+    # + the marked subset, inside the suite     ~4m24s  (measured locally)
+    # + the marked subset again, in the guard   ~4m24s
+    # + `playwright install --with-deps`        ~1-3m   (cold runner, apt included)
+    #                                          ~=  18m
+    #
+    # At 10 the job would be killed mid-suite and the guard would never run -- a gate
+    # that cannot pass is worse than no gate. 25 leaves margin without hiding a hang.
+    timeout-minutes: 25
     services:
       postgres:
         # Pinned by digest, matching how every action in this file is pinned.
@@ -84,6 +96,12 @@ jobs:
           python-version: "3.13"
           enable-cache: true
       - run: uv sync --frozen
+      # `FND-005`: without this the 236 `browser`-marked tests skip and the job reports
+      # green. The lockfile is the pin -- `uv.lock` constrains playwright to >=1.61,<2 and
+      # `playwright install` resolves the Chromium revision that version fixes. No revision
+      # is transcribed here; `image.yml` remains the only place one is read out.
+      - name: install the pinned Chromium
+        run: uv run playwright install --with-deps chromium
       - run: uv run pytest
       # The point of attaching the service is that concurrency contracts get
       # proved rather than skipped, and a skipped test reports green. This
@@ -93,6 +111,12 @@ jobs:
       # identical from the outside, and only the second is a regression.
       - name: prove the concurrency contracts actually ran
         run: uv run python .github/scripts/require_concurrency_tests.py
+      # The same reading for the browser contracts, which `FND-005` governs. This step
+      # fails if any test marked `browser` was skipped -- meaning the Chromium install
+      # above did not take -- and fails if the marker matches nothing at all, because a
+      # renamed marker and an unwritten test are indistinguishable from outside.
+      - name: prove the browser contracts actually ran
+        run: uv run python .github/scripts/require_browser_tests.py
 
   # RRA-007 requires CI to fail when an approved performance tolerance is
   # exceeded. This job is that gate. It is NOT evidence that the objective is
