@@ -3,11 +3,11 @@
 **Slice:** Accessibility evidence, `RRA` report and evidence surfaces (`U1-06`, this family's half).
 **Authority:** `RRA-015` `FR-189`, `active`, verified at `535b644`. Design: master specification §11.
 **Plan:** `docs/superpowers/plans/2026-09-19-u1-rra-slice-9a-execution-plan.md`.
-**Module:** `tests/test_rra015_report_accessibility.py` — 18 collected, **6 browser-marked**
-(three browser functions, each parametrized over `ar` and `en`). Counted by collection
-(`pytest -m browser --collect-only`), not by reading the source: a first draft said "4", written
-when there were two browser functions and not updated when the target-size floor was split into
-its own.
+**Module:** `tests/test_rra015_report_accessibility.py` — 26 collected, **14 browser-marked**
+Counted by collection (`pytest -m browser --collect-only`), never by reading the source: a first
+draft said "4 browser-marked" and a review corrected it to 6; the review round then parametrized
+two browser tests by surface and viewport, taking it to 14. A test count derived by reasoning goes
+stale at every refactor.
 **Result:** 20 passed, **6 xfailed** — every xfail is a recorded floor failure, below.
 
 **This slice changed no source file.**
@@ -86,9 +86,14 @@ antecedent is false today, so the pin fails the day a subject ships.
 
 | Floor | Subject | Why |
 |---|---|---|
-| `role="status"` for refusals and progress | **0** on both surfaces | neither renders a refusal region or progress affordance |
 | Labels associated with controls | **0** form controls | a report is a read-only presentation |
 | Non-colour differentiation, **evidence surface** | **0** trust badges | only the report surface renders them |
+
+~~`role="status"` for refusals and progress~~ — **WITHDRAWN.** This was listed as a third absence
+and it was wrong. Refusal panels ARE reachable: `data-component="refusal-panel"` with
+`role="note"`, 4 of them on the report surface under the unpublished fixture. The absence was an
+artifact of searching for the role the clause requires instead of the subject it governs. It is now
+Finding 4, a recorded failure.
 
 **The third was nearly missed by a substring count.** A first probe counted the substring `badge`
 and reported `2` on the evidence surface; a class-attribute match reports `0`. Those two
@@ -142,7 +147,7 @@ Every mutant restored by `git checkout`, after committing the module — see
 
 | Gate | Result |
 |---|---|
-| `uv run pytest tests/test_rra015_report_accessibility.py` | **16 passed, 2 xfailed** |
+| `uv run pytest tests/test_rra015_report_accessibility.py` | **20 passed, 6 xfailed** |
 | `uv run ruff check .` | passed |
 | `uv run khepri-gov validate` | passed |
 | `uv run pytest` (full suite) | see the pull request |
