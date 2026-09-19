@@ -1,10 +1,16 @@
 """`RRA-015` `FR-190`-`FR-191`: visual-regression evidence for the report and evidence surfaces.
 
 `tests/` only, and no stored image. Visual evidence here is **computed measurement** -- box
-geometry, computed styles and element counts -- because a pixel digest cannot name which of
-`FR-190`'s eight dimensions drifted, and a committed baseline image would be the hosted
-baseline store `FR-190` excludes. Slice 10b measured both before choosing; this module follows
-that decision rather than re-litigating it.
+geometry from `getBoundingClientRect`, computed styles and element counts -- because a pixel
+digest cannot name which of `FR-190`'s eight dimensions drifted, and a committed baseline
+image would be the hosted baseline store `FR-190` excludes. Slice 10b measured both before
+choosing; this module follows that decision rather than re-litigating it.
+
+**Counts alone would not have been layout evidence.** Element counts and computed styles can
+both hold while boxes move, overlap, clip or fail to mirror, so the probe also measures real
+geometry: the content column against the viewport, section offsets from the START edge (so a
+correct mirror reports the same numbers in both directions), section widths, and that sections
+stack without overlapping.
 
 **No stylesheet is injected, and that is a finding rather than an omission.** The report
 renders one inline `<style>` element and zero `<link rel=stylesheet>`, so `set_content` alone
@@ -63,6 +69,26 @@ _DIRECTION = {"ar": "rtl", "en": "ltr"}
 #: rhythm from `shell.css` would be the cross-family token import slice 3 was scoped around.
 _RHYTHM_PX = 8
 
+#: Surfaces whose asymmetric boxes are sized by TEXT rather than by the grid.
+#:
+#: `documents`' tables carry fixed column widths, so its `td` offsets are identical in both
+#: languages whatever face resolves. `evidence` lets its columns size to content, so its
+#: offsets follow the rendered text -- and a `set_content` page has no HTTP origin, so
+#: `@font-face` never fetches and the metrics are the HOST's, not the product's. Measured:
+#: the governed Arabic face resolves on `ubuntu-latest` and not on a Windows developer
+#: machine, exactly as slice 9a recorded.
+_TEXT_SIZED_SURFACES = frozenset({"evidence"})
+
+#: The drift admitted on a text-sized surface. Wide enough to absorb a fallback face,
+#: narrow enough that a real reflow -- a column order reversed, a panel moved to the other
+#: edge -- is hundreds of pixels and still fails.
+_TEXT_METRIC_TOLERANCE_PX = 40
+
+
+def _measures_arabic_text_width(surface: str) -> bool:
+    """Whether this surface's inline offsets depend on the resolved Arabic face."""
+    return surface in _TEXT_SIZED_SURFACES
+
 
 def _test_sources() -> list[Path]:
     """Every test module, anchored to `__file__` rather than the CWD.
@@ -71,6 +97,73 @@ def _test_sources() -> list[Path]:
     pytest runs from elsewhere, which passes vacuously.
     """
     return sorted(Path(__file__).resolve().parent.glob("test_*.py"))
+
+
+#: A name bound to an image path, e.g. `ref = _PACK / "01-….png"`. Captured so a read
+#: through that name on a LATER line is still attributed to the image.
+_IMAGE_BINDING = re.compile(r"^\s*(\w+)\s*=.*")
+
+#: A read, decode or digest performed through a name, e.g. `ref.read_bytes()`.
+_READ_THROUGH = r"\b{name}\b\s*(?:\.\s*(?:read_bytes|read_text|open)|\))"
+
+#: An inert line: a fixture that DEMONSTRATES the forbidden shape as data rather than
+#: performing it. This module's own regression cases must contain the evasion they pin, and
+#: the scan would otherwise report them as offenders.
+#:
+#: A marker rather than an exemption for this module. Excluding the file wholesale would
+#: blind the guard on the one place most likely to touch reference images -- the same wrong
+#: repair the platform scan's self-match invited.
+_INERT = "scan-fixture: not a real read"
+
+
+def _names_an_image(line: str) -> bool:
+    """Whether this line mentions the reference pack or an image file."""
+    return "ui-visual-references" in line or any(
+        suffix in line for suffix in _IMAGE_SUFFIXES
+    )
+
+
+def _bound_name(line: str) -> set[str]:
+    """The name this line binds, if it binds one, as a set for cheap union."""
+    binding = _IMAGE_BINDING.match(line)
+    return {binding.group(1)} if binding else set()
+
+
+def _reads_through(line: str, bound: set[str]) -> bool:
+    """Whether this line reads, decodes or digests through an image-bearing name."""
+    return any(
+        re.search(_READ_THROUGH.format(name=re.escape(name)), line) for name in bound
+    )
+
+
+def _image_read_lines(source: str) -> list[int]:
+    """The 1-indexed lines where a module reads product truth out of an image.
+
+    **Reads are tracked across statements, not per physical line.** The first version of
+    this scan tested "names an image" and "performs a read" against the SAME line, so the
+    two-statement form below slipped through while the guard reported compliance:
+
+        reference = _PACK / "01-decision-refusal-rtl-comparison.png"   # names, no read
+        payload = reference.read_bytes()   # reads, no name; scan-fixture: not a real read
+
+    Any name bound to an image-bearing expression is therefore remembered, and a later read
+    through that name is attributed to the image it came from. Unrelated image access that
+    never feeds a read is left alone, as `FR-191` reaches reading values out of a picture
+    rather than mentioning one.
+    """
+    bound: set[str] = set()
+    offenders: list[int] = []
+
+    for number, line in enumerate(source.splitlines(), 1):
+        if _INERT in line:
+            continue
+        if _names_an_image(line):
+            offenders.extend([number] if _READS.search(line) else [])
+            bound.update(_bound_name(line))
+            continue
+        offenders.extend([number] if _reads_through(line, bound) else [])
+
+    return offenders
 
 
 def _surfaces(*, published: bool) -> dict[tuple[str, str], str]:
@@ -118,16 +211,54 @@ def test_no_test_reads_a_value_out_of_a_reference_image() -> None:
     sources = _test_sources()
     assert sources, "no test modules found, so this scan proves nothing"
 
-    offenders = []
-    for source in sources:
-        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
-            names_an_image = "ui-visual-references" in line or any(
-                suffix in line for suffix in _IMAGE_SUFFIXES
-            )
-            if names_an_image and _READS.search(line):
-                offenders.append(f"{source.name}:{number}")
+    offenders = [
+        f"{source.name}:{number}"
+        for source in sources
+        for number in _image_read_lines(source.read_text(encoding="utf-8"))
+    ]
 
     assert offenders == [], "a test reads product truth out of an image: " + ", ".join(offenders)
+
+
+def test_the_image_scan_catches_a_read_split_across_two_statements() -> None:
+    """The evasion the per-line form admitted, pinned so it cannot return.
+
+    Binding the path on one line and reading through the name on the next matches neither
+    predicate on either line. A scan that tested both against one line reported compliance
+    while the bytes went on to supply a governed value.
+    """
+    split = (
+        'reference = _PACK / "01-decision-refusal-rtl-comparison.png"\n'
+        'payload = reference.read_bytes()\n'  # scan-fixture: not a real read
+    )
+    assert _image_read_lines(split) == [2], (
+        "a read split across two statements is not detected, so the scan can be evaded"
+    )
+
+    same_line = (
+        'payload = (_PACK / "01-decision-refusal-rtl-comparison.png")'
+        '.read_bytes()\n'  # scan-fixture: not a real read
+    )
+    assert _image_read_lines(same_line) == [1], (  # scan-fixture: not a real read
+        "the single-line form is no longer detected"
+    )
+
+
+def test_the_image_scan_admits_mentioning_an_image_without_reading_it() -> None:
+    """`FR-191` reaches reading values out of a picture, not naming one.
+
+    Asserted so the widened scan cannot drift into refusing every mention -- which would
+    make the guard unusable and invite its deletion. This module's own docstrings name the
+    pack repeatedly.
+    """
+    mention = (
+        '_PACK = Path(__file__).parents[1] / "docs" / "product" / "ui-visual-references"\n'
+        'assert _PACK.is_dir(), "the reference pack is missing"\n'
+        "images = [entry for entry in _PACK.iterdir() if entry.suffix in _IMAGE_SUFFIXES]\n"
+    )
+    assert _image_read_lines(mention) == [], (
+        "the scan flags a mention that reads no value, which would refuse legitimate code"
+    )
 
 
 def test_the_image_scan_is_anchored_to_the_module_not_the_working_directory() -> None:
@@ -169,12 +300,16 @@ def test_no_baseline_image_or_visual_testing_platform_is_introduced() -> None:
     A stored baseline committed beside this module would BE the baseline store the
     requirement excludes, so its absence is asserted rather than assumed.
     """
-    stored = [
-        entry.name
-        for entry in Path(__file__).resolve().parent.iterdir()
+    # `rglob`, not `iterdir`: the latter sees only direct children, so `tests/baselines/
+    # report.png` -- the conventional place a baseline store would appear -- passed the
+    # first version of this guard untouched.
+    root = Path(__file__).resolve().parent
+    stored = sorted(
+        str(entry.relative_to(root))
+        for entry in root.rglob("*")
         if entry.suffix in _IMAGE_SUFFIXES
-    ]
-    assert stored == [], f"a baseline image is stored beside the tests: {stored}"
+    )
+    assert stored == [], f"a baseline image is stored under the test tree: {stored}"
 
     # Assembled from fragments so this module's own source never contains a whole platform
     # name. Spelling them out here would make the scan match ITSELF, and the obvious repair
@@ -302,6 +437,61 @@ _PROBE = """
     typography: {
       body: getComputedStyle(document.body).fontFamily,
     },
+    geometry: (() => {
+      // Real box geometry. Counts and computed styles can BOTH hold while boxes move,
+      // overlap, clip or fail to mirror -- so a module claiming visual regression on
+      // counts alone measures composition and not layout.
+      //
+      // Rounded to whole pixels: sub-pixel text metrics differ with the resolved face,
+      // and a `set_content` page has no HTTP origin, so `@font-face` never fetches and
+      // fractional widths become a property of the HOST rather than the product.
+      const viewport = document.documentElement.clientWidth;
+      const round = (value) => Math.round(value);
+      const rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+      const sections = [...document.querySelectorAll('section')].slice(0, 3);
+      const body = document.body.getBoundingClientRect();
+      return {
+        // The content column must not exceed the viewport: the overflow defect.
+        body_within_viewport: body.width <= viewport + 1,
+        body_width: round(body.width),
+        // Inline offset from the START edge, so a mirrored layout reports the SAME
+        // value in both directions and a broken mirror does not.
+        //
+        // Measured on elements that are ASYMMETRIC in the inline axis. Every block-level
+        // box here is full-width and centred, so its start offset equals its left offset
+        // in BOTH directions -- comparing those asserts 62 == 62 and passes whether the
+        // page mirrors or ignores direction entirely. Measured: `section`, `.disclosure`,
+        // `ul` and `h2` are all [62, 1118] in each language.
+        //
+        // `li` and `td` really do mirror. `li` carries `padding-inline-start`, so it sits
+        // at left 82 in English and 62 in Arabic; `td` reverses column order, 823 -> 62.
+        // Those are the boxes a broken mirror actually moves.
+        asymmetric_inline_starts: [...document.querySelectorAll('li, td')]
+          .slice(0, 4)
+          .map((element) => {
+            const box = element.getBoundingClientRect();
+            return round(rtl ? viewport - box.right : box.left);
+          }),
+        // The same boxes' raw left offsets. Under a correct mirror these DIFFER between
+        // languages; asserted so the pair above cannot silently become a tautology again.
+        asymmetric_raw_lefts: [...document.querySelectorAll('li, td')]
+          .slice(0, 4)
+          .map((element) => round(element.getBoundingClientRect().left)),
+        section_inline_starts: sections.map((element) => {
+          const box = element.getBoundingClientRect();
+          return round(rtl ? viewport - box.right : box.left);
+        }),
+        section_widths: sections.map((element) =>
+          round(element.getBoundingClientRect().width)
+        ),
+        // Stacked, not overlapping: each section begins at or after the previous ends.
+        sections_stack_without_overlap: sections.every((element, index) => {
+          if (index === 0) { return true; }
+          const previous = sections[index - 1].getBoundingClientRect();
+          return element.getBoundingClientRect().top >= previous.bottom - 1;
+        }),
+      };
+    })(),
     rtl: {
       dir: document.documentElement.getAttribute('dir'),
       lang: document.documentElement.getAttribute('lang'),
@@ -398,6 +588,56 @@ def test_the_right_to_left_rendering_mirrors_rather_than_reflows(surface: str) -
         f"{surface}: density differs by language -- {english['density']} vs {arabic['density']}"
     )
 
+    # Geometry, because counts and computed styles can both hold while the boxes fail to
+    # mirror. Offsets are measured from the START edge, so a correctly mirrored layout
+    # reports the SAME numbers in both directions and a broken mirror reports different
+    # ones -- which comparing `left` could never distinguish from correct mirroring.
+    for language, measured in (("en", english), ("ar", arabic)):
+        assert measured["geometry"]["body_within_viewport"], (
+            f"{surface}/{language}: the content column is "
+            f"{measured['geometry']['body_width']}px and overflows the viewport"
+        )
+        assert measured["geometry"]["sections_stack_without_overlap"], (
+            f"{surface}/{language}: sections overlap rather than stacking"
+        )
+
+    assert english["geometry"]["section_widths"] == arabic["geometry"]["section_widths"], (
+        f"{surface}: section widths differ by language -- "
+        f"{english['geometry']['section_widths']} vs {arabic['geometry']['section_widths']}"
+    )
+
+    # The mirror itself, on boxes that actually move. Two assertions, because either alone
+    # is satisfiable by a page that ignores direction:
+    #   * equal offsets FROM THE START EDGE -- the same composition in both directions;
+    #   * DIFFERENT raw left offsets -- proof the page really mirrored rather than
+    #     rendering identically, which is what made the centred-box version a tautology.
+    english_starts = english["geometry"]["asymmetric_inline_starts"]
+    arabic_starts = arabic["geometry"]["asymmetric_inline_starts"]
+    assert english_starts, f"{surface}: no asymmetric box measured, so this proves nothing"
+    if _measures_arabic_text_width(surface):
+        # Offsets on this surface follow TEXT metrics, and a `set_content` page has no
+        # HTTP origin, so `@font-face` never fetches and the width depends on the face the
+        # HOST happens to have. Compared as a tolerance rather than pinned: an exact match
+        # would encode a machine-specific number, which is the defect slice 9a recorded
+        # when `evidence/ar` was briefly pinned and then reported `XPASS(strict)` in CI.
+        drift = [abs(a - b) for a, b in zip(english_starts, arabic_starts, strict=True)]
+        assert max(drift) <= _TEXT_METRIC_TOLERANCE_PX, (
+            f"{surface}: asymmetric boxes drift {drift}px from the start edge, beyond the "
+            f"{_TEXT_METRIC_TOLERANCE_PX}px text-metric tolerance -- a real reflow"
+        )
+    else:
+        assert english_starts == arabic_starts, (
+            f"{surface}: asymmetric boxes sit at different offsets from the start edge -- "
+            f"{english_starts} vs {arabic_starts}, so the layout reflows rather than mirrors"
+        )
+    assert english["geometry"]["asymmetric_raw_lefts"] != (
+        arabic["geometry"]["asymmetric_raw_lefts"]
+    ), (
+        f"{surface}: the asymmetric boxes occupy identical raw positions in both "
+        "languages, so the page renders the same rather than mirroring and the "
+        "start-edge comparison above is measuring nothing"
+    )
+
 
 @pytest.mark.browser
 def test_the_refusal_composition_is_language_invariant() -> None:
@@ -421,4 +661,31 @@ def test_the_refusal_composition_is_language_invariant() -> None:
     assert english["density"]["charts"] == 0, (
         "the unpublished fixture renders a chart, so it is not the refusal-bearing fixture "
         "this case relies on"
+    )
+
+    # The refusal surface is laid out, not merely composed. A refusal panel that overflowed
+    # or overlapped its neighbour would leave every count above unchanged.
+    for language, measured in (("en", english), ("ar", arabic)):
+        assert measured["geometry"]["body_within_viewport"], (
+            f"the refusal surface overflows the viewport in {language} at "
+            f"{measured['geometry']['body_width']}px"
+        )
+        assert measured["geometry"]["sections_stack_without_overlap"], (
+            f"the refusal surface's sections overlap in {language}"
+        )
+
+    # Same two-sided mirror check as the RTL case: equal from the start edge, different
+    # raw positions. Either alone passes on a page that ignores direction.
+    assert english["geometry"]["asymmetric_inline_starts"] == (
+        arabic["geometry"]["asymmetric_inline_starts"]
+    ), (
+        "the refusal surface reflows rather than mirrors -- "
+        f"{english['geometry']['asymmetric_inline_starts']} vs "
+        f"{arabic['geometry']['asymmetric_inline_starts']}"
+    )
+    assert english["geometry"]["asymmetric_raw_lefts"] != (
+        arabic["geometry"]["asymmetric_raw_lefts"]
+    ), (
+        "the refusal surface occupies identical raw positions in both languages, so it "
+        "renders the same rather than mirroring"
     )

@@ -1,7 +1,8 @@
 # `U1` RRA slice 10a — Evidence
 
 Companion to `2026-09-19-u1-rra-slice-10a-execution-plan.md`. Records what was measured, what
-each guard proves, and the two defects this slice's own mutation testing found in its tests.
+each guard proves, the defects this slice's own mutation testing found in its tests, and the
+three review findings that followed.
 
 **Authority:** active `RRA-015` `FR-190`–`FR-191`. **Files changed:** `tests/` only — no source
 file, as the allocation plan requires of an evidence slice.
@@ -10,14 +11,16 @@ file, as the allocation plan requires of an evidence slice.
 
 ## What shipped
 
-`tests/test_rra015_report_visual_regression.py`, 13 tests: 6 static, 7 marked `browser`.
+`tests/test_rra015_report_visual_regression.py`, 15 tests: 8 static, 7 marked `browser`.
 
 | Guard | `FR` | Proves |
 |---|---|---|
 | no test reads a value out of a reference image | `FR-191` | no module opens, reads, decodes or digests a pack file |
 | the scan is anchored to the module, not the CWD | `FR-191` | the scan's file set is identical from two working directories |
 | the reference pack is present | `FR-191` | the scan is not guarding an empty directory |
-| no baseline image or visual-testing platform | `FR-190` | no stored baseline, no hosted store, no snapshot platform |
+| the scan catches a read split across two statements | `FR-191` | the two-line evasion cannot return |
+| the scan admits a mention that reads nothing | `FR-191` | the guard refuses reads, not mentions |
+| no baseline image or visual-testing platform | `FR-190` | no stored baseline anywhere under `tests/`, no snapshot platform |
 | every named reference resolves to a rendered subject | `FR-190` | no reference is measured over nothing |
 | the refusal reference is measured, not exempted | `FR-190` | §16.4 #9 has a real subject here, two-fixture split holds |
 | dimensions are deterministic across two runs | `FR-190` §Verification | the measurement is usable as evidence at all |
@@ -59,7 +62,7 @@ surfaces — exactly `--report-space: 1rem` at 2×, 1×, 2× (`report.css:51-52`
 
 ---
 
-## Two defects found by mutation testing, both in this slice's own tests
+## Defects found by mutation testing, all in this slice's own tests
 
 Neither would have been caught by a green run. Recorded because each is a reusable trap.
 
@@ -96,10 +99,100 @@ null measurement. Re-run of M2 then failed on both surfaces. Killed.
 | M3 | `_DIRECTION["en"] = "rtl"` | **killed**, both surfaces |
 | M4 | `#6` mapped to `<canvas>`, which nothing renders | **killed** |
 | M5 | `_test_sources()` made CWD-relative (`Path("tests")`) | **killed** |
+| M6 | a real unmarked two-statement image read | **killed** (re-run after the CodeScene refactor) |
+| M7 | a baseline planted at `tests/baselines/report.png` | **killed** |
+| M8 | mirror measured from raw `left` instead of the start edge | **survived → defect fixed → killed** |
 
 Each mutant was restored by targeted diff and the module re-run green, per
 `khepri-restore-a-mutant-by-diff-not-by-replace`. The restored file was diffed against a
 pristine backup to confirm no mutation residue remained.
+
+---
+
+## Review round: three CodeRabbit findings, all valid, all fixed
+
+Each was verified against the code before being acted on, not implemented on assertion.
+
+### 1. The image scan was evadable across two statements (Major)
+
+Confirmed by execution: binding the path on one line and reading through the name on the
+next matches **neither** predicate on **either** line, so the read passed while the guard
+reported compliance.
+
+    reference = _PACK / "01-….png"    # names an image, performs no read
+    payload = reference.read_bytes()  # performs a read, names no image
+
+Fixed by remembering any name bound to an image-bearing expression and attributing a later
+read through that name to the image. Two regression cases pin it: the split form must be
+caught, and a mention that reads nothing must still be admitted — `FR-191` reaches reading
+values out of a picture, not naming one, and a scan that refused every mention would be
+unusable and invite its own deletion.
+
+**This module's own fixtures then tripped the widened scan** — they must contain the evasion
+they pin. Marked inert line-by-line with an explicit comment rather than exempting the file,
+because a blanket exemption would blind the guard on the one file most likely to touch
+reference images. That is the same wrong repair the platform-scan self-match invited.
+
+### 2. The baseline scan saw only direct children (Minor)
+
+`iterdir()` does not descend, so `tests/baselines/report.png` — the conventional shape of a
+baseline store — passed untouched. Changed to `rglob("*")`. **Verified by planting a real PNG
+at that path**: the guard fires, and passes again once removed.
+
+The finding also corrected an attribution: the stored-baseline prohibition is `FR-190`,
+`FR-191` covers reading values out of images. The allocation plan confirms it (§512, §514).
+
+### 3. The probe measured no box geometry (Major) — the substantive one
+
+Confirmed: the module contained no `getBoundingClientRect` at all. Counts and computed styles
+can **both** hold while boxes move, overlap, clip or fail to mirror, so a module claiming
+visual regression on counts alone measured composition and not layout.
+
+Added: content column against the viewport, section widths, non-overlapping stacking, and
+inline offsets from the start edge.
+
+**The first mirror assertion was a tautology, and mutation testing caught it.** Measuring
+`section`/`body` offsets proved nothing: those boxes are centred (`margin-inline: auto`), so
+their start offset equals their left offset in **both** directions — the assertion compared
+`[62,62,62]` against `[62,62,62]` and passed whether the page mirrored or ignored direction
+entirely. **M8 survived**, replacing raw `left` for the start-edge calculation with no test
+failing.
+
+Repaired by measuring elements that genuinely mirror. Measured across the rendered page:
+
+| Selector | English | Arabic | Mirrors? |
+|---|---|---|---|
+| `section`, `.disclosure`, `ul`, `h2` | left 62, right 1118 | left 62, right 1118 | **no** — full-width, centred |
+| `li` | left 82 | left 62 | **yes** — `padding-inline-start` flips |
+| `td` | left 823 | left 62 | **yes** — column order reverses |
+
+The assertion is now two-sided: offsets from the start edge must be **equal** (same
+composition), and raw `left` offsets must **differ** (the page really mirrored rather than
+rendering identically). Either alone passes on a page that ignores direction. M8 then failed
+on all three cases.
+
+### The host-dependent divergence this exposed, recorded not pinned
+
+With real geometry, `evidence/ar` diverged ~19px from `evidence/en`. **Diagnosed rather than
+assumed**: `_renders_the_governed_face()` reports `False` for Arabic on this machine, so the
+cause is the known `set_content` limitation — no HTTP origin, so `@font-face` never fetches
+and text metrics are the host's.
+
+`documents` is unaffected: its tables carry fixed column widths. `evidence` sizes columns to
+content, so its offsets follow the rendered text.
+
+Compared under a 40px tolerance on text-sized surfaces rather than pinned exactly — wide
+enough to absorb a fallback face, narrow enough that a real reflow (a reversed column order,
+a panel at the wrong edge) is hundreds of pixels and still fails. Pinning the machine-specific
+number is the defect slice 9a recorded when `evidence/ar` was briefly filed and CI then
+reported `XPASS(strict)`.
+
+### CodeScene
+
+The multi-line scan's nested conditionals dropped the file to **9.84** ("Bumpy Road Ahead",
+3 bumps in `_image_read_lines`) — below the 10.00 every new file must score. Extracted
+`_bound_name` and `_reads_through`, flattening the loop body. Back to **10.00**, and M6
+re-run afterwards to confirm the refactor did not disarm the scan.
 
 ---
 
