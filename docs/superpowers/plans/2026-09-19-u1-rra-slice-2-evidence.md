@@ -81,6 +81,18 @@ Every guard was mutated and restored by `git checkout`, never by `str.replace`
 | M3 | skip link moved below `.brand` in `base.html.j2` | tab order fails | **2 failed** |
 | M4 | skip link `padding` zeroed | target floor fails | **4 failed** |
 | M5 | `:focus-visible` outline set to `none` | scroll container fails | **2 failed** |
+| M6 | `:focus-visible` outline set to `0px solid` | scroll container fails | **2 failed**, after the fix below |
+
+**M6 was found by review, not by this slice's own mutation pass, and it is the honest record of a
+guard that nearly shipped half-blind.** The first form of the scroll-container test asserted
+`outlineStyle != "none"` and collected `outlineWidth` without asserting on it — the
+"defined but never attached" shape. `outline-width: 0` keeps `outlineStyle == "solid"`, so the
+assertion passed on a container painting nothing. M5 had not caught it because `outline: none`
+changes the *style*, so it never exercised the zero-width path.
+
+Confirmed by running: M6 **survived** the original test (2 passed), and **fails** it after the width
+half was added (2 failed). See `khepri-defined-but-never-attached` and
+`khepri-redundant-guards-need-separate-evidence`.
 
 **M2 is the load-bearing one.** It proves the guard measures the *binding* rather than the
 directory: a second mechanism in the companion surface's file, which shares

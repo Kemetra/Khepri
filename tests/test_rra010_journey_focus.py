@@ -261,8 +261,13 @@ def test_the_journey_scroll_container_shows_focus(language: str) -> None:
                 "(() => { const s = getComputedStyle(document.activeElement);"
                 " return {style: s.outlineStyle, width: s.outlineWidth}; })()"
             )
-            assert outline["style"] != "none", (
-                f"{language}: the focused scroll container paints no outline"
+            # Both halves are load-bearing, and the width half was missing until a review
+            # found it: `outline-width: 0` keeps `outlineStyle == "solid"`, so a style-only
+            # assertion passes on a container that paints nothing. Mutation M6 confirmed the
+            # hole -- the style check alone survived a zero-width outline.
+            assert outline["style"] != "none" and outline["width"] != "0px", (
+                f"{language}: the focused scroll container paints no visible outline "
+                f"(style={outline['style']}, width={outline['width']})"
             )
         finally:
             browser.close()  # type: ignore[attr-defined]
