@@ -91,9 +91,21 @@ a:focus-visible,
   inset-inline-start: 0;
 }
 
+/*
+ * The skip link is a tab stop, so `FR-189`'s 44px floor reaches it -- it measured 26px.
+ * The floor is declared on `.skip` itself rather than on `.skip:focus`, because the link is
+ * parked offscreen rather than hidden: it still reports a box, so an audit of pointer
+ * targets measures it in the parked state and a `:focus`-only rule would never apply.
+ * Corrected under `RRA-015` `FR-193`; part of the same recorded failure as the anchors above.
+ */
+.skip {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+}
+
 .skip:focus {
   position: static;
-  display: inline-block;
   margin-block-end: var(--report-space);
 }
 
@@ -160,6 +172,24 @@ nav {
 nav ul {
   margin-block: 0;
   padding-inline-start: 1.25rem;
+}
+
+/*
+ * `FR-189`'s 44px pointer-target floor on the navigation anchors, which rendered at 21px --
+ * the line box of an inline `<a>`. `min-block-size` does nothing to a non-replaced inline
+ * box, so the anchor becomes `inline-block` first; that is what makes the floor take effect
+ * rather than merely be declared. `inline-flex` with `align-items: center` keeps the label
+ * optically centred in the taller box instead of sitting on its first line.
+ *
+ * The list marker stays on the `<li>`, so the target grows without the bullets moving.
+ * Corrected under `RRA-015` `FR-193`; the failure was recorded by slice 9a at `#497`.
+ */
+nav ul a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
 }
 
 section {
@@ -237,11 +267,28 @@ article {
   border-inline-start: 2px solid var(--report-rule);
 }
 
+/*
+ * `FR-189` reflow: this two-column grid was what pushed the evidence surface 184px wide at
+ * 200% text in a 390px viewport -- **not** the figures table, which its own `.scroller`
+ * already contains. `minmax(12rem, auto)` is a rem-based floor, so doubling the root font
+ * size doubles the term column to 384px inside a 326px box and the page scrolls sideways.
+ *
+ * `min-content` in place of the fixed `12rem` lets the term column shrink to its longest
+ * word instead of a typographic ideal, and below 480px the pair stacks: a definition list
+ * reads correctly in one column, and `dt`/`dd` keep their semantics either way.
+ * Corrected under `RRA-015` `FR-193`; recorded by slice 9a at `#497`.
+ */
 .provenance {
   display: grid;
-  grid-template-columns: minmax(12rem, auto) 1fr;
+  grid-template-columns: minmax(min-content, auto) 1fr;
   gap: 0.25rem var(--report-space);
   margin-block: 0;
+}
+
+@media (max-width: 480px) {
+  .provenance {
+    grid-template-columns: 1fr;
+  }
 }
 
 .provenance dt {
