@@ -2352,6 +2352,39 @@ def test_a_violating_return_refuses_every_revenue_comparison() -> None:
         assert result.comparison(dimension, METRIC_UNITS) is not None, dimension
 
 
+def test_an_unmapped_dimension_keeps_its_own_cause_when_the_measure_is_refused() -> None:
+    """The surface's own missing input outranks the measure's, and says so.
+
+    `#503`. `channel` is not mapped by this contract, so its comparison has no
+    keys to group by -- genuinely an absent input, whose truthful cause is
+    `required_input_unavailable`: "the file does not contain" the column, which
+    is advice the reader can act on. The revenue measure is *simultaneously*
+    refused for `incomplete_column_coverage`, and letting that cause win here
+    would tell the reader their channel column has gaps when they have no
+    channel column at all.
+
+    Pinned because the seam routing these two causes is shared by both derived
+    surfaces: without this case, `_derived_refusal` ignoring its `present`
+    argument altogether passes every other test in this file.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    # The measure's own cause, on a dimension this contract maps.
+    mapped = result.refusal("revenue_by_product")
+    assert mapped is not None
+    assert mapped.reason == REASON_INCOMPLETE_COVERAGE
+    # The surface's own cause, on the dimension it does not.
+    unmapped = result.refusal(f"revenue_by_{SEMANTIC_CHANNEL}")
+    assert unmapped is not None
+    assert unmapped.reason == REASON_INPUT_UNAVAILABLE
+
+
 def test_a_well_signed_return_still_publishes_the_trend_and_comparisons() -> None:
     """The other side of both gates, so neither can be widened into a refusal.
 
