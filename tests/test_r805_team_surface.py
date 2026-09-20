@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -206,6 +207,7 @@ def _shell(
     context: _Context | None = None,
     raises: Exception | None = None,
     reader: _StubOrganizations | None = None,
+    invitations: object | None = None,
 ) -> TestClient:
     app = FastAPI()
     add_shell_routes(
@@ -213,12 +215,76 @@ def _shell(
         services=ShellServices(
             resolver=_StubResolver(context, raises),
             organizations=reader or _StubOrganizations(),
+            invitations=invitations,
         ),
         clock=lambda: NOW,
     )
     client = TestClient(app)
     client.cookies.set(SESSION_COOKIE, "a-session-token")
     return client
+
+
+class _ListingInvitations:
+    """An invitation gateway that answers the expiry question the real store asks.
+
+    `SqlInvitationStore.invitations_for_organization` is expiry-aware (`#217`):
+    it evaluates `_expired(row, now)` -- `stored <= now` -- for every row it
+    returns. A gateway that ignores `now` cannot fail the way production does,
+    so this one asserts it received a usable instant, which is the whole point
+    of the case below.
+    """
+
+    def __init__(self, invitations: tuple[object, ...]) -> None:
+        self.invitations = invitations
+        self.asked_at: object = None
+
+    def invitations_for_organization(
+        self, organization_id: str, *, now: object
+    ) -> tuple[object, ...]:
+        if not isinstance(now, datetime):
+            raise TypeError(
+                f"the listing needs an instant to compare against, got {now!r}"
+            )
+        self.asked_at = now
+        return self.invitations
+
+
+class TestTheTeamSurfaceListsInvitations:
+    """The path no other case in this file reaches: an organization holding one."""
+
+    def test_it_lists_an_organization_that_holds_an_invitation(self) -> None:
+        """Found in review on `#508`, and no existing test could see it.
+
+        `_team_response` passed `now=None` to a listing whose signature requires
+        a `datetime` and which compares `stored <= now` on every row it returns.
+        Every Team test lists an *empty* organization, so the loop never ran and
+        the surface answered `200` while any organization with a single
+        invitation row raised `TypeError`.
+
+        This is the same shape `#382` recorded for the `AttributeError` the
+        adapter fixed: a field wired to something that cannot answer the
+        surface's call, invisible while nothing calls it.
+        """
+        invitations = _ListingInvitations(
+            (
+                SimpleNamespace(
+                    invitation_id="inv-1",
+                    target_identity="invitee@example.test",
+                    intended_role="member",
+                ),
+            )
+        )
+        reader = _StubOrganizations(
+            organizations=[_organization("org-acme", "Acme")],
+            members=[_Member("member@example.test", "owner", False)],
+        )
+
+        response = _shell(reader=reader, invitations=invitations).get(
+            f"{SHELL_PREFIX}/en/org-acme/team"
+        )
+
+        assert response.status_code == 200
+        assert invitations.asked_at == NOW
 
 
 class TestTheTeamSurface:

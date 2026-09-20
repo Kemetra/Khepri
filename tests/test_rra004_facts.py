@@ -16,6 +16,7 @@ from khepri.rra.facts import (
     CAVEAT_NULL_MEASURE_INPUTS,
     CAVEAT_PERSONAL_VALUES_REDACTED,
     CAVEAT_UNDATED_ROWS_EXCLUDED,
+    COMPARISON_DIMENSIONS,
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
     METRIC_COST,
@@ -1744,10 +1745,21 @@ def test_a_gapped_headline_does_not_take_the_trend_with_it() -> None:
     assert trend is not None, "a gapped headline refused the whole revenue trend"
     # Bucketed at the granularity this span earns, so the labels are asserted by
     # the days that carry revenue rather than by a month spelling.
-    assert {bucket.label for bucket in trend.series.buckets} >= {
-        "2026-01-05",
-        "2026-03-07",
-    }
+    #
+    # Exact rather than a lower bound (`#507` item 5). `>=` could not see a
+    # spurious bucket, and the one that matters is the *gapped* period: the
+    # defect this test guards against is February publishing a figure derived
+    # from a row with no revenue. Asserting the value alongside the label is
+    # what pins that -- the period is present, carries no value, and keeps its
+    # row count, so the gap reads as incompleteness rather than as a month that
+    # sold nothing.
+    assert [
+        (bucket.label, bucket.value, bucket.rows) for bucket in trend.series.buckets
+    ] == [
+        ("2026-01-05", Decimal("100.00"), 1),
+        ("2026-02-06", None, 1),
+        ("2026-03-07", Decimal("200.00"), 1),
+    ]
 
 
 def test_an_unmapped_column_cannot_hide_a_repeated_row_signature() -> None:
@@ -2275,6 +2287,142 @@ def test_a_well_signed_return_still_publishes_both_populations() -> None:
 
     assert result.value(METRIC_REVENUE) == "70.00"
     assert result.value(METRIC_RETURNS) == "30.00"
+
+
+def test_a_violating_return_refuses_the_revenue_trend_too() -> None:
+    """`RRA-003`:93 refuses a *population*, and a series is drawn from it.
+
+    `#503`. The headline gate landed at `#431` item 1 and stopped there:
+    `series_revenue` was summed from the same `measures.revenue` with no gate,
+    so the trend published the illegal `+30.00` reversal as a revenue bucket
+    while the headline refused the very total that bucket feeds.
+
+    The comment that permitted this cited `RRA-004`:46 -- "a month whose own
+    rows are whole still has a total" -- which is sound for a **gap** rule,
+    where a period without holes is genuinely whole. `RRA-003`:93 is not a gap
+    rule. It refuses the financial revenue population itself, so there is no
+    admissible period left to total, and `RRA-004`:55 admits governed trends
+    "only when the relevant dimensions and metric populations are admissible."
+
+    Units are untouched: the violation is in the revenue population, and
+    `RRA-004`:97 leaves independently proven facts standing.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.trend(METRIC_REVENUE) is None
+    refused = result.refusal("revenue_by_period")
+    assert refused is not None
+    assert refused.reason == REASON_INCOMPLETE_COVERAGE
+    # The units series is a different population and still publishes.
+    assert result.trend(METRIC_UNITS) is not None
+
+
+def test_a_violating_return_refuses_every_revenue_comparison() -> None:
+    """The same population refusal, on the dimension surfaces.
+
+    `#503`. Store and category published `330.00` -- the figure the headline
+    refuses -- and product published `P1 = 130.00`, the `100.00` sale plus the
+    illegal `30.00` reversal counted as a sale. `RRA-004`:55 governs the
+    comparisons with the trend in one sentence, so they refuse together.
+
+    Every *mapped* dimension is named rather than one, because
+    `COMPARISON_DIMENSIONS` drives the loop that builds them: a gate reaching
+    only the dimension a test happens to read leaves the others publishing.
+    `channel` is excluded because this contract does not map it -- it refuses at
+    `keys is None` for `required_input_unavailable`, which is the truthful cause
+    for an absent column and says nothing about this requirement.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    mapped = tuple(
+        dimension
+        for dimension in COMPARISON_DIMENSIONS
+        if dimension != SEMANTIC_CHANNEL
+    )
+    assert mapped == ("product", "category", "store")
+    for dimension in mapped:
+        assert result.comparison(dimension, METRIC_REVENUE) is None, dimension
+        refused = result.refusal(f"revenue_by_{dimension}")
+        assert refused is not None, dimension
+        assert refused.reason == REASON_INCOMPLETE_COVERAGE, dimension
+        # Units share the dimension and not the refused population.
+        assert result.comparison(dimension, METRIC_UNITS) is not None, dimension
+
+
+def test_an_unmapped_dimension_keeps_its_own_cause_when_the_measure_is_refused() -> None:
+    """The surface's own missing input outranks the measure's, and says so.
+
+    `#503`. `channel` is not mapped by this contract, so its comparison has no
+    keys to group by -- genuinely an absent input, whose truthful cause is
+    `required_input_unavailable`: "the file does not contain" the column, which
+    is advice the reader can act on. The revenue measure is *simultaneously*
+    refused for `incomplete_column_coverage`, and letting that cause win here
+    would tell the reader their channel column has gaps when they have no
+    channel column at all.
+
+    Pinned because the seam routing these two causes is shared by both derived
+    surfaces: without this case, `_derived_refusal` ignoring its `present`
+    argument altogether passes every other test in this file.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    # The measure's own cause, on a dimension this contract maps.
+    mapped = result.refusal("revenue_by_product")
+    assert mapped is not None
+    assert mapped.reason == REASON_INCOMPLETE_COVERAGE
+    # The surface's own cause, on the dimension it does not.
+    unmapped = result.refusal(f"revenue_by_{SEMANTIC_CHANNEL}")
+    assert unmapped is not None
+    assert unmapped.reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_a_well_signed_return_still_publishes_the_trend_and_comparisons() -> None:
+    """The other side of both gates, so neither can be widened into a refusal.
+
+    `#503`. Without this the gate above passes just as well when it refuses
+    every package containing a return -- `#326`'s over-refusal direction. The
+    published figures are the net financial population: `70.00` overall, and
+    `P1 = 70.00` where the `-30.00` reversal lands against its own sale.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    trend = result.trend(METRIC_REVENUE)
+    assert trend is not None
+    assert [str(bucket.value) for bucket in trend.series.buckets] == [
+        "100.00",
+        "-30.00",
+    ]
+    product = result.comparison("product", METRIC_REVENUE)
+    assert product is not None
+    assert {
+        bucket.label: str(bucket.value) for bucket in product.comparison.buckets
+    } == {"P1": "70.00"}
 
 
 def test_a_gapped_discount_states_incomplete_coverage_not_an_absent_column() -> None:

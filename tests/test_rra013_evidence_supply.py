@@ -250,10 +250,30 @@ def test_a_coverage_only_difference_changes_the_bundle_id(package: FactPackage) 
 
 
 def test_the_bundle_version_advanced_with_the_identity_shape(bundle: ReportBundle) -> None:
-    """FR-105: the identity document gained two fields, so its version moves once."""
+    """FR-105: the identity document gained two fields, so its version moves once.
+
+    The key set is asserted **exactly** (`#507` item 5). A subset check names
+    the two fields the version moved for, which is the claim this docstring
+    makes -- but it cannot see a third key added by the same bump, or an
+    existing one dropped by it, and either would be an identity-shape change
+    that `rra006.bundle.v8` silently absorbed. The document's extent is
+    knowable, so it is stated.
+    """
     assert BUNDLE_VERSION == "rra006.bundle.v8"
     document = bundle.identity.as_document()
-    assert {"coverage_manifest_identity", "coverage_signatures"} <= set(document)
+    assert set(document) == {
+        "bundle_version",
+        "package_version",
+        "formula_version",
+        "mapping_version",
+        "narrative_version",
+        "profile_digest",
+        "source_sha256_hex",
+        "monetary_precision",
+        "row_count",
+        "coverage_manifest_identity",
+        "coverage_signatures",
+    }
     assert document["bundle_version"] == BUNDLE_VERSION
 
 

@@ -296,13 +296,23 @@ def main() -> None:
     the same collaborators, which this module's own docstring records as the thing to avoid.
     """
     import json
-    from datetime import UTC, datetime
 
     from khepri.runtime.config import RuntimeSettings
     from khepri.runtime.wiring import build_retention_sweep, build_stack
 
-    now = datetime.now(UTC)
     stack = build_stack(RuntimeSettings.from_environment())
+    # `stack.clock`, not a second wall clock -- the rule `wiring.py` states for
+    # the comparison path: "a composition root that minted its own would put the
+    # comparison path on a different time from the stores it reads -- invisible
+    # in production and untestable under a controlled clock."
+    #
+    # `#507` item 3 verified no collaborator on this graph reads `stack.clock`
+    # independently today, so minting one here was not yet a live defect. It is
+    # the shape that becomes one silently: the first collaborator to read the
+    # stack's clock would disagree with the `now` threaded through every sweeper,
+    # `DeletionService` and `SqlReportJobRepository` from this single call, and
+    # nothing here would fail. Read from the stack so that cannot arise.
+    now = stack.clock()
     report = build_retention_sweep(stack).sweep(now=now)
     print(
         json.dumps(

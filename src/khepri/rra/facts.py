@@ -529,6 +529,13 @@ class _Aggregated:
     total: Decimal | None
     precision: int
     unit_kind: str
+    #: The cause to state when `total` is absent. `required_input_unavailable`
+    #: renders as "the file does not contain" the column, which is the truthful
+    #: answer when the measure was never mapped and a misdirection when the
+    #: column is present and one of its rows broke a contract. Carried on the
+    #: entry rather than chosen by each consumer so `_series` and `_comparisons`
+    #: cannot drift apart on one requirement's cause.
+    reason: str = REASON_INPUT_UNAVAILABLE
 
 
 @dataclass(frozen=True, slots=True)
@@ -620,11 +627,20 @@ class _Totals:
     #: Which headlines refused because their own column had gaps, so each names
     #: a cause the reader can act on rather than "the file does not contain" it.
     gapped_semantics: frozenset[str] = frozenset()
-    #: The revenue and unit sums before the per-column gap gate, used only to
+    #: The revenue and unit sums before the per-column *gap* gate, used only to
     #: decide whether a *series or comparison* can be derived. `RRA-004`:46
     #: refuses the **headline** when its column has gaps, and a monthly bucket is
     #: not that headline: a gap in January says nothing about February's total,
     #: so refusing the trend would take periods whose own rows are whole.
+    #:
+    #: A **population** refusal is not that, and `#503` is the defect of
+    #: treating it as one. `RRA-003`:93 refuses "the financial revenue
+    #: population" itself, so there is no admissible period left whose own rows
+    #: are whole -- the January/February reasoning has no population to range
+    #: over. `RRA-004`:55 states the consequence directly: governed trends and
+    #: dimension comparisons exist "only when the relevant dimensions and metric
+    #: populations are admissible." So this field survives a gap and refuses a
+    #: population, which is the whole distinction it now encodes.
     series_revenue: Decimal | None = None
     series_units: int | None = None
 
@@ -763,7 +779,8 @@ def _totals(
             if returns_violated
             else measures.gapped_semantics
         ),
-        series_revenue=_monetary(admitted_events, measures.revenue),
+        # Refused with the headline; the field's own note says why (`#503`).
+        series_revenue=None if returns_violated else _monetary(admitted_events, measures.revenue),
         series_units=_sum_integer(measures.units),
     )
 
@@ -1274,12 +1291,14 @@ def _build(
         _Aggregated(
             measure=SEMANTIC_REVENUE,
             values=measures.revenue,
-            # The ungated sum: a series is per period, and `RRA-004`:46 refuses
-            # the *headline* when its column has gaps. A month whose own rows are
-            # whole still has a total.
+            # Survives a gap and refuses a population -- the distinction the
+            # field's own note carries. `reason` because the column is present
+            # and a row broke it, so `required_input_unavailable` would tell the
+            # reader to add a column already in their export (`#503`).
             total=totals.series_revenue,
             precision=money,
             unit_kind=UNIT_MONETARY,
+            reason=headline_reason(SEMANTIC_REVENUE),
         ),
         _Aggregated(
             measure=SEMANTIC_UNITS,
@@ -2022,6 +2041,32 @@ def _assert_derived_from_profile(admitted: AdmittedInput) -> None:
         raise FactsRefused("Admissibility was not decided for the supplied artifacts.")
 
 
+def _derived_refusal(metric: str, entry: _Aggregated, *, present: bool) -> RefusedResult:
+    """A derived surface's refusal, naming its own missing input or the measure's.
+
+    A series and a comparison each have one precondition of their own -- a dated
+    package, a mapped dimension column -- and both are genuinely *absent inputs*
+    when unmet, so they keep `required_input_unavailable` whatever the measure
+    says. That code renders as "the file does not contain" the column, which is
+    the truthful advice for something that is not there.
+
+    When the surface's own input *is* present, the cause belongs to the measure,
+    and `_Aggregated.reason` carries it -- `incomplete_column_coverage` for a
+    revenue column present but holding a row that broke `RRA-003`:93, where
+    telling the reader to add the column would be a misdirection (`#503`).
+
+    `present` is the surface's own precondition: a dated package for a series, a
+    mapped dimension column for a comparison.
+
+    Stated once because the two call sites answer one question. Inlined at each,
+    they were two conditionals that could drift apart on the same requirement.
+    """
+    return RefusedResult(
+        metric=metric,
+        reason=entry.reason if present else REASON_INPUT_UNAVAILABLE,
+    )
+
+
 def _series(
     measures: _Measures,
     aggregated: tuple[_Aggregated, ...],
@@ -2042,9 +2087,7 @@ def _series(
     for entry in aggregated:
         metric = f"{entry.measure}_by_{PERIOD_DIMENSION}"
         if not dated or entry.total is None:
-            refusals.append(
-                RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)
-            )
+            refusals.append(_derived_refusal(metric, entry, present=bool(dated)))
             continue
         series = build_series(
             dates=measures.dates,
@@ -2129,9 +2172,7 @@ def _comparisons(
         for entry in aggregated:
             metric = f"{entry.measure}_by_{dimension}"
             if keys is None or entry.total is None:
-                refusals.append(
-                    RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)
-                )
+                refusals.append(_derived_refusal(metric, entry, present=keys is not None))
                 continue
             comparison = build_comparison(
                 dimension=dimension,

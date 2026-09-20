@@ -2127,10 +2127,25 @@ def _renderings(
     precision; that refusal only holds if the string reaching them is already
     the finished one.
 
-    **No currency marker, at any unit.** `facts` appends
-    `CAVEAT_CURRENCY_NOT_DECLARED` to every package carrying a monetary fact,
-    because the currency is not derivable from an upload. A symbol here would
-    assert what that caveat exists to disclaim.
+    **No currency marker, at any unit.** The reason stated here was that `facts`
+    appends `CAVEAT_CURRENCY_NOT_DECLARED` to *every* package carrying a
+    monetary fact, so a symbol would assert what that caveat exists to
+    disclaim. That has not been true since `rra004.package.v3`: `facts`
+    attaches it only when the package declares no currency, because a package
+    stating both `EGP` and "currency not declared" contradicts itself in front
+    of the customer.
+
+    The rule stands on the narrower ground that remains. A `v3` package that
+    *does* declare a currency carries one currency for the whole document, and
+    this function formats a single figure with no access to it -- so a symbol
+    here would still be this layer asserting something it cannot read, and four
+    renderers would each need the same fact to agree.
+
+    Whether a declared currency *should* reach the formatted string is a
+    governed question rather than a docstring edit: it would change what
+    `RRA-009` renders, and it is adjacent to the open `CAL1` `P2` finding that
+    `CAVEAT_CURRENCY_NOT_DECLARED` is now unreachable on the declared path.
+    Recorded, not decided (`#507` item 4).
 
     `unit_kind` is optional so a caller with no unit in hand -- a label, a
     timestamp, anything that is not a measured quantity -- gets the previous

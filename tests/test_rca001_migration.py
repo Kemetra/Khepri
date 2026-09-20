@@ -90,6 +90,23 @@ RCA_REVISIONS = (
     # rather than leaving assumed. The middle element is this revision file's own slug.
     ("20260906_0029", "rca_workspace_pins", "20260906_0028"),
 )
+
+#: The head revision, registered but **not** replayed -- the `20260822_0020` treatment.
+#:
+#: `#505`. `RCA_REVISIONS` is the list `_run` drives, so every member must apply against an
+#: RCA-only SQLite schema. `20260915_0030` cannot: it is a data migration whose four correlated
+#: `UPDATE`s read `rra_beta_sessions`, `rra_uploads` and `rra_report_jobs`, tables that chain
+#: never creates. Listing it there fails every `_run`-driven test with "no such table:
+#: rra_beta_sessions", verified before this entry was written rather than assumed.
+#:
+#: What the omission actually lost was the **chain** guard, not the replay: nothing asserted that
+#: the head points at `20260906_0029`, so `test_the_revisions_form_an_unbroken_chain` was blind to
+#: the current head and the next DDL revision could not name a true parent without first adding
+#: this one -- the `#240` trap, re-armed. That guard is restored below by naming the head here.
+#:
+#: Its own DDL-free behaviour is covered directly at `tests/test_workspace_retention_migration.py`,
+#: and the single head is pinned by name at `tests/test_rca001_session_persistence.py`.
+RCA_CHAIN_HEAD = ("20260915_0030", "workspace_content_retention", "20260906_0029")
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
 # them to head would fail on the INSERT rather than on the behavior they assert.
@@ -257,8 +274,19 @@ def test_the_revisions_form_an_unbroken_chain() -> None:
     chain interleaves: `20260813_0012` is an RRA revision sitting between two RCA ones, so
     `20260814_0013` descends from it. Deriving the parent positionally would assert the wrong
     thing here, and would go on asserting it silently as more revisions interleave.
+
+    `RCA_CHAIN_HEAD` is asserted alongside `RCA_REVISIONS` because this guard is about parentage,
+    which every revision has, rather than about replay, which the head cannot do. Reading only
+    `RCA_REVISIONS` here is what left the current head unchecked (`#505`).
     """
-    for revision, slug, expected_parent in RCA_REVISIONS:
+    checked = (*RCA_REVISIONS, RCA_CHAIN_HEAD)
+    # The head is *in* what this guard reads. Asserted rather than assumed, because
+    # narrowing the iterable back to `RCA_REVISIONS` alone -- which is `#505` exactly --
+    # cannot be caught by any assertion inside the loop: a guard that stops covering
+    # something still passes. This is the line that fails when it stops.
+    assert RCA_CHAIN_HEAD in checked
+
+    for revision, slug, expected_parent in checked:
         module = _rca_migration_module(revision, slug)
         assert module.revision == revision
         assert module.down_revision == expected_parent, (
