@@ -923,12 +923,19 @@ The repository pack at **`docs/product/ui-visual-references/README.md`** is the 
 evidence referred to by §16.3 and §17. It records, per image, what is binding, what is not, and which
 generation artifacts must not be inherited.
 
-**It does not cover all twelve references of §16.2.** Independently covered: **#6 period comparison,
-#8 evidence drawer, #9 refusal, #10 Arabic RTL**. Partially covered: **#4** (workspace overview —
-density floor shown in Arabic/RTL only) and **#7** (executive decision — composition only; the four
-trust states are not demonstrated). **Not yet independently referenced: #1, #2, #3, #5, #11, #12**,
-which appear only as low-fidelity panels on the family board and therefore do not count as screen
-references.
+The owner expanded the pack on 2026-09-20 with nine byte-identical supplied references covering the
+workspace overview, journey entry, upload, data review, processing, results, detailed findings,
+report workspace, and executive report. The pack README records provenance, precedence, binding
+qualities, non-binding generated content, and conflicts for every image. The later set controls the
+shared visual family; the earlier high-fidelity references remain controlling for refusal, the
+period comparison, evidence drawer, and true Arabic RTL composition.
+
+**It still does not cover all twelve references of §16.2.** Independently covered: **#1 welcome and
+journey entry, #2 upload, #3 processing, #4 workspace overview, #5 analysis detail, #6 period
+comparison, #8 evidence drawer, #9 refusal, #10 Arabic RTL, and #12 dense analytical workspace**.
+Partially covered: **#7** (executive decision, composition only; the four trust states are not
+demonstrated). **Not yet independently referenced: #11 narrow and mobile**. Its appearance on the
+family board does not count as a screen reference.
 
 The pack is acceptance evidence for the surfaces it covers and is **silent** on the rest; §16.3's
 prohibition on substituting a coding agent's own visual interpretation applies regardless. The pack
