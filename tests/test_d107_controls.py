@@ -119,6 +119,23 @@ class TestRoutingSendsAndNeverDrops:
         assert port.filters_for(seam.CONCENTRATION.view_id) == (("product", "p-1"),)
         assert port.filters_for(seam.BASKET.view_id) == ()
 
+    def test_a_category_filter_reaches_both_views_that_admit_it(self) -> None:
+        """`ProductCategoryView` and `ConcentrationView`, as `product` does.
+
+        `#507` item 5. `test_routing_is_derived_from_the_table_and_not_from_a
+        _second_copy` bounds routing *above* by each view's allowlist, which a
+        `routed_to` returning `()` satisfies for every view. `store` and
+        `product` have positive cases that catch that; `category` had none,
+        while `registry.py` admits it on these two -- so a mutant dropping
+        `category` from routing passed the file.
+        """
+        port, client = _echo_client()
+        client.get(f"{support.address()}?category=c-1")
+
+        assert port.filters_for(seam.PRODUCT_CATEGORY.view_id) == (("category", "c-1"),)
+        assert port.filters_for(seam.CONCENTRATION.view_id) == (("category", "c-1"),)
+        assert port.filters_for(seam.BASKET.view_id) == ()
+
     def test_the_cards_views_are_never_sent_a_filter(self) -> None:
         """All three publish `request_filter_allowlist=()`; a filter would refuse them."""
         port, client = _echo_client()

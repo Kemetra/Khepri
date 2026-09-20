@@ -1745,10 +1745,21 @@ def test_a_gapped_headline_does_not_take_the_trend_with_it() -> None:
     assert trend is not None, "a gapped headline refused the whole revenue trend"
     # Bucketed at the granularity this span earns, so the labels are asserted by
     # the days that carry revenue rather than by a month spelling.
-    assert {bucket.label for bucket in trend.series.buckets} >= {
-        "2026-01-05",
-        "2026-03-07",
-    }
+    #
+    # Exact rather than a lower bound (`#507` item 5). `>=` could not see a
+    # spurious bucket, and the one that matters is the *gapped* period: the
+    # defect this test guards against is February publishing a figure derived
+    # from a row with no revenue. Asserting the value alongside the label is
+    # what pins that -- the period is present, carries no value, and keeps its
+    # row count, so the gap reads as incompleteness rather than as a month that
+    # sold nothing.
+    assert [
+        (bucket.label, bucket.value, bucket.rows) for bucket in trend.series.buckets
+    ] == [
+        ("2026-01-05", Decimal("100.00"), 1),
+        ("2026-02-06", None, 1),
+        ("2026-03-07", Decimal("200.00"), 1),
+    ]
 
 
 def test_an_unmapped_column_cannot_hide_a_repeated_row_signature() -> None:
