@@ -27,6 +27,16 @@
   padding: 0;
 }
 
+/* §E.4's density floor, which the pack states as a measurement rather than a feel: the Arabic
+ * overview panel "carries well past 12 distinct governed figures or rows above the fold".
+ *
+ * A row is therefore as tight as the 44px target allows and no tighter -- `--row-min` is
+ * `--touch-min` by construction in `shell.css`, so the floor and the density are the same number
+ * and cannot drift apart. The gap inside a row is the `tight` tier (label to value) and the rows
+ * are separated by a hairline rather than by space, which is what lets twelve fit.
+ *
+ * The literal `44px` here was the floor restated; it now reads the token, so `FR-056` moves these
+ * rows if it ever moves. */
 .data-use,
 .attention-item,
 .pinned-item,
@@ -35,22 +45,51 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3, 0.75rem);
-  min-height: 44px;
+  gap: var(--density-tight);
+  min-height: var(--row-min);
   padding-block: var(--space-2, 0.5rem);
   border-block-end: 1px solid var(--line-subtle);
 }
 
+/* The last row in a region is followed by the next region's own hairline, so its rule is the
+ * second of two 1px lines a few pixels apart. Removing it is why the regions read as regions. */
+.data-list > .data-use:last-child,
+.attention-list > .attention-item:last-child,
+.pinned-list > .pinned-item:last-child,
+.recent-list > .recent-item:last-child,
+.processing-list > .processing-item:last-child,
+.spine-list > .spine-item:last-child {
+  border-block-end: 0;
+}
+
+/* The region label is this shell's eyebrow: a small uppercase mono run over a hairline, which is
+ * how a surface with one background colour separates regions without nesting a card (§E.2).
+ *
+ * `--density-region` replaces the literal `--space-4` start margin so the gap between regions is
+ * the named tier rather than a step that happens to be right. §E.3 asks for three tiers, not
+ * seven; `.region-label`, `.data-use` and `.latest-work` now read `region`, `row` and `tight`
+ * respectively, which is the whole ramp this surface uses.
+ *
+ * The tracking rises to the approved pack's eyebrow rhythm. §16.0's "editorial typography with
+ * strong hierarchy" is carried here by tracking and weight, because the palette has one surface
+ * colour and a label cannot be separated by tint. */
 .region-label {
-  margin-block: var(--space-4, 1rem) var(--space-2, 0.5rem);
+  margin-block: var(--density-region) var(--density-tight);
   padding-block-start: var(--space-3, 0.75rem);
   border-block-start: 1px solid var(--line);
   font-family: var(--font-mono, monospace);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* The first region on a surface follows the lede, which already carries the region gap below it.
+ * Without this the two stack and open a gap twice the tier -- the "oversized hero whitespace on
+ * analytical screens" §15 item 13 forbids by name. */
+.shell-main > .document-card > .region-label:first-of-type {
+  margin-block-start: 0;
 }
 
 .latest-work,
@@ -74,10 +113,37 @@
   padding-block-start: 0;
 }
 
+/* A state reads as a word in `--muted`, never as colour alone (`FR-122`), and that is also the
+ * master specification §13 rule the pack's strongest panel demonstrates: a refusal "reads as a
+ * governed result, not a crash". The approved board paints its status rows in green, amber and red
+ * pills; those are the pack's non-binding half twice over -- new colour, and colour carrying
+ * meaning on its own. The word is what carries the state here.
+ *
+ * `--text-sm` and the tabular figures are the binding half: §E.4's density, and a column of times
+ * that does not align is a column a reader cannot scan. `tabular-nums` affects only the numerals'
+ * advance width, so it changes no value and no direction. */
 .row-label,
 .row-state,
 .row-format {
   color: var(--muted);
+}
+
+/* `.row-format` is absent here and keeps the size on its own rule below, beside the mono family it
+ * also needs -- two declarations of one property on one selector is the near-duplicate this
+ * stylesheet's own header warns about. */
+.row-label,
+.row-state {
+  font-size: var(--text-sm);
+}
+
+.row-label {
+  font-weight: 600;
+}
+
+/* Every `<time>` on these surfaces is already `dir="ltr"` in the templates, because a timestamp is
+ * a Latin-Indic run that must not reorder inside Arabic prose. This aligns them as a column. */
+.shell-main time {
+  font-variant-numeric: tabular-nums;
 }
 
 .row-format {

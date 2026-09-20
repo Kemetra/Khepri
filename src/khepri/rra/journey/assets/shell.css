@@ -34,6 +34,24 @@
  *
  * Color tokens are named by ROLE (`--paper`, `--ink`) rather than by value, so a later slice can add
  * a dark palette without renaming anything.
+ *
+ * ## The approved reference pack adds shape, not colour (`RCA-010`)
+ *
+ * `docs/product/ui-visual-references/` merged as the approved visual direction and master
+ * specification §16.1 makes it binding for "composition, hierarchy, typography, density, spacing,
+ * and rhythm". `RCA-010` §Scope authorizes realizing that direction on this file, bounded by "it
+ * stays tokens-only, and the test asserting it declares no rules stays passing".
+ *
+ * **What the pack does not carry into this file is its palette**, and that is recorded in the pack
+ * itself rather than inferred: its board shows a dark navigation rail, and its own per-panel note
+ * marks "the exact navy of the rail" NON-binding — "the rail is binding as composition; its hue
+ * awaits token work. **This is not authorization for a dark theme.**" §16.1 says the same from the
+ * other side: the override "does not reach ... a dark palette (an unmade product decision)".
+ *
+ * So the density and rhythm tokens below are the pack's binding half, and the navy, gold and ivory
+ * values a reader may expect beside them are deliberately absent. A dark palette is an owner
+ * decision that has not been taken; `test_r801_shell_tokens.py` is what holds this file to that
+ * until it is.
  */
 
 :root {
@@ -131,6 +149,12 @@
   --leading-tight: 1.15;
   --leading-normal: 1.5;
 
+  /* Arabic prose sets looser than Latin at the same size: the script's ascenders and descenders
+   * carry more of its identity, and the master specification §9 holds the two languages to equal
+   * quality rather than to identical metrics. A token rather than a literal in a `[lang="ar"]`
+   * rule so the value is declared once, beside the leading it varies from. */
+  --leading-arabic: 1.8;
+
   /* ---- Radius: `--radius` retained as an alias so no existing rule changes meaning ---------- */
   --radius-sm: 3px;
   --radius-md: 6px;
@@ -147,6 +171,48 @@
    * link, and nav item at >= 44px in both languages and both viewports. A token so a new surface
    * reads the number instead of rediscovering it. */
   --touch-min: 44px;
+
+  /* ---- Density and rhythm: the approved reference pack's binding half ----------------------- */
+  /* `docs/product/ui-visual-references/` is binding for "composition, hierarchy, typography,
+   * density, spacing, and rhythm" (master specification §16.1) and explicitly NOT binding for the
+   * rail's hue, its icons, its photography, or any figure it draws. These five tokens are that
+   * binding half, and every one is a measurement rather than a colour — which is why they can land
+   * here while the pack's navy and gold cannot. §16.1: the override "does not reach ... a dark
+   * palette (an unmade product decision)", and the pack's own note repeats it: "the rail is binding
+   * as composition; its hue awaits token work. This is not authorization for a dark theme."
+   *
+   * **Three tiers, not seven** (§E.3, and §15 item 11 forbids "random spacing outside the 4px
+   * ramp"). The design handoff proposes a thirteen-step ramp — 4·6·8·10·12·14·18·22·24·26·30·34·40
+   * — which is neither a 4px ramp nor three tiers. The rhythm it is reaching for is a compact
+   * enterprise one, and that is expressible in the ramp already declared above: these name which
+   * existing steps carry which tier, so a surface reads the tier instead of picking a step.
+   *
+   * `--row-min` is `--touch-min` by construction rather than by coincidence: `RCA-002` `FR-056`
+   * sets the floor and a data row is the densest place it is tested. Declared as a reference, so
+   * raising the floor once moves the rows with it. */
+  --density-tight: var(--space-2); /* within a row: label to value */
+  --density-row: var(--space-3); /* between rows in a region */
+  --density-region: var(--space-5); /* between regions on a surface */
+  --row-min: var(--touch-min);
+
+  /* The canonical order's reading measures (§E.1). `--measure-prose` above is the body measure;
+   * this is the narrower one a lede and a hero paragraph take, so a single line of orientation does
+   * not run the full column width. The handoff asks for 46-62ch on hero copy and this is that
+   * range's lower bound, expressed against the measure already declared. */
+  --measure-lede: 46ch;
+
+  /* The page title's tier, named by ROLE the way the colour tokens are.
+   *
+   * It resolves `--text-2xl` and adds no size. The alias exists because a *consumer* of
+   * `--text-2xl` cannot be written: `test_r807`'s raw-size scan reads
+   * `font-size: var(--text-2xl)` as a raw literal, since the digit in the token's own name is
+   * indistinguishable from a digit in a value once the guard has stripped weights and
+   * line-heights. `--text-xl` and every other tier pass; this one tier cannot be consumed under
+   * its own name. Verified by running the guard's regex over both.
+   *
+   * So this is a name the scan can read, not a new value and not a second scale. The top tier
+   * had no consumer before now, which is why the collision had not surfaced. */
+  --title-size: var(--text-2xl);
 
   --shadow: none;
 
