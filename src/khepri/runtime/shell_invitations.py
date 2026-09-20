@@ -228,7 +228,11 @@ def add_invitation_routes(
             )
         except Exception:  # noqa: BLE001 -- one refusal for every cause, per `FR-025`
             return unavailable(environment, language=rendered)
-        return team(services, environment, language=rendered, context=context)
+        # The same instant the revoke was written at, so the surface rendered
+        # straight after it cannot answer an expiry question on a later clock.
+        return team(
+            services, environment, language=rendered, context=context, now=clock()
+        )
 
 
 __all__ = [

@@ -590,10 +590,18 @@ def _row_availability(row: Any, found: dict[str, Any]) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class _Scoped:
-    """One scoped request: the address's language and the session's resolved context."""
+    """One scoped request: the address's language, resolved context, and instant.
+
+    `now` is the *same* instant the actor was resolved at, not a second reading.
+    A surface that minted its own would answer an expiry question on a different
+    clock from the door that admitted the request -- the hazard `wiring.py`
+    states for the comparison path, and the reason this is carried rather than
+    read where it is needed.
+    """
 
     language: str
     context: Any
+    now: Any
 
 
 def _analysis_response(
@@ -654,6 +662,7 @@ def _team_response(
     *,
     language: str,
     context: Any,
+    now: Any,
 ) -> Response:
     """The team surface, rendered from the session's organization.
 
@@ -672,9 +681,14 @@ def _team_response(
     )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
+        # `now` is required, and the listing is expiry-aware (`#217`): it calls
+        # `_expired(row, now)` on every row it returns. `None` here raised
+        # `TypeError` on `stored <= now` for any organization holding an
+        # invitation, which no test reached because they list an empty
+        # organization -- found in review on `#508`.
         invitations = tuple(
             services.invitations.invitations_for_organization(
-                context.organization_id, now=None
+                context.organization_id, now=now
             )
         )
     return _render(
@@ -788,7 +802,11 @@ def _scoped_response(
     exact = _exact(segments)
     if surface == "team" and exact:
         return _team_response(
-            services, environment, language=scoped.language, context=scoped.context
+            services,
+            environment,
+            language=scoped.language,
+            context=scoped.context,
+            now=scoped.now,
         )
     try:
         return _workspace_response(services, environment, segments, scoped)
@@ -934,8 +952,12 @@ def add_shell_routes(
         language = _language(segments[0] if segments else "")
         if session is None:
             return _unavailable(environment, language=language)
+        # One clock read per request, shared by the scope door and every surface
+        # it admits, so an expiry question cannot be answered on a later instant
+        # than the one that authorized the read.
+        now = clock()
         try:
-            context = services.resolver.for_request(session, organization_id=None, now=clock())
+            context = services.resolver.for_request(session, organization_id=None, now=now)
         except PermissionError:
             return _unavailable(environment, language=language)
 
@@ -949,7 +971,7 @@ def add_shell_routes(
         # resolved -- or a retained row carrying a code the surface has no governed word for
         # (review on `#373`) are faults to investigate, not pages to read.
         scoped_response = _scoped_response(
-            services, environment, segments, _Scoped(language, context)
+            services, environment, segments, _Scoped(language, context, now)
         )
         if scoped_response is not None:
             return scoped_response
