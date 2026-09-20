@@ -97,9 +97,15 @@
   the hand-built paragraph it replaces did. This layer authors no refusal wording; it
   gives the existing wording one consistent place to appear, and a text label beside
   it so the state is never carried by the rule colour alone (FR-100).
+
+  `role="status"` is `RRA-015` `FR-189`'s floor for a refusal, corrected here under
+  `FR-193` from the `role="note"` this element carried. It is an accessibility-attribute
+  correction, not a change of component semantics: the element, its `data-component`
+  value, its class and its `RRA-009` prose are untouched, and what changes is whether a
+  screen reader announces a refusal the sighted reader can already see.
 #}
 {% macro refusal_panel(prose, chrome) -%}
-<p data-component="refusal-panel" class="refused" role="note">
+<p data-component="refusal-panel" class="refused" role="status">
 <span class="refused__label">{{ chrome.component.refusal_label }}</span>
 {{ prose }}
 </p>

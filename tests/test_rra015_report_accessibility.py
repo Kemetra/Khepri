@@ -47,20 +47,13 @@ _DIRECTION = {"ar": "rtl", "en": "ltr"}
 #: passes at 1180px and fails at 390px, where doubled text has a quarter of the room.
 _VIEWPORTS = ((1180, 900), (390, 844))
 
-#: `FR-189` target-floor failures, recorded not fixed, keyed by the exact case that fails.
-#: Both live in stylesheets a follow-on slice under `RRA-015` owns. An evidence slice that
-#: edited them to go green would hide the defect rather than record it.
-_TARGET_FLOOR_FAILURES = {
-    ("documents", "en"): (
-        "FR-189 floor failure in report.css. The report surface's 'On this page' nav "
-        "anchors render at 21px against the 44px floor; report.css declares no minimum "
-        "target size at all."
-    ),
-    ("documents", "ar"): (
-        "FR-189 floor failure in report.css, the Arabic report surface. Same cause as the "
-        "English one: no minimum target size is declared."
-    ),
-}
+#: The `FR-189` target-floor failures this module recorded at `#497` are FIXED and their
+#: strict markers are gone, under `RRA-015` `FR-193`. `report.css` now declares the floor on
+#: the navigation anchors and on the skip link, in both dimensions. Two things the fix found
+#: that the recorded reason had not named: `min-block-size` does nothing to a non-replaced
+#: inline box, so the anchors needed `inline-flex` before the floor could take effect at all;
+#: and the Arabic surface failed on WIDTH as well, at 35px, which a height-only rule leaves
+#: failing. The assertion below is now unconditional, which is what makes it a live guard.
 
 #: A `set_content` page has no HTTP origin, so its `@font-face` rules never fetch and every
 #: text metric depends on what the HOST happens to have installed. That made one assertion
@@ -95,12 +88,14 @@ _TARGET_FLOOR_FAILURES = {
 #: has no HTTP origin, so `@font-face` never fetches and the measurement depends entirely
 #: on what the host has installed.
 
-#: `FR-189` reflow failures at 200% text, keyed the same way. Both languages fail on the
-#: evidence surface at the narrow viewport; the wide viewport passes.
-_REFLOW_FAILURES = {
-    ("evidence", "ar", 390),
-    ("evidence", "en", 390),
-}
+#: The `FR-189` reflow failures recorded at `#497` are FIXED under `RRA-015` `FR-193`, and
+#: their strict markers are gone. **The recorded reason misattributed them.** It named "the
+#: evidence surface's stylesheet" and the figures table was the assumed subject; the table is
+#: contained by its own `.scroller` and was never the cause. The real one was
+#: `dl.provenance`, whose `minmax(12rem, auto)` term column doubles to 384px inside a 326px
+#: box at 200% text. A rem-based grid minimum cannot reflow, so the page scrolled sideways.
+#: Recorded here because the misattribution, not the failure, is what a later reader needs:
+#: a plausible subject named in an xfail reason is a hypothesis, not a diagnosis.
 
 
 def _surfaces(*, published: bool = True) -> dict[tuple[str, str], str]:
@@ -351,15 +346,6 @@ def test_only_the_report_surface_renders_trust_badges_today() -> None:
 # day a subject ships rather than passing over nothing. This is the shape `#486` established.
 
 
-@pytest.mark.xfail(
-    reason=(
-        "FR-189 floor failure in _components.html.j2, recorded not fixed. A refusal panel "
-        "renders with role='note', not role='status'. Measured on the unpublished fixture: "
-        "4 refusal panels on the report surface, 0 status roles. The fix belongs to a "
-        "follow-on slice under RRA-015 that owns that template."
-    ),
-    strict=True,
-)
 def test_every_refusal_panel_announces_itself_with_a_status_role() -> None:
     """`FR-189`: `role="status"` for refusals and progress.
 
@@ -511,11 +497,6 @@ def test_every_tab_stop_meets_the_target_floor(
     # evidence one; a surface-level xfail would have hidden that `evidence/en` PASSES while
     # `evidence/ar` does not. Marking the exact failing cases is what keeps the ledger able
     # to say which subjects are broken and which are sound.
-    if (surface, language) in _TARGET_FLOOR_FAILURES:
-        request.node.add_marker(
-            pytest.mark.xfail(reason=_TARGET_FLOOR_FAILURES[(surface, language)], strict=True)
-        )
-
     document = _surfaces()[(surface, language)]
     with sync_playwright() as playwright:
         browser = _launch_chromium(playwright)
@@ -576,19 +557,6 @@ def test_text_scales_to_200_percent_without_horizontal_overflow(
     it from 1180px alone.
     """
     from playwright.sync_api import sync_playwright
-
-    if (surface, language, viewport[0]) in _REFLOW_FAILURES:
-        request.node.add_marker(
-            pytest.mark.xfail(
-                reason=(
-                    f"FR-189 reflow failure: {surface}/{language} overflows by ~184px at "
-                    f"{viewport[0]}px with 200% text. The wide viewport passes, so this is "
-                    "a narrow-width layout failure in the evidence surface's stylesheet, "
-                    "owned by a follow-on slice under RRA-015."
-                ),
-                strict=True,
-            )
-        )
 
     document = _surfaces()[(surface, language)]
     with sync_playwright() as playwright:
