@@ -37,6 +37,17 @@ These images are **not** `docs/ui/design_handoff_khepri/`, which §7.4 names as 
 anti-reference and which must not be mined for values. The numeric coincidence — twelve references
 there, twelve required in §16.2 — is a coincidence and nothing more.
 
+### Precedence inside this pack
+
+Files 03–11 are the owner's later, coherent visual-family direction. They control the shared visual
+tone, material relationships, composition, density, and bilingual presentation when an older
+reference differs. Files 01 and 02 remain the more specific references for refusal, period
+comparison, the evidence drawer, and true Arabic RTL composition. File 90 remains a mood board only.
+
+A surface-specific, higher-fidelity reference beats a general board. An active specification beats
+every image. No precedence rule promotes generated copy, data, routes, controls, or capabilities to
+product truth.
+
 ---
 
 ## Asset policy — binding, and the most likely thing to get wrong
@@ -73,20 +84,38 @@ pack. No chart in an image here is a source of a figure, an axis value, a kind, 
 
 ## Provenance
 
-Supplied by the owner on 2026-09-17 and staged through an untracked `visual-input/` working
-directory, which is **not** committed. Each file below is **byte-identical** to the image the owner
-supplied — verified with `cmp`; no crop, re-encode, or edit was applied.
+The original three references were supplied by the owner on 2026-09-17 and staged through an
+untracked `visual-input/` working directory, which is **not** committed. Nine additional references
+were supplied by the owner on 2026-09-20 under the original filenames listed below. Each committed
+file is **byte-identical** to its supplied source; no crop, re-encode, or edit was applied.
 
 | Committed as | Original filename | SHA-256 | Dimensions |
 |---|---|---|---|
 | `01-decision-refusal-rtl-comparison.png` | `ChatGPT Image Sep 17, 2026, 03_49_44 PM (3).png` | `622538d9…6973fe` | 1536×1024 |
 | `02-decision-refusal-rtl-evidence-comparison.png` | `ChatGPT Image Sep 17, 2026, 03_49_43 PM (1).png` | `e2648078…caee65` | 1586×992 |
+| `03-workspace-overview.png` | `ChatGPT Image Sep 20, 2026, 09_27_50 PM (2).png` | `d509dc45…d256c26` | 1448×1086 |
+| `04-welcome-and-journey-entry.png` | `ChatGPT Image Sep 20, 2026, 09_27_49 PM (1).png` | `b8aa1719…35b5215` | 1448×1086 |
+| `05-document-upload.png` | `ChatGPT Image Sep 20, 2026, 09_27_50 PM (3).png` | `4e0acc82…5b203a6` | 1448×1086 |
+| `06-data-review-and-mapping.png` | `ChatGPT Image Sep 20, 2026, 09_27_51 PM (4).png` | `c3c91809…68b1bf5` | 1448×1086 |
+| `07-analysis-processing.png` | `ChatGPT Image Sep 20, 2026, 09_27_51 PM (5).png` | `b7a4bc69…e351da16` | 1448×1086 |
+| `08-analysis-results.png` | `ChatGPT Image Sep 20, 2026, 09_27_51 PM (6).png` | `5d1baf30…9bf9f6da` | 1448×1086 |
+| `09-detailed-findings-workspace.png` | `ChatGPT Image Sep 20, 2026, 09_27_52 PM (7).png` | `07180cf8…b6d594d0` | 1448×1086 |
+| `10-report-workspace.png` | `ChatGPT Image Sep 20, 2026, 09_27_52 PM (8).png` | `6126165d…57f453be` | 1448×1086 |
+| `11-executive-report.png` | `ChatGPT Image Sep 20, 2026, 09_27_52 PM (9).png` | `f4c02506…07bf9fcd` | 1448×1086 |
 | `90-visual-family-board.png` | `ChatGPT Image Sep 17, 2026, 03_43_58 PM.png` | `0e612e76…34f39d` | 1536×1024 |
 
-**Every supplied image is a composite** — each file tiles several screens into one canvas. Because
-§4 of the curation brief forbids altering the images, they are committed whole and **classified per
-panel** rather than per file. Filenames therefore describe actual contents; the numbering has gaps
-because no reference is manufactured merely to fill a sequence.
+The composite boards are committed whole and classified per panel where necessary. The single-screen
+and report references are likewise unaltered. Filenames describe actual contents; numbering does not
+imply a route sequence.
+
+These are documentation references, not runtime assets. Promotion of any depicted artwork, logo,
+font, or icon into shipped UI still requires the repository's reviewed-asset and usage-rights
+process.
+
+For files 03–11, every depicted action, control, tab, navigation item, affordance, and interaction
+sequence is non-binding. The binding notes describe spatial hierarchy and visual emphasis only. If
+an active specification authorizes an equivalent product element, its presentation follows those
+relationships; an image never requires the element to exist.
 
 ---
 
@@ -215,6 +244,304 @@ confidence, tab-filtered by source class, over a dimmed parent surface.
 
 ---
 
+## 03 — Workspace overview
+
+**Class:** PRIMARY — §16.2 #4
+
+![Khepri workspace-overview reference](03-workspace-overview.png)
+
+**Binding**
+
+- A persistent global frame surrounds a high-density overview without competing with its content.
+- The branded hero establishes orientation; operational summaries and recent work carry the usable
+  density below it.
+- Distinct regions use alignment, spacing, and restrained surface changes rather than ornamental
+  card nesting.
+- The English surface demonstrates the §E.4 density floor while remaining legible.
+
+**Non-binding**
+
+- Every metric, project, analysis, report, activity event, user identity, status, and relative time.
+- Home, New Analysis, My Files, Reports, Insights, Data Sources, Team, and Settings as destinations.
+- Quick actions, pinned work, team activity, downloads, connectors, icons, and artwork.
+
+**Known generation artifacts and conflicts**
+
+1. M3 is not an executive dashboard. KPI rows and activity panels do not authorize metrics,
+   history, collaboration, or data-source management.
+2. Relative times such as “2 hours ago” conflict with the product's absolute-time rule.
+3. The sidebar labels conflict with the settled customer navigation set and are composition only.
+4. The generated logo, icon family, avatar photography, and hero artwork require separate asset
+   admission before runtime use.
+
+**Relevant specification:** §E · §7 · §9 · §14 · §15 · §16.2 #4 · §16.3 · §17
+
+---
+
+## 04 — Welcome and journey entry
+
+**Class:** PRIMARY — §16.2 #1
+
+![Khepri welcome and journey-entry reference](04-welcome-and-journey-entry.png)
+
+**Binding**
+
+- One concise promise dominates the entry surface; any authorized primary action, supporting
+  explanation, and recent-work context remain subordinate in that order.
+- Brand imagery occupies the orientation region without entering the operational content below.
+- The journey explanation is short, visually sequential, and clearly separate from live product
+  state.
+- English and Arabic brand copy carry equal visual importance.
+
+**Non-binding**
+
+- Every recent analysis, file type, capability tile, journey step, action, route, and status.
+- Security, trust, collaboration, report-generation, and advanced-AI claims.
+- The generated logo, icons, avatar, and scenic artwork.
+
+**Known generation artifacts and conflicts**
+
+1. The four-step flow does not authorize a workflow or fix stage names; active specifications do.
+2. Generic document and collaboration capabilities shown here do not describe Khepri's admitted
+   product scope.
+3. Relative time labels conflict with the absolute-time rule.
+
+**Relevant specification:** §A · §C · §7 · §9 · §14 · §15 · §16.2 #1 · §16.3 · §17
+
+---
+
+## 05 — Document upload
+
+**Class:** PRIMARY — §16.2 #2
+
+![Khepri upload-surface reference](05-document-upload.png)
+
+**Binding**
+
+- The upload region reads as ready for action, with requirements and data-handling guidance visible
+  before submission.
+- Authorized analysis context belongs beside or immediately below the input rather than in a later,
+  disconnected step.
+- Recent-item context and one dominant authorized continuation action remain visually subordinate to
+  the input task.
+- The page stays calm and legible despite a dense enterprise frame.
+
+**Non-binding**
+
+- Excel, PDF, Word, CSV, multi-file upload, cloud connectors, databases, tags, objectives, and
+  recent-upload history.
+- File sizes, limits, security certifications, model-training claims, actions, and routes.
+- Icons, logo artwork, scenic rail, and generated copy.
+
+**Known generation artifacts and conflicts**
+
+1. Khepri's admitted input types, limits, validation states, and data-use statements come from active
+   specifications, not this image.
+2. Google Drive, OneDrive, SharePoint, Dropbox, and database connectors have no authority here.
+3. SOC 2, ISO 27001, GDPR, encryption, and model-training statements must not ship unless separately
+   established.
+
+**Relevant specification:** §C · §F · §7 · §9 · §10 · §11 · §14 · §15 · §16.2 #2 · §16.3 · §17
+
+---
+
+## 06 — Data review and mapping
+
+**Class:** SUPPLEMENTARY / JOURNEY TRANSITION
+
+![Khepri data-review and mapping reference](06-data-review-and-mapping.png)
+
+**Binding**
+
+- A dense two-region composition keeps source context and interpreted structure visible together.
+- Review state, warnings, and unresolved items have clear hierarchy without relying on color alone.
+- The journey position is visible without displacing the task itself.
+- Tables retain readable row rhythm, stable headers, and contained pagination.
+
+**Non-binding**
+
+- Schema extraction, field mapping, automatic mapping, custom fields, templates, confidence scores,
+  issue counts, and suggested fixes.
+- Sample rows, column names, monetary values, navigation, actions, and exact stage names.
+- Icons, file-format marks, user identity, and all generated copy.
+
+**Known generation artifacts and conflicts**
+
+1. No current image can authorize semantic mapping or automatic schema repair; those require active
+   product authority.
+2. Literal directional arrows do not satisfy the RTL rule and must not be copied.
+3. Status pills need textual and structural differentiation in the real product.
+
+**Relevant specification:** §6 · §8 · §9 · §10 · §11 · §14 · §15 · §16.3 · §17
+
+---
+
+## 07 — Analysis processing
+
+**Class:** PRIMARY — §16.2 #3
+
+![Khepri analysis-processing reference](07-analysis-processing.png)
+
+**Binding**
+
+- Processing communicates named sequential stages, completed/current/pending structure, and one
+  clearly dominant locus of progress.
+- Stable file context, overall progress, and activity context explain what is happening without
+  turning the page into a blocking spinner.
+- Any permitted animation is confined to the current processing indicator and respects reduced
+  motion.
+- Layout remains stable while stage state changes.
+
+**Non-binding**
+
+- The five depicted stages, progress percentage, duration estimate, cancel action, activity feed,
+  preliminary insight cards, and data preview.
+- Every sample fact, metric, row, timestamp, AI claim, route, and icon.
+
+**Known generation artifacts and conflicts**
+
+1. Preliminary findings may render only when active authority supplies admitted, governed facts;
+   the image does not authorize early claims.
+2. Duration estimates and activity narration are generated examples, not product promises.
+3. The exact stage model comes from the focused-journey contract, never from this screen.
+
+**Relevant specification:** §C · §F · §7 · §9 · §10 · §11 · §14 · §15 · §16.2 #3 · §16.3 · §17
+
+---
+
+## 08 — Analysis results and period comparison
+
+**Class:** PRIMARY — §16.2 #5 and #6; supports #7
+
+![Khepri analysis-results and comparison reference](08-analysis-results.png)
+
+**Binding**
+
+- A clear result header and scope controls precede summary figures, comparison analysis, findings,
+  narrative, and next-step context in that visual order when those elements are authorized.
+- Baseline and comparand are differentiated by position, label, line treatment, and explicit values,
+  not hue alone.
+- Summary information stays subordinate to governed figures and their comparison context.
+- High density is carried through alignment and hierarchy rather than tiny text.
+
+**Non-binding**
+
+- Every figure, percentage, filter, chart, finding, recommendation, summary, action, date, and product
+  category.
+- Sharing, export, report creation, follow-up, feedback, and generic AI-generated narrative.
+- Icons, user identity, scenic artwork, and exact generated copy.
+
+**Known generation artifacts and conflicts**
+
+1. The donut chart conflicts with §8.1 and does not become an approved chart kind.
+2. The depicted recommendations and AI summary do not authorize generated advice or a second
+   arithmetic.
+3. This image supports executive-decision composition but does not demonstrate the four required
+   trust states.
+
+**Relevant specification:** §E · §F · §7 · §8 · §9 · §11 · §14 · §15 · §16.2 (#5, #6, #7) ·
+§16.3 · §17
+
+---
+
+## 09 — Detailed findings workspace
+
+**Class:** PRIMARY — §16.2 #5 and #12
+
+![Khepri detailed-findings workspace reference](09-detailed-findings-workspace.png)
+
+**Binding**
+
+- The density ceiling is a coordinated workspace with aggregate orientation, trends, a detailed row
+  set, and contextual detail visible together.
+- When active authority supplies a finding and its evidence, their visual adjacency makes the
+  relationship clear without requiring depicted selection behavior.
+- The detail region preserves context while the main analytical region remains readable.
+- Dense rows use stable alignment and hierarchy rather than decorative nesting.
+
+**Non-binding**
+
+- Findings, severity levels, opportunities, filters, root-cause analysis, collaboration, ownership,
+  tags, related charts, and every count or status.
+- Actions, routes, selection behavior, icons, user identity, and generated explanations.
+
+**Known generation artifacts and conflicts**
+
+1. Risk and severity are not synonyms for refusal or trust state; the governed vocabularies remain
+   distinct.
+2. Red error paint does not become valid for governed refusal or unavailable states.
+3. Root-cause analysis, comments, owners, and issue workflow have no authority through this image.
+
+**Relevant specification:** §E · §F · §7 · §8 · §10 · §11 · §13 · §14 · §15 · §16.2 (#5, #12) ·
+§16.3 · §17
+
+---
+
+## 10 — Report workspace
+
+**Class:** SUPPLEMENTARY / DELIVERABLE WORKSPACE — supports §16.2 #12
+
+![Khepri report-workspace reference](10-report-workspace.png)
+
+**Binding**
+
+- A stable three-region composition keeps report structure, the document itself, and supplementary
+  context distinguishable at high density.
+- The document remains the dominant surface; surrounding context is quieter and visually bounded.
+- Page identity and report sections make a long deliverable navigable without changing its facts.
+
+**Non-binding**
+
+- Version history, comments, annotations, access management, shared groups, collaboration, export,
+  sharing, page counts, and report-section names.
+- Every report value, date, author, narrative, action, icon, avatar, and depicted permission.
+
+**Known generation artifacts and conflicts**
+
+1. Collaboration, versioning, sharing, and access-management capabilities are not currently
+   authorized.
+2. The central viewer is a composition reference, not a requirement for an interactive document
+   editor.
+3. The report's generated facts and claims must never enter implementation.
+
+**Relevant specification:** §A.2 · §7 · §8 · §9 · §10 · §14 · §15 · §16.2 #12 · §16.3 · §17
+
+---
+
+## 11 — Executive report
+
+**Class:** PRIMARY / DELIVERABLE — supports §16.2 #7
+
+![Khepri executive-report reference](11-executive-report.png)
+
+**Binding**
+
+- A restrained cover, executive summary, findings, comparisons, and recommendations form one
+  readable print sequence.
+- Screen and print share the same visual family, hierarchy, material warmth, and provenance cues
+  without pretending to be the same medium.
+- Decorative imagery remains on the cover and outside analytical regions.
+- Page identity, section numbering, and running context make the deliverable navigable.
+
+**Non-binding**
+
+- Every figure, chart, percentage, quote, recommendation, customer claim, report date, and page
+  count.
+- The generated mark, photography, physical staging, icons, and all exact wording.
+- The presence of mixed-language copy or any depicted report capability.
+
+**Known generation artifacts and conflicts**
+
+1. This is a photographed presentation mockup, not a print-geometry or pagination test.
+2. Any promoted imagery requires reviewed assets and usage rights and must remain outside analytical
+   regions.
+3. Charts and facts must reconcile to the immutable fact package and active RRA specifications.
+4. This image does not close the four-state executive-decision requirement.
+
+**Relevant specification:** §A.2 · §7 · §8 · §9 · §11 · §14 · §15 · §16.2 #7 · §16.3 · §17
+
+---
+
 ## 90 — Visual family board
 
 **Class:** BOARD / MOOD
@@ -236,9 +563,9 @@ management, and welcome/landing.
 
 Each panel occupies roughly **370×230 px**, far below the fidelity at which typography, spacing
 rhythm, component behavior, or density can be judged. **No panel on this board is a screen contract,
-and no panel counts as independent coverage of a §16.2 requirement.** Where this board and file 01 or
-02 disagree, the higher-fidelity file wins; where it introduces a surface those files do not cover,
-that requirement remains uncovered.
+and no panel counts as independent coverage of a §16.2 requirement.** Where this board and any
+surface-specific reference in files 01–11 disagree, the higher-fidelity surface reference wins. A
+requirement remains uncovered only when no higher-fidelity surface reference covers it.
 
 **This board must not be implemented literally.**
 
@@ -263,24 +590,24 @@ that requirement remains uncovered.
 
 | # | Reference requirement | Covered by | Status |
 |---|---|---|---|
-| 1 | Welcome and journey entry | 02 (bottom-left, Arabic only); 90 panel 16 | **NOT YET INDEPENDENTLY REFERENCED** |
-| 2 | Upload | 90 panel 2 only | **NOT YET INDEPENDENTLY REFERENCED** |
-| 3 | Processing | — | **NOT YET INDEPENDENTLY REFERENCED** |
-| 4 | Workspace overview — density floor (§E.4) | 01 bottom-left; 02 bottom-left | **COVERED (Arabic/RTL only)** |
-| 5 | Analysis detail | 90 panel 5 only | **NOT YET INDEPENDENTLY REFERENCED** |
-| 6 | Period comparison | 01 bottom-right; 02 bottom-right | **COVERED** |
-| 7 | Executive decision — four trust states | 01 top-left; 02 top-left | **PARTIAL** — composition covered; only one trust state shown, four non-color-differentiated states not demonstrated |
-| 8 | Evidence drawer | 02 bottom-centre | **COVERED** |
+| 1 | Welcome and journey entry | 04 | **COVERED** |
+| 2 | Upload | 05 | **COVERED** |
+| 3 | Processing | 07 | **COVERED** |
+| 4 | Workspace overview — density floor (§E.4) | 03; 01 and 02 (Arabic/RTL) | **COVERED** |
+| 5 | Analysis detail | 08; 09 | **COVERED** |
+| 6 | Period comparison | 01 bottom-right; 02 bottom-right; 08 | **COVERED** |
+| 7 | Executive decision — four trust states | 01 top-left; 02 top-left; 08; 11 | **PARTIAL** — composition covered; four non-color-differentiated states not demonstrated |
+| 8 | Evidence drawer | 02 bottom-centre; 09 and 10 (evidence context only) | **COVERED** |
 | 9 | Refusal and insufficient data | 01 top-right | **COVERED** (02's variant conflicts with §13 — see its notes) |
 | 10 | Arabic RTL | 01 bottom-left; 02 bottom-left | **COVERED** |
 | 11 | Narrow and mobile | 90 panel 13 only | **NOT YET INDEPENDENTLY REFERENCED** |
-| 12 | Dense analytical workspace — density ceiling | 02 bottom-centre (drawer, partial) | **NOT YET INDEPENDENTLY REFERENCED** |
+| 12 | Dense analytical workspace — density ceiling | 09; 10; 02 bottom-centre (supporting) | **COVERED** |
 
-**Independently covered: 4 of 12** (#6, #8, #9, #10). **Partial: 2** (#4 RTL-only, #7 composition-only).
-**Not yet independently referenced: 6** (#1, #2, #3, #5, #11, #12).
+**Independently covered: 10 of 12** (#1, #2, #3, #4, #5, #6, #8, #9, #10, #12). **Partial: 1**
+(#7 composition-only). **Not yet independently referenced: 1** (#11).
 
 Per §16.3 the approved references are acceptance evidence for the surfaces they cover. **They are
-silent on the six uncovered requirements** — silence is not permission to invent. A surface with no
+silent on the one uncovered requirement** — silence is not permission to invent. A surface with no
 reference here is implemented from its §F screen contract, and §16.3 still forbids substituting a
 coding agent's own visual interpretation.
 
