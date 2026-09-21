@@ -53,7 +53,7 @@
 
 /* The last row in a region is followed by the next region's own hairline, so its rule is the
  * second of two 1px lines a few pixels apart. Removing it is why the regions read as regions. */
-.data-list > .data-use:last-child,
+.data-uses > .data-use:last-child,
 .attention-list > .attention-item:last-child,
 .pinned-list > .pinned-item:last-child,
 .recent-list > .recent-item:last-child,
