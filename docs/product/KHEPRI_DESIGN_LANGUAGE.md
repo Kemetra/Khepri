@@ -57,10 +57,18 @@ acceptance evidence for it. So "no visual-world replacement is warranted" is ret
 code still changes only under an active specification naming the files (Constitution Article IV), and
 `U1-03`, `U1-05`, `U1-06` and `U1-07` remain unauthorized. It does not waive the
 licence-plus-audited-digest process for a new typeface or icon family. It does not admit an external
-font host or CDN, which stay unreachable under the shipped `default-src 'none'` CSP. It does not
-decide the dark palette, which remains an unmade product decision. And it reaches nothing in the
+font host or CDN, which stay unreachable under the shipped `default-src 'none'` CSP. ~~It does not
+decide the dark palette, which remains an unmade product decision.~~ And it reaches nothing in the
 governed layers — facts, privacy, evidence, provenance, retention, or organization isolation are
 untouched by any presentation decision.
+
+**The palette sentence is corrected in place, 2026-09-21, by `KHEPRI_UI_UX_MASTER_SPEC.md` §16.4.**
+It said the dark palette remained undecided, which was accurate when written. The owner supplied the
+approved product-UI handoff on 2026-09-21 and its token set is recorded as §16.4; the decision is
+taken and the sentence is spent. Struck rather than deleted, so a reader arriving from an older note
+sees what changed. **The other three items in that paragraph are untouched** — no typeface or icon
+family bypasses the licence-plus-audited-digest process, no external font host or CDN becomes
+reachable, and the governed layers stay exactly as the next sentence states.
 
 Until an approved pack exists, **the shipped light token set remains the working visual reference**
 in practice, because it is what ships. The change is that it is no longer *authority* against which a
