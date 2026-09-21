@@ -58,6 +58,20 @@ body {
   font-family: var(--font-body);
 }
 
+/* `RCA-010` §Scope, realizing the approved reference pack's binding half.
+ *
+ * The pack is binding for composition, hierarchy, typography, density and rhythm (master
+ * specification §16.1) and NON-binding for its rail hue, its icons, its photography and every
+ * figure it draws. Everything below is the first list. Nothing below introduces a colour: the
+ * palette stays declared in `shell.css` alone, and the pack's own note is why -- "the rail is
+ * binding as composition; its hue awaits token work. This is not authorization for a dark theme."
+ *
+ * Hierarchy is therefore carried by weight, measure, rule and space rather than by paint. That is
+ * not a workaround for the missing palette: §16.0 asks for "editorial typography with strong
+ * hierarchy and generous measure" and §15 forbids "weak hierarchy" and "gray-on-gray low contrast"
+ * in the same list, so the shape layer is where the direction actually lives.
+ */
+
 .shell-identity {
   display: flex;
   align-items: center;
@@ -78,6 +92,63 @@ body {
   padding-block: var(--space-4, 1rem);
   padding-inline: var(--space-4, 1rem);
   color: var(--ink);
+}
+
+/* §E.1's canonical order, made visible: the frame, then a context header, then the surface's
+ * regions. The pack's binding note calls this "the relationship between global frame, context
+ * header, KPI row, supporting analysis, and evidence". A surface here has no KPI row -- `M3-U5`
+ * forbids a figure on Overview by name -- so the order this shell can carry is frame, title,
+ * orientation, regions, and the rule below is what separates the second from the third.
+ *
+ * `--measure-heading` and `--measure-lede` cap the two runs that would otherwise set to the full
+ * column width. §16.0 asks for "generous measure"; a heading running 120ch is not generous, it is
+ * unread. */
+/* The scale's top tier, not the one below it, and measured rather than chosen: before this rule no
+ * shell sheet set an `h1` size at all, so every page title rendered at the browser's `2em` -- 32px.
+ * The tier below would have made the page title *smaller* than it shipped, which is the "weak
+ * hierarchy" §15 item 8 names, and no gate measures the tier -- `test_r807`'s scan only asks that a
+ * size resolve from a token, and every tier does. Measured at 34.4px after, 32px before.
+ *
+ * `--title-size` rather than the tier's own name: `shell.css` records why the alias exists. */
+.shell-main h1 {
+  max-inline-size: var(--measure-heading);
+  margin-block: 0 var(--density-tight);
+  font-size: var(--title-size);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  /* §16.0's editorial character: a display heading breaks on sense rather than on fit. Degrades to
+   * normal wrapping where unsupported, so nothing depends on it. */
+  text-wrap: pretty;
+}
+
+.shell-main h1 + .lede {
+  max-inline-size: var(--measure-lede);
+  margin-block: 0 var(--density-region);
+  font-size: var(--text-lede);
+  line-height: var(--leading-normal);
+}
+
+/* Arabic prose sets looser than Latin at the same size (§9: equal surfaces, not one and its
+ * translation). One rule, one token, both directions -- not a second layout.
+ *
+ * **Prose, and deliberately not the page title.** `.shell-main h1` sets `--leading-tight`
+ * explicitly and therefore keeps it in both languages: a heading capped at 24ch is one or two
+ * lines, where loose leading reads as a gap rather than as rhythm. Measured: the lede rises to
+ * 33.4px and a row to 28.8px in Arabic while the title holds at 32.2px in both. */
+[lang="ar"] .shell-main,
+[lang="ar"] .shell-main .lede {
+  line-height: var(--leading-arabic);
+}
+
+/* §E.2 and §15 item 2: **cards do not nest.** The pack's own artifact note flags "bordered rows
+ * inside bounded regions" as a generation defect rather than a pattern to copy, so a bounded
+ * region inside `.document-card` is separated by rule and space, never by a second border. This
+ * rule is the guard: it strips the border and padding from a card that lands inside another, so
+ * nesting degrades to a plain region instead of drawing two frames. */
+.document-card .document-card {
+  margin-block-end: 0;
+  padding: 0;
+  border: 0;
 }
 
 /* The skip link is visible only while focused, and is the first focusable element in the body so
@@ -201,9 +272,52 @@ body {
   font-size: var(--text-sm);
 }
 
+/* An empty region states its emptiness and stays in the reading order. §15 item 21 forbids a
+ * "visually de-emphasized refusal state", and the same reasoning covers an absence: this is the
+ * surface answering, not the surface failing. So it takes the muted ink every stated fact takes
+ * and nothing else -- no dashed box, no icon, no centred illustration. The approved pack draws an
+ * empty state with an outline icon; §7.1 makes every icon in it non-binding, and there is no
+ * approved family to draw one from. */
 .empty-state {
+  margin-block: 0;
   color: var(--muted);
 }
+
+/*
+ * The responsive posture `RCA-010` authorizes with `U1-05`. Two postures, not three: this shell is
+ * a single column of regions at every width, so the thing that actually changes is the page gutter
+ * and the frame row's wrapping -- both already handled by `flex-wrap` above.
+ *
+ * The gutter is what a breakpoint is genuinely needed for. `--space-4` on a 390px viewport spends
+ * 8% of the width on margin; the tighter tier keeps the density floor (§E.4) reachable on a phone,
+ * where it is hardest to reach and most often abandoned. §15 item 19 names "desktop-only layout" as
+ * an anti-pattern.
+ *
+ * `40rem` matches the breakpoint `workspace.css` already uses for its two-column lists, so the
+ * shell has one breakpoint rather than a second one a few pixels away.
+ */
+@media (max-width: 40rem) {
+  .shell-main,
+  .shell-identity {
+    padding-inline: var(--space-3, 0.75rem);
+  }
+
+  .document-card {
+    padding: var(--space-3, 0.75rem);
+  }
+}
+
+/*
+ * **No motion, and therefore no `prefers-reduced-motion` block.** The design handoff asks for three
+ * keyframes and a 140ms transition, and a reduced-motion query to freeze them. None of that lands
+ * here, for a reason `test_the_shell_stylesheets_declare_no_motion` states better than the handoff
+ * does: over zero motion declarations a reduced-motion block "would be dead CSS gating nothing --
+ * the defined-but-never-attached defect".
+ *
+ * The shell declares no animation and no transition in any of its three sheets. That is a stronger
+ * accessibility position than honoring reduced motion, not a weaker one, and it is asserted rather
+ * than left to care. A slice that ships the first transition adds the query with it.
+ */
 
 /* The one-time invitation token. Monospace and wrapped, because it is copied by hand and a token
  * that overflows its container is a token that cannot be. */
@@ -275,6 +389,49 @@ body {
  * on a surface with two items as on one with four -- and mirrors in RTL without a second rule. */
 .frame-language {
   margin-inline-start: auto;
+}
+
+/*
+ * `U1-05`, the navigation presentation `RCA-010` authorizes by name: "one navigation per surface, a
+ * single `aria-current`, a responsive navigation posture, visible applied filters, and filter
+ * accessibility -- over destinations that already exist".
+ *
+ * **Over destinations that already exist** is the operative clause and the reason this is styling
+ * and not markup. `shell_frame.organization_frame()` decides the destinations in Python, and
+ * `FR-049` forbids rendering an entry for a surface with no implementation. The approved pack's
+ * board draws a rail of eight or nine destinations; most are surfaces this product does not serve,
+ * and a nav item is the one thing a stylesheet must never add.
+ *
+ * The current destination is marked by weight and a rule on its inline start, never by colour
+ * alone -- §11's non-colour differentiation, which is why a state on any shell surface reads as a
+ * rule or a word and not as a tint. `aria-current="page"` is the template's; this paints what it
+ * already says.
+ */
+.frame-surfaces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--density-tight);
+}
+
+.frame-surfaces a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--row-min);
+  padding-inline: var(--space-3, 0.75rem);
+  color: var(--accent);
+}
+
+/* The rule sits on the inline start, so it mirrors in RTL with no second declaration. Transparent
+ * rather than absent on the inactive rows: a border that appears on selection shifts every sibling
+ * by 2px, and a navigation that moves when you choose in it reads as a fault. */
+.frame-surfaces a {
+  border-inline-start: 2px solid transparent;
+}
+
+.frame-surfaces a[aria-current="page"] {
+  border-inline-start-color: var(--accent);
+  font-weight: 600;
 }
 
 .shell-identity a {
