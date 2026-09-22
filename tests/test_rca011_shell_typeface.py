@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from khepri.rra.journey.hero import HERO_JPEG_FILE, HERO_WEBP_FILE
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.rra.rendering.fonts import (
     ARABIC_FILE,
@@ -127,6 +128,12 @@ class TestFR207TheShellServesItsOwnTypeface:
 
         `>=` only ever weakens: a third entry added by a later slice must fail here rather than
         pass unnoticed. This is the recorded `RCA_TABLES` drift, applied to an asset allowlist.
+
+        `RCA-012` `FR-212` added the two hero derivatives, and this assertion is what made that
+        addition visible rather than silent -- which is the whole point of stating the extent. It
+        is widened to the new exact set rather than loosened to a subset check: relaxing it here
+        would have discarded the guard instead of honouring it, and every later entry must fail
+        here too.
         """
         assert set(_ASSETS) == {
             "shell.css",
@@ -134,6 +141,8 @@ class TestFR207TheShellServesItsOwnTypeface:
             "workspace.css",
             ARABIC_FILE,
             LATIN_FILE,
+            HERO_JPEG_FILE,
+            HERO_WEBP_FILE,
         }
 
     @pytest.mark.parametrize("file_name", _TYPEFACES)

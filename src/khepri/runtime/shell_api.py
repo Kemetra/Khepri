@@ -50,6 +50,14 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.contracts import RUN_COMPLETED
+from khepri.rra.journey.hero import (
+    HERO_DIRECTORY,
+    HERO_JPEG_FILE,
+    HERO_JPEG_MEDIA_TYPE,
+    HERO_PACKAGE,
+    HERO_WEBP_FILE,
+    HERO_WEBP_MEDIA_TYPE,
+)
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.rra.rendering.fonts import (
     ARABIC_FILE,
@@ -121,12 +129,22 @@ _STYLESHEET = "text/css; charset=utf-8"
 #: Each entry carries its own media type because a `.woff2` served as `text/css` is not served.
 #: `FR-211`: naming a face here adds no capability -- the route below stays one read of a named
 #: file, answering the same way for every caller, with no authorization path and no access record.
+#:
+#: **The two hero derivatives are `RCA-012` `FR-212`.** Same shape and same reason as the faces:
+#: they are read from the package `journey/hero.py` audits rather than copied here, because a
+#: second copy would be artwork nothing checks. That module verifies both files against their
+#: SHA-256 manifest *at import*, so importing these names has already refused a drifted derivative
+#: -- `FR-213`'s "refused at load rather than quietly served", applied where the route cannot
+#: reach it. The supplied 2.4 MB PNG is absent from this dict deliberately (`FR-215`): it stays
+#: design material under `docs/` and no entry names it.
 _ASSETS = {
     "shell.css": ("khepri.rra.journey", "assets", _STYLESHEET),
     "shell-components.css": ("khepri.rra.journey", "assets", _STYLESHEET),
     "workspace.css": ("khepri.runtime", "shell_assets", _STYLESHEET),
     ARABIC_FILE: (FONT_PACKAGE, FONT_DIRECTORY, FONT_MEDIA_TYPE),
     LATIN_FILE: (FONT_PACKAGE, FONT_DIRECTORY, FONT_MEDIA_TYPE),
+    HERO_JPEG_FILE: (HERO_PACKAGE, HERO_DIRECTORY, HERO_JPEG_MEDIA_TYPE),
+    HERO_WEBP_FILE: (HERO_PACKAGE, HERO_DIRECTORY, HERO_WEBP_MEDIA_TYPE),
 }
 
 
