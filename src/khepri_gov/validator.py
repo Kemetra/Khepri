@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import posixpath
+from collections.abc import Hashable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -45,10 +46,41 @@ def _load_artifacts(root: Path, errors: list[str]) -> list[Artifact] | None:
     return _extract_artifacts(loaded, errors)
 
 
+class _DuplicateKeyError(yaml.constructor.ConstructorError):
+    def __init__(self, key: object, key_node: yaml.Node) -> None:
+        super().__init__(problem=f"duplicate key {key!r}", problem_mark=key_node.start_mark)
+        self.message = f"registry: duplicate key {key!r} at line {key_node.start_mark.line + 1}"
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A safe loader that refuses a mapping which repeats a key, at any depth.
+
+    ``yaml.safe_load`` keeps the last of two equal keys, so a registry with two
+    ``artifacts:`` blocks or two ``state:`` fields would validate against
+    whichever came last. Merge keys (``<<``) keep their override semantics.
+    """
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        seen: set[object] = set()
+        for key_node, _ in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, Hashable):
+                continue  # unhashable: the base constructor reports it
+            if key in seen:
+                raise _DuplicateKeyError(key, key_node)
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def _read_registry(root: Path, errors: list[str]) -> object | None:
     path = root / REGISTRY_PATH
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
+        return yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
+    except _DuplicateKeyError as duplicate:
+        errors.append(duplicate.message)
+        return None
     except FileNotFoundError:
         errors.append(f"registry: file does not exist: {REGISTRY_PATH.as_posix()}")
         return None
@@ -181,9 +213,10 @@ class _ArtifactValidator:
         if path.suffix.lower() != ".md":
             self.errors.append(f"registry: {label}: document must be a Markdown file")
             return
-        if document in self.documents:
+        normalized = posixpath.normpath(path.as_posix())
+        if normalized in self.documents:
             self.errors.append(f"registry: duplicate document {document!r}")
-        self.documents.add(document)
+        self.documents.add(normalized)
         if not (self.root / path).is_file():
             self.errors.append(f"registry: {label}: document does not exist: {document}")
 

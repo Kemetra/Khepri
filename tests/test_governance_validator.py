@@ -118,6 +118,15 @@ def test_registry_rejects_a_repeated_key_inside_an_artifact(tmp_path: Path) -> N
     assert validate_repository(tmp_path) == ["registry: duplicate key 'state' at line 6"]
 
 
+@pytest.mark.parametrize(
+    "content",
+    ["schema_version: 2\n? [a]\n: 1\n", "schema_version: 2\n? !!set {a: null}\n: 1\n"],
+)
+def test_unhashable_keys_still_fail_as_invalid_yaml(tmp_path: Path, content: str) -> None:
+    write_raw_registry(tmp_path, content)
+    assert validate_repository(tmp_path) == ["registry: invalid YAML"]
+
+
 def test_registry_still_accepts_a_yaml_merge_key(tmp_path: Path) -> None:
     write_registry(tmp_path, valid_artifacts())
     content = (
