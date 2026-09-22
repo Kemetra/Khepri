@@ -20,6 +20,7 @@ from __future__ import annotations
 import ast
 import inspect
 import pathlib
+from dataclasses import FrozenInstanceError
 
 import pytest
 from sqlalchemy import event
@@ -399,7 +400,7 @@ def test_a_returned_refusal_cannot_be_edited_through_its_wording() -> None:
 
     assert first.wording == {"en": "no", "ar": "\u0644\u0627"}
     assert second.wording == first.wording
-    with pytest.raises((AttributeError, TypeError)):
+    with pytest.raises(FrozenInstanceError):
         first.wording_pairs = ()  # type: ignore[misc]
 
 

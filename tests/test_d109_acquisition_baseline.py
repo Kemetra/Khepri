@@ -21,7 +21,6 @@ composed cost is already recorded in §3a.
 
 from __future__ import annotations
 
-import statistics
 import time
 
 from khepri.rca.workspace.decision.controls import ControlSelection
@@ -67,10 +66,11 @@ def test_the_surface_acquisition_is_a_measured_distribution() -> None:
     any run had been served from something retained, its read count would drop
     below the seven every other run issued.
     """
-    timings, counts = _surface_samples()
+    _timings, counts = _surface_samples()
 
-    assert len(timings) == _SAMPLES
-    assert statistics.median(timings) > 0
+    # The timings are evidence for the dated ledger, not an assertion. `len == _SAMPLES`
+    # restated the loop bound and `median > 0` restated that a clock advances; neither could
+    # fail against any defect, so both were dropped (`#529` T-12).
     assert set(counts) == {7}
 
 

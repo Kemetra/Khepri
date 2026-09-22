@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
+    ORDERED_SECTIONS,
     SECTION_BASKET,
     SECTION_COMPARISON,
     SECTION_CONCENTRATION,
@@ -28,10 +29,10 @@ from khepri.rra.bundle import (
 from khepri.rra.facts import AdmittedInput, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
-from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering.html import HtmlReportRenderer
-from khepri.rra.rendering.wording import caveat_prose, refusal_message
+from khepri.rra.rendering.wording import SECTION_HEADINGS, caveat_prose, refusal_message
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     manifest_for_csv,
@@ -331,11 +332,22 @@ def test_an_undrawable_chart_says_so_inside_its_own_section() -> None:
 
 
 def test_both_languages_render_every_section() -> None:
-    """A heading present in one language and missing from the other is two reports."""
-    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+    """A heading present in one language and missing from the other is two reports.
+
+    Every governed section in every governed language, read off the rendered document. It
+    used to check two sections, and `SurfaceContent`'s own section list cannot stand in for
+    the page: `build_content` copies it from the bundle, so it names every section whether or
+    not the template drew one (`#529` T-05).
+    """
+    for language in REQUIRED_LANGUAGES:
         rendered = page(language)
-        for section_id in (SECTION_OVERVIEW, SECTION_BASKET):
-            assert f'<section id="{section_id}"' in rendered, (language, section_id)
+        for section_id in ORDERED_SECTIONS:
+            assert rendered.count(f'<section id="{section_id}"') == 1, (language, section_id)
+            heading = SECTION_HEADINGS[language][section_id]
+            assert f'<h2 id="{section_id}-heading">{heading}</h2>' in rendered, (
+                language,
+                section_id,
+            )
 
 
 def test_the_arabic_page_mirrors_its_chart() -> None:

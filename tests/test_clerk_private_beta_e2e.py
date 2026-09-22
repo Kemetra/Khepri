@@ -156,13 +156,36 @@ def journey_fixture(tmp_path) -> PrivateBetaJourney:
         journey.close()
 
 
-def test_closing_the_private_beta_journey_releases_its_sqlite_database(tmp_path) -> None:
-    """A missing client or engine shutdown leaves the fixture's file locked on Windows."""
-    database_path = tmp_path / "private-beta.db"
+def test_closing_the_private_beta_journey_releases_its_sqlite_database(
+    tmp_path, monkeypatch
+) -> None:
+    """A missing client or engine shutdown leaves the fixture's file locked on Windows.
+
+    Asserted on the mechanism rather than by renaming the file (`#529` T-08): an open SQLite
+    file renames freely on Linux, so the rename passed in CI with both shutdowns removed. The
+    precondition matters too -- a pool holding no connection would report zero either way.
+    """
     journey = build_private_beta_journey(tmp_path)
+    calls: list[str] = []
+    original_close, original_dispose = journey.client.close, journey.engine.dispose
+
+    def close_client() -> None:
+        calls.append("client.close")
+        original_close()
+
+    def dispose_engine(*args, **kwargs) -> None:
+        calls.append("engine.dispose")
+        original_dispose(*args, **kwargs)
+
+    monkeypatch.setattr(journey.client, "close", close_client)
+    monkeypatch.setattr(journey.engine, "dispose", dispose_engine)
+    assert journey.engine.pool.checkedin() >= 1, "the schema build left no pooled connection"
 
     journey.close()
-    database_path.rename(tmp_path / "private-beta-released.db")
+
+    assert calls == ["client.close", "engine.dispose"]
+    assert journey.engine.pool.checkedin() == 0
+    assert journey.engine.pool.checkedout() == 0
 
 
 def test_failed_journey_factory_disposes_its_engine(tmp_path, monkeypatch) -> None:

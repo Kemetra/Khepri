@@ -25,6 +25,8 @@ from khepri.rca.sessions import Session, StoredSession, hash_session_id
 NOW = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
 ACCOUNT = "acc_actor"
 ORGANIZATION = "org_acme"
+#: The seal's own refusal (`records._MISUSE`), matched so an unrelated `TypeError` is not a pass.
+SEAL_REFUSAL = "constructed through create"
 
 
 class TestTheIdentifierIsNeverStoredRaw:
@@ -232,14 +234,19 @@ class TestNoAuthorityIsCached:
         """`FR-003` states it directly. Sealed records refuse attribute assignment outright."""
         session = Session.issue(ACCOUNT, now=NOW, lifetime=timedelta(hours=12)).session
 
-        with pytest.raises(Exception):  # noqa: B017, PT011 -- FrozenInstanceError or AttributeError
+        # `TypeError`, not `FrozenInstanceError`: `slots=True` rebuilds the class, so the frozen
+        # `__setattr__` CPython generated refuses a *non-field* name through a `super()` call
+        # that no longer matches. Named exactly so an unrelated error cannot pass, and the
+        # attribute's absence is asserted too, because that is the property `FR-003` needs.
+        with pytest.raises(TypeError):
             session.prescription_count = 5  # type: ignore[attr-defined]
+        assert not hasattr(session, "prescription_count")
 
 
 class TestTheRecordIsSealed:
     def test_the_constructor_is_not_reachable_without_a_door(self) -> None:
         """`records.py`'s two-door rule: construction goes through `issue` or `_from_storage`."""
-        with pytest.raises(Exception):  # noqa: B017, PT011 -- the seal's own refusal
+        with pytest.raises(TypeError, match=SEAL_REFUSAL):
             Session(
                 session_id_hash="deadbeef",
                 account_id=ACCOUNT,
@@ -255,7 +262,7 @@ class TestTheRecordIsSealed:
 
         session = Session.issue(ACCOUNT, now=NOW, lifetime=timedelta(hours=12)).session
 
-        with pytest.raises(Exception):  # noqa: B017, PT011 -- the seal's own refusal
+        with pytest.raises(TypeError, match=SEAL_REFUSAL):
             dataclasses.replace(session, account_id="acc_someone_else")
 
 

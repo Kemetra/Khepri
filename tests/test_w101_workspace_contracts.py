@@ -193,7 +193,7 @@ def test_substitution_is_refused_on_a_sealed_workspace_record() -> None:
     re-point a sealed dataset at content it never admitted.
     """
     version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
-    with pytest.raises(Exception):  # noqa: B017 - the sealing error type is records.py's to name
+    with pytest.raises(TypeError, match="constructed through create"):
         replace(version, upload_plaintext_digest="sha256:" + "f" * 64)
 
 

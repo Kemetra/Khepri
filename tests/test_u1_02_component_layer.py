@@ -39,7 +39,13 @@ import pytest
 from jinja2 import TemplateNotFound, UndefinedError
 
 from khepri.rra.admissibility import assess_admissibility
-from khepri.rra.bundle import GOVERNED_SECTION_STATES, FactPackage, ReportBundle, reconcile
+from khepri.rra.bundle import (
+    GOVERNED_SECTION_STATES,
+    SECTION_REFUSED,
+    FactPackage,
+    ReportBundle,
+    reconcile,
+)
 from khepri.rra.facts import AdmittedInput, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
@@ -189,13 +195,22 @@ def test_a_refusal_renders_through_the_refusal_panel() -> None:
     Was RED because the template rendered a bare `<p class="refused">`. The panel
     consumes `chrome.refusal_prose`, which `html.py` already supplies -- so this
     component authors no refusal wording and FR-095 holds by construction.
+
+    The precondition is asserted, not skipped (`#529` T-09): a fixture that stopped refusing
+    would otherwise report this test as a skip, and so would a template that stopped drawing
+    the refusal as a `<p class="refused">` at all. `ROWS` is three days, which settles no
+    comparison period, so the bundle itself is asked which sections refused -- and each must
+    reach the page, in both languages, as exactly one panel.
     """
-    rendered = page()
-    refusals = re.findall(r"<p[^>]*class=\"[^\"]*\brefused\b[^\"]*\"[^>]*>", rendered)
-    if not refusals:
-        pytest.skip("this fixture publishes every section; no refusal to check")
-    bypassing = [panel for panel in refusals if REFUSAL_COMPONENT_MARKER not in panel]
-    assert not bypassing, f"refusal prose bypasses the panel component: {bypassing[:3]}"
+    bundle = ReportBundle.of(package_for(ROWS))
+    refused = [section for section in bundle.sections if section.state == SECTION_REFUSED]
+    assert refused, "the fixture refuses no section -- this test would prove nothing"
+    for language in REQUIRED_LANGUAGES:
+        rendered = page(language)
+        assert rendered.count(REFUSAL_COMPONENT_MARKER) == len(refused), language
+        refusals = re.findall(r"<p[^>]*class=\"[^\"]*\brefused\b[^\"]*\"[^>]*>", rendered)
+        bypassing = [panel for panel in refusals if REFUSAL_COMPONENT_MARKER not in panel]
+        assert not bypassing, f"refusal prose bypasses the panel component: {bypassing[:3]}"
 
 
 def test_no_scoped_template_renders_a_figure_outside_the_component_layer() -> None:
@@ -332,7 +347,9 @@ def test_an_unknown_code_fails_closed() -> None:
     except TemplateNotFound:  # pragma: no cover - the RED state
         pytest.fail(f"{COMPONENTS_TEMPLATE} does not exist; fail-closed is unproven")
 
-    with pytest.raises((KeyError, ValueError, UndefinedError)):
+    # The one refusal this layer raises, naming the unknown *state*. Matching the state keeps a
+    # typo elsewhere in the macro (`chrome.component_states`) from passing as fail-closed.
+    with pytest.raises(UndefinedError, match="not_a_governed_state"):
         render_macro(
             'status_badge(state="not_a_governed_state", chrome=chrome)', LANGUAGE_ENGLISH
         )

@@ -387,13 +387,13 @@ class TestADisabledAccountCannotResume:
     def test_the_resume_is_refused(self, journey: Journey) -> None:
         journey.disable(journey.member)
 
-        with pytest.raises((AuthenticationFailed, ScopeAccessDenied)):
+        with pytest.raises(AuthenticationFailed):
             journey.resume_through_session(journey.member_token)
 
     def test_the_analysis_still_exists(self, journey: Journey) -> None:
         journey.disable(journey.member)
 
-        with pytest.raises((AuthenticationFailed, ScopeAccessDenied)):
+        with pytest.raises(AuthenticationFailed):
             journey.resume_through_session(journey.member_token)
 
         assert journey.analysis_exists()
@@ -406,7 +406,7 @@ class TestADisabledAccountCannotResume:
         """
         journey.disable(journey.member)
 
-        with pytest.raises((AuthenticationFailed, ScopeAccessDenied)):
+        with pytest.raises(AuthenticationFailed):
             journey.resume_through_session(journey.member_token)
 
     def test_the_membership_row_is_untouched(self, journey: Journey) -> None:

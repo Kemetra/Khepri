@@ -1124,15 +1124,17 @@ class SqlOrganizationStore:
         a team screen showing fewer people than the organization has is its own confusion --
         the surface says so instead.
 
-        Ordered by email then account so two renders agree. Email is nullable, and `NULLS` ordering
-        differs between engines, so the account identifier is the stable tiebreak.
+        Ordered by email then account so two renders agree. Email is nullable (a purged account),
+        and engines disagree on where `NULL` sorts -- PostgreSQL last, SQLite first -- so the
+        placement is stated with `nulls_last()` rather than inherited from the engine, and the
+        account identifier is the stable tiebreak.
         """
         with self._factory() as database:
             rows = database.execute(
                 select(MembershipRow, AccountRow)
                 .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
                 .where(MembershipRow.organization_id == organization_id)
-                .order_by(AccountRow.email, AccountRow.account_id)
+                .order_by(AccountRow.email.asc().nulls_last(), AccountRow.account_id)
             ).all()
             return [
                 OrganizationMember(
