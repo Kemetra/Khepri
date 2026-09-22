@@ -33,6 +33,30 @@
 >
 > The palette recorded here as §8 is transcribed into `docs/product/KHEPRI_UI_UX_MASTER_SPEC.md`
 > §16.5, which is the citable record for those token values.
+>
+> ### One file is excluded from this import: `design-files/support.js`
+>
+> The supplied package contains sixteen files. **Fifteen are imported here.** The sixteenth,
+> `design-files/support.js`, is **not in version control**, deliberately.
+>
+> It is generated build output, not authored source. Its own first line says so:
+> `// GENERATED from dc-runtime/src/*.ts — do not edit.`
+> It is a ~1,620-line, 100-function prototype rendering runtime that the repository's required
+> CodeScene Code Health gate scores as authored code, where it lands at **2.40 / 10.00**
+> (`walkXImport` alone carries a cyclomatic complexity of 52 against a threshold of 9). Every new
+> file must score 10.00. Committing vendored build output is the defect the gate is detecting; the
+> gate is not wrong about it.
+>
+> **What this costs.** The three `.dc.html` prototypes each load it with
+> `<script src="./support.js"></script>`, so they **do not render as live pages** from this
+> directory. They are imported and kept anyway, because they remain the readable design source —
+> markup, tokens, component structure and per-screen inventory — which is what this package is
+> cited for. Nothing about the approved visual direction is lost, and nothing governed depends on a
+> runnable prototype.
+>
+> **How to restore live prototypes.** Take `design-files/support.js` from the owner's supplied
+> archive (`Ancient Egypt Premium Mockup.zip`, 2026-09-22) and drop it beside the `.dc.html` files.
+> They then render offline exactly as supplied. Do not commit it.
 
 # Khepri Product UI — implementation handoff (FINAL)
 
