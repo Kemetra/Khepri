@@ -26,6 +26,7 @@ from jinja2 import Environment
 from khepri.rca.invitations import InvitationOffer
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.runtime.shell_frame import offers_of, organization_frame
+from khepri.runtime.shell_refusals import SHELL_REFUSALS
 
 #: How long an issued invitation stays redeemable.
 #:
@@ -162,16 +163,21 @@ def add_invitation_routes(
         )
 
         now = clock()
-        token = services.invitations.issue(
-            InvitationOffer(
-                organization_id=context.organization_id,
-                intended_role=role,
-                target_identity=email,
-                issued_by=context.account_id,
-            ),
-            expires_at=now + INVITATION_LIFETIME,
-            now=now,
-        )
+        # A store that refuses the write is the same denial as the gate's (`FR-025`), and the
+        # refusal happens before any token exists, so nothing is lost by answering it uniformly.
+        try:
+            token = services.invitations.issue(
+                InvitationOffer(
+                    organization_id=context.organization_id,
+                    intended_role=role,
+                    target_identity=email,
+                    issued_by=context.account_id,
+                ),
+                expires_at=now + INVITATION_LIFETIME,
+                now=now,
+            )
+        except SHELL_REFUSALS:
+            return unavailable(environment, language=rendered)
         return render(
             environment,
             "invitation_issued.html.j2",
