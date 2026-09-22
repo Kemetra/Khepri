@@ -203,9 +203,10 @@ class WorkspaceDeletion:
         what writes `FR-124`'s content-free evidence, so the evidence arrives by using the existing
         path rather than by this slice writing a second kind.
 
-        The job it begins is idempotent per session, so a repeat that reached here would not start
-        a second ending -- but the caller returns before this on the already-deleted path, so a
-        repeat does not reach it at all.
+        The job it begins is idempotent per session, so a repeat that reaches here does not start a
+        second ending. A *sequential* repeat never does: the caller returns before this on the
+        already-deleted path. A request overtaken after that read does reach it, and meets the
+        first request's already-complete job (`#526`).
         """
         session_ids = self._sessions_of_version(version)
         if not session_ids:

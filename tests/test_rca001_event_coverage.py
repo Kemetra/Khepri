@@ -126,8 +126,14 @@ def test_every_membership_write_path_emits_exactly_one_event(factory: sessionmak
 
 
 #: How a method's source betrays that it writes `rca_memberships`: inserting a row, reassigning a
-#: role, or deleting the row the shared guard located.
-_MUTATION_MARKERS = ("MembershipRow(", ".role = ", "database.delete(row)")
+#: role, deleting the row the shared guard located, or a conditional `UPDATE` statement -- the form
+#: `promote_membership` took in `#526`, which the first three markers do not see.
+_MUTATION_MARKERS = (
+    "MembershipRow(",
+    ".role = ",
+    "database.delete(row)",
+    "update(MembershipRow)",
+)
 
 #: How it betrays that the write is attributed: emitting the event itself, or delegating to the
 #: shared guard that does. Delegation counts -- that indirection is what makes revoke and demote

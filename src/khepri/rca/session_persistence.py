@@ -33,6 +33,7 @@ from khepri.rca.persistence import (
 )
 from khepri.rca.records import assert_sealed
 from khepri.rca.sessions import Session, StoredSession
+from khepri.rca.workspace.unit_of_work import is_uniqueness_clash
 
 
 def _session_from_row(row: SessionRow) -> Session:
@@ -72,8 +73,10 @@ class SqlSessionStore:
 
         The read is the courteous path; the primary key is the guarantee. A writer that commits the
         same identifier between the two loses at the constraint, and that loss is the same `False`
-        -- caught as `link_external_identity` catches it (`#526`), so `SessionService.create`
-        answers with its uniform refusal rather than a driver error.
+        (`#526`), so `SessionService.create` answers with its uniform refusal rather than a driver
+        error. **Only a uniqueness clash**, unlike `link_external_identity`'s broad catch: a
+        session naming no account is a foreign-key fault, and it stays the error it is --
+        `test_a_session_requires_an_account_that_exists` holds that line.
         """
         assert_sealed(session)
         try:
@@ -90,7 +93,9 @@ class SqlSessionStore:
                         revoked_at=session.revoked_at,
                     )
                 )
-        except IntegrityError:
+        except IntegrityError as clash:
+            if not is_uniqueness_clash(clash):
+                raise
             return False
         return True
 
