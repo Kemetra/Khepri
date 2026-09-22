@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #E9E3DA; }
+  a { color: #8C6B22; text-decoration: none; }
+  a:hover { color: #6F5316; }
+  @keyframes khSpin { to { transform: rotate(360deg); } }
+  @keyframes khBar { from { transform: translateX(-40%); } to { transform: translateX(340%); } }
+  @keyframes khPulse { 0%,100% { opacity: .35; } 50% { opacity: .85; } }
+</style>
+</helmet>
+
+<div dir="{{ dir }}" style="font-family: 'Noto Sans Arabic', -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #16212B; background: #E9E3DA; padding: 26px; display: flex; justify-content: center;">
+<div style="width: 100%; max-width: 1620px; display: grid; grid-template-columns: 238px minmax(0, 1fr); background: #FBF9F6; border: 1px solid #DED7CC; border-radius: 16px; overflow: hidden; box-shadow: 0 40px 80px -52px rgba(18,28,38,.55);">
+
+  <aside style="display: flex; flex-direction: column; background: linear-gradient(180deg, #101C26 0%, #0B1017 100%); color: #DFE3E7; padding: 24px 0 20px; min-height: 940px;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 0 20px 24px;">
+      <svg width="62" height="32" viewBox="0 0 62 32" fill="none" aria-hidden="true">
+        <circle cx="31" cy="28" r="11.5" fill="#C9A45C"></circle>
+        <path d="M5 30a26 26 0 0 1 52 0" stroke="#C9A45C" stroke-width="1.3"></path>
+        <path d="M12 30a19 19 0 0 1 38 0" stroke="#C9A45C" stroke-width="1.1" opacity=".68"></path>
+        <path d="M19 30a12 12 0 0 1 24 0" stroke="#C9A45C" stroke-width="1" opacity=".45"></path>
+      </svg>
+      <div style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.22rem; letter-spacing: .34em; text-indent: .34em; color: #F3EBDA;">KHEPRI</div>
+      <div style="font-family: ui-monospace, Consolas, monospace; font-size: .54rem; letter-spacing: .2em; text-transform: uppercase; color: #93A0A9; text-align: center; line-height: 1.9;">Insights for<br>a brighter tomorrow</div>
+    </div>
+
+    <nav style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+      <span onClick="{{ goHome }}" style="position: relative; display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #D9DEE2;" style-hover="background: rgba(255,255,255,.06);">
+        <sc-if value="{{ atHome }}"><span style="position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, rgba(201,164,92,.26), rgba(201,164,92,.02)); box-shadow: inset 3px 0 0 #C9A45C;"></span></sc-if>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.6" style="position: relative;"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h14V10"></path></svg>
+        <span style="position: relative;">Home</span>
+      </span>
+      <span onClick="{{ goUpload }}" style="position: relative; display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #D9DEE2;" style-hover="background: rgba(255,255,255,.06);">
+        <sc-if value="{{ atFlow }}"><span style="position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, rgba(201,164,92,.26), rgba(201,164,92,.02)); box-shadow: inset 3px 0 0 #C9A45C;"></span></sc-if>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.6" style="position: relative;"><path d="M12 5v14M5 12h14"></path></svg>
+        <span style="position: relative;">New Analysis</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>My Files
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 20V11M12 20V4M19 20v-6"></path></svg>Reports
+      </span>
+      <span onClick="{{ goInsights }}" style="position: relative; display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #D9DEE2;" style-hover="background: rgba(255,255,255,.06);">
+        <sc-if value="{{ atInsights }}"><span style="position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, rgba(201,164,92,.26), rgba(201,164,92,.02)); box-shadow: inset 3px 0 0 #C9A45C;"></span></sc-if>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.6" style="position: relative;"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.6H9c0-.6-.1-1.2-.6-1.6A6 6 0 0 1 12 3z"></path></svg>
+        <span style="position: relative;">Insights</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"></path></svg>Data Sources
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg>Team
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"></circle><path d="M4.6 8.6l2-3.5 3.8.6L12 2l1.6 3.7 3.8-.6 2 3.5-2.3 3.4 2.3 3.4-2 3.5-3.8-.6L12 22l-1.6-3.7-3.8.6-2-3.5 2.3-3.4z"></path></svg>Settings
+      </span>
+    </nav>
+
+    <div style="margin: auto 16px 0; padding: 18px 16px 16px; border: 1px solid rgba(201,164,92,.26); border-radius: 12px;">
+      <p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: .98rem; line-height: 1.45; color: #EBE4D6;">Turning today's data into a brighter tomorrow.</p>
+      <p dir="rtl" lang="ar" style="margin: 10px 0 0; font-size: .82rem; line-height: 1.85; color: #A9B2B9;">من البيانات اليوم إلى غدٍ أكثر إشراقاً</p>
+      <svg viewBox="0 0 170 62" width="100%" height="56" fill="none" aria-hidden="true" style="margin-top: 12px; display: block;">
+        <circle cx="85" cy="40" r="22" stroke="#C9A45C" stroke-width=".7" opacity=".4"></circle>
+        <path d="M85 20 L114 58 H56 Z" stroke="#C9A45C" stroke-width=".9" opacity=".7"></path>
+        <path d="M0 58h170" stroke="#C9A45C" stroke-width=".8" opacity=".3"></path>
+      </svg>
+    </div>
+  </aside>
+
+  <div style="display: flex; flex-direction: column; min-width: 0;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #EBE5DC;">
+      <label style="flex: 1; min-width: 180px; max-width: 520px; display: flex; align-items: center; gap: 11px; min-height: 42px; padding: 0 16px; border: 1px solid #E6E0D6; border-radius: 999px; background: #FAF8F5;" style-focus="border-color: #C9A45C;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#98A0A8" stroke-width="1.8"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path></svg>
+        <input placeholder="Search files, reports, insights..." style="flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: .9rem; color: #16212B;">
+      </label>
+      <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 9px; font-size: .86rem; color: #4A5560;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.4"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"></path></svg>
+        <span onClick="{{ setEn }}" style="cursor: pointer; padding: 3px 8px; border-radius: 6px; font-weight: 600;">EN</span>
+        <span style="color: #D6D0C6;">|</span>
+        <span onClick="{{ setAr }}" dir="rtl" lang="ar" style="cursor: pointer; padding: 3px 8px; border-radius: 6px;">عربي</span>
+      </span>
+      <span style="position: relative; display: inline-flex; cursor: pointer;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.4"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"></path><path d="M10.4 21a2 2 0 0 0 3.2 0"></path></svg>
+        <span style="position: absolute; top: -2px; inset-inline-end: -2px; width: 8px; height: 8px; border-radius: 50%; background: #D9922E; border: 2px solid #fff;"></span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 11px; cursor: pointer;">
+        <span style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(145deg, #D8CBB6, #A2907A);"></span>
+        <span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600; font-size: .9rem;">Sarah Ahmed</span><span style="font-size: .76rem; color: #8A929B;">Global Strategy</span></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6"><path d="M6 9l6 6 6-6"></path></svg>
+      </span>
+    </header>
+
+    <sc-if value="{{ showProtoNav }}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 24px; background: #F4EEE4; border-bottom: 1px solid #E8E1D6; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; color: #8A8172;">
+      <span style="margin-inline-end: 4px;">Prototype nav</span>
+      <span onClick="{{ goHome }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">01 Home</span>
+      <span onClick="{{ goUpload }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">02 Upload</span>
+      <span onClick="{{ goReview }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">03 Review &amp; Map</span>
+      <span onClick="{{ goProgress }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">04 In Progress</span>
+      <span onClick="{{ goInsights }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">05 Insights</span>
+      <span onClick="{{ goReport }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">06 Report</span>
+      <span style="margin-inline-start: auto; color: #A79C8A;">{{ screenLabel }}</span>
+    </div>
+    </sc-if>
+
+    <main style="flex: 1; min-width: 0; background: #FBF9F6;">
+
+      <sc-if value="{{ atHome }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="01 Home">
+        <div style="position: relative; min-height: 238px; display: grid; grid-template-columns: minmax(0, 1fr) 210px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 46%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.94) 34%, rgba(252,243,228,.45) 56%, rgba(20,30,40,0) 74%);"></div>
+          <div style="position: relative; padding: 28px 34px 30px;">
+            <span style="font-family: ui-monospace, Consolas, monospace; font-size: .66rem; letter-spacing: .3em; text-transform: uppercase; color: #9A7B34;">Good morning, Sarah</span>
+            <h1 style="margin: 8px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.5rem; line-height: 1.1; color: #12202C; text-wrap: pretty;">Deeper insights<br>for a brighter tomorrow.</h1>
+            <p style="margin: 10px 0 0; max-width: 46ch; font-size: .95rem; line-height: 1.6; color: #4C5762;">Analyze, understand, and act on your data — with the power of AI and the clarity of Khepri.</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px;">
+              <span onClick="{{ goUpload }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 22px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .94rem; cursor: pointer; box-shadow: 0 10px 22px -12px rgba(140,104,30,.9);" style-hover="filter: brightness(1.05);">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 17v3h16v-3"></path></svg>Start a New Analysis
+              </span>
+              <span style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: rgba(255,255,255,.85); color: #24313D; font-size: .94rem; cursor: pointer;" style-hover="border-color: #C9A45C;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.5"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.5l6 3.5-6 3.5z"></path></svg>See How It Works
+              </span>
+            </div>
+          </div>
+          <div style="position: relative; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 12px; padding: 0 26px; text-align: end; font-family: ui-monospace, Consolas, monospace; font-size: .62rem; letter-spacing: .26em; line-height: 2.4; text-transform: uppercase; color: #F0DFBC; text-shadow: 0 1px 8px rgba(10,16,22,.6);">
+            Different<br>perspectives<br>a brighter<br>tomorrow
+            <span style="width: 46px; height: 1px; background: #C9A45C;"></span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; padding: 18px 24px 0;">
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #F6EBD6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Total Analyses</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">42</b><span style="font-size: .78rem; color: #2E7D57;">▲ 12%</span></span>
+              <span style="font-size: .72rem; color: #98A0A8;">vs. last month</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #F6EBD6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5M9 13h6M9 17h4"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Reports Generated</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">28</b><span style="font-size: .78rem; color: #2E7D57;">▲ 18%</span></span>
+              <span style="font-size: .72rem; color: #98A0A8;">vs. last month</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #EDF1F6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#4A6178" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Team Members</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">6</b><span style="font-size: .78rem; color: #98A0A8;">— no change</span></span>
+              <span style="font-size: .72rem; color: #98A0A8;">2 pending invites</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #F6EBD6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Connected Sources</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">9</b><span style="font-size: .78rem; color: #2E7D57;">▲ 29%</span></span>
+              <span style="font-size: .72rem; color: #B8873B;">1 needs reauthorization</span>
+            </span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) minmax(0, .95fr); gap: 14px; padding: 14px 24px 0; align-items: start;">
+          <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 18px 20px 14px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+              <span style="display: flex; flex-direction: column;"><b style="font-size: 1.02rem;">Analysis Activity</b><span style="font-size: .8rem; color: #8A929B;">Analyses run over time</span></span>
+              <span style="margin-inline-start: auto; display: flex; gap: 2px; padding: 3px; background: #F4EFE7; border-radius: 8px; font-size: .76rem;">
+                <span style="padding: 5px 10px; border-radius: 6px; color: #6B7580; cursor: pointer;">7D</span>
+                <span style="padding: 5px 10px; border-radius: 6px; background: #E8D6B0; color: #4A3712; font-weight: 600; cursor: pointer;">30D</span>
+                <span style="padding: 5px 10px; border-radius: 6px; color: #6B7580; cursor: pointer;">3M</span>
+                <span style="padding: 5px 10px; border-radius: 6px; color: #6B7580; cursor: pointer;">12M</span>
+              </span>
+            </div>
+            <svg viewBox="0 0 640 220" width="100%" height="212" fill="none" style="margin-top: 12px; display: block;" aria-label="Analyses per day">
+              <g stroke="#EFE9E0" stroke-width="1"><path d="M40 20h590M40 65h590M40 110h590M40 155h590M40 200h590"></path></g>
+              <g fill="#98A0A8" font-size="11" font-family="ui-monospace, monospace"><text x="8" y="24">40</text><text x="8" y="69">30</text><text x="8" y="114">20</text><text x="8" y="159">10</text><text x="14" y="204">0</text></g>
+              <path d="M40 200 L40 188 L90 176 L140 158 L190 168 L240 140 L290 152 L340 120 L390 128 L440 100 L490 112 L540 84 L590 92 L630 76 L630 200 Z" fill="#F3E4C9" opacity=".7"></path>
+              <path d="M40 188 L90 176 L140 158 L190 168 L240 140 L290 152 L340 120 L390 128 L440 100 L490 112 L540 84 L590 92 L630 76" stroke="#C09146" stroke-width="2"></path>
+              <g fill="#C09146"><circle cx="90" cy="176" r="3.2"></circle><circle cx="190" cy="168" r="3.2"></circle><circle cx="290" cy="152" r="3.2"></circle><circle cx="390" cy="128" r="3.2"></circle><circle cx="490" cy="112" r="3.2"></circle><circle cx="590" cy="92" r="3.2"></circle></g>
+              <g fill="#98A0A8" font-size="11" font-family="ui-monospace, monospace"><text x="28" y="216">Oct 1</text><text x="160" y="216">Oct 10</text><text x="300" y="216">Oct 18</text><text x="440" y="216">Oct 24</text><text x="570" y="216">Oct 30</text></g>
+            </svg>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; padding-top: 12px; border-top: 1px solid #F0EAE1;">
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Success rate</span><b style="font-size: 1.1rem;">98%</b></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Avg. processing</span><b style="font-size: 1.1rem;">1.8 min</b></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Data analyzed</span><b style="font-size: 1.1rem;">12.4 GB</b></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Active users</span><b style="font-size: 1.1rem;">6</b></span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1.02rem;">Recent Analyses</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+                <span onClick="{{ goInsights }}" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C; background: #FDFAF4;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #E6F1E9; color: #27724F; font-size: .62rem; font-weight: 700;">XLS</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Q3 Financial Performance</span><span style="font-size: .74rem; color: #98A0A8;">Oct 30 · 2 hours ago</span></span>
+                  <span style="margin-inline-start: auto; padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .72rem; font-weight: 600;">Completed</span>
+                </span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C; background: #FDFAF4;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #FBE9E7; color: #B0392F; font-size: .62rem; font-weight: 700;">PDF</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Market Expansion Analysis</span><span style="font-size: .74rem; color: #98A0A8;">Oct 29 · 1 day ago</span></span>
+                  <span style="margin-inline-start: auto; padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .72rem; font-weight: 600;">Completed</span>
+                </span>
+                <span onClick="{{ goProgress }}" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #E8D6B0; border-radius: 10px; background: #FDF7EA; cursor: pointer;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #EEF2F8; color: #33506D; font-size: .62rem; font-weight: 700;">DOC</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Operations Review 2024</span><span style="font-size: .74rem; color: #98A0A8;">Validating data quality…</span></span>
+                  <span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #F6E9CE; color: #7A5A17; font-size: .72rem; font-weight: 600;"><span style="width: 10px; height: 10px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite;"></span>Running</span>
+                </span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #F2DAD6; border-radius: 10px; background: #FEF7F6;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #E6F1E9; color: #27724F; font-size: .62rem; font-weight: 700;">XLS</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Regional Sales Data</span><span style="font-size: .74rem; color: #B0392F;">Failed — 2 columns could not be parsed</span></span>
+                  <span style="margin-inline-start: auto; padding: 3px 10px; border-radius: 999px; background: #FBE9E7; color: #B0392F; font-size: .72rem; font-weight: 600;">Error</span>
+                </span>
+              </div>
+            </div>
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1.02rem;">Recently Generated Reports</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px;">
+                <span onClick="{{ goReport }}" style="display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-bottom: 1px solid #F3EEE6; cursor: pointer; font-size: .87rem;">Executive Summary Q3<span style="margin-inline-start: auto; font-size: .74rem; color: #98A0A8;">PDF · 4.2 MB</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg></span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-bottom: 1px solid #F3EEE6; font-size: .87rem;">Market Expansion Analysis<span style="margin-inline-start: auto; font-size: .74rem; color: #98A0A8;">PDF · 6.8 MB</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg></span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 9px 4px; font-size: .87rem; color: #A9AFB6;">Customer Insights Report<span style="margin-inline-start: auto; font-size: .74rem;">Preparing…</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C7CCD1" stroke-width="1.6"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <b style="font-size: 1.02rem;">Quick Actions</b>
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+                <span onClick="{{ goUpload }}" style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #E3CE9F; border-radius: 10px; background: linear-gradient(90deg, #FAEFD8, #FDF8EE); cursor: pointer;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8C6B22" stroke-width="1.8"><path d="M12 5v14M5 12h14"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">New Analysis</b><span style="font-size: .74rem; color: #7A6C52;">Upload files or connect data</span></span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8C6B22" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.6"><path d="M5 20V11M12 20V4M19 20v-6"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">Browse Reports</b><span style="font-size: .74rem; color: #8A929B;">Explore generated reports</span></span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">Connect Data Source</b><span style="font-size: .74rem; color: #8A929B;">Link to your data systems</span></span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+                <span title="Requires workspace admin" style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #F0ECE5; border-radius: 10px; background: #FAF8F5; color: #B2B7BC; cursor: not-allowed;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C2C7CC" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">Invite Team Members</b><span style="font-size: .74rem;">Admin permission required</span></span>
+                </span>
+              </div>
+            </div>
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1.02rem;">Team Activity</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+                <span style="display: flex; gap: 11px; align-items: flex-start;"><span style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(145deg, #CBBBA2, #8D7C64); flex: none;"></span><span style="display: flex; flex-direction: column; font-size: .84rem;"><span><b>Omar Khaled</b> uploaded new data</span><span style="font-size: .73rem; color: #98A0A8;">2 hours ago</span></span></span>
+                <span style="display: flex; gap: 11px; align-items: flex-start;"><span style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(145deg, #C7C0B2, #7E8A93); flex: none;"></span><span style="display: flex; flex-direction: column; font-size: .84rem;"><span><b>Lina Hassan</b> generated a report</span><span style="font-size: .73rem; color: #98A0A8;">4 hours ago</span></span></span>
+                <span style="display: flex; gap: 11px; align-items: flex-start;"><span style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(145deg, #D2C3AC, #96826A); flex: none;"></span><span style="display: flex; flex-direction: column; font-size: .84rem;"><span><b>Ahmed Mostafa</b> commented</span><span style="font-size: .8rem; color: #55616C;">“Key trends look promising.”</span><span style="font-size: .73rem; color: #98A0A8;">1 day ago</span></span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin: 18px 24px 24px; padding: 16px 20px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <span style="display: flex; gap: 12px; align-items: flex-start;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4" style="flex: none;"><path d="M12 3l7 3v6c0 4.3-3 7.7-7 9-4-1.3-7-4.7-7-9V6z"></path></svg><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .86rem;">Enterprise-Grade Security</b><span style="font-size: .78rem; color: #6B7580; line-height: 1.5;">Protected with industry-leading security and compliance standards.</span></span></span>
+          <span style="display: flex; gap: 12px; align-items: flex-start;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4" style="flex: none;"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .86rem;">Trusted by Leading Organizations</b><span style="font-size: .78rem; color: #6B7580; line-height: 1.5;">Powering decisions across finance, strategy, and operations.</span></span></span>
+          <span style="display: flex; gap: 12px; align-items: flex-start;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4" style="flex: none;"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"></path></svg><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .86rem;">Global Impact</b><span style="font-size: .78rem; color: #6B7580; line-height: 1.5;">Khepri helps organizations turn information into lasting impact.</span></span></span>
+          <span style="display: flex; flex-direction: column; justify-content: center; align-items: flex-end; font-family: ui-monospace, Consolas, monospace; font-size: .6rem; letter-spacing: .24em; line-height: 2.2; text-transform: uppercase; color: #A8935F; text-align: end;">People<br>Ideas<br>Data<br>A brighter tomorrow</span>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atUpload }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="02 Upload" style="padding: 22px 24px 26px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+          <div>
+            <span style="font-family: ui-monospace, Consolas, monospace; font-size: .66rem; letter-spacing: .3em; text-transform: uppercase; color: #9A7B34;">New analysis</span>
+            <h1 style="margin: 6px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.1rem; line-height: 1.12;">Upload your data</h1>
+            <p style="margin: 8px 0 0; max-width: 62ch; font-size: .93rem; line-height: 1.6; color: #55616C;">Bring your business files, connect your data sources, and let Khepri turn complex data into clear insights and executive-ready reports.</p>
+
+            <div style="margin-top: 16px; display: grid; place-items: center; gap: 4px; padding: 30px 24px; border: 1.5px dashed #D3C7B0; border-radius: 14px; background: linear-gradient(180deg, #FFFDF9, #FBF7EF); text-align: center;" style-hover="border-color: #C9A45C; background: #FDF8EC;">
+              <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.3"><path d="M7 17a4 4 0 0 1 .6-7.96A5.5 5.5 0 0 1 18 9.5a3.75 3.75 0 0 1 .3 7.5"></path><path d="M12 19v-8M9 13l3-3 3 3"></path></svg>
+              <b style="font-size: 1.06rem; margin-top: 6px;">Drag and drop your files here</b>
+              <span style="font-size: .87rem; color: #6B7580;">or <a href="#">click to browse</a> from your device</span>
+              <span style="font-size: .76rem; color: #98A0A8;">XLSX, CSV, PDF, DOCX · up to 250 MB per file</span>
+              <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 14px;">
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #E6F1E9; color: #27724F; font-size: .56rem; font-weight: 700;">XLS</span>Excel</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #FBE9E7; color: #B0392F; font-size: .56rem; font-weight: 700;">PDF</span>PDF</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #EEF2F8; color: #33506D; font-size: .56rem; font-weight: 700;">DOC</span>Word</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #F1EEE8; color: #5B6570; font-size: .56rem; font-weight: 700;">CSV</span>CSV</span>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; font-family: ui-monospace, Consolas, monospace; font-size: .62rem; letter-spacing: .24em; text-transform: uppercase; color: #A79C8A;"><span style="flex: 1; height: 1px; background: #EBE5DC;"></span>Or connect a data source<span style="flex: 1; height: 1px; background: #EBE5DC;"></span></div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #3E8E5A;"></span>Google Drive</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #3E6FA8;"></span>OneDrive</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #2C8F87;"></span>SharePoint</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #F0ECE5; border-radius: 10px; background: #FAF8F5; color: #B2B7BC; cursor: not-allowed;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #DCDFE3;"></span>Dropbox · not connected</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg>Database</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 14px;">
+              <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .9rem;">Analysis Objective</b>
+                <span style="display: flex; align-items: center; gap: 10px; margin-top: 10px; min-height: 40px; padding: 0 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: #FDFBF8; font-size: .86rem; color: #8A929B;">Select an objective<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M6 9l6 6 6-6"></path></svg></span>
+                <span style="display: block; margin-top: 8px; font-size: .74rem; color: #B0392F;">Required before you can continue.</span>
+              </div>
+              <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .9rem;">Dataset Context <span style="font-weight: 400; color: #98A0A8;">(optional)</span></b>
+                <textarea rows="2" placeholder="Tell us about your data, business context, or specific questions…" style="width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: #FDFBF8; font: inherit; font-size: .85rem; resize: vertical;"></textarea>
+                <span style="display: block; margin-top: 6px; font-size: .72rem; color: #98A0A8; text-align: end;">0 / 500</span>
+              </div>
+              <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .9rem;">Tags <span style="font-weight: 400; color: #98A0A8;">(optional)</span></b>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;">
+                  <span style="padding: 5px 11px; border-radius: 999px; background: #F4EEE4; font-size: .78rem;">Finance ×</span>
+                  <span style="padding: 5px 11px; border-radius: 999px; background: #F4EEE4; font-size: .78rem;">Q3 ×</span>
+                  <span style="padding: 5px 11px; border-radius: 999px; border: 1px dashed #D9D0C2; font-size: .78rem; color: #8A929B; cursor: pointer;">+ Add tag</span>
+                </div>
+                <span style="display: block; margin-top: 10px; font-size: .74rem; color: #98A0A8;">Tags help you find analyses later.</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="position: relative; min-height: 270px; border-radius: 14px; overflow: hidden; background: #0E1A24;">
+              <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;">
+              <div style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,16,22,.72) 0%, rgba(10,16,22,.25) 45%, rgba(10,16,22,.88) 100%);"></div>
+              <div style="position: relative; display: flex; flex-direction: column; height: 100%; min-height: 270px; padding: 20px 22px;">
+                <span style="font-family: ui-monospace, Consolas, monospace; font-size: .6rem; letter-spacing: .26em; line-height: 2.2; text-transform: uppercase; color: #E6D3AC;">Different<br>perspectives<br>a brighter tomorrow</span>
+                <span style="width: 40px; height: 1px; background: #C9A45C; margin: 10px 0 auto;"></span>
+                <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 1.62rem; line-height: 1.2; color: #FBF6EC;">From data<br>to what's next.</h2>
+                <p style="margin: 8px 0 0; font-size: .85rem; line-height: 1.6; color: #D3D9DE;">Upload your data and let Khepri uncover the insights that move your business forward.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid #E3CE9F; border-radius: 12px; background: linear-gradient(90deg, #FAEFD8, #FDF9F0);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C6B22" stroke-width="1.5" style="flex: none;"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.6H9c0-.6-.1-1.2-.6-1.6A6 6 0 0 1 12 3z"></path></svg>
+              <span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-size: .88rem;">Need help getting started?</b><span style="font-size: .8rem; line-height: 1.55; color: #6E6249;">Learn how to prepare your data, choose the right analysis type, and get the best results.</span><a href="#" style="font-size: .8rem; margin-top: 2px;">View data preparation guide →</a></span>
+            </div>
+            <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: .95rem;">Upload Queue</b><span style="margin-inline-start: auto; font-size: .76rem; color: #98A0A8;">3 files · 12 MB</span></div>
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+                <span style="display: flex; flex-direction: column; gap: 6px;">
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: .84rem;">Q3 Financial Performance.xlsx<span style="margin-inline-start: auto; color: #27724F; font-size: .76rem;">✓ Uploaded</span></span>
+                  <span style="height: 5px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 100%; height: 100%; background: #46875F;"></span></span>
+                </span>
+                <span style="display: flex; flex-direction: column; gap: 6px;">
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: .84rem;">Market Analysis.pdf<span style="margin-inline-start: auto; color: #8A929B; font-size: .76rem;">64% · 1.7 MB/s</span></span>
+                  <span style="height: 5px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 64%; height: 100%; background: linear-gradient(90deg, #D5AE63, #B98C39);"></span></span>
+                </span>
+                <span style="display: flex; flex-direction: column; gap: 6px;">
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: .84rem; color: #B0392F;">Regional Sales Data.xlsx<span style="margin-inline-start: auto; font-size: .76rem;">Failed · file exceeds 250 MB</span></span>
+                  <span style="height: 5px; border-radius: 999px; background: #F7E2DF; overflow: hidden;"><span style="display: block; width: 28%; height: 100%; background: #C0433A;"></span></span>
+                  <span style="display: flex; gap: 10px;"><a href="#" style="font-size: .78rem;">Retry</a><a href="#" style="font-size: .78rem; color: #8A929B;">Remove</a></span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 13px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4"><path d="M12 3l7 3v6c0 4.3-3 7.7-7 9-4-1.3-7-4.7-7-9V6z"></path></svg>
+          <span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Your data is secure</b><span style="font-size: .78rem; color: #6B7580;">All files are encrypted in transit and at rest. We never use your data to train models.</span></span>
+          <span style="margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: 18px; font-size: .78rem; color: #55616C;"><span>SOC 2 Compliant</span><span>ISO 27001 Certified</span><span>GDPR Ready</span></span>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 4px;">
+          <span style="font-size: .8rem; color: #98A0A8;">Select an objective to continue.</span>
+          <span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: #fff; font-size: .9rem; cursor: pointer;">Save as draft</span>
+          <span onClick="{{ goReview }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 24px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .92rem; cursor: pointer;" style-hover="filter: brightness(1.05);">Continue to Review<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atReview }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="03 Review and Map" style="padding: 0 0 26px;">
+        <div style="position: relative; min-height: 170px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 70% 40%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.95) 38%, rgba(252,243,228,.4) 60%, rgba(20,30,40,0) 80%);"></div>
+          <div style="position: relative; padding: 20px 24px 22px;">
+            <span style="display: flex; align-items: center; gap: 8px; font-size: .8rem; color: #7A828A;">My Files<span>›</span>Q3 Financial Performance<span>›</span><b style="color: #16212B;">Review &amp; Map</b></span>
+            <h1 style="margin: 8px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2rem; line-height: 1.12;">Review and map your data</h1>
+            <p style="margin: 6px 0 0; max-width: 64ch; font-size: .9rem; line-height: 1.6; color: #55616C;">We've analyzed your file and suggested a schema. Review the results, adjust mappings, and fix any issues before continuing.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 24px 0; padding: 14px 20px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #B98C39; color: #fff; font-size: .8rem; font-weight: 700;">✓</span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Upload</b><span style="font-size: .74rem; color: #98A0A8;">Completed</span></span></span>
+          <span style="flex: 1; min-width: 40px; height: 1px; background: #E3CE9F;"></span>
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #B98C39; color: #fff; font-size: .8rem; font-weight: 700; box-shadow: 0 0 0 4px rgba(201,164,92,.22);">2</span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Review &amp; Map</b><span style="font-size: .74rem; color: #98A0A8;">Map fields and fix issues</span></span></span>
+          <span style="flex: 1; min-width: 40px; height: 1px; background: #EBE5DC;"></span>
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #EFE9E0; color: #8A929B; font-size: .8rem; font-weight: 700;">3</span><span style="display: flex; flex-direction: column; color: #8A929B;"><b style="font-size: .86rem;">Confirm</b><span style="font-size: .74rem;">Validate and confirm</span></span></span>
+          <span style="flex: 1; min-width: 40px; height: 1px; background: #EBE5DC;"></span>
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #EFE9E0; color: #8A929B; font-size: .8rem; font-weight: 700;">4</span><span style="display: flex; flex-direction: column; color: #8A929B;"><b style="font-size: .86rem;">Analyze</b><span style="font-size: .74rem;">Run analysis</span></span></span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 14px 24px 0;">
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <b style="font-size: 1rem;">File Details</b>
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #E6F1E9; color: #27724F; font-size: .68rem; font-weight: 700;">XLS</span><span style="display: flex; flex-direction: column;"><b style="font-size: .9rem;">Q3 Financial Performance.xlsx</b><span style="font-size: .76rem; color: #98A0A8;">12 MB · uploaded 2 hours ago</span></span></div>
+            <div style="display: flex; flex-direction: column; margin-top: 12px; font-size: .84rem;">
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">Sheets detected<b style="margin-inline-start: auto;">3</b></span>
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">Rows<b style="margin-inline-start: auto;">1,248</b></span>
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">Columns<b style="margin-inline-start: auto;">24</b></span>
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">File type<b style="margin-inline-start: auto;">Microsoft Excel (.xlsx)</b></span>
+            </div>
+          </div>
+
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Data Quality Check</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View details →</a></div>
+            <div style="display: flex; align-items: center; gap: 18px; margin-top: 12px;">
+              <svg width="112" height="112" viewBox="0 0 120 120" fill="none" style="flex: none;">
+                <circle cx="60" cy="60" r="48" stroke="#EFE9E0" stroke-width="13"></circle>
+                <circle cx="60" cy="60" r="48" stroke="#46875F" stroke-width="13" stroke-linecap="round" stroke-dasharray="277 301" transform="rotate(-90 60 60)"></circle>
+                <text x="60" y="56" text-anchor="middle" font-size="24" font-weight="600" fill="#16212B" font-family="Georgia, serif">92%</text>
+                <text x="60" y="74" text-anchor="middle" font-size="10" fill="#8A929B" font-family="monospace">QUALITY</text>
+              </svg>
+              <div style="display: flex; flex-direction: column; gap: 9px; font-size: .85rem; min-width: 0;">
+                <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #46875F;"></span>18 columns valid</span>
+                <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #D9922E;"></span>4 columns with warnings</span>
+                <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C0433A;"></span>2 columns with errors</span>
+                <span style="display: flex; align-items: center; gap: 9px; color: #6B7580;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C7CCD1;"></span>1,248 rows ready</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Transformation Suggestions</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+              <span style="display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #EFE9E0; border-radius: 9px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .84rem;">Standardize date formats</b><span style="font-size: .74rem; color: #98A0A8;">3 columns with inconsistent formats</span></span><span style="margin-inline-start: auto; padding: 6px 13px; border-radius: 7px; background: #F4EBD8; color: #7A5A17; font-size: .78rem; font-weight: 600; cursor: pointer;">Apply</span></span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #EFE9E0; border-radius: 9px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .84rem;">Clean text values</b><span style="font-size: .74rem; color: #98A0A8;">Remove extra spaces, standardize casing</span></span><span style="margin-inline-start: auto; padding: 6px 13px; border-radius: 7px; background: #F4EBD8; color: #7A5A17; font-size: .78rem; font-weight: 600; cursor: pointer;">Apply</span></span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #EFE9E0; border-radius: 9px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .84rem;">Convert to numeric</b><span style="font-size: .74rem; color: #98A0A8;">2 columns stored as text</span></span><span style="margin-inline-start: auto; padding: 6px 13px; border-radius: 7px; background: #F4EBD8; color: #7A5A17; font-size: .78rem; font-weight: 600; cursor: pointer;">Apply</span></span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #EFE9E0; border-radius: 9px; background: #FAF8F5;"><span style="display: flex; flex-direction: column; color: #A9AFB6;"><b style="font-size: .84rem;">Handle missing values</b><span style="font-size: .74rem;">Applied · 124 values filled (median)</span></span><span style="margin-inline-start: auto; padding: 6px 13px; border-radius: 7px; background: #EFEAE2; color: #B2B7BC; font-size: .78rem; font-weight: 600; cursor: not-allowed;">Applied</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin: 14px 24px 0; padding: 16px 18px 12px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+            <span style="display: flex; flex-direction: column;"><b style="font-size: 1rem;">Field Mapping</b><span style="font-size: .8rem; color: #8A929B;">Map your data columns to Khepri's data model.</span></span>
+            <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 0 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #FDFBF8; font-size: .84rem; color: #98A0A8;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#98A0A8" stroke-width="1.8"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path></svg>Search columns…</span>
+            <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid #DCD3C4; border-radius: 8px; background: #fff; font-size: .84rem; font-weight: 600; cursor: pointer;" style-hover="border-color: #C9A45C;">Auto-Map</span>
+            <a href="#" style="font-size: .84rem;">Reset mappings</a>
+          </div>
+          <div style="overflow-x: auto; margin-top: 12px;">
+            <table style="width: 100%; min-width: 900px; border-collapse: collapse; font-size: .84rem;">
+              <thead><tr style="background: #F7F3EC; text-align: start;">
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Source Column</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Sample Data</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Type</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Map To</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Confidence</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Status</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Notes</th>
+              </tr></thead>
+              <tbody>
+                <tr><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600;">Date</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">2024-07-01</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">Date</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #E6E0D6; border-radius: 7px; background: #FDFBF8;">Transaction Date ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 98%; height: 100%; background: #46875F;"></span></span>98%</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .74rem; font-weight: 600;">Mapped</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">Standard format</td></tr>
+                <tr><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600;">Region</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">North America</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">Text</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #E6E0D6; border-radius: 7px; background: #FDFBF8;">Region ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 96%; height: 100%; background: #46875F;"></span></span>96%</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .74rem; font-weight: 600;">Mapped</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">—</td></tr>
+                <tr><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600;">Revenue</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">540,230</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">Number</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #E6E0D6; border-radius: 7px; background: #FDFBF8;">Revenue (USD) ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 97%; height: 100%; background: #46875F;"></span></span>97%</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .74rem; font-weight: 600;">Mapped</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">Detected as currency</td></tr>
+                <tr style="background: #FDF9F0;"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600;">Sales Rep</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">John Smith</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">Text</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #E3CE9F; border-radius: 7px; background: #FFFCF5;">Sales Representative ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 72%; height: 100%; background: #D9922E;"></span></span>72%</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: #FAEEDA; color: #7A5A17; font-size: .74rem; font-weight: 600;">Needs Review</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">Multiple formats detected</td></tr>
+                <tr style="background: #FEF8F7;"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600;">Notes</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">Urgent order</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">Text</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #EBC7C2; border-radius: 7px; background: #FFFBFA; color: #98A0A8;">Select field ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: 38%; height: 100%; background: #C0433A;"></span></span>38%</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: #FBE9E7; color: #B0392F; font-size: .74rem; font-weight: 600;">Unmapped</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">Contains mixed content</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 10px; font-size: .8rem; color: #8A929B;">Showing 5 of 24 columns<span style="margin-inline-start: auto; display: flex; align-items: center; gap: 6px;"><span style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; color: #C7CCD1; cursor: not-allowed;">‹</span><span style="padding: 5px 11px; border-radius: 6px; background: #E8D6B0; color: #4A3712; font-weight: 600;">1</span><span style="padding: 5px 11px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">2</span><span style="padding: 5px 11px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">3</span><span>…</span><span style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">›</span></span></div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 14px 24px 0;">
+          <span onClick="{{ goUpload }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: #fff; font-size: .9rem; cursor: pointer;">← Back to Upload</span>
+          <span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: #fff; font-size: .9rem; cursor: pointer;">Save as Template</span>
+          <span onClick="{{ goProgress }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 24px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .92rem; cursor: pointer;" style-hover="filter: brightness(1.05);">Continue to Analysis<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atProgress }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="04 Analysis in Progress" style="padding: 0 0 26px;">
+        <div style="position: relative; min-height: 186px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 66% 44%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.94) 36%, rgba(252,243,228,.42) 58%, rgba(20,30,40,0) 78%);"></div>
+          <div style="position: relative; padding: 18px 24px 22px;">
+            <span onClick="{{ goReview }}" style="display: inline-flex; align-items: center; gap: 8px; font-size: .84rem; color: #55616C; cursor: pointer;">← Back to Review</span>
+            <span style="display: block; margin-top: 10px; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .3em; text-transform: uppercase; color: #9A7B34;">Analysis in progress</span>
+            <h1 style="margin: 6px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2rem; line-height: 1.12;">Q3 Financial Performance</h1>
+            <p style="margin: 6px 0 0; max-width: 60ch; font-size: .9rem; line-height: 1.6; color: #55616C;">Khepri is analyzing your data and generating insights. You can leave this page — we'll notify you when it's complete.</p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 18px; margin: 14px 24px 0; padding: 16px 20px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px;">
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; min-width: 120px; text-align: center;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #B98C39; color: #fff; font-weight: 700;">✓</span><b style="font-size: .85rem;">1. Upload</b><span style="font-size: .73rem; color: #98A0A8;">3 files · 12 MB</span></span>
+            <span style="flex: 1; min-width: 30px; height: 1px; background: #E3CE9F; margin-top: 16px;"></span>
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; min-width: 120px; text-align: center;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #B98C39; color: #fff; font-weight: 700;">✓</span><b style="font-size: .85rem;">2. Parse</b><span style="font-size: .73rem; color: #98A0A8;">Extracted 24 sheets</span></span>
+            <span style="flex: 1; min-width: 30px; height: 1px; background: #E3CE9F; margin-top: 16px;"></span>
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; min-width: 120px; text-align: center;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #FDF6E6; border: 2px solid #C9A45C; color: #7A5A17; font-weight: 700; box-shadow: 0 0 0 5px rgba(201,164,92,.18);">3</span><b style="font-size: .85rem; color: #7A5A17;">3. Validate</b><span style="font-size: .73rem; color: #98A0A8;">Checking data quality…</span></span>
+            <span style="flex: 1; min-width: 30px; height: 1px; background: #EBE5DC; margin-top: 16px;"></span>
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; min-width: 120px; text-align: center; color: #98A0A8;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #EFE9E0; font-weight: 700;">4</span><b style="font-size: .85rem;">4. Analyze</b><span style="font-size: .73rem;">Pending</span></span>
+            <span style="flex: 1; min-width: 30px; height: 1px; background: #EBE5DC; margin-top: 16px;"></span>
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; min-width: 120px; text-align: center; color: #98A0A8;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #EFE9E0; font-weight: 700;">5</span><b style="font-size: .85rem;">5. Report</b><span style="font-size: .73rem;">Pending</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding-inline-start: 18px; border-inline-start: 1px solid #F0EAE1;">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#B98C39" stroke-width="1.4"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+            <span style="display: flex; flex-direction: column;"><span style="font-size: .76rem; color: #8A929B;">Estimated completion</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.32rem;">~ 3 minutes</b><span style="font-size: .73rem; color: #98A0A8;">Elapsed 2m 18s</span></span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 14px 24px 0; align-items: start;">
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Analysis Tasks</b><span style="margin-inline-start: auto; font-size: .8rem; color: #8A929B;">3 of 6 completed</span></div>
+            <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 12px;">
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #46875F; color: #fff; font-size: .72rem; flex: none;">✓</span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">Reading files and extracting data</b><span style="font-size: .74rem; color: #98A0A8;">Completed · 10:14 AM</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #46875F; color: #fff; font-size: .72rem; flex: none;">✓</span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">Parsing sheets and data structures</b><span style="font-size: .74rem; color: #98A0A8;">Completed · 10:15 AM</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px; border-radius: 9px; background: #FDF7EA; border: 1px solid #F0E1C2;"><span style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite; flex: none;"></span><span style="display: flex; flex-direction: column; min-width: 0; flex: 1;"><b style="font-size: .87rem;">Validating data quality</b><span style="font-size: .74rem; color: #7A6C52;">Checking for inconsistencies, missing values…</span><span style="height: 4px; margin-top: 8px; border-radius: 999px; background: #EFE3CC; overflow: hidden;"><span style="display: block; width: 34%; height: 100%; background: linear-gradient(90deg, #D5AE63, #B98C39); animation: khBar 1.6s ease-in-out infinite;"></span></span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px; color: #A9AFB6;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #EFE9E0; flex: none;"></span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">Enriching data with metadata</b><span style="font-size: .74rem;">Pending</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px; color: #A9AFB6;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #EFE9E0; flex: none;"></span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">Running AI analysis</b><span style="font-size: .74rem;">Pending</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px; color: #A9AFB6;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #EFE9E0; flex: none;"></span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">Generating insights and visualizations</b><span style="font-size: .74rem;">Pending</span></span></span>
+            </div>
+          </div>
+
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">AI Insights (live)</b><span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; color: #7A5A17;"><span style="width: 11px; height: 11px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite;"></span>Generating…</span></div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #EFE9E0; border-radius: 10px;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F6EBD6; flex: none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Identifying revenue trends…</b><span style="font-size: .78rem; line-height: 1.5; color: #6B7580;">Analyzing quarter-over-quarter performance across regions and products.</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #EFE9E0; border-radius: 10px;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F6EBD6; flex: none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M4 17l5-6 4 3 6-8"></path><path d="M19 6h-4M19 6v4"></path></svg></span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Detecting key drivers…</b><span style="font-size: .78rem; line-height: 1.5; color: #6B7580;">Finding the factors that contributed to performance changes.</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #F0EAE1; border-radius: 10px; opacity: .6;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F2EEE7; flex: none;"></span><span style="display: flex; flex-direction: column; gap: 6px; flex: 1;"><span style="width: 62%; height: 9px; border-radius: 4px; background: #EDE7DE; animation: khPulse 1.5s ease-in-out infinite;"></span><span style="width: 100%; height: 8px; border-radius: 4px; background: #F2EDE5; animation: khPulse 1.5s ease-in-out infinite;"></span><span style="width: 78%; height: 8px; border-radius: 4px; background: #F2EDE5; animation: khPulse 1.5s ease-in-out infinite;"></span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #F0EAE1; border-radius: 10px; opacity: .6;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F2EEE7; flex: none;"></span><span style="display: flex; flex-direction: column; gap: 6px; flex: 1;"><span style="width: 48%; height: 9px; border-radius: 4px; background: #EDE7DE; animation: khPulse 1.5s ease-in-out infinite;"></span><span style="width: 92%; height: 8px; border-radius: 4px; background: #F2EDE5; animation: khPulse 1.5s ease-in-out infinite;"></span></span></span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Data Summary</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View details →</a></div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px;">
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">3</b><span style="font-size: .76rem; color: #8A929B;">Files uploaded</span></span>
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">24</b><span style="font-size: .76rem; color: #8A929B;">Sheets detected</span></span>
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">1,248</b><span style="font-size: .76rem; color: #8A929B;">Total rows</span></span>
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">12</b><span style="font-size: .76rem; color: #8A929B;">Columns</span></span>
+              </div>
+            </div>
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Recent Activity</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px; font-size: .84rem;">
+                <span style="display: flex; gap: 11px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C; margin-top: 6px; flex: none;"></span><span style="display: flex; flex-direction: column;"><span><b>Data validation started</b></span><span style="font-size: .75rem; color: #98A0A8;">10:16 AM</span></span></span>
+                <span style="display: flex; gap: 11px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C; margin-top: 6px; flex: none;"></span><span style="display: flex; flex-direction: column;"><span><b>File parsing completed</b> — 24 sheets, 1,248 rows</span><span style="font-size: .75rem; color: #98A0A8;">10:15 AM</span></span></span>
+                <span style="display: flex; gap: 11px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C; margin-top: 6px; flex: none;"></span><span style="display: flex; flex-direction: column;"><span><b>Files uploaded successfully</b> — 3 files (12 MB)</span><span style="font-size: .75rem; color: #98A0A8;">10:14 AM</span></span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 14px 24px 0; padding: 14px 18px; border: 1px solid #CFDCE8; border-radius: 12px; background: #F3F7FB;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3C6089" stroke-width="1.6"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 7.6v.2"></path></svg>
+          <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">You can safely leave this page</b><span style="font-size: .8rem; color: #4E5F70;">Your analysis continues in the background. We'll notify you when it's complete.</span></span>
+          <span onClick="{{ goInsights }}" style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 18px; border-radius: 9px; border: 1px solid #C3D2E0; background: #fff; font-size: .86rem; font-weight: 600; cursor: pointer;">Preview results</span>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atInsightsScreen }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="05 Insights" style="padding: 0 0 26px;">
+        <div style="position: relative; min-height: 210px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 64% 46%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.94) 34%, rgba(252,243,228,.42) 56%, rgba(20,30,40,0) 76%);"></div>
+          <div style="position: relative; display: flex; flex-wrap: wrap; gap: 16px; padding: 18px 24px 20px;">
+            <div style="flex: 1; min-width: 320px;">
+              <span style="display: flex; align-items: center; gap: 8px; font-size: .8rem; color: #7A828A;">Insights<span>›</span><b style="color: #16212B;">Q3 Financial Performance</b></span>
+              <span style="display: block; margin-top: 10px; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .3em; text-transform: uppercase; color: #2E7D57;">Analysis complete</span>
+              <h1 style="margin: 6px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.1rem; line-height: 1.12;">Q3 Financial Performance</h1>
+              <p style="margin: 6px 0 0; max-width: 58ch; font-size: .92rem; line-height: 1.6; color: #55616C;">Strong revenue growth and improving profitability driven by market expansion and operational efficiency.</p>
+              <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; font-size: .8rem; color: #55616C;">
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: rgba(255,255,255,.9);"><span style="display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: #E6F1E9; color: #27724F; font-size: .54rem; font-weight: 700;">XLS</span>Q3 Financial Performance.xlsx</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: rgba(255,255,255,.9);">Completed Oct 12 · 4 min 32 sec</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: rgba(255,255,255,.9);">1,248 rows analyzed</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E3CE9F; border-radius: 8px; background: #FDF8EC;">Finance, Q3, Revenue</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 10px;">
+              <span style="display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 16px; border-radius: 9px; border: 1px solid #DCD3C4; background: rgba(255,255,255,.92); font-size: .86rem; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.6"><circle cx="18" cy="5" r="2.6"></circle><circle cx="6" cy="12" r="2.6"></circle><circle cx="18" cy="19" r="2.6"></circle><path d="M8.4 10.8l7.2-4.2M8.4 13.2l7.2 4.2"></path></svg>Share</span>
+              <span onClick="{{ goReport }}" style="display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 18px; border-radius: 9px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .86rem; cursor: pointer;" style-hover="filter: brightness(1.05);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg>Open Report</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; margin: 14px 24px 0; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; gap: 22px; padding: 0 4px; border-bottom: 1px solid #EBE5DC;">
+              <span style="padding: 10px 2px 11px; border-bottom: 2px solid #B98C39; font-weight: 600; font-size: .92rem; cursor: pointer;">Overview</span>
+              <span style="padding: 10px 2px 11px; color: #6B7580; font-size: .92rem; cursor: pointer;" style-hover="color: #16212B;">Findings</span>
+              <span style="padding: 10px 2px 11px; color: #6B7580; font-size: .92rem; cursor: pointer;" style-hover="color: #16212B;">Charts</span>
+              <span style="padding: 10px 2px 11px; color: #6B7580; font-size: .92rem; cursor: pointer;" style-hover="color: #16212B;">Recommendations</span>
+              <span style="margin-inline-start: auto; align-self: center; font-size: .78rem; color: #98A0A8;">Updated 2 hours ago</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #F6EBD6;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Total Revenue</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">$482M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 18% vs. Q2</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #F6EBD6;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Operating Profit</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">$142M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 22% vs. Q2</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #F6EBD6; font-size: 1.05rem; color: #A8823A;">%</span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Operating Margin</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">29.5%</b><span style="font-size: .74rem; color: #2E7D57;">▲ 2.3 pp vs. Q2</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #EDF1F6;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#4A6178" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Units Sold</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">12.4K</b><span style="font-size: .74rem; color: #2E7D57;">▲ 16% vs. Q2</span></span></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px;">
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .98rem;">Revenue Trend</b><span style="font-size: .78rem; color: #8A929B;">Quarterly revenue (USD millions)</span></span><a href="#" style="margin-inline-start: auto; font-size: .8rem;">Details →</a></div>
+                <svg viewBox="0 0 420 210" width="100%" height="200" fill="none" style="margin-top: 10px; display: block;" aria-label="Quarterly revenue">
+                  <g stroke="#EFE9E0"><path d="M40 20h370M40 65h370M40 110h370M40 155h370M40 185h370"></path></g>
+                  <g fill="#98A0A8" font-size="10" font-family="ui-monospace, monospace"><text x="8" y="24">600</text><text x="8" y="69">400</text><text x="8" y="114">200</text><text x="14" y="189">0</text></g>
+                  <rect x="80" y="113" width="70" height="72" fill="#CBD4DC" rx="3"></rect>
+                  <rect x="190" y="93" width="70" height="92" fill="#CBD4DC" rx="3"></rect>
+                  <rect x="300" y="77" width="70" height="108" fill="#C9A45C" rx="3"></rect>
+                  <g fill="#16212B" font-size="12" font-weight="600" font-family="Georgia, serif"><text x="103" y="106">320</text><text x="213" y="86">408</text><text x="323" y="70">482</text></g>
+                  <g fill="#98A0A8" font-size="10" font-family="ui-monospace, monospace"><text x="95" y="203">Q1 2024</text><text x="205" y="203">Q2 2024</text><text x="315" y="203">Q3 2024</text></g>
+                </svg>
+              </div>
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .98rem;">Revenue by Region</b><span style="font-size: .78rem; color: #8A929B;">Q3 2024 breakdown</span></span><a href="#" style="margin-inline-start: auto; font-size: .8rem;">Details →</a></div>
+                <div style="display: flex; align-items: center; gap: 16px; margin-top: 10px; flex-wrap: wrap;">
+                  <svg width="150" height="150" viewBox="0 0 120 120" fill="none" style="flex: none;">
+                    <circle cx="60" cy="60" r="44" stroke="#33506D" stroke-width="18" stroke-dasharray="105 172" transform="rotate(-90 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#5E7E9E" stroke-width="18" stroke-dasharray="72 205" transform="rotate(46 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#C9A45C" stroke-width="18" stroke-dasharray="50 227" transform="rotate(140 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#8FB4D4" stroke-width="18" stroke-dasharray="33 244" transform="rotate(205 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#E0D3BA" stroke-width="18" stroke-dasharray="17 260" transform="rotate(248 60 60)"></circle>
+                    <text x="60" y="57" text-anchor="middle" font-size="17" font-weight="600" fill="#16212B" font-family="Georgia, serif">$482M</text>
+                    <text x="60" y="72" text-anchor="middle" font-size="8" fill="#8A929B" font-family="monospace">TOTAL</text>
+                  </svg>
+                  <div style="display: flex; flex-direction: column; gap: 8px; font-size: .84rem; flex: 1; min-width: 150px;">
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #33506D;"></span>North America<b style="margin-inline-start: auto;">38%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #5E7E9E;"></span>Europe<b style="margin-inline-start: auto;">26%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C9A45C;"></span>Middle East<b style="margin-inline-start: auto;">18%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #8FB4D4;"></span>Asia Pacific<b style="margin-inline-start: auto;">12%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #E0D3BA;"></span>Latin America<b style="margin-inline-start: auto;">6%</b></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px;">
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .98rem;">Top Products by Revenue</b><span style="font-size: .78rem; color: #8A929B;">Q3 2024 (USD millions)</span></span></div>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px; font-size: .84rem;">
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Solar Max</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #D5AE63, #B98C39);"></span></span><b>182</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Eco Home</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 54%; height: 100%; background: linear-gradient(90deg, #DCBC7E, #C49A4C);"></span></span><b>98</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Power Unit</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 42%; height: 100%; background: linear-gradient(90deg, #E2C793, #CBA75E);"></span></span><b>76</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Smart Grid</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 35%; height: 100%; background: linear-gradient(90deg, #E7D0A5, #D2B273);"></span></span><b>64</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Other</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 34%; height: 100%; background: #E0D3BA;"></span></span><b>62</b></span>
+                </div>
+              </div>
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .98rem;">Segment Detail</b>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 28px 16px; margin-top: 12px; border: 1px dashed #DED7CC; border-radius: 10px; text-align: center;">
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                  <b style="font-size: .9rem;">No segment dimension selected</b>
+                  <span style="font-size: .8rem; color: #8A929B; max-width: 38ch; line-height: 1.55;">Choose a dimension such as customer tier or channel to break this analysis down further.</span>
+                  <span style="margin-top: 4px; display: inline-flex; align-items: center; min-height: 38px; padding: 0 16px; border-radius: 8px; border: 1px solid #DCD3C4; background: #fff; font-size: .84rem; font-weight: 600; cursor: pointer;">Add a dimension</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Executive Summary</b><span onClick="{{ goReport }}" style="margin-inline-start: auto; font-size: .82rem; color: #8C6B22; cursor: pointer;">View full report →</span></div>
+              <p style="margin: 12px 0 0; font-size: .87rem; line-height: 1.65; color: #44505B;">Q3 2024 delivered strong financial results, with 18% revenue growth year-over-year, driven by continued market expansion, higher demand in core markets, and improved operational efficiency. Profitability also increased, with operating margin reaching 29.5%.</p>
+              <p style="margin: 10px 0 0; font-size: .87rem; line-height: 1.65; color: #44505B;">The business is well-positioned for an accelerated Q4, with positive momentum across all key regions.</p>
+              <div style="margin-top: 14px; padding: 14px 16px; border-radius: 10px; background: #FAF3E6; border: 1px solid #F0E1C2;">
+                <p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-style: italic; font-size: .92rem; line-height: 1.6; color: #4B4025;">“Our disciplined execution and focus on strategic growth continue to drive strong results and position us for a brighter tomorrow.”</p>
+                <span style="display: block; margin-top: 8px; font-size: .78rem; color: #7A6C52;">— CEO, Khepri</span>
+              </div>
+            </div>
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <b style="font-size: 1rem;">Key Drivers</b>
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px; font-size: .86rem;">
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">1</span>Market expansion in North America (+28% revenue)</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">2</span>Strong performance in the Solar Max product line</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">3</span>Improved operational efficiency (−2.3 pp cost ratio)</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">4</span>Growing demand in sustainable energy solutions</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">5</span>Successful channel partner activation in EMEA</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid #F0DCB4; border-radius: 12px; background: #FDF7EA;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A7327" stroke-width="1.6" style="flex: none;"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.2"></path></svg>
+              <span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .87rem;">2 columns were excluded</b><span style="font-size: .8rem; line-height: 1.55; color: #6E6249;">“Notes” and one date column contained mixed content and were left out of this analysis.</span><a href="#" style="font-size: .8rem;">Review mapping</a></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atReport }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="06 Executive Report" style="background: #ECE7DF; padding: 0 0 30px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #EBE5DC; position: sticky; top: 0; z-index: 2;">
+          <span onClick="{{ goInsights }}" style="display: inline-flex; align-items: center; gap: 8px; font-size: .86rem; cursor: pointer;">← Back to insights</span>
+          <span style="display: flex; flex-direction: column; margin-inline-start: 10px;"><b style="font-size: .92rem;">Executive Report — Q3 2024</b><span style="font-size: .74rem; color: #98A0A8;">Generated Oct 12, 2024 · 14 pages</span></span>
+          <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 8px; font-size: .8rem; color: #6B7580;"><span style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">−</span>100%<span style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">+</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 15px; border-radius: 9px; border: 1px solid #DCD3C4; background: #fff; font-size: .85rem; cursor: pointer;">Share</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 15px; border-radius: 9px; border: 1px solid #DCD3C4; background: #fff; font-size: .85rem; cursor: pointer;">Export PDF</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 17px; border-radius: 9px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .85rem; cursor: pointer;" style-hover="filter: brightness(1.05);">Send to stakeholders</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px; padding: 11px 24px; background: #E9F3EC; border-bottom: 1px solid #D5E5DA;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#27724F" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M8 12.4l2.6 2.6L16 9.6"></path></svg>
+          <span style="font-size: .85rem; color: #235E42;"><b>Report generated successfully.</b> All 1,248 rows were included; 2 columns were excluded during mapping.</span>
+          <span style="margin-inline-start: auto; font-size: .8rem; color: #3D7A5B; cursor: pointer;">Dismiss</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 186px minmax(0, 1fr); gap: 20px; padding: 20px 24px 0; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 8px; position: sticky; top: 80px;">
+            <span style="font-family: ui-monospace, Consolas, monospace; font-size: .62rem; letter-spacing: .22em; text-transform: uppercase; color: #8A8172;">Pages</span>
+            <span style="padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #C9A45C; font-size: .83rem; font-weight: 600; cursor: pointer;">1 · Cover</span>
+            <span style="padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #E4DED4; font-size: .83rem; color: #55616C; cursor: pointer;" style-hover="border-color: #C9A45C;">2 · Summary</span>
+            <span style="padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #E4DED4; font-size: .83rem; color: #55616C; cursor: pointer;" style-hover="border-color: #C9A45C;">3 · Performance</span>
+            <span style="padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #E4DED4; font-size: .83rem; color: #55616C; cursor: pointer;" style-hover="border-color: #C9A45C;">4 · Regions</span>
+            <span style="padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid #E4DED4; font-size: .83rem; color: #55616C; cursor: pointer;" style-hover="border-color: #C9A45C;">5 · Recommendations</span>
+            <span style="padding: 9px 11px; border-radius: 8px; border: 1px dashed #DED7CC; font-size: .83rem; color: #A9AFB6;">6–14 · Appendix</span>
+          </div>
+
+          <div style="max-width: 940px; width: 100%; background: #FCFAF6; border: 1px solid #DED7CC; box-shadow: 0 30px 60px -44px rgba(18,28,38,.6);">
+            <div style="display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 420px;">
+              <div style="display: flex; flex-direction: column; padding: 34px 26px;">
+                <svg width="66" height="34" viewBox="0 0 62 32" fill="none" aria-hidden="true">
+                  <circle cx="31" cy="28" r="11.5" fill="#C9A45C"></circle>
+                  <path d="M5 30a26 26 0 0 1 52 0" stroke="#B0873C" stroke-width="1.3"></path>
+                  <path d="M12 30a19 19 0 0 1 38 0" stroke="#B0873C" stroke-width="1.1" opacity=".68"></path>
+                  <path d="M19 30a12 12 0 0 1 24 0" stroke="#B0873C" stroke-width="1" opacity=".45"></path>
+                </svg>
+                <div style="margin-top: 14px; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem; letter-spacing: .3em; text-indent: .3em; color: #16212B;">KHEPRI</div>
+                <div style="margin-top: 8px; font-family: ui-monospace, Consolas, monospace; font-size: .57rem; letter-spacing: .2em; text-transform: uppercase; color: #6B7580; line-height: 2;">Insights for<br>a brighter tomorrow</div>
+                <span style="width: 40px; height: 1px; background: #C9A45C; margin: 24px 0;"></span>
+                <span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .24em; line-height: 2.4; text-transform: uppercase; color: #8A8172;">People<br>Ideas<br>Data<br>A brighter tomorrow</span>
+                <span style="width: 40px; height: 1px; background: #C9A45C; margin: 24px 0;"></span>
+                <span dir="rtl" lang="ar" style="font-size: .82rem; line-height: 2; color: #55616C;">رؤى أعمق من أجل غدٍ أكثر إشراقاً</span>
+              </div>
+              <div style="position: relative; overflow: hidden; background: #E9DFCC;">
+                <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 46%;">
+                <div style="position: absolute; inset: 0; background: linear-gradient(90deg, rgba(252,250,246,.85) 0%, rgba(252,250,246,0) 22%);"></div>
+                <span style="position: absolute; top: 26px; inset-inline-end: 26px; font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .24em; line-height: 2.2; text-transform: uppercase; color: #F4E4C0; text-align: end; text-shadow: 0 1px 10px rgba(10,16,22,.7);">Knowledge<br>illuminates<br>possibilities</span>
+              </div>
+            </div>
+
+            <div style="padding: 34px 40px 30px; display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 34px;">
+              <div>
+                <span style="font-family: ui-monospace, Consolas, monospace; font-size: .68rem; letter-spacing: .34em; text-transform: uppercase; color: #9A7B34;">Q3 2024</span>
+                <h1 style="margin: 10px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 3rem; line-height: 1.05; color: #101C26;">Executive Report</h1>
+                <p style="margin: 10px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.32rem; line-height: 1.3; color: #2B3A47;">Stronger insights. A brighter tomorrow.</p>
+                <p style="margin: 14px 0 0; max-width: 56ch; font-size: .95rem; line-height: 1.7; color: #4C5762;">A comprehensive review of performance, key drivers, and opportunities across the business. Powered by data, guided by deeper perspectives, and built for what's next.</p>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 16px; padding-inline-start: 26px; border-inline-start: 1px solid #E4DED4;">
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .2em; text-transform: uppercase; color: #9A7B34;">Prepared for</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Khepri Analytics</b><span style="font-size: .82rem; color: #6B7580; line-height: 1.55;">Turning today's data into a brighter tomorrow.</span></span>
+                <span style="height: 1px; background: #E4DED4;"></span>
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .2em; text-transform: uppercase; color: #9A7B34;">Report period</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Q3 2024</b><span style="font-size: .82rem; color: #6B7580;">Jul 1 – Sep 30, 2024</span></span>
+                <span style="height: 1px; background: #E4DED4;"></span>
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .2em; text-transform: uppercase; color: #9A7B34;">Prepared on</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Oct 12, 2024</b></span>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; padding: 0 40px;">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #F6EBD6;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Total Revenue</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">$482M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 18% vs. Q3 2023</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #F6EBD6;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Operating Profit</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">$142M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 22% vs. Q3 2023</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #F6EBD6; color: #A8823A;">%</span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Operating Margin</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">29.5%</b><span style="font-size: .74rem; color: #2E7D57;">▲ 210 bps</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #EDF1F6;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A6178" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Customers</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">1.2M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 16% vs. Q3 2023</span></span></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 26px; margin: 26px 40px; padding: 24px 0; border-top: 1px solid #E4DED4; border-bottom: 1px solid #E4DED4;">
+              <span style="display: flex; gap: 14px; align-items: flex-start;"><span style="display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #F6EBD6; flex: none;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.5"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.6H9c0-.6-.1-1.2-.6-1.6A6 6 0 0 1 12 3z"></path></svg></span><span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.06rem;">Deeper Insights</b><span style="font-size: .85rem; line-height: 1.6; color: #55616C;">Uncover what matters with trusted, intelligent analysis across your data.</span></span></span>
+              <span style="display: flex; gap: 14px; align-items: flex-start;"><span style="display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #F6EBD6; flex: none;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.06rem;">Bigger Opportunities</b><span style="font-size: .85rem; line-height: 1.6; color: #55616C;">Identify emerging trends and areas for accelerated growth.</span></span></span>
+              <span style="display: flex; gap: 14px; align-items: flex-start;"><span style="display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #F6EBD6; flex: none;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.5"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3.2"></circle></svg></span><span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.06rem;">A Brighter Tomorrow</b><span style="font-size: .85rem; line-height: 1.6; color: #55616C;">Turn insight into action and build a more resilient, smarter future.</span></span></span>
+            </div>
+
+            <div style="padding: 0 40px 30px;">
+              <p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-style: italic; font-size: 1.06rem; line-height: 1.6; color: #2B3A47;">“Our disciplined execution and focus on long-term value creation continue to drive strong results and position us for a brighter tomorrow.”</p>
+              <span style="display: block; margin-top: 8px; font-size: .82rem; color: #7A828A;">— CEO, Khepri</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 16px; padding: 16px 40px; background: #101C26; color: #E4E8EB;">
+              <span style="font-family: 'Source Serif 4', Georgia, serif; font-size: .95rem; letter-spacing: .3em;">KHEPRI</span>
+              <span style="width: 1px; height: 18px; background: rgba(201,164,92,.5);"></span>
+              <span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .22em; text-transform: uppercase; color: #C2C9CE;">Insights for a brighter tomorrow</span>
+              <span style="margin-inline-start: auto; font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .18em; color: #8E9BA4;">Page 1 / 14</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1680,&quot;height&quot;:1080},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;upload&quot;,&quot;review&quot;,&quot;progress&quot;,&quot;insights&quot;,&quot;report&quot;],&quot;default&quot;:&quot;home&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;language&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;English (LTR)&quot;,&quot;Arabic (RTL)&quot;],&quot;default&quot;:&quot;English (LTR)&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;showProtoNav&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, dir: null };
+  go(s) { return () => this.setState({ screen: s }); }
+  renderVals() {
+    const s = this.state.screen || this.props.startScreen || 'home';
+    const labels = { home: '01 · Home', upload: '02 · New Analysis', review: '03 · Review & Map', progress: '04 · Analysis in Progress', insights: '05 · Insights', report: '06 · Executive Report' };
+    return {
+      dir: this.state.dir || (this.props.language === 'Arabic (RTL)' ? 'rtl' : 'ltr'),
+      showProtoNav: this.props.showProtoNav !== false,
+      screenLabel: labels[s],
+      atHome: s === 'home',
+      atFlow: s === 'upload' || s === 'review',
+      atInsights: s === 'insights' || s === 'report',
+      atUpload: s === 'upload',
+      atReview: s === 'review',
+      atProgress: s === 'progress',
+      atInsightsScreen: s === 'insights',
+      atReport: s === 'report',
+      goHome: this.go('home'), goUpload: this.go('upload'), goReview: this.go('review'),
+      goProgress: this.go('progress'), goInsights: this.go('insights'), goReport: this.go('report'),
+      setEn: () => this.setState({ dir: 'ltr' }),
+      setAr: () => this.setState({ dir: 'rtl' })
+    };
+  }
+}
+</script>
+</body>
+</html>

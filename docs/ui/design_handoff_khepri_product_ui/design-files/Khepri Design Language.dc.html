@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #F3EFE8; }
+  a { color: #B08A34; text-decoration: none; }
+  a:hover { color: #8C6B22; }
+</style>
+</helmet>
+
+<div style="font-family: 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif; background: #F3EFE8; color: #16212B; padding: 0 0 100px;">
+
+  <!-- masthead -->
+  <header style="position: relative; overflow: hidden; background: linear-gradient(100deg, #0F1B24 0%, #142130 55%, #1B2A36 100%); color: #EDE6D8; padding: 64px 48px 56px;">
+    <svg viewBox="0 0 600 260" preserveAspectRatio="xMaxYMax slice" aria-hidden="true" style="position: absolute; inset-block: 0; inset-inline-end: 0; width: 48%; height: 100%; opacity: .5;">
+      <defs><radialGradient id="dlSun" cx="50%" cy="50%"><stop offset="0%" stop-color="#F0CE8E" stop-opacity=".85"></stop><stop offset="70%" stop-color="#C9A45C" stop-opacity="0"></stop></radialGradient></defs>
+      <circle cx="380" cy="120" r="150" fill="url(#dlSun)"></circle>
+      <path d="M380 60 L470 210 H290 Z" fill="none" stroke="#C9A45C" stroke-width="1"></path>
+      <circle cx="380" cy="120" r="64" fill="none" stroke="#C9A45C" stroke-width="1" opacity=".6"></circle>
+      <path d="M120 210h420" stroke="#C9A45C" stroke-width="1" opacity=".45"></path>
+    </svg>
+    <div style="position: relative; max-width: 1180px; margin: 0 auto;">
+      <span style="font-family: ui-monospace, Consolas, monospace; font-size: .68rem; letter-spacing: .34em; text-transform: uppercase; color: #C9A45C;">Canonical specification · v1.0</span>
+      <h1 style="margin: 16px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: clamp(2.4rem, 5vw, 3.8rem); line-height: 1.06; max-width: 18ch;">The Khepri Design Language</h1>
+      <p style="margin: 18px 0 0; max-width: 62ch; font-size: 1.08rem; line-height: 1.65; color: #C3C9CE;">Reverse-engineered from the eight supplied product references and the executive report cover. This document defines the shell, tokens, components, layout, states, responsive and RTL behaviour, and the limits of the Egyptian visual language. Where references disagreed, the conflict is named and resolved in section 9.</p>
+      <div style="display: flex; flex-wrap: wrap; gap: 28px; margin-top: 34px; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .26em; text-transform: uppercase; color: #9AA3A9;">
+        <span>Analyze</span><span>Understand</span><span>Decide</span><span>Progress</span>
+      </div>
+    </div>
+  </header>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 0 32px; display: flex; flex-direction: column; gap: 64px;">
+
+    <!-- ── 1 SHELL ── -->
+    <section data-screen-label="1 Shell" style="margin-top: 56px;">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">01</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Global app shell</h2>
+      </div>
+
+      <p style="margin: 22px 0 0; max-width: 72ch; font-size: 1rem; line-height: 1.7; color: #46525D;">Every authenticated surface is one fixed three-part frame: a dark navigation rail, a white utility bar, and a warm content canvas. The frame never changes between pages. What changes is the page header block directly beneath the utility bar.</p>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 26px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h3 style="margin: 0 0 12px; font-size: 1rem; font-weight: 600;">Sidebar rail</h3>
+          <dl style="margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: .88rem;">
+            <dt style="color: #7D8892;">Width</dt><dd style="margin: 0;">236 px fixed, never fluid</dd>
+            <dt style="color: #7D8892;">Ground</dt><dd style="margin: 0;">Navy gradient #0F1B24 → #0C1118</dd>
+            <dt style="color: #7D8892;">Blocks</dt><dd style="margin: 0;">Logo lockup · nav list · footer motto card</dd>
+            <dt style="color: #7D8892;">Item height</dt><dd style="margin: 0;">46 px, 14 px icon gap, 10 px radius</dd>
+            <dt style="color: #7D8892;">Active</dt><dd style="margin: 0;">Gold 3 px inset bar + 24%→3% gold wash + #F6EFDF label</dd>
+            <dt style="color: #7D8892;">Rest / hover</dt><dd style="margin: 0;">#AEB6BC / #E7E2D8 label, 6% white wash</dd>
+            <dt style="color: #7D8892;">Behaviour</dt><dd style="margin: 0;">Always expanded on desktop. No collapse state exists in the references; do not invent one above 1280 px.</dd>
+          </dl>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h3 style="margin: 0 0 12px; font-size: 1rem; font-weight: 600;">Top utility bar</h3>
+          <dl style="margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: .88rem;">
+            <dt style="color: #7D8892;">Height</dt><dd style="margin: 0;">68 px, white, 1 px #EDE8E0 bottom rule</dd>
+            <dt style="color: #7D8892;">Left</dt><dd style="margin: 0;">Search pill, 42 px tall, 999 px radius, max 520 px</dd>
+            <dt style="color: #7D8892;">Right</dt><dd style="margin: 0;">Globe + EN | عربي · bell with amber dot · avatar + name + role</dd>
+            <dt style="color: #7D8892;">Rule</dt><dd style="margin: 0;">The utility bar carries no page title, no page actions, and no colour.</dd>
+          </dl>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h3 style="margin: 0 0 12px; font-size: 1rem; font-weight: 600;">Page container</h3>
+          <dl style="margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: .88rem;">
+            <dt style="color: #7D8892;">Canvas</dt><dd style="margin: 0;">#FBF9F6 warm off-white, never pure white</dd>
+            <dt style="color: #7D8892;">Gutters</dt><dd style="margin: 0;">26 px at 1280 px, 32 px at ≥1600 px</dd>
+            <dt style="color: #7D8892;">Max width</dt><dd style="margin: 0;">1440 px content, centred; the shell itself is full-bleed</dd>
+            <dt style="color: #7D8892;">Vertical rhythm</dt><dd style="margin: 0;">24 px between stacked card rows, 20 px between cards in a row</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div style="margin-top: 22px; background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 24px 26px;">
+        <h3 style="margin: 0 0 14px; font-size: 1rem; font-weight: 600;">The three page-header patterns</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; font-size: .9rem; line-height: 1.65; color: #46525D;">
+          <div style="padding-inline-start: 16px; border-inline-start: 3px solid #C9A45C;">
+            <strong style="display: block; color: #16212B; margin-bottom: 6px;">A · Illustrated hero</strong>
+            Full-bleed sunrise band with a serif headline, lede, and one or two actions. The dark motto panel sits flush at the inline end. Used on Home, New Analysis, Analysis Results, Processing. Height 220–300 px.
+          </div>
+          <div style="padding-inline-start: 16px; border-inline-start: 3px solid #C9A45C;">
+            <strong style="display: block; color: #16212B; margin-bottom: 6px;">B · Document header</strong>
+            Breadcrumb, file-type icon, serif title, status pill, meta line, and a right-aligned action cluster ending in one gold primary. Used on Report viewer and Findings. No illustration.
+          </div>
+          <div style="padding-inline-start: 16px; border-inline-start: 3px solid #C9A45C;">
+            <strong style="display: block; color: #16212B; margin-bottom: 6px;">C · Wizard header</strong>
+            Breadcrumb plus a four-step numbered progress row pinned to the inline end, then a serif title and lede. Used on Review &amp; Map.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 2 TOKENS ── -->
+    <section data-screen-label="2 Tokens">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">02</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Visual tokens</h2>
+      </div>
+
+      <h3 style="margin: 28px 0 14px; font-size: 1.05rem; font-weight: 600;">Colour</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px;">
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #0F1B24;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">ink-900</strong><span style="color: #7D8892;">#0F1B24 · rail, headings</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #16212B;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">ink-800</strong><span style="color: #7D8892;">#16212B · body text</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #6B7580;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">ink-500</strong><span style="color: #7D8892;">#6B7580 · secondary</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #98A0A8;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">ink-400</strong><span style="color: #7D8892;">#98A0A8 · meta, timestamps</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: linear-gradient(180deg, #DCB55F, #BE912E);"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">gold-primary</strong><span style="color: #7D8892;">#DCB55F → #BE912E</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #C9A45C;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">gold-line</strong><span style="color: #7D8892;">#C9A45C · rules on navy</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #B08A34;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">gold-ink</strong><span style="color: #7D8892;">#B08A34 · links, eyebrows on light</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #F8F0DE;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">gold-wash</strong><span style="color: #7D8892;">#F8F0DE · icon tiles, AI callouts</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #FBF9F6;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">canvas</strong><span style="color: #7D8892;">#FBF9F6 · page ground</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 62px; background: #ECE7DF;"></div><div style="padding: 12px 14px; font-size: .8rem;"><strong style="display: block;">border</strong><span style="color: #7D8892;">#ECE7DF card · #F2EDE5 row</span></div></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-top: 14px;">
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 48px; background: #2F7A55;"></div><div style="padding: 10px 14px; font-size: .78rem;"><strong>success</strong> <span style="color: #7D8892;">#2F7A55 / #EDF6F0</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 48px; background: #3C6491;"></div><div style="padding: 10px 14px; font-size: .78rem;"><strong>info</strong> <span style="color: #7D8892;">#3C6491 / #EEF3FA</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 48px; background: #C08A2E;"></div><div style="padding: 10px 14px; font-size: .78rem;"><strong>warning</strong> <span style="color: #7D8892;">#C08A2E / #FBF3E2</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 48px; background: #C0463B;"></div><div style="padding: 10px 14px; font-size: .78rem;"><strong>danger</strong> <span style="color: #7D8892;">#C0463B / #FBEDEC</span></div></div>
+        <div style="border: 1px solid #E7E1D7; border-radius: 12px; overflow: hidden; background: #fff;"><div style="height: 48px; background: #6A54A0;"></div><div style="padding: 10px 14px; font-size: .78rem;"><strong>accent-violet</strong> <span style="color: #7D8892;">charts only</span></div></div>
+      </div>
+
+      <div style="margin-top: 18px; padding: 18px 22px; border: 1px solid #EBD6A8; border-radius: 12px; background: #FBF5E8; font-size: .92rem; line-height: 1.65; color: #4A4234;">
+        <strong>Semantic rule.</strong> Gold is the brand and the single primary action per view — never a data-severity colour and never a chart's default series. Severity uses the four semantic hues only. Navy is structure, not emphasis. A screen carries at most one gold-filled button.
+      </div>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Typography</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 200px 1fr; gap: 0;">
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; border-inline-end: 1px solid #F2EDE5; font-size: .82rem; color: #7D8892;">Display / page title<br><span style="color: #98A0A8;">Serif 500 · 40/1.12 · -0.01em</span></div>
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5;"><span style="font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.3rem; line-height: 1.12;">Q3 Financial Performance</span></div>
+
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; border-inline-end: 1px solid #F2EDE5; font-size: .82rem; color: #7D8892;">Section heading<br><span style="color: #98A0A8;">Serif 600 · 18/1.3</span></div>
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5;"><span style="font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 1.15rem;">Recommended Next Steps</span></div>
+
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; border-inline-end: 1px solid #F2EDE5; font-size: .82rem; color: #7D8892;">KPI figure<br><span style="color: #98A0A8;">Serif 600 · 28–34 · tabular</span></div>
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5;"><span style="font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 1.9rem; font-variant-numeric: tabular-nums;">$24.8M</span></div>
+
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; border-inline-end: 1px solid #F2EDE5; font-size: .82rem; color: #7D8892;">Body / UI<br><span style="color: #98A0A8;">Sans 400–600 · 15/1.6</span></div>
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; font-size: .95rem; line-height: 1.6;">Revenue grew 12% in Q3, driven by strong performance in MEA and new enterprise customers.</div>
+
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; border-inline-end: 1px solid #F2EDE5; font-size: .82rem; color: #7D8892;">Meta / caption<br><span style="color: #98A0A8;">Sans 400 · 12.5/1.5 · ink-400</span></div>
+          <div style="padding: 18px 22px; border-bottom: 1px solid #F2EDE5; font-size: .78rem; color: #98A0A8;">PDF · 4.8 MB · Analyzed 1 day ago</div>
+
+          <div style="padding: 18px 22px; border-inline-end: 1px solid #F2EDE5; font-size: .82rem; color: #7D8892;">Eyebrow / motto<br><span style="color: #98A0A8;">Mono 10–11 · .28em · uppercase</span></div>
+          <div style="padding: 18px 22px; font-family: ui-monospace, Consolas, monospace; font-size: .68rem; letter-spacing: .28em; text-transform: uppercase; color: #B08A34;">Analysis results</div>
+        </div>
+      </div>
+      <p style="margin: 14px 0 0; font-size: .92rem; line-height: 1.7; color: #46525D; max-width: 72ch;">Two families only: a transitional serif for titles, section headings and every headline figure; a humanist sans for all interface text, including Arabic, which uses the same sans across both scripts. The letterspaced mono is a third, narrow role — eyebrows, mottos and the wordmark — never body copy. Serif is never used below 16 px and never for a table cell.</p>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Space, radius, border, shadow, icons</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .95rem; font-weight: 600;">Spacing scale</h4>
+          <p style="margin: 0 0 12px; font-size: .88rem; color: #6B7580; line-height: 1.6;">4 px base. 4 · 8 · 12 · 14 · 18 · 20 · 24 · 26 · 32 · 44.</p>
+          <div style="display: flex; align-items: flex-end; gap: 6px;">
+            <span style="width: 4px; height: 12px; background: #C9A45C;"></span>
+            <span style="width: 8px; height: 18px; background: #C9A45C;"></span>
+            <span style="width: 12px; height: 26px; background: #C9A45C;"></span>
+            <span style="width: 18px; height: 34px; background: #C9A45C;"></span>
+            <span style="width: 24px; height: 44px; background: #C9A45C;"></span>
+            <span style="width: 32px; height: 56px; background: #C9A45C;"></span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: .84rem; color: #7D8892;">Card padding is 18–20 px on compact rows, 24–26 px on content cards. Section gap 24 px.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 14px; font-size: .95rem; font-weight: 600;">Radius</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+            <span style="width: 54px; height: 44px; border: 1px solid #E0D8CA; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; color: #7D8892;">7</span>
+            <span style="width: 54px; height: 44px; border: 1px solid #E0D8CA; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; color: #7D8892;">10</span>
+            <span style="width: 54px; height: 44px; border: 1px solid #E0D8CA; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; color: #7D8892;">14</span>
+            <span style="padding: 10px 16px; border: 1px solid #E0D8CA; border-radius: 999px; font-size: .72rem; color: #7D8892;">pill</span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: .84rem; color: #7D8892; line-height: 1.6;">7 file chips · 10 buttons, inputs, nav items · 14 cards and panels · pill for search, badges, tags. Nothing exceeds 18 px.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .95rem; font-weight: 600;">Border &amp; shadow</h4>
+          <p style="margin: 0; font-size: .88rem; color: #6B7580; line-height: 1.7;">Hairlines carry the structure: 1 px #ECE7DF around cards, #F2EDE5 between rows. Shadows are near-absent — a card rests on <code style="font-size: .82rem; background: #F5F1EA; padding: 1px 5px; border-radius: 4px;">0 1px 2px rgba(22,33,43,.04)</code>. Only floating layers (dropdown, side panel, modal) get <code style="font-size: .82rem; background: #F5F1EA; padding: 1px 5px; border-radius: 4px;">0 18px 40px -24px rgba(22,33,43,.28)</code>. No elevation on hover.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .95rem; font-weight: 600;">Icons</h4>
+          <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
+            <span style="width: 46px; height: 46px; border-radius: 11px; background: #F8F0DE; display: inline-flex; align-items: center; justify-content: center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B08A34" stroke-width="1.7"><path d="M5 20V11M12 20V5M19 20v-6"></path></svg></span>
+            <span style="width: 46px; height: 46px; border-radius: 11px; background: #EEF2F7; display: inline-flex; align-items: center; justify-content: center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4B6480" stroke-width="1.7"><circle cx="9" cy="8" r="3"></circle><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5"></path></svg></span>
+            <span style="width: 46px; height: 46px; border-radius: 11px; background: #EFF5EF; display: inline-flex; align-items: center; justify-content: center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3F7A55" stroke-width="1.7"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path></svg></span>
+          </div>
+          <p style="margin: 0; font-size: .84rem; color: #7D8892; line-height: 1.6;">Line icons, 1.6–1.8 px stroke, 18 px inline / 22 px in a tile. Tiles are 46 px, radius 11, tinted to the semantic family. Never filled glyphs, never two-tone, never emoji.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 3 COMPONENTS ── -->
+    <section data-screen-label="3 Components">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">03</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Core components</h2>
+      </div>
+
+      <h3 style="margin: 28px 0 14px; font-size: 1.05rem; font-weight: 600;">Buttons</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 24px 26px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px;">
+          <span style="display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 22px; border-radius: 10px; background: linear-gradient(180deg, #DCB55F, #BE912E); color: #1E1608; font-weight: 700; font-size: .92rem; box-shadow: 0 10px 22px -14px rgba(190,145,46,.9);">Create Executive Report</span>
+          <span style="display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid #E0D8CA; background: #fff; color: #34404B; font-weight: 500; font-size: .92rem;">Export</span>
+          <span style="display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid #E4CBC7; background: #fff; color: #C0463B; font-weight: 500; font-size: .92rem;">Cancel Analysis</span>
+          <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; color: #B08A34; font-size: .92rem;">View All →</span>
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; border: 1px solid #E0D8CA; background: #fff; color: #6B7580;">···</span>
+          <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: 10px; background: #F2EEE7; color: #AFB5BB; font-weight: 600; font-size: .92rem;">Disabled</span>
+        </div>
+        <p style="margin: 16px 0 0; font-size: .88rem; color: #6B7580; line-height: 1.65;">Height 44–48 px, radius 10, 20–26 px inline padding, icon 17 px before the label. Order in a cluster runs ghost → secondary → gold primary, primary always last in reading order. Destructive is outlined, never filled.</p>
+      </div>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">KPI cards</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;">
+        <div style="display: flex; align-items: center; gap: 16px; padding: 18px 20px; background: #fff; border: 1px solid #ECE7DF; border-radius: 14px;">
+          <span style="width: 46px; height: 46px; border-radius: 11px; background: #F8F0DE; display: inline-flex; align-items: center; justify-content: center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B08A34" stroke-width="1.7"><path d="M5 20V11M12 20V5M19 20v-6"></path></svg></span>
+          <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: .88rem; color: #6B7580;">Total Revenue</span>
+            <strong style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.7rem; font-weight: 600;">$24.8M</strong>
+            <span style="font-size: .78rem; color: #2F7A55;">▲ +12% vs. Q2 2024</span>
+          </span>
+          <svg width="66" height="34" viewBox="0 0 66 34" fill="none"><path d="M2 28c8-2 12-10 18-12s10 6 16 2 12-14 28-16" stroke="#2F7A55" stroke-width="2"></path></svg>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 18px 20px; background: #fff; border: 1px solid #ECE7DF; border-radius: 14px;">
+          <span style="width: 46px; height: 46px; border-radius: 11px; background: #FBEDEC; display: inline-flex; align-items: center; justify-content: center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C0463B" stroke-width="1.7"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17.5v.5"></path></svg></span>
+          <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+            <strong style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.7rem; font-weight: 600;">12</strong>
+            <span style="font-size: .88rem; color: #6B7580;">High Severity Issues</span>
+            <span style="font-size: .78rem; color: #C0463B;">↑ +5 vs. previous period</span>
+          </span>
+        </div>
+      </div>
+      <p style="margin: 12px 0 0; font-size: .9rem; color: #46525D; line-height: 1.7; max-width: 76ch;">Two admissible KPI forms: <strong>label-above-figure</strong> for business metrics, <strong>figure-above-label</strong> for counts of issues. Both are single-height (96–104 px), icon-left, delta as a coloured caption with an arrow. Sparklines are optional, 66×34, single stroke, no axis, no fill beyond a 12% tint.</p>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Status badges</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 24px 26px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+        <span style="padding: 5px 12px; border-radius: 999px; background: #EDF6F0; color: #2F7A55; font-size: .76rem; font-weight: 600;">Completed</span>
+        <span style="padding: 5px 12px; border-radius: 999px; background: #EEF3FA; color: #3C6491; font-size: .76rem; font-weight: 600;">In Progress</span>
+        <span style="padding: 5px 12px; border-radius: 999px; background: #FBF3E2; color: #9A6F1E; font-size: .76rem; font-weight: 600;">Needs Review</span>
+        <span style="padding: 5px 12px; border-radius: 999px; background: #FBEDEC; color: #C0463B; font-size: .76rem; font-weight: 600;">Unmapped</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; background: #FBEDEC; color: #C0463B; font-size: .76rem; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #C0463B;"></span>High Severity</span>
+        <span style="padding: 5px 12px; border-radius: 999px; background: #F1EFEA; color: #6B7580; font-size: .76rem; font-weight: 600;">Draft</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; background: #F5F0E6; color: #8C6B22; font-size: .76rem; font-weight: 600;">BETA</span>
+      </div>
+      <p style="margin: 12px 0 0; font-size: .9rem; color: #46525D; line-height: 1.7; max-width: 76ch;">Pill, 5/12 padding, 12.2 px semibold, tinted ground with the matching semantic ink. Severity badges add a 6 px dot; lifecycle badges do not. Never outlined, never gold, never uppercase.</p>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Tabs, filters, dropdowns</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 24px 26px;">
+        <div style="display: flex; gap: 26px; border-bottom: 1px solid #EFE9E0; margin-bottom: 20px;">
+          <span style="padding: 0 0 12px; font-size: .92rem; color: #6B7580;">Overview</span>
+          <span style="padding: 0 0 12px; font-size: .92rem; font-weight: 600; color: #16212B; box-shadow: inset 0 -2px 0 #BE912E;">Findings</span>
+          <span style="padding: 0 0 12px; font-size: .92rem; color: #6B7580;">Trends &amp; Charts</span>
+          <span style="padding: 0 0 12px; font-size: .92rem; color: #6B7580;">Root Cause</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+          <span style="display: inline-flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border: 1px solid #E6E0D6; border-radius: 10px; background: #fff; font-size: .88rem;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg><span style="display: flex; flex-direction: column; line-height: 1.3;"><span style="font-size: .72rem; color: #98A0A8;">Time Range</span><span style="font-weight: 500;">Last 12 months</span></span><span style="color: #98A0A8;">▾</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border: 1px solid #E6E0D6; border-radius: 10px; background: #fff; font-size: .88rem;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.6"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18"></path></svg><span style="display: flex; flex-direction: column; line-height: 1.3;"><span style="font-size: .72rem; color: #98A0A8;">Region</span><span style="font-weight: 500;">All Regions</span></span><span style="color: #98A0A8;">▾</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 18px; border: 1px solid #E6E0D6; border-radius: 10px; background: #fff; font-size: .88rem; color: #46525D;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.7"><path d="M4 7h16M7 12h10M10 17h4"></path></svg>More Filters</span>
+        </div>
+        <p style="margin: 16px 0 0; font-size: .88rem; color: #6B7580; line-height: 1.65;">Tabs are underline-only with a 2 px gold rule and a weight change — never pills, never boxed. Filters are a single horizontal row of 48 px two-line controls (muted label above the current value) directly under the page header; they scroll horizontally rather than wrapping to a second row on tablet. A compact inline dropdown (chart scope, sort, rows-per-page) is one line, 36–40 px, and sits inside the card header at the inline end.</p>
+      </div>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Tables and data grids</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 18px 22px;">
+          <h4 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.1rem; font-weight: 600;">Detailed Findings (83)</h4>
+          <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid #E6E0D6; border-radius: 9px; font-size: .84rem; color: #46525D;">Sort by: Severity ▾</span>
+        </div>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; min-width: 720px; border-collapse: collapse;">
+            <thead>
+              <tr style="background: #FBF9F6;">
+                <th style="padding: 12px 22px; text-align: start; font-size: .74rem; font-weight: 600; letter-spacing: .04em; color: #7D8892; border-block: 1px solid #F2EDE5;">ID</th>
+                <th style="padding: 12px 16px; text-align: start; font-size: .74rem; font-weight: 600; letter-spacing: .04em; color: #7D8892; border-block: 1px solid #F2EDE5;">Finding</th>
+                <th style="padding: 12px 16px; text-align: start; font-size: .74rem; font-weight: 600; letter-spacing: .04em; color: #7D8892; border-block: 1px solid #F2EDE5;">Category</th>
+                <th style="padding: 12px 16px; text-align: start; font-size: .74rem; font-weight: 600; letter-spacing: .04em; color: #7D8892; border-block: 1px solid #F2EDE5;">Severity</th>
+                <th style="padding: 12px 22px; text-align: start; font-size: .74rem; font-weight: 600; letter-spacing: .04em; color: #7D8892; border-block: 1px solid #F2EDE5;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background: #FCF6E9; box-shadow: inset 3px 0 0 #C9A45C;">
+                <td style="padding: 14px 22px; font-size: .86rem; border-bottom: 1px solid #F2EDE5;">F-1023</td>
+                <td style="padding: 14px 16px; font-size: .88rem; font-weight: 500; border-bottom: 1px solid #F2EDE5;">Declining revenue in MENA region</td>
+                <td style="padding: 14px 16px; font-size: .86rem; color: #46525D; border-bottom: 1px solid #F2EDE5;">Financial</td>
+                <td style="padding: 14px 16px; font-size: .86rem; border-bottom: 1px solid #F2EDE5;"><span style="display: inline-flex; align-items: center; gap: 6px; color: #C0463B;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #C0463B;"></span>High</span></td>
+                <td style="padding: 14px 22px; border-bottom: 1px solid #F2EDE5;"><span style="padding: 4px 11px; border-radius: 999px; background: #FBEDEC; color: #C0463B; font-size: .74rem; font-weight: 600;">Open</span></td>
+              </tr>
+              <tr>
+                <td style="padding: 14px 22px; font-size: .86rem; border-bottom: 1px solid #F2EDE5;">F-0964</td>
+                <td style="padding: 14px 16px; font-size: .88rem; border-bottom: 1px solid #F2EDE5;">Supply chain cost increase</td>
+                <td style="padding: 14px 16px; font-size: .86rem; color: #46525D; border-bottom: 1px solid #F2EDE5;">Operations</td>
+                <td style="padding: 14px 16px; font-size: .86rem; border-bottom: 1px solid #F2EDE5;"><span style="display: inline-flex; align-items: center; gap: 6px; color: #9A6F1E;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #C08A2E;"></span>Medium</span></td>
+                <td style="padding: 14px 22px; border-bottom: 1px solid #F2EDE5;"><span style="padding: 4px 11px; border-radius: 999px; background: #EEF3FA; color: #3C6491; font-size: .74rem; font-weight: 600;">In Progress</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; font-size: .84rem; color: #6B7580;">
+          <span style="display: flex; gap: 6px; align-items: center;"><span style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid #E6E0D6; display: inline-flex; align-items: center; justify-content: center;">‹</span><span style="width: 30px; height: 30px; border-radius: 8px; background: #F5EEDF; color: #8C6B22; font-weight: 600; display: inline-flex; align-items: center; justify-content: center;">1</span><span style="width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;">2</span><span style="width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;">3</span><span>…</span><span style="width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;">9</span><span style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid #E6E0D6; display: inline-flex; align-items: center; justify-content: center;">›</span></span>
+          <span>Rows per page <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 8px;">10 ▾</span></span>
+        </div>
+      </div>
+      <p style="margin: 12px 0 0; font-size: .9rem; color: #46525D; line-height: 1.7; max-width: 76ch;">Row height 48–52 px, hairline row rules only (no zebra, no vertical rules), header on the canvas tint with 12 px semibold labels. Selection is a warm gold-wash row plus a 3 px inset gold bar — the same marker the sidebar uses for "you are here". A spreadsheet preview grid is the one exception that keeps cell borders, and it renders in the sans at 13 px with a grey column/row gutter.</p>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Charts</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 20px 22px;">
+          <h4 style="margin: 0 0 4px; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem; font-weight: 600;">Revenue Trend</h4>
+          <p style="margin: 0 0 14px; font-size: .82rem; color: #98A0A8;">Steady growth across all regions.</p>
+          <svg viewBox="0 0 320 120" width="100%" height="120" fill="none">
+            <path d="M20 100h290M20 75h290M20 50h290M20 25h290" stroke="#F0EBE2"></path>
+            <path d="M28 92c40-6 60-14 92-22s60 2 96-14 52-24 76-32" stroke="#C9A45C" stroke-width="2.4"></path>
+            <path d="M28 104c40-3 60-8 92-12s60-2 96-8 52-8 76-12" stroke="#C3C9CE" stroke-width="2" stroke-dasharray="5 5"></path>
+            <circle cx="216" cy="56" r="4" fill="#BE912E"></circle>
+          </svg>
+          <div style="display: flex; gap: 18px; margin-top: 10px; font-size: .78rem; color: #6B7580;"><span style="display: inline-flex; align-items: center; gap: 7px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C;"></span>Q3 2024</span><span style="display: inline-flex; align-items: center; gap: 7px;"><span style="width: 14px; height: 2px; background: #C3C9CE;"></span>Q2 2024</span></div>
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 20px 22px;">
+          <h4 style="margin: 0 0 14px; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem; font-weight: 600;">Revenue by Region</h4>
+          <div style="display: flex; align-items: center; gap: 20px;">
+            <svg viewBox="0 0 120 120" width="118" height="118">
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#C9A45C" stroke-width="20" stroke-dasharray="88 188"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#16212B" stroke-width="20" stroke-dasharray="66 210" stroke-dashoffset="-88"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#9FC0DE" stroke-width="20" stroke-dasharray="60 216" stroke-dashoffset="-154"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#E4D3B4" stroke-width="20" stroke-dasharray="41 235" stroke-dashoffset="-214"></circle>
+            </svg>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: .82rem; color: #46525D;">
+              <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C9A45C;"></span>MEA <strong style="margin-inline-start: auto;">32%</strong></span>
+              <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #16212B;"></span>Europe <strong style="margin-inline-start: auto;">24%</strong></span>
+              <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #9FC0DE;"></span>Americas <strong style="margin-inline-start: auto;">22%</strong></span>
+              <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #E4D3B4;"></span>APAC <strong style="margin-inline-start: auto;">15%</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="margin: 12px 0 0; font-size: .9rem; color: #46525D; line-height: 1.7; max-width: 76ch;">Chart palette in fixed order: gold #C9A45C, navy #16212B, light blue #9FC0DE, sand #E4D3B4, grey #C3C9CE. Horizontal gridlines only at #F0EBE2, no chart borders, no 3D, no shadow. The highlighted member of a bar series takes gold while the rest stay #DCD6CC. Comparison periods are a grey dashed line. Tooltips are a white card, radius 10, 1 px border, 12 px meta + 16 px figure + delta.</p>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Upload zone, callouts, side panel, report viewer</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 18px; border: 2px dashed #E0D6C4; border-radius: 12px; background: #FDFBF8; text-align: center;">
+            <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.3"><path d="M7 18a4 4 0 0 1 .6-8 5.5 5.5 0 0 1 10.6 1.4A3.6 3.6 0 0 1 17.5 18z"></path><path d="M12 20v-7m0 0l-2.6 2.6M12 13l2.6 2.6"></path></svg>
+            <strong style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Drag and drop your files here</strong>
+            <span style="font-size: .85rem; color: #6B7580;">or <a href="#" style="text-decoration: underline;">click to browse</a></span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: .84rem; color: #7D8892; line-height: 1.6;">2 px dashed #E0D6C4, radius 12, ≥180 px tall, gold outline cloud icon, serif invitation, accepted-format chips below. Drag-active swaps the dash to a solid gold border and a #FCF6E9 fill.</p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; gap: 14px; padding: 16px 18px; border: 1px solid #EBD6A8; border-radius: 12px; background: #FBF5E8;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B08A34" stroke-width="1.7" style="flex: none; margin-top: 2px;"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"></path></svg>
+            <span style="font-size: .88rem; line-height: 1.6; color: #4A4234;"><strong style="display: block; color: #16212B;">AI Tip</strong>Review high-confidence fields first. Address the items flagged with warnings to get the most accurate insights.</span>
+          </div>
+          <div style="display: flex; gap: 14px; padding: 16px 18px; border: 1px solid #F0DCC0; border-radius: 12px; background: #FDF6EA;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C08A2E" stroke-width="1.7" style="flex: none; margin-top: 2px;"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17.5v.5"></path></svg>
+            <span style="font-size: .88rem; line-height: 1.6; color: #4A4234;">Possible multiple formats detected. <span style="color: #7D8892;">Suggested fix:</span> <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid #E6D6B4; border-radius: 8px; background: #fff; font-size: .8rem;">Standardize to Names ▾</span></span>
+          </div>
+          <div style="display: flex; gap: 14px; padding: 16px 18px; border-inline-start: 3px solid #D8CFC0; background: #FAF8F4; border-radius: 0 12px 12px 0;">
+            <span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem; color: #C9A45C; line-height: 1;">“</span>
+            <span style="font-size: .9rem; line-height: 1.65; color: #46525D; font-style: italic;">The decline correlates with increased competition and pricing pressure in key markets.<span style="display: block; font-style: normal; font-size: .8rem; color: #98A0A8; margin-top: 6px;">— Khepri AI Insight</span></span>
+          </div>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px;">
+          <h4 style="margin: 0 0 10px; font-size: .95rem; font-weight: 600;">Side panel &amp; report viewer</h4>
+          <p style="margin: 0 0 10px; font-size: .88rem; color: #6B7580; line-height: 1.65;"><strong style="color: #16212B;">Side panel</strong> — 360–400 px, docked at the inline end inside the content area (not overlaying the shell), white, 14 px radius, 1 px border, own header with title, severity badge and a close ×, then tabs, a definition list, related chart and one gold primary action pinned at the foot.</p>
+          <p style="margin: 0; font-size: .88rem; color: #6B7580; line-height: 1.65;"><strong style="color: #16212B;">Report viewer</strong> — three columns: 260 px numbered section list (active row = gold wash + inset bar), centre page canvas with a pager toolbar (page x / n, zoom, fullscreen, search, one-up/two-up), 320 px right rail holding version history, comments and sharing. The rendered page is a paper sheet on the canvas tint with a 1 px border and the lightest shadow in the system.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 4 LAYOUT ── -->
+    <section data-screen-label="4 Layout">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">04</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Layout rules</h2>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 24px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Grid</h4>
+          12 columns, 20 px gutter, inside a 1440 px max. The recurring blocks are 4-up (KPI row), 3-up (equal content cards), and 2-up asymmetric at 1.6 : 1 (primary work area beside a supporting rail). Never more than four cards across.
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Density</h4>
+          Comfortable, not compact. A dashboard screen carries at most five stacked bands: hero, KPI row, two analytic rows, footer strip. Cards in one row share a height; a card never sets its own width outside the grid.
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Proportion</h4>
+          KPI card ≈ 3.3 : 1. Chart card 4 : 3 at 320–420 px tall. List card matches the tallest sibling and scrolls internally rather than stretching the row.
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Alignment &amp; whitespace</h4>
+          One inline-start alignment line runs from the page title through every card edge. Figures align to the baseline of their labels. Prose is capped at 72 ch. Whitespace is carried by padding inside white cards, not by gaps in the canvas.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 5 STATES ── -->
+    <section data-screen-label="5 States">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">05</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">UX state patterns</h2>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 24px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Processing</h4>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <span style="width: 28px; height: 28px; border-radius: 50%; background: #BE912E; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700;">✓</span>
+            <span style="flex: 1; height: 2px; background: #C9A45C;"></span>
+            <span style="width: 30px; height: 30px; border-radius: 50%; background: #F3E4C4; border: 2px solid #C9A45C; color: #8C6B22; display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700;">2</span>
+            <span style="flex: 1; height: 2px; background: #EDE8E0;"></span>
+            <span style="width: 28px; height: 28px; border-radius: 50%; background: #F1EEE8; color: #A6ADB4; display: inline-flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700;">3</span>
+          </div>
+          <span style="display: block; height: 8px; border-radius: 999px; background: #F0EBE2;"><span style="display: block; width: 36%; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #DCB55F, #BE912E);"></span></span>
+          <p style="margin: 10px 0 0; font-size: .85rem; color: #6B7580; line-height: 1.6;">Numbered stepper (done · current · waiting), a gold determinate bar with a percentage, an ETA, and a live activity timeline. Long work always shows partial results labelled <em>Preliminary</em> rather than an empty screen.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Loading (skeleton)</h4>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <span style="height: 12px; width: 60%; border-radius: 6px; background: #F1ECE4;"></span>
+            <span style="height: 12px; width: 92%; border-radius: 6px; background: #F1ECE4;"></span>
+            <span style="height: 12px; width: 78%; border-radius: 6px; background: #F1ECE4;"></span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: .85rem; color: #6B7580; line-height: 1.6;">Grey #F1ECE4 bars at the true shape of the content, radius 6. No spinners inside cards; a spinner appears only in a button that is mid-submit.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Empty</h4>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px; border: 1px dashed #E5DFD4; border-radius: 12px; text-align: center;">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.2"><path d="M12 4l8 4.5v7L12 20l-8-4.5v-7z"></path></svg>
+            <strong style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1rem;">No analyses yet</strong>
+            <span style="font-size: .84rem; color: #7D8892;">Upload a file to get your first insights.</span>
+            <span style="margin-top: 6px; display: inline-flex; min-height: 40px; align-items: center; padding: 0 18px; border-radius: 10px; background: linear-gradient(180deg, #DCB55F, #BE912E); color: #1E1608; font-weight: 700; font-size: .85rem;">New Analysis</span>
+          </div>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Error · warning · success · disabled</h4>
+          <div style="display: flex; flex-direction: column; gap: 10px; font-size: .86rem; line-height: 1.55;">
+            <span style="display: flex; gap: 10px; padding: 12px 14px; border: 1px solid #EFD3CF; border-radius: 10px; background: #FBEDEC; color: #8E342B;"><strong>Error</strong> Column contains mixed content. A suggested fix is always offered beside the message.</span>
+            <span style="display: flex; gap: 10px; padding: 12px 14px; border: 1px solid #F0DCC0; border-radius: 10px; background: #FDF6EA; color: #7E5A16;"><strong>Warning</strong> Needs review — the work continues, the row is flagged.</span>
+            <span style="display: flex; gap: 10px; padding: 12px 14px; border: 1px solid #D9E9DF; border-radius: 10px; background: #EFF7F2; color: #2A6B4B;"><strong>Success</strong> Stated as a badge or a green check in a list, never as a banner that must be dismissed.</span>
+            <span style="display: flex; gap: 10px; padding: 12px 14px; border: 1px solid #ECE7DF; border-radius: 10px; background: #F7F5F1; color: #A6ADB4;"><strong>Disabled</strong> #F2EEE7 ground, #AFB5BB ink, no border change, cursor not-allowed.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 6 RESPONSIVE + 7 RTL ── -->
+    <section data-screen-label="6 Responsive and RTL">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">06 · 07</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Responsive and RTL</h2>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 24px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Desktop ≥ 1280</h4>
+          Full shell. Rail expanded at 236 px. 4-up KPIs, 3-up cards, docked side panel, three-column report viewer.
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Tablet 768–1279</h4>
+          Rail collapses to a 72 px icon rail with tooltips; the motto card is dropped, not shrunk. KPIs 2-up, content cards 2-up, the hero illustration crops from the inline end and the motto panel is hidden. Side panel becomes an overlay sheet at 420 px. Filters scroll horizontally.
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Mobile &lt; 768</h4>
+          Rail becomes a bottom tab bar of the five primary destinations plus an overflow. Everything stacks 1-up; the hero keeps the sun band at 160 px with the headline over it. Tables become stacked record cards, never a pinched grid. Report viewer: page canvas only, sections and comments move to sheets. Targets ≥ 44 px.
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px; font-size: .9rem; line-height: 1.7; color: #46525D;">
+          <h4 style="margin: 0 0 10px; font-size: .98rem; font-weight: 600; color: #16212B;">Arabic / RTL</h4>
+          Arabic is a first-class mirror, not a translation layer. Every rule here is written in logical properties, so the rail, inset selection bars, breadcrumbs, steppers and side panel all flip. What does <em>not</em> flip: chart time axes, numerals shown with Latin digits in mixed tables, file identifiers, and the ordering inside a version transition. Arabic sets in the same sans, one step more line-height (1.8), no letterspacing and no italic — emphasis comes from weight. The EN | عربي switch lives in the utility bar in both directions.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 8 EGYPTIAN ── -->
+    <section data-screen-label="8 Egyptian language">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">08</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Egyptian-inspired visual language</h2>
+      </div>
+      <p style="margin: 22px 0 0; max-width: 74ch; font-size: 1rem; line-height: 1.7; color: #46525D;">The reference set is disciplined: the Egyptian idea appears as <em>light, geometry and horizon</em>, and only ever in three places — the sunrise hero band, the sidebar motto card, and the report cover. The product surface itself is quiet. That restraint is the rule, not an accident of the renders.</p>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 22px;">
+        <div style="background: #fff; border: 1px solid #D9E9DF; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600; color: #2A6B4B;">Permitted</h4>
+          <ul style="margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 9px; font-size: .9rem; line-height: 1.6; color: #46525D;">
+            <li>The rising sun disc behind a horizon — the single hero motif, always warm, always low.</li>
+            <li>One clean pyramid silhouette and its reflection, rendered as soft masses or thin line-work, never both in the same frame.</li>
+            <li>The arc-and-disc mark of the wordmark, reused as a small ornament at ≤ 80 px.</li>
+            <li>Architectural line diagrams in gold on navy: concentric arcs, a colonnade rhythm, a single incised rule.</li>
+            <li>Register logic borrowed as layout — horizontal bands with shared baselines and one alignment line.</li>
+            <li>Bilingual motto blocks in letterspaced mono and Arabic, treated as typography rather than decoration.</li>
+          </ul>
+        </div>
+        <div style="background: #fff; border: 1px solid #EFD3CF; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600; color: #8E342B;">Forbidden</h4>
+          <ul style="margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 9px; font-size: .9rem; line-height: 1.6; color: #46525D;">
+            <li>Hieroglyph strips, cartouches, ankhs, eyes of Horus, scarab jewellery or gods as UI furniture.</li>
+            <li>Papyrus, sandstone or parchment textures behind content; the canvas is a flat warm off-white.</li>
+            <li>Gold as a fill on cards, tables, badges or charts — gold is ink, rule and one button.</li>
+            <li>Egyptian-styled display type, faux-carved letterforms, outlines or letterpress effects on text.</li>
+            <li>Camels, palms, deserts-as-wallpaper, tomb interiors, or any lapis-and-turquoise jewellery palette.</li>
+            <li>Ornament inside a data region: no motif may appear behind a chart, table, form or side panel.</li>
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 18px 22px; border: 1px solid #EBD6A8; border-radius: 12px; background: #FBF5E8; font-size: .92rem; line-height: 1.7; color: #4A4234;">
+        <strong>Budget rule.</strong> At most one Egyptian element per viewport, and it must sit in the header band, the rail, or a cover — never in the working area. If a screen would carry two, the second becomes plain typography.
+      </div>
+    </section>
+
+    <!-- ── 9 CONFLICTS ── -->
+    <section data-screen-label="9 Conflicts resolved">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">09</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Inconsistencies found, and the resolution</h2>
+      </div>
+
+      <div style="margin-top: 24px; background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 1.1fr 1.4fr; gap: 0; font-size: .89rem;">
+          <div style="padding: 14px 20px; background: #FBF9F6; border-bottom: 1px solid #F2EDE5; font-weight: 600; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Conflict in the references</div>
+          <div style="padding: 14px 20px; background: #FBF9F6; border-bottom: 1px solid #F2EDE5; font-weight: 600; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Canonical rule</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">Active nav item is drawn three ways: gold wash with a left bar, plain gold text, and a lighter navy block.</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">One treatment: 3 px gold inset bar + gold wash + #F6EFDF label. The same marker denotes selection everywhere (nav, table row, report section).</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">KPI cards appear both as label-then-figure and figure-then-label, with and without a sparkline.</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">Two named variants with fixed use: <em>Metric</em> (label, figure, delta, optional sparkline) for business values; <em>Count</em> (figure, label, delta) for issue tallies. No third form.</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">Primary action is gold-filled in most frames, but the report viewer also shows a gold split "Export" beside a gold "Save to Report".</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">One gold button per view. In the viewer, Export becomes the gold split button and Save to Report drops to secondary.</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">The hero band varies: motto panel present or absent, Arabic line present or absent, height 200–320 px.</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">Pattern A fixes it: 260 px band, motto panel 208 px at the inline end, English vertical motto always, Arabic line only on Home and Analysis Results.</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">Card radius ranges 10–16 px and borders shift between #ECE7DF, #EDE8E0 and pure grey across frames.</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">Cards 14 px / #ECE7DF, inner rows #F2EDE5, controls 10 px / #E6E0D6. Nothing else.</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">Breadcrumbs appear with "‹ Back", with a chevron trail, and with both.</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">Chevron trail is standard. A "← Back" link is added only when the page is a child of a workflow (Findings, Review &amp; Map), placed above the trail.</div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6;">Chart series colours differ per frame (gold-only bars, blue/amber/red lines, navy-and-blue donut).</div>
+          <div style="padding: 16px 20px; border-bottom: 1px solid #F2EDE5; line-height: 1.6; color: #46525D;">Fixed five-colour ordered palette; severity charts are the only ones allowed to use semantic red/amber/blue, and then in that fixed severity order.</div>
+
+          <div style="padding: 16px 20px; line-height: 1.6;">Avatars appear as photos in some frames and as initials elsewhere; the sidebar motto card art differs per screen.</div>
+          <div style="padding: 16px 20px; line-height: 1.6; color: #46525D;">Avatars: photo when available, otherwise initials on a warm neutral. The motto card carries one fixed line drawing; only the quotation may change between "Turning today's data…" and "Your data. Greater possibilities."</div>
+        </div>
+      </div>
+
+      <p style="margin: 22px 0 0; max-width: 74ch; font-size: .95rem; line-height: 1.7; color: #46525D;">With these resolutions the system is closed: every screen in the reference set can be rebuilt from the shell, the tokens, and the component set above without introducing a new value. Sections 10 to 12 extend it where the references were silent.</p>
+    </section>
+
+    <!-- ── 10 MOTION & INTERACTION ── -->
+    <section data-screen-label="10 Motion">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">10</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Motion and interaction states</h2>
+      </div>
+      <p style="margin: 22px 0 0; max-width: 74ch; font-size: 1rem; line-height: 1.7; color: #46525D;">The references are static, so every interactive state below is a decision rather than an observation. One easing, two durations, and no motion that repeats.</p>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 24px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Motion tokens</h4>
+          <dl style="margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: .88rem;">
+            <dt style="color: #7D8892;">Easing</dt><dd style="margin: 0;"><code style="font-size: .82rem; background: #F5F1EA; padding: 1px 5px; border-radius: 4px;">cubic-bezier(.2,.7,.3,1)</code> — the sun's ease, never overshoots</dd>
+            <dt style="color: #7D8892;">Fast</dt><dd style="margin: 0;">140 ms · colour, border, opacity on controls</dd>
+            <dt style="color: #7D8892;">Slow</dt><dd style="margin: 0;">320 ms · panels, sheets, page-enter reveals</dd>
+            <dt style="color: #7D8892;">Travel</dt><dd style="margin: 0;">Max 8 px. Nothing slides further; nothing scales.</dd>
+            <dt style="color: #7D8892;">Loops</dt><dd style="margin: 0;">Only the indeterminate progress bar and the processing pulse. Everything else runs once.</dd>
+            <dt style="color: #7D8892;">Reduced motion</dt><dd style="margin: 0;">All of the above collapse to an instant state change; the hero light renders at its final value.</dd>
+          </dl>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Interaction states — try them</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+            <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 22px; border-radius: 10px; background: linear-gradient(180deg, #DCB55F, #BE912E); color: #1E1608; font-weight: 700; font-size: .9rem; cursor: pointer; transition: filter 140ms cubic-bezier(.2,.7,.3,1), box-shadow 140ms cubic-bezier(.2,.7,.3,1);" style-hover="filter: brightness(1.06); box-shadow: 0 12px 26px -14px rgba(190,145,46,1);" style-active="filter: brightness(.94);">Primary</span>
+            <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid #E0D8CA; background: #fff; color: #34404B; font-weight: 500; font-size: .9rem; cursor: pointer; transition: background 140ms, border-color 140ms;" style-hover="background: #FBF7EF; border-color: #D8C9A8;">Secondary</span>
+            <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 10px; color: #46525D; font-size: .9rem; cursor: pointer; transition: background 140ms;" style-hover="background: #F3EFE8;">Ghost</span>
+            <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid #E0D8CA; background: #fff; font-size: .9rem; outline: 2px solid #BE912E; outline-offset: 2px;">Focus ring</span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: .86rem; color: #6B7580; line-height: 1.6;">Hover on a card row is a #FBF9F6 wash, no lift and no shadow change. Focus is always a 2 px #BE912E ring at 2 px offset, on every control including table rows and nav items. Pressed states darken 6%; they never translate.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">The hero light</h4>
+          <p style="margin: 0; font-size: .88rem; color: #6B7580; line-height: 1.65;">On page enter the sunrise band fades its glow from 40% to 100% over 900 ms and the disc rises 8 px into place. It happens once per navigation. No parallax, no scroll-linked movement, no ambient loop — an ambient sun turns a governed product into a screensaver.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 11 DENSITY, EVIDENCE, CONFIDENCE ── -->
+    <section data-screen-label="11 Density evidence confidence">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">11</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Density, evidence, confidence</h2>
+      </div>
+
+      <h3 style="margin: 28px 0 14px; font-size: 1.05rem; font-weight: 600;">Density modes</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; overflow: hidden;">
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5; font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Comfortable — default</div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 15px 20px; border-bottom: 1px solid #F2EDE5; font-size: .88rem;"><span style="width: 30px; height: 30px; border-radius: 7px; background: #FBEDEC; color: #A8443B; display: inline-flex; align-items: center; justify-content: center; font-size: .56rem; font-weight: 700;">PDF</span>Declining revenue in MENA region<span style="margin-inline-start: auto; padding: 4px 11px; border-radius: 999px; background: #FBEDEC; color: #C0463B; font-size: .74rem; font-weight: 600;">Open</span></div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 15px 20px; font-size: .88rem;"><span style="width: 30px; height: 30px; border-radius: 7px; background: #EAF0FA; color: #3C6491; display: inline-flex; align-items: center; justify-content: center; font-size: .56rem; font-weight: 700;">DOC</span>Supply chain cost increase<span style="margin-inline-start: auto; padding: 4px 11px; border-radius: 999px; background: #EEF3FA; color: #3C6491; font-size: .74rem; font-weight: 600;">In Progress</span></div>
+          <p style="margin: 0; padding: 12px 20px 16px; font-size: .82rem; color: #7D8892;">Row 52 px · card padding 24 px · text 15 px. Dashboards, home, report viewer.</p>
+        </div>
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; overflow: hidden;">
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5; font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Compact — analyst</div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-bottom: 1px solid #F2EDE5; font-size: .82rem;"><span style="width: 22px; height: 22px; border-radius: 5px; background: #FBEDEC; color: #A8443B; display: inline-flex; align-items: center; justify-content: center; font-size: .5rem; font-weight: 700;">PDF</span>Declining revenue in MENA region<span style="margin-inline-start: auto; padding: 2px 9px; border-radius: 999px; background: #FBEDEC; color: #C0463B; font-size: .7rem; font-weight: 600;">Open</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-bottom: 1px solid #F2EDE5; font-size: .82rem;"><span style="width: 22px; height: 22px; border-radius: 5px; background: #EAF0FA; color: #3C6491; display: inline-flex; align-items: center; justify-content: center; font-size: .5rem; font-weight: 700;">DOC</span>Supply chain cost increase<span style="margin-inline-start: auto; padding: 2px 9px; border-radius: 999px; background: #EEF3FA; color: #3C6491; font-size: .7rem; font-weight: 600;">In Progress</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: .82rem;"><span style="width: 22px; height: 22px; border-radius: 5px; background: #E8F3EC; color: #2F7A55; display: inline-flex; align-items: center; justify-content: center; font-size: .5rem; font-weight: 700;">XLS</span>Delayed partner onboarding<span style="margin-inline-start: auto; padding: 2px 9px; border-radius: 999px; background: #EDF6F0; color: #2F7A55; font-size: .7rem; font-weight: 600;">Resolved</span></div>
+          <p style="margin: 0; padding: 12px 16px 16px; font-size: .82rem; color: #7D8892;">Row 40 px · card padding 16 px · text 13.5 px · icon tiles 22 px. Findings, Review &amp; Map, data grids.</p>
+        </div>
+      </div>
+      <p style="margin: 12px 0 0; max-width: 74ch; font-size: .9rem; line-height: 1.7; color: #46525D;">Density is a user preference persisted per account, offered only on grid-bearing surfaces, and it changes spacing and type size only — never colour, radius, border or hierarchy. Targets stay ≥ 40 px in compact and ≥ 44 px everywhere else; on touch, compact is unavailable.</p>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">Evidence affordance</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 24px 26px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; align-items: start;">
+          <div>
+            <span style="font-size: .88rem; color: #6B7580;">Total Revenue</span>
+            <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 4px;">
+              <strong style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">$24.8M</strong>
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #DCC79A; background: #FBF5E8; color: #8C6B22; font-size: .66rem; font-weight: 700; cursor: pointer; transition: background 140ms;" style-hover="background: #F5E9CE;">E</span>
+            </div>
+            <span style="display: block; margin-top: 6px; font-size: .78rem; color: #2F7A55;">▲ +12% vs. Q2 2024</span>
+          </div>
+          <div style="font-size: .9rem; line-height: 1.7; color: #46525D;">
+            Any published figure may carry the <strong>evidence marker</strong>: a 20 px gold-outlined disc bearing <em>E</em>, placed after the figure with an 8 px gap. It is a real button — 44 px hit area, focusable, labelled "View evidence for Total Revenue".
+          </div>
+          <div style="font-size: .9rem; line-height: 1.7; color: #46525D;">
+            Activating it opens the standard side panel to an <strong>Evidence</strong> tab: the definition, the calculation version, the source columns and rows, the coverage statement, and a link to the underlying data. Never a tooltip, never a modal — evidence is a place you can stay in.
+          </div>
+        </div>
+        <div style="margin-top: 18px; padding: 14px 18px; border-inline-start: 3px solid #D8CFC0; background: #FAF8F4; font-size: .88rem; line-height: 1.65; color: #46525D;">A figure with no reachable evidence must not carry the marker, and a figure the system declines to publish is stated in words in the place the number would have been — italic, ink-500, with its reason — rather than shown as a dash or hidden.</div>
+      </div>
+
+      <h3 style="margin: 32px 0 14px; font-size: 1.05rem; font-weight: 600;">One confidence vocabulary</h3>
+      <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 150px 130px 1fr; font-size: .88rem;">
+          <div style="padding: 13px 20px; background: #FBF9F6; border-bottom: 1px solid #F2EDE5; font-size: .74rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Level</div>
+          <div style="padding: 13px 16px; background: #FBF9F6; border-bottom: 1px solid #F2EDE5; font-size: .74rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Range</div>
+          <div style="padding: 13px 20px; background: #FBF9F6; border-bottom: 1px solid #F2EDE5; font-size: .74rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7D8892;">Form and meaning</div>
+
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="display: inline-block; width: 44px; height: 6px; border-radius: 999px; background: linear-gradient(90deg, #2F7A55 0 100%);"></span><strong>High</strong></span></div>
+          <div style="padding: 14px 16px; border-bottom: 1px solid #F2EDE5; color: #46525D;">90–100%</div>
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5; color: #46525D; line-height: 1.6;">Bar + percentage + <span style="padding: 3px 10px; border-radius: 999px; background: #EDF6F0; color: #2F7A55; font-size: .74rem; font-weight: 600;">Valid</span> — publishable without qualification.</div>
+
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="display: inline-block; width: 44px; height: 6px; border-radius: 999px; background: linear-gradient(90deg, #C08A2E 0 70%, #F0EBE2 70% 100%);"></span><strong>Moderate</strong></span></div>
+          <div style="padding: 14px 16px; border-bottom: 1px solid #F2EDE5; color: #46525D;">60–89%</div>
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5; color: #46525D; line-height: 1.6;">Bar + percentage + <span style="padding: 3px 10px; border-radius: 999px; background: #FBF3E2; color: #9A6F1E; font-size: .74rem; font-weight: 600;">Needs review</span> — shown, with the caveat travelling beside the figure wherever it appears.</div>
+
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="display: inline-block; width: 44px; height: 6px; border-radius: 999px; background: linear-gradient(90deg, #C0463B 0 35%, #F0EBE2 35% 100%);"></span><strong>Low</strong></span></div>
+          <div style="padding: 14px 16px; border-bottom: 1px solid #F2EDE5; color: #46525D;">&lt; 60%</div>
+          <div style="padding: 14px 20px; border-bottom: 1px solid #F2EDE5; color: #46525D; line-height: 1.6;">Bar + percentage + <span style="padding: 3px 10px; border-radius: 999px; background: #FBEDEC; color: #C0463B; font-size: .74rem; font-weight: 600;">Unmapped</span> and a suggested fix. Not carried into a report.</div>
+
+          <div style="padding: 14px 20px;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span style="display: inline-block; width: 44px; height: 6px; border-radius: 999px; background: repeating-linear-gradient(90deg, #C3C9CE 0 4px, #F0EBE2 4px 8px);"></span><strong>Preliminary</strong></span></div>
+          <div style="padding: 14px 16px; color: #46525D;">in flight</div>
+          <div style="padding: 14px 20px; color: #46525D; line-height: 1.6;">Dashed bar, no percentage, <span style="padding: 3px 10px; border-radius: 999px; background: #F1EFEA; color: #6B7580; font-size: .74rem; font-weight: 600;">Preliminary</span> — a value still being computed. Replaced, never promoted silently.</div>
+        </div>
+      </div>
+      <p style="margin: 12px 0 0; max-width: 74ch; font-size: .9rem; line-height: 1.7; color: #46525D;">This single scale replaces the three vocabularies in the references. <strong>BETA</strong> is retired as a confidence signal — it describes a feature's maturity, belongs beside a feature name only, and never beside a number. Every AI-authored block carries the same footer: the model's role, the confidence level, and a helpful / not-helpful control.</p>
+    </section>
+
+    <!-- ── 12 GOLD BUDGET & CHART INTEGRITY ── -->
+    <section data-screen-label="12 Gold budget and chart integrity">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #DED7CB;">
+        <span style="font-family: ui-monospace, Consolas, monospace; font-size: .7rem; letter-spacing: .3em; color: #B08A34;">12</span>
+        <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.9rem; font-weight: 600;">Gold budget and chart integrity</h2>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 24px;">
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">The gold budget</h4>
+          <ul style="margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 9px; font-size: .9rem; line-height: 1.6; color: #46525D;">
+            <li><strong>≤ 5% of viewport pixels</strong> may be gold-filled. The hero band's warm light is exempt; it is illumination, not fill.</li>
+            <li><strong>One</strong> gold-filled button per view. <strong>One</strong> gold selection marker active at a time per region.</li>
+            <li>Two gold elements may not be adjacent: a gold active tab above a gold primary button means the tab drops to weight-and-underline in ink.</li>
+            <li>Gold text is reserved for links, eyebrows, and numbers inside the navy rail — never for body copy on light ground.</li>
+            <li>In charts, gold marks the subject of the sentence the chart is making — one series, or one bar. If everything is gold, nothing is.</li>
+          </ul>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Severity must not rely on colour</h4>
+          <div style="display: flex; flex-direction: column; gap: 10px; font-size: .88rem;">
+            <span style="display: inline-flex; align-items: center; gap: 9px; color: #C0463B;"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 0l6 12H0z" fill="#C0463B"></path></svg>High</span>
+            <span style="display: inline-flex; align-items: center; gap: 9px; color: #9A6F1E;"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2" fill="#C08A2E"></rect></svg>Medium</span>
+            <span style="display: inline-flex; align-items: center; gap: 9px; color: #3C6491;"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="#3C6491"></circle></svg>Low</span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: .86rem; color: #6B7580; line-height: 1.6;">Each level gets a distinct <em>shape</em> as well as a hue — triangle, square, circle — and the word is always present. The same three shapes carry into chart legends and the report PDF, so severity survives greyscale printing and colour-blind reading.</p>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #E7E1D7; border-radius: 14px; padding: 22px 24px;">
+          <h4 style="margin: 0 0 12px; font-size: .98rem; font-weight: 600;">Chart empty and insufficient states</h4>
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 118px; border: 1px dashed #E5DFD4; border-radius: 10px; background: #FDFBF8; text-align: center;">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#C3BCAE" stroke-width="1.3"><path d="M4 19h16M6 15v-3M11 15V8M16 15v-6"></path></svg>
+            <strong style="font-size: .88rem;">Not enough data to chart this period</strong>
+            <span style="font-size: .8rem; color: #98A0A8;">3 of 12 months have coverage. <a href="#" style="text-decoration: underline;">See coverage</a></span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: .86rem; color: #6B7580; line-height: 1.6;">A chart that cannot be drawn keeps its card, its title and its height, and states why in words with a route to the reason. It never collapses, never renders an axis with no series, and never interpolates across a gap — gaps break the line and are labelled.</p>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding: 18px 22px; border: 1px solid #EBD6A8; border-radius: 12px; background: #FBF5E8; font-size: .92rem; line-height: 1.7; color: #4A4234;">
+        <strong>Accessibility floor for the whole system.</strong> Body text ≥ 4.5:1, large text and UI borders that encode state ≥ 3:1. Gold #BE912E on white measures 3.1:1 — acceptable for borders and ≥ 19 px text, not for body copy; gold body text uses #8C6B22. Every state that uses colour also uses a word, a shape, or a position.
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
