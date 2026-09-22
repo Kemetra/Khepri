@@ -25,6 +25,7 @@ its authoritative text from the figure's own rendering; neither is touched here.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from khepri.rra import facts, versions
@@ -43,6 +44,7 @@ from khepri.rra.bundle import (
     SECTION_PRESENT,
     SECTION_REFUSED,
     CitedFigure,
+    StatedCaveat,
 )
 from khepri.rra.crossversion_bundle import (
     CAVEAT_CROSSVERSION_ADMITTED_PAIR,
@@ -1044,6 +1046,36 @@ def _result_business_name(result: str, language: str) -> str:
     if name is None:
         raise KeyError(result)
     return name
+
+
+def stated_once(caveats: Iterable[StatedCaveat], language: str) -> tuple[str, ...]:
+    """The caveat codes a surface prints, with codes that read identically collapsed.
+
+    **Deduplicated by prose rather than by code, because the codes differ and the
+    sentences do not.** A single-period upload emits
+    `revenue_delta_absolute.year_over_year:prior_window_absent` and
+    `revenue_delta_percent.year_over_year:prior_window_absent` -- two governed codes,
+    one per affected metric, which is correct: the caveat is a property of a figure
+    and both figures have it. `caveat_prose` maps both to one paragraph, so a list
+    of them states it twice.
+
+    One helper for every surface, so the page and the workbook cannot disagree about
+    what counts as the same sentence. Each surface passes the caveats it presents as
+    one list: the page one section's, the workbook's limitations sheet all of them.
+
+    The first code wins and the given order is preserved, so the surviving entry is
+    the one a reader would have seen first. No code is dropped from the bundle:
+    `_reconcile_language` compares the caveat *codes* both languages carry, and
+    this narrows only what is *printed*.
+
+    Collapsing is per language deliberately. Two codes sharing English prose need
+    not share Arabic prose, and deduplicating on one language's text would drop a
+    sentence the other language still distinguishes.
+    """
+    stated: dict[str, str] = {}
+    for caveat in caveats:
+        stated.setdefault(caveat_prose(caveat.code, language), caveat.code)
+    return tuple(stated.values())
 
 
 # What each governed section is called. The page shows it as a heading, the printed
