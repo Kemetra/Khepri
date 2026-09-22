@@ -704,12 +704,18 @@ class SqlWorkspaceRecordStore(PinReads):
         now: datetime,
         owner_id: str | None = None,
         sections_of: SectionsOf = _no_sections,
-    ) -> None:
+    ) -> bool:
         """Move a version's retention state, refusing a state the domain does not name.
 
         Refused in the store as well as by the `CHECK` constraint, and the duplication is the
         point: the constraint is what holds when a row arrives by another route, and this is what
         gives a caller a content-free refusal rather than a driver error carrying its input.
+
+        Returns whether **this call** moved the state, decided under the version lock. A caller
+        that must answer a repeat differently from a first ending (`FR-123`: one `already_deleted`
+        event, no new evidence) reads it here. Its own earlier unlocked read cannot decide it: two
+        overlapping requests both pass that read, and before `#526` the second met this method's
+        silent early return and recorded a second `completed` ending.
         """
         if state not in RETENTION_STATES:
             raise ValueError(RETENTION_STATE_FAILURE)
@@ -734,11 +740,12 @@ class SqlWorkspaceRecordStore(PinReads):
                 # against, arriving through the timestamp instead of the state. Review on `#370`
                 # found it, and the guard could not: assigning an equal value is not a change, so
                 # `_one_way` sees nothing to refuse.
-                return
+                return False
             row.retention_state = state
             row.retention_changed_at = now
             if state == RETENTION_TOMBSTONED:
                 _tombstone_version(database, row, now, sections_of)
+        return True
 
     def seal_dataset_version(
         self, version_id: str, *, now: datetime, owner_id: str | None = None
@@ -777,14 +784,17 @@ class SqlWorkspaceRecordStore(PinReads):
         now: datetime,
         owner_id: str | None = None,
         sections_of: SectionsOf = _no_sections,
-    ) -> None:
+    ) -> bool:
         """Delete a version as `KHEPRI-DEC-033` §1-§3 describe: one way, cascading, recorded.
 
         `sections_of` is how the caller supplies each cascaded run's section states -- see
         `SectionsOf`. Left at its default, every run is recorded with no section states, which is
         what a `started` or `failed` run has and what a caller without the bundle can say.
+
+        Returns whether this call ended the version -- `False` for one already ended, or not in
+        this scope. See `set_retention_state`.
         """
-        self.set_retention_state(
+        return self.set_retention_state(
             version_id, RETENTION_TOMBSTONED, now=now, owner_id=owner_id, sections_of=sections_of
         )
 

@@ -84,16 +84,17 @@ class WorkspaceDeletion:
         that never existed, and both are the same answer to a customer -- there is nothing here to
         end. Answering `deleted=False` for either keeps `FR-123`'s "same response" true without
         telling one scope whether another's identifier ever existed.
+
+        **That read is a fast path, not the decision.** It is unlocked and outside the unit of
+        work, so two overlapping requests can both pass it. What decides the outcome is the
+        tombstone call itself, under the version lock inside the unit: it reports whether *this*
+        call ended the version, and the request that did not records `already_deleted` and no
+        revocation (`FR-123`). Before `#526` both recorded `completed` and answered `deleted=True`.
         """
         actor = AuditActor(owner_id=owner_id, actor_account_id=actor_account_id)
         subject = AuditSubject(OBJECT_VERSION, version_id)
         if self._sources.store.get_dataset_version(version_id, owner_id) is None:
-            self._sources.audit.record(
-                WorkspaceAuditEvent.already_deleted(
-                    actor, ACTION_VERSION_DELETED, subject, now=now
-                )
-            )
-            return DeletionOutcome(version_id=version_id, deleted=False)
+            return self._already_deleted(actor, subject, now)
         version = self._sources.store.get_dataset_version(version_id, owner_id)
         # Content first, records second, and **not** the other way round. The two orderings fail
         # very differently:
@@ -117,7 +118,12 @@ class WorkspaceDeletion:
         # on the recording side; `unit_of_work` is that instrument and the three stores below all
         # reach the database through `writing`, so they join the ambient session unchanged.
         with unit_of_work(self._sources.factory):
-            self._sources.store.tombstone_dataset_version(version_id, now=now, owner_id=owner_id)
+            if not self._sources.store.tombstone_dataset_version(
+                version_id, now=now, owner_id=owner_id
+            ):
+                # Overtaken: another request ended it after the read above. The winner wrote the
+                # revocation; this one is `FR-123`'s repeat.
+                return self._already_deleted(actor, subject, now)
             self._sources.ledger.revoke(
                 RevokedObject(
                     object_kind=OBJECT_VERSION,
@@ -130,6 +136,15 @@ class WorkspaceDeletion:
                 WorkspaceAuditEvent.completed(actor, ACTION_VERSION_DELETED, subject, now=now)
             )
         return DeletionOutcome(version_id=version_id, deleted=True)
+
+    def _already_deleted(
+        self, actor: AuditActor, subject: AuditSubject, now: datetime
+    ) -> DeletionOutcome:
+        """`FR-123`'s repeat: one `already_deleted` event, no evidence, the first's response."""
+        self._sources.audit.record(
+            WorkspaceAuditEvent.already_deleted(actor, ACTION_VERSION_DELETED, subject, now=now)
+        )
+        return DeletionOutcome(version_id=subject.object_id, deleted=False)
 
     def _sessions_of_version(self, version: Any) -> tuple[str, ...]:
         """Every analysis session that holds content derived from this version.
@@ -188,9 +203,10 @@ class WorkspaceDeletion:
         what writes `FR-124`'s content-free evidence, so the evidence arrives by using the existing
         path rather than by this slice writing a second kind.
 
-        The job it begins is idempotent per session, so a repeat that reached here would not start
-        a second ending -- but the caller returns before this on the already-deleted path, so a
-        repeat does not reach it at all.
+        The job it begins is idempotent per session, so a repeat that reaches here does not start a
+        second ending. A *sequential* repeat never does: the caller returns before this on the
+        already-deleted path. A request overtaken after that read does reach it, and meets the
+        first request's already-complete job (`#526`).
         """
         session_ids = self._sessions_of_version(version)
         if not session_ids:

@@ -522,7 +522,11 @@ class WorkspaceRecording:
             proposed_mapping=_placed_mapping(profile),
             created_at=now,
         )
-        self._rca.profiles.add(remembered)
+        try:
+            self._rca.profiles.add_source_profile(remembered)
+        except ValueError as refused:
+            # The version was tombstoned between the read and the locked insert.
+            raise WorkspaceRefused(NO_VERSION_FAILURE) from refused
         return Performed(remembered, OUTCOME_COMPLETED, subject_of_profile(remembered))
 
     def propose_reuse(self, owner_id: str, profile_id: str) -> Performed[SourceProfile]:
