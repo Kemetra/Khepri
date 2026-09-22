@@ -55,10 +55,15 @@ nobody will ever complete. Two concurrent report requests that both find no link
 the unique constraint on `job_id`: the loser's unit of work rolls back the run it started and it
 reads the winner's -- SQLite serializes writes, so no test here can show the race; the store test
 shows the constraint.
+
+The one place a fault does not propagate is the reconciliation *sweep* (`reconcile`), which the
+worker runs before every claim: there one link's fault is logged and that link is retried on the
+next sweep, because propagating it would stop the worker claiming anything at all (`#523`).
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
@@ -247,10 +252,22 @@ class PipelineRecorder:
         """Every run still `started`, brought level with its job. The worker calls this before
         each claim (`SettlingJobStore.recover_expired`), so a run left behind by a crash between
         a job's terminal transition and its recording -- or by a lease reclaimed into the dead
-        letter -- is settled within one loop iteration. Returns how many runs moved."""
+        letter -- is settled within one loop iteration. Returns how many runs moved.
+
+        **One link's fault is isolated to that link (`#523`, RRA-007 restart recovery).** This runs
+        before every claim, so a deterministic fault on one link that escaped here would kill every
+        iteration and every restart before `receive`: the worker would claim nothing, ever. A
+        faulting link is logged and skipped; it stays `started` and is retried on the next sweep.
+        `Exception`, not `BaseException`, so an interrupt or a shutdown still stops the worker.
+        The log names the opaque job id and the exception's type only -- see `_log_link_fault`."""
         moved = 0
         for link in self._reports.links_of_started_runs():
-            if self.reconcile_job(link.job_id, now=now) is not None:
+            try:
+                reconciled = self.reconcile_job(link.job_id, now=now)
+            except Exception as fault:
+                _log_link_fault(link, fault)
+                continue
+            if reconciled is not None:
                 moved += 1
         return moved
 
@@ -394,6 +411,24 @@ class RecordingReportRequests:
         self, *, session_id: str, job_id: str, now: datetime
     ) -> ReportJobView | None:
         return self._requests.get_session_job(session_id=session_id, job_id=job_id, now=now)
+
+
+_LOG = logging.getLogger(__name__)
+
+
+def _log_link_fault(link: RunReport, fault: Exception) -> None:
+    """Report a link `reconcile` skipped, content-free.
+
+    The opaque job id is what RRA-007 correlates operational evidence with, and the link table maps
+    it to its run. The exception's *type* is logged, never its message or traceback: a driver error
+    echoes its bound parameters, and nothing guarantees those are free of customer content (RRA-007)
+    or of a session identifier (`KHEPRI-DEC-015` §7, where the prohibition governs).
+    """
+    _LOG.error(
+        "workspace run reconciliation faulted; skipped until the next sweep: job_id=%s error=%s",
+        link.job_id,
+        type(fault).__name__,
+    )
 
 
 class SettlingJobStore:

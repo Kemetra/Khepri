@@ -40,7 +40,7 @@ from khepri.runtime.pipeline_recording import (
     RecorderReads,
     SettlingJobStore,
 )
-from khepri.runtime.retention_sweep import RetentionPasses, RetentionSweeper
+from khepri.runtime.retention_sweep import RetentionCounts, RetentionPasses, RetentionSweeper
 from tests.test_runtime_worker import NOW, QueueStub, ReaderStub, WorkerStub, job
 
 # --- A-07: the worker keeps claiming past a link that faults --------------------------------------
@@ -244,7 +244,7 @@ def test_a_faulting_session_does_not_stop_later_sessions_or_passes(
     assert report.deletions_faulted == 1
     assert [one.calls for one in counting.values()] == [1, 1, 1, 1], "every later pass ran"
     assert (report.purged_accounts, report.purged_invitations) == (2, 4)
-    assert report.faulted == ("expired_sessions",), "the run reports the fault"
+    assert report.faulted_passes == ("expired_sessions",), "the run reports the fault"
     logged = caplog.text
     assert "expired_sessions" in logged and "ValueError" in logged
     assert "ses_bad" not in logged, "no session identifier reaches a log (KHEPRI-DEC-015 §7)"
@@ -258,7 +258,46 @@ def test_a_faulting_pass_does_not_stop_the_passes_after_it() -> None:
 
     assert [one.calls for one in counting.values()] == [1, 1, 1, 1]
     assert (counts.accounts, counts.events, counts.invitations, counts.raw_uploads) == (0, 3, 4, 5)
-    assert counts.faulted == ("accounts",)
+    assert counts.faulted_passes == ("accounts",)
+
+
+def test_every_retention_pass_runs_and_reports_into_its_own_count() -> None:
+    """The isolation loop reads a table; a missing or swapped row must not pass silently.
+
+    `recovery_events` and `workspace_audit` both report `purged_events`, so distinct counts are
+    what would expose two swapped rows, and the field-set comparison is what would expose a pass
+    added to `RetentionPasses` without a row -- which the loop would skip with no fault recorded.
+    """
+    table = retention_sweep._RETENTION_PASSES
+    assert [row[0] for row in table] == list(RetentionPasses.__dataclass_fields__)
+    assert {row[1] for row in table} == set(RetentionCounts.__dataclass_fields__) - {
+        "faulted_passes"
+    }
+    reports = {
+        "accounts": SimpleNamespace(purged_accounts=1),
+        "events": SimpleNamespace(purged_events=2),
+        "sessions": SimpleNamespace(purged_sessions=3),
+        "invitations": SimpleNamespace(purged_invitations=4),
+        "recovery_events": SimpleNamespace(purged_events=5),
+        "workspace_audit": SimpleNamespace(purged_events=6),
+        "evidence": SimpleNamespace(purged_evidence=7),
+        "raw_uploads": SimpleNamespace(purged_uploads=8),
+    }
+    counting = {name: CountingPass(report) for name, report in reports.items()}
+
+    counts = RetentionPasses(**counting).run(now=NOW)  # type: ignore[arg-type]
+
+    assert [one.calls for one in counting.values()] == [1] * 8
+    assert counts == RetentionCounts(
+        accounts=1,
+        events=2,
+        sessions=3,
+        invitations=4,
+        recovery_events=5,
+        workspace_audit_events=6,
+        evidence=7,
+        raw_uploads=8,
+    )
 
 
 def test_a_clean_run_reports_no_fault() -> None:
@@ -269,9 +308,9 @@ def test_a_clean_run_reports_no_fault() -> None:
 
     report = sweeper.sweep(now=NOW)
 
-    assert report.faulted == ()
+    assert report.faulted_passes == ()
     assert report.deletions_faulted == 0
-    assert "faulted" not in report.as_counts(), "as_counts stays a mapping of counts"
+    assert "faulted_passes" not in report.as_counts(), "as_counts stays a mapping of counts"
 
 
 def test_a_faulting_lease_recovery_does_not_stop_retention() -> None:
@@ -287,7 +326,7 @@ def test_a_faulting_lease_recovery_does_not_stop_retention() -> None:
 
     assert report.expired_sessions == 1
     assert [one.calls for one in counting.values()] == [1, 1, 1, 1]
-    assert report.faulted == ("expired_leases",)
+    assert report.faulted_passes == ("expired_leases",)
 
 
 def test_an_interrupt_during_a_pass_is_not_absorbed() -> None:
@@ -340,7 +379,7 @@ def test_main_exits_non_zero_after_every_pass_when_one_faulted(
     assert exited.value.code == 1
     assert [one.calls for one in counting.values()] == [1, 1, 1, 1]
     line = json.loads(capsys.readouterr().out)
-    assert line["faulted"] == ["expired_sessions", "accounts"]
+    assert line["faulted_passes"] == ["expired_sessions", "accounts"]
     assert line["purged_invitations"] == 4, "the counts line is still printed"
 
 
@@ -355,5 +394,5 @@ def test_main_exits_cleanly_when_nothing_faulted(
     _run_main(monkeypatch, sweeper)
 
     line = json.loads(capsys.readouterr().out)
-    assert line["faulted"] == []
+    assert line["faulted_passes"] == []
     assert line["expired_sessions"] == 1

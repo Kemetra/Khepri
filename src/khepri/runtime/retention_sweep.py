@@ -32,7 +32,8 @@ deployment nobody has authorized. `KHEPRI-DEC-033` decides no cadence; §5 asks 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -51,6 +52,13 @@ from khepri.rra.persistence import BetaSessionRow
 from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 REASON_EXPIRED = "expiry"
+
+_LOG = logging.getLogger(__name__)
+
+#: `RetentionSweeper.sweep`'s own passes, each named by the count it reports.
+PASS_EXPIRED_LEASES = "expired_leases"
+PASS_ORPHANED_JOBS = "orphaned_jobs"
+PASS_EXPIRED_SESSIONS = "expired_sessions"
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,10 +94,21 @@ class SweepReport:
     purged_workspace_audit_events: int = 0
     purged_evidence: int = 0
     purged_uploads: int = 0
+    #: Expired sessions whose deletion raised something other than `DeletionRetryRequired`
+    #: (`#523`). Counted apart from `deletions_deferred`: a deferral is the store asking for a
+    #: later try, a fault is a defect an operator must look at.
+    deletions_faulted: int = 0
+    #: The passes that faulted, by name, in the order they ran. Empty on a clean run; `main` exits
+    #: non-zero when it is not, so a scheduler alerts (`#523`). Not a count, so not in `as_counts`.
+    faulted_passes: tuple[str, ...] = ()
 
     def as_counts(self) -> dict[str, int]:
         """Every count by name, for the entry point's one JSON line."""
-        return {field: getattr(self, field) for field in self.__dataclass_fields__}
+        return {
+            field: getattr(self, field)
+            for field in self.__dataclass_fields__
+            if field != "faulted_passes"
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +128,51 @@ class RetentionCounts:
     workspace_audit_events: int = 0
     evidence: int = 0
     raw_uploads: int = 0
+    #: The `RetentionPasses` fields whose pass faulted, in run order (`#523`).
+    faulted_passes: tuple[str, ...] = ()
+
+
+#: Each retention pass: its `RetentionPasses` field, its `RetentionCounts` field, and the count its
+#: sweeper's report carries. Tuple order is run order, which is `RetentionPasses` field order.
+_RETENTION_PASSES: tuple[tuple[str, str, str], ...] = (
+    ("accounts", "accounts", "purged_accounts"),
+    ("events", "events", "purged_events"),
+    ("sessions", "sessions", "purged_sessions"),
+    ("invitations", "invitations", "purged_invitations"),
+    ("recovery_events", "recovery_events", "purged_events"),
+    ("workspace_audit", "workspace_audit_events", "purged_events"),
+    ("evidence", "evidence", "purged_evidence"),
+    ("raw_uploads", "raw_uploads", "purged_uploads"),
+)
+
+
+def _log_fault(pass_name: str, fault: Exception) -> None:
+    """Report a fault in one pass, content-free.
+
+    The exception's *type* is logged, never its message or traceback: a driver error echoes its
+    bound parameters, which here can include a beta session identifier -- bearer material that
+    `KHEPRI-DEC-015` §7 says never reaches a log, where "the prohibition governs" -- or customer
+    content RRA-007 excludes from logging. The pass name locates the fault.
+    """
+    _LOG.error(
+        "retention sweep pass faulted; later passes still run: pass=%s error=%s",
+        pass_name,
+        type(fault).__name__,
+    )
+
+
+def _attempt[T](pass_name: str, action: Callable[[], T], fallback: T, faulted: list[str]) -> T:
+    """Run one pass, isolating its fault from every pass after it (`#523`).
+
+    `Exception`, not `BaseException`: an interrupt or `SystemExit` still stops the sweep. A fault is
+    logged and appended to `faulted`, which the caller reports, so it is never swallowed.
+    """
+    try:
+        return action()
+    except Exception as fault:
+        _log_fault(pass_name, fault)
+        faulted.append(pass_name)
+        return fallback
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,37 +227,26 @@ class RetentionPasses:
         Returns a named record rather than a tuple: this began as a four-element tuple destructured
         by position, and a fifth pass is where that stops being readable. The same reasoning made
         these sweepers one value object in the first place.
+
+        **One pass's fault does not stop the passes after it (`#523`).** Before this, a faulting
+        pass aborted every later one on every run, so `KHEPRI-DEC-015` §2b's account purge or the
+        invitation `target_identity` purge could stay unenforced indefinitely behind an unrelated
+        table, which is the unenforced horizon `KHEPRI-DEC-033` §5 names. A faulted pass counts
+        zero and is named in `faulted_passes`.
         """
-        return RetentionCounts(
-            accounts=0 if self.accounts is None else self.accounts.sweep(now=now).purged_accounts,
-            events=0 if self.events is None else self.events.sweep(now=now).purged_events,
-            sessions=(
-                0 if self.sessions is None else self.sessions.sweep(now=now).purged_sessions
-            ),
-            invitations=(
-                0
-                if self.invitations is None
-                else self.invitations.sweep(now=now).purged_invitations
-            ),
-            recovery_events=(
-                0
-                if self.recovery_events is None
-                else self.recovery_events.sweep(now=now).purged_events
-            ),
-            workspace_audit_events=(
-                0
-                if self.workspace_audit is None
-                else self.workspace_audit.sweep(now=now).purged_events
-            ),
-            evidence=(
-                0 if self.evidence is None else self.evidence.sweep(now=now).purged_evidence
-            ),
-            raw_uploads=(
-                0
-                if self.raw_uploads is None
-                else self.raw_uploads.sweep(now=now).purged_uploads
-            ),
-        )
+        counts: dict[str, int] = {}
+        faulted: list[str] = []
+        for pass_name, count_name, report_field in _RETENTION_PASSES:
+            sweeper = getattr(self, pass_name)
+            if sweeper is None:
+                continue
+            counts[count_name] = _attempt(
+                pass_name,
+                lambda sweeper=sweeper, field=report_field: getattr(sweeper.sweep(now=now), field),
+                0,
+                faulted,
+            )
+        return RetentionCounts(**counts, faulted_passes=tuple(faulted))
 
 
 class RetentionSweeper:
@@ -216,10 +269,24 @@ class RetentionSweeper:
         self._retention = retention
 
     def sweep(self, *, now: datetime) -> SweepReport:
-        """Recover stalled work, delete expired sessions, then apply both retention horizons."""
-        expired = self._jobs.recover_expired(now=now)
-        orphaned = self._jobs.recover_orphans(now=now)
-        swept, deferred = self._expire_sessions(now=now)
+        """Recover stalled work, delete expired sessions, then apply both retention horizons.
+
+        Each step is isolated from the ones after it, as `RetentionPasses.run` isolates its own
+        (`#523`): a lease recovery or a session query that faults must not switch off the
+        retention horizons behind it. Every fault is named in `faulted_passes`.
+        """
+        faulted: list[str] = []
+        expired = _attempt(
+            PASS_EXPIRED_LEASES, lambda: self._jobs.recover_expired(now=now), (), faulted
+        )
+        orphaned = _attempt(
+            PASS_ORPHANED_JOBS, lambda: self._jobs.recover_orphans(now=now), (), faulted
+        )
+        swept, deferred, failed = _attempt(
+            PASS_EXPIRED_SESSIONS, lambda: self._expire_sessions(now=now), (0, 0, 0), faulted
+        )
+        if failed:
+            faulted.append(PASS_EXPIRED_SESSIONS)
         # `getattr` because a stack without RCA tables, and the test stubs that subclass this
         # without calling __init__, legitimately have no retention pass to run.
         retention = getattr(self, "_retention", None) or RetentionPasses()
@@ -229,6 +296,8 @@ class RetentionSweeper:
             orphaned_jobs=len(orphaned),
             expired_sessions=swept,
             deletions_deferred=deferred,
+            deletions_faulted=failed,
+            faulted_passes=(*faulted, *purged.faulted_passes),
             purged_accounts=purged.accounts,
             purged_events=purged.events,
             purged_sessions=purged.sessions,
@@ -239,15 +308,24 @@ class RetentionSweeper:
             purged_uploads=purged.raw_uploads,
         )
 
-    def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
+    def _expire_sessions(self, *, now: datetime) -> tuple[int, int, int]:
         """Delete content for every session past its expiry instant.
+
+        Returns `(swept, deferred, faulted)`.
 
         A session whose deletion needs another attempt is counted rather than
         retried here: `DeletionRetryRequired` means the store asked for a later
         try, and looping on it inside one pass would turn a backoff into a spin.
+
+        **A session whose deletion faults is counted and skipped (`#523`).** `DeletionService`
+        raises `ValueError`s outside its retry blocks, and a faulting session stays due, so it
+        comes back in the same place on every run. Isolating only the pass would let that one
+        session starve every due session after it of RRA-002's seven-day deletion, indefinitely.
+        The log carries no session identifier (`KHEPRI-DEC-015` §7) -- see `_log_fault`.
         """
         swept = 0
         deferred = 0
+        faulted = 0
         for session_id in self._expired_session_ids(now=now):
             try:
                 self._deletion.delete_session_content(
@@ -257,9 +335,12 @@ class RetentionSweeper:
                 )
             except DeletionRetryRequired:
                 deferred += 1
+            except Exception as fault:
+                _log_fault(PASS_EXPIRED_SESSIONS, fault)
+                faulted += 1
             else:
                 swept += 1
-        return swept, deferred
+        return swept, deferred, faulted
 
     def _expired_session_ids(self, *, now: datetime) -> Sequence[str]:
         """Sessions past expiry whose content has not already been deleted."""
@@ -316,10 +397,16 @@ def main() -> None:
     report = build_retention_sweep(stack).sweep(now=now)
     print(
         json.dumps(
-            {"event": "retention_sweep", "occurred_at": now.isoformat()} | report.as_counts(),
+            {"event": "retention_sweep", "occurred_at": now.isoformat()}
+            | report.as_counts()
+            | {"faulted_passes": list(report.faulted_passes)},
             sort_keys=True,
         )
     )
+    # `#523`: every pass has already run and the counts line is printed; a faulted pass now makes
+    # the process fail, so the scheduler that invokes it alerts rather than reading success.
+    if report.faulted_passes:
+        raise SystemExit(1)
 
 
 __all__ = [
