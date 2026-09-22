@@ -289,3 +289,24 @@ def test_a_malformed_xml_part_is_rejected_not_raised() -> None:
 
     with pytest.raises(IntakeRejected):
         upload.finish()
+
+
+def test_a_macro_content_type_in_a_utf16_content_types_part_is_rejected() -> None:
+    """The macro guard's sibling of S-05: `[Content_Types].xml` re-encoded as UTF-16.
+
+    No `vbaProject` part is present, so the part-name check cannot catch it; only the
+    content type says the workbook is macro-enabled, and the byte check cannot read it.
+    """
+    plain = _xlsx({"Sales": ["revenue"]})
+    types = zipfile.ZipFile(io.BytesIO(plain)).read("[Content_Types].xml").decode("utf-8")
+    macro_types = types.replace('encoding="UTF-8"', 'encoding="UTF-16"').replace(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
+    )
+    assert "macroEnabled" in macro_types
+    content = _with_part(plain, "[Content_Types].xml", macro_types.encode("utf-16"))
+    upload = UploadAccumulator(declared_size=len(content))
+    upload.append(content)
+
+    with pytest.raises(IntakeRejected):
+        upload.finish()

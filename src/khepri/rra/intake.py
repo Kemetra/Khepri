@@ -347,7 +347,7 @@ def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
                 raise IntakeRejected("Upload content is invalid or unsupported.")
 
             content_types = _read_xml_part(archive, _CONTENT_TYPES_PATH)
-            if b"macroenabled" in content_types.lower():
+            if b"macroenabled" in content_types.lower() or _declares_macros(content_types):
                 raise IntakeRejected("Upload content is invalid or unsupported.")
             workbook = ElementTree.fromstring(_read_xml_part(archive, _WORKBOOK_PATH))
             relationships = ElementTree.fromstring(
@@ -383,6 +383,19 @@ def _read_xml_part(archive: zipfile.ZipFile, path: str) -> bytes:
     if _declares_document_type(content):
         raise IntakeRejected("Upload content is invalid or unsupported.")
     return content
+
+
+def _declares_macros(content_types: bytes) -> bool:
+    """Whether any declared content type is macro-enabled, read as the parser decodes it.
+
+    The byte check beside it misses a UTF-16 `[Content_Types].xml` for the same reason
+    `_declares_document_type` exists (`#530` S-05): the markers are compared as ASCII
+    bytes, while the parser decodes the part per its BOM.
+    """
+    root = ElementTree.fromstring(content_types)
+    return any(
+        "macroenabled" in element.get("ContentType", "").casefold() for element in root.iter()
+    )
 
 
 class _PrologEnded(Exception):
