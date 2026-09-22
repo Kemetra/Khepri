@@ -108,6 +108,7 @@ from khepri.runtime.shell_controls import (
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import offers_of, organization_frame
 from khepri.runtime.shell_invitations import ShellRendering
+from khepri.runtime.shell_refusals import SHELL_REFUSALS
 
 __all__ = [
     "ABSENCE_WORDING",
@@ -1006,15 +1007,20 @@ def _respond(call: _RouteCall) -> Response:
         selection=selection_from(call.source_id, call.parameters),
         sources=_sources_for(call, context),
     )
-    readings = read_surface(
-        call.services.decisions,
-        CardsRequest(
-            organization_id=context.organization_id,
-            account_id=context.account_id,
-            source_id=call.source_id,
-        ),
-        selection=controls.selection,
-    )
+    # Every view read re-resolves the scope, so a membership revoked since the gate refuses
+    # here. The reader is then not a member, and `FR-050` gives that the gate's own surface.
+    try:
+        readings = read_surface(
+            call.services.decisions,
+            CardsRequest(
+                organization_id=context.organization_id,
+                account_id=context.account_id,
+                source_id=call.source_id,
+            ),
+            selection=controls.selection,
+        )
+    except SHELL_REFUSALS:
+        return call.rendering.unavailable(call.rendering.environment, language=language)
     return _page(
         call,
         _Resolved(
