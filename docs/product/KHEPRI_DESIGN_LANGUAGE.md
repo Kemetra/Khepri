@@ -62,9 +62,9 @@ decide the dark palette, which remains an unmade product decision.~~ And it reac
 governed layers — facts, privacy, evidence, provenance, retention, or organization isolation are
 untouched by any presentation decision.
 
-**The palette sentence is corrected in place, 2026-09-21, by `KHEPRI_UI_UX_MASTER_SPEC.md` §16.4.**
+**The palette sentence is corrected in place, 2026-09-21, by `KHEPRI_UI_UX_MASTER_SPEC.md` §16.5.**
 It said the dark palette remained undecided, which was accurate when written. The owner supplied the
-approved product-UI handoff on 2026-09-21 and its token set is recorded as §16.4; the decision is
+approved product-UI handoff on 2026-09-21 and its token set is recorded as §16.5; the decision is
 taken and the sentence is spent. Struck rather than deleted, so a reader arriving from an older note
 sees what changed. **The other three items in that paragraph are untouched** — no typeface or icon
 family bypasses the licence-plus-audited-digest process, no external font host or CDN becomes
