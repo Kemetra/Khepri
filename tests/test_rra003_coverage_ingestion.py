@@ -367,6 +367,30 @@ def test_an_attested_closure_admits_the_window_it_covers() -> None:
     assert response.json()["manifest_version"] == COVERAGE_MANIFEST_VERSION
 
 
+def test_an_admitted_window_is_never_stored_by_a_cache() -> None:
+    """`#530` S-06: a session-scoped read carries the journey read's cache policy.
+
+    `journey/routes.py` marks its session-scoped GET `private, no-store`; this
+    route answered for the same session and set nothing, so a shared cache was
+    free to keep one session's attestation answer. Exact equality, so a policy
+    carrying only half the directive fails too.
+    """
+    test = ready()
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(closed_days=[_END.isoformat()])),
+    )
+    assert profiled.status_code == 201
+
+    response = test.client.get(
+        "/api/v1/beta/coverage/completeness",
+        params=completeness_query(),
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("cache-control") == "private, no-store"
+
+
 def test_a_manifest_attested_under_another_reading_refuses_at_use_time() -> None:
     """RED case 3. A wrong contract identity refuses when the manifest is USED.
 
