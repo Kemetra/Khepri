@@ -421,6 +421,11 @@ class WorkspaceRecording:
         ):
             raise WorkspaceRefused(PROVENANCE_FAILURE)
         artifacts = self._published_artifacts(report, now)
+        # `W1-06`: the Passport's facts, built *before* anything is written. `_provenance_of`
+        # refuses a profile with no attestation, and `_perform_once` commits a refused unit so
+        # its event survives -- built after `record_completion`, that refusal committed a
+        # completed, bound, sealed run with no provenance row (`#522`; `_retain`'s reasoning).
+        provenance = _provenance_of(run, profile, package)
         outcome = RunOutcome(
             state=RUN_COMPLETED,
             package_digest=package.package_digest,
@@ -432,10 +437,9 @@ class WorkspaceRecording:
             run.run_id, outcome, artifacts, now=now, owner_id=owner_id
         ):
             raise WorkspaceRefused(NO_RUN_FAILURE)
-        # `W1-06`: the Passport's facts, retained with the run in this same unit of work
-        # (`KHEPRI-DEC-033` §2). The admission and the package end on their own horizons; the
-        # record they are read into does not.
-        self._provenance.record(_provenance_of(run, profile, package), now=now)
+        # Retained with the run in this same unit of work (`KHEPRI-DEC-033` §2). The admission and
+        # the package end on their own horizons; the record they are read into does not.
+        self._provenance.record(provenance, now=now)
         return self._reread_run(run.run_id, owner_id)
 
     def _awaiting_run(self, owner_id: str, run_id: str) -> tuple[AnalysisRun, DatasetVersion]:

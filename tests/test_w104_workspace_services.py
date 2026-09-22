@@ -39,10 +39,13 @@ from khepri.rca.workspace.audit import (
     OUTCOME_REFUSED,
 )
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_FAILED, RUN_STARTED, SourceProfile
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rra.datasets import document_digest, stored_manifest
 from khepri.rra.pipeline import DeliveryRecord
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
+from khepri.runtime import workspace_recording
 from khepri.runtime.workspace import ADMISSION_ADMITTED, ReportLocator, WorkspaceRefused
+from khepri.runtime.workspace_recording import NO_ATTESTATION_FAILURE
 from tests.w104_support import (
     GOLDEN_CSV,
     JOB,
@@ -388,6 +391,64 @@ def test_a_delivery_from_another_session_cannot_complete_a_run() -> None:
         )
     run = w.store.get_analysis_run(run_id, who.owner_id)
     assert run is not None and run.state == RUN_STARTED
+
+
+def _assert_refused_before_any_write(w: World, who: Member, version_id: str, run_id: str) -> None:
+    """A completion refused for want of an attestation leaves the run exactly as it was: still
+    `started`, no package, no binding, the version unsealed, no provenance row -- and the one event
+    the refusal owes (`FR-125`) is that refusal."""
+    run = w.store.get_analysis_run(run_id, who.owner_id)
+    assert run is not None and run.state == RUN_STARTED and run.package_digest is None
+    assert run.completed_at is None
+    assert w.store.artifact_bindings_for_run(run_id) == ()
+    version = w.store.get_dataset_version(version_id)
+    assert version is not None and version.sealed_at is None
+    assert SqlRunProvenanceStore(w.factory).for_run(run_id, who.owner_id) is None
+    recorded = events(w, who)[-1]
+    assert (recorded.action, recorded.outcome) == (ACTION_RUN_COMPLETED, OUTCOME_REFUSED)
+    assert len(events(w, who)) == 3
+
+
+def test_a_completion_whose_attestation_is_gone_refuses_before_it_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`#522`: the Passport's facts are built before the completion is written. `_perform_once`
+    commits a refused unit so its event survives, so a refusal raised *after* `record_completion`
+    committed a completed, bound, sealed run with no provenance row -- a run `FR-119` cannot show
+    a Passport for, that `DEC-033` §2 says keeps one, and that can never be retried. The manifest
+    is removed after the version and run exist, which is the window the order has to survive."""
+    w = world()
+    who = member(w)
+    session_id, version_id, run_id = _version_and_run(w, who)
+    derived(w, session_id)
+    monkeypatch.setattr(workspace_recording, "_stored_manifest", lambda _profile: None)
+
+    with pytest.raises(WorkspaceRefused, match=NO_ATTESTATION_FAILURE):
+        w.services.complete_analysis_run(
+            who.caller, run_id=run_id, report=ReportLocator(session_id, JOB), now=LATER
+        )
+
+    _assert_refused_before_any_write(w, who, version_id, run_id)
+
+
+def test_an_unattested_report_of_the_same_bytes_refuses_before_it_writes() -> None:
+    """The same `#522` window reached through real admissions, no patch: a second session admits
+    the version's exact bytes without an attestation, so its package passes the provenance check
+    (same source digest, same mapping) and only the Passport build refuses. Reachable through
+    `complete_analysis_run`'s `ReportLocator`; the pipeline recorder completes from the job's own
+    session, whose admission made the version."""
+    w = world()
+    who = member(w)
+    _session_a, version_id, run_id = _version_and_run(w, who)
+    session_b = admitted_session(w, who.owner_id, attest=False)
+    derived(w, session_b, job_id="job_b")
+
+    with pytest.raises(WorkspaceRefused, match=NO_ATTESTATION_FAILURE):
+        w.services.complete_analysis_run(
+            who.caller, run_id=run_id, report=ReportLocator(session_b, "job_b"), now=LATER
+        )
+
+    _assert_refused_before_any_write(w, who, version_id, run_id)
 
 
 def test_a_second_completion_is_refused_and_binds_nothing_twice() -> None:
