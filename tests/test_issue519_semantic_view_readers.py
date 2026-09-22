@@ -38,6 +38,7 @@ from khepri.rra.bundle import (
     SECTION_CONCENTRATION,
     SECTION_PRESENT,
     SECTION_REASON_FAMILY_VERSION_UNADMITTED,
+    SECTION_REFUSED,
     CitedEvidence,
     CitedFigure,
     ReportBundle,
@@ -320,6 +321,54 @@ def test_every_metric_of_a_refused_section_is_unavailable_with_the_sections_reas
     assert rows["revenue"]["availability"] == definitions.AVAILABLE
 
 
+def _refused_comparison(*, own: str) -> ReportBundle:
+    """A comparison section refused on a missing window, whose YoY result names `own`.
+
+    `bundle._analysed` builds exactly this when a family refuses outright: the
+    section carries the summary reason and `_scoped` carries each mode's own.
+    """
+    headline = _figure("revenue")
+    return ReportBundle(
+        identity=_identity(),
+        figures=(headline,),
+        caveats=(
+            StatedCaveat(
+                code=f"{comparison.METRIC_DELTA_PERCENT}.{comparison.MODE_YEAR_OVER_YEAR}:{own}",
+                section=SECTION_COMPARISON,
+            ),
+        ),
+        narrative_state=NARRATIVE_OMITTED,
+        sections=(
+            Section("overview", SECTION_PRESENT, None, (headline.figure_id,), None),
+            Section(
+                SECTION_COMPARISON, SECTION_REFUSED, comparison.REASON_PRIOR_WINDOW_ABSENT, (), None
+            ),
+        ),
+        evidence=(),
+    )
+
+
+def test_a_results_own_refusal_outranks_its_sections_summary_reason() -> None:
+    """The section states one cause; the result states its own, and that is its answer."""
+    own = comparison.REASON_COVERAGE_INCOMPATIBLE
+    rows = _by_metric(_rows(_AVAILABILITY, _refused_comparison(own=own)))
+
+    assert rows[comparison.METRIC_DELTA_PERCENT]["reason"] == own
+    assert rows[comparison.METRIC_DELTA_ABSOLUTE]["reason"] == comparison.REASON_PRIOR_WINDOW_ABSENT
+
+
+def test_a_result_stating_only_refusals_is_not_an_empty_result() -> None:
+    """`FR-142` -- emptiness is about rows: a stated refusal is a row, not nothing."""
+    bundle = _refused_comparison(own=comparison.REASON_COVERAGE_INCOMPATIBLE)
+    outcome = projection.project(
+        _request(_AVAILABILITY, metrics=(comparison.METRIC_DELTA_PERCENT,)), (bundle,)
+    )
+
+    assert outcome.projection is not None
+    assert len(outcome.projection.rows) == 1
+    assert outcome.projection.is_empty is False
+
+
 def test_headline_refusals_do_not_travel_on_the_bundle_so_no_row_states_them() -> None:
     """The owner escalation `#531` asked this slice to check for, pinned.
 
@@ -411,6 +460,29 @@ def test_an_absent_comparison_cell_projects_as_an_absence() -> None:
     for row in rows:
         assert row["baseline"] is None
         assert row["subject"] is not None
+
+
+def test_two_facts_sharing_a_metric_keep_two_comparison_rows() -> None:
+    """Rows are keyed by citation: keying by metric would suppress one fact (`FR-140`)."""
+    real = _real_crossversion()
+    first = real.figures[0].citation_id
+    twin = tuple(
+        replace(f, citation_id="cit_twin", figure_id=f"{f.figure_id}_twin")
+        for f in real.figures
+        if f.citation_id == first
+    )
+    source = SimpleNamespace(
+        identity=real.identity,
+        figures=(*real.figures, *twin),
+        caveats=real.caveats,
+        evidence=real.evidence,
+        sections=real.sections,
+        bundle_version=real.bundle_version,
+    )
+    rows = _rows(_COMPARISON, source)
+    metric = real.figures[0].metric
+
+    assert [row["metric"] for row in rows].count(metric) == 2
 
 
 def test_a_two_population_source_carries_its_package_formula_version() -> None:
