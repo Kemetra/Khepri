@@ -35,11 +35,18 @@ from sqlalchemy.pool import StaticPool
 from khepri.rca.accounts import Account, AccountService
 from khepri.rca.errors import ScopeAccessDenied
 from khepri.rca.lifecycle import LifecycleService
-from khepri.rca.organizations import Organization, OrganizationService
+from khepri.rca.organizations import MEMBER_ROLE, Organization, OrganizationService
 from khepri.rca.persistence import Base, SqlAccountStore, SqlOrganizationStore
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_copy import SHELL_COPY
+from tests.rca_lifecycle_support import (
+    CREDENTIAL,
+    EMAIL,
+    OTHER_EMAIL,
+    grant_membership,
+    two_owner_organization,
+)
 
 NOW = datetime(2026, 8, 22, tzinfo=UTC)
 
@@ -154,6 +161,41 @@ class TestMembershipsForOrganization:
         second = organizations.memberships_for_organization(created.organization_id)
 
         assert [member.email for member in first] == [member.email for member in second]
+
+
+def _team_with_a_purged_member_and_an_orphan(factory):
+    """Two live owners, one purged member (email `NULL`), and one membership with no account.
+
+    `factory=None` builds it over the fakes. The r805 fixture enforces no foreign keys, so the
+    orphan row can exist on SQLite too, and the inner join is what must leave it out.
+    """
+    stack = two_owner_organization(factory)
+    organization_id = stack.organization.organization_id
+    purged = AccountService(stack.accounts).create_account("aaa@example.test", CREDENTIAL)
+    grant_membership(stack, purged.account_id, MEMBER_ROLE, factory=factory)
+    stack.lifecycle.disable_account(purged.account_id, now=NOW)
+    assert stack.accounts.purge_if_still_eligible(purged.account_id, NOW + timedelta(days=1))
+    grant_membership(stack, "acc_orphan", MEMBER_ROLE, factory=factory)
+    return stack.organizations.memberships_for_organization(organization_id)
+
+
+class TestTheFakeListsMembersLikeTheStore:
+    """`#529` `T-11`: the fake and the SQL store must list one team identically.
+
+    PostgreSQL sorts `NULL` last in ascending order and SQLite sorts it first, so an implicit
+    `ORDER BY email` put a purged member at opposite ends on the two engines, and the fake sorted
+    `NULL` as `""` -- first -- while also listing memberships with no account, which the SQL inner
+    join never returns. The order is now explicit (`nulls_last()`), and the fake mirrors both.
+    """
+
+    @pytest.mark.parametrize("backend", ["sql", "memory"])
+    def test_a_purged_member_sorts_last_and_an_orphan_is_absent(self, factory, backend) -> None:
+        members = _team_with_a_purged_member_and_an_orphan(
+            factory if backend == "sql" else None
+        )
+
+        assert [member.email for member in members] == [OTHER_EMAIL, EMAIL, None]
+        assert "acc_orphan" not in {member.account_id for member in members}
 
 
 @dataclass

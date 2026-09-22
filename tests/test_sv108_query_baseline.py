@@ -51,7 +51,6 @@ from __future__ import annotations
 
 import ast
 import pathlib
-import statistics
 import time
 
 import pytest
@@ -454,10 +453,11 @@ def _assert_measured(view_id: str) -> None:
     measuring changed nothing, so no run of the loop warmed, cached or reordered
     a later one.
     """
-    timings, outcomes = _projection_samples(view_id)
+    _timings, outcomes = _projection_samples(view_id)
 
-    assert len(timings) == _SAMPLES
-    assert statistics.median(timings) > 0
+    # The timings are evidence for the dated ledger, not an assertion. `len == _SAMPLES`
+    # restated the loop bound and `median > 0` restated that a clock advances; neither could
+    # fail against any defect, so both were dropped (`#529` T-12).
     assert all(outcome == outcomes[0] for outcome in outcomes)
     assert outcomes[0].kind == projection.KIND_ADMITTED  # type: ignore[attr-defined]
 

@@ -31,7 +31,7 @@ from sqlalchemy.orm import sessionmaker
 from khepri.rca.accounts import AccountService
 from khepri.rca.actor_resolution import ActorResolver
 from khepri.rca.authorization_resolution import AuthorizationResolver
-from khepri.rca.errors import AuthenticationFailed, ScopeAccessDenied
+from khepri.rca.errors import AuthenticationFailed, FinalOwnerProtected, ScopeAccessDenied
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
@@ -590,7 +590,7 @@ class TestTheFinalOwnerInvariantIsNotDuplicated:
         )
         assert context.is_owner
 
-        with pytest.raises(Exception) as refusal:
+        with pytest.raises(FinalOwnerProtected) as refusal:
             organizations.demote_to_member(
                 stack.organization.organization_id,
                 stack.first.account_id,

@@ -698,9 +698,9 @@ def test_bundle_version_is_not_a_constructor_argument() -> None:
     """
     assert "bundle_version" not in inspect.signature(ReportBundle).parameters
     report = _bundle((_present(SECTION_OVERVIEW),))
-    # CPython 3.13 raises TypeError here; earlier interpreters raised ValueError. The
-    # guarantee under test is the refusal, not the class the standard library chose.
-    with pytest.raises((TypeError, ValueError), match="init=False"):
+    # CPython 3.13 raises TypeError here (earlier interpreters raised ValueError), and
+    # `requires-python` pins 3.13, so the one class this build can raise is named.
+    with pytest.raises(TypeError, match="init=False"):
         replace(report, bundle_version="rra006.bundle.v0")
 
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 
 import pytest
+from botocore.exceptions import ClientError
 
 from khepri.local.config import LocalSettings
 from khepri.local.storage import build_local_object_store
@@ -135,5 +136,8 @@ class TestTheRoundTrip:
 
         store.delete(KEY)
 
-        with pytest.raises(Exception):  # noqa: B017 - any read failure proves absence
+        # The store's absence answer, not any failure: an unrelated error on the read path
+        # (a bad envelope, a crypto fault) would otherwise read as "deleted".
+        with pytest.raises(ClientError) as absent:
             store.get(KEY, envelope=envelope)
+        assert absent.value.response["Error"]["Code"] == "NoSuchKey"

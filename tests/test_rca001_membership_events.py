@@ -12,6 +12,7 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
+from khepri.rca.errors import OrganizationCreationFailed
 from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS, RETENTION_MONTHS
 from khepri.rca.organizations import (
     MEMBER_ROLE,
@@ -170,7 +171,7 @@ def test_a_refused_creation_writes_no_event(factory: sessionmaker) -> None:
     OrganizationService(store).create_organization("First", owner.account_id, now=NOW)
 
     # An account that does not exist violates the membership foreign key.
-    with pytest.raises(Exception):  # noqa: B017, PT011 -- any refusal; the assertion is below
+    with pytest.raises(OrganizationCreationFailed):
         OrganizationService(store).create_organization("Second", "acc_absent", now=NOW)
 
     with factory() as database:

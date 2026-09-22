@@ -32,6 +32,7 @@ from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
@@ -151,7 +152,7 @@ def test_the_membership_table_refuses_a_forged_role(factory: sessionmaker) -> No
     organization, subject = _real_organization(factory)
 
     with (
-        pytest.raises(Exception) as refusal,  # noqa: B017, PT011 -- IntegrityError is dialect-shaped
+        pytest.raises(IntegrityError) as refusal,
         factory.begin() as database,
     ):
         database.add(
