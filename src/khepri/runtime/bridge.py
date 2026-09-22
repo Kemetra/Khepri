@@ -1,8 +1,10 @@
 """The commercial bridge: an authorized RCA actor to an RRA analysis session (`R7-07`).
 
-**Authorized by `KHEPRI-DEC-021` §2**, which lifted the bullet in `KHEPRI-DEC-020` §3 that withheld
-"no bridge service and no entry-point implementation". Four parts and no more: the entry point, its
-persistence, the resume lookup, and this.
+**Authorized by `KHEPRI-DEC-023` §1**, which carries forward `KHEPRI-DEC-022` §1 unchanged, which in
+turn carries forward §§1-4 of the now-retired `KHEPRI-DEC-021` -- whose §2 granted this bridge by
+lifting the bullet in `KHEPRI-DEC-020` §3 that withheld "no bridge service and no entry-point
+implementation". Four parts and no more: the entry point, its persistence, the resume lookup, and
+this.
 
 ## Why this module is in `khepri.runtime` and not `khepri.local`
 

@@ -77,19 +77,15 @@ would change this: a governed window length, and per-period completeness. Both
 belong in the same amendment as the concentration curve and transaction
 membership.
 
-**One governed requirement is deferred, not met.** `RRA-008` requires the formula
-version recorded as provenance. `COMPARISON_FORMULA_VERSION` is hashed into every
-fact identity below, and hashing is not recording -- a serialized fact cannot
-disclose which formula produced it, and `mode_of` cannot interpret a fact derived
-under a superseded version. Recording it properly needs a field on `Fact`, which
-is an `RRA-004` type this specification excludes changing, so it is a fifth item
-for that same amendment rather than a change made here.
-
-Until then the obligation falls on the caller: **whichever slice first serializes
-these facts must record `COMPARISON_FORMULA_VERSION` alongside them.** Nothing
-does today -- no section carries them and no bundle includes them -- so the gap
-has no consumer yet, and it acquires one the moment section assembly lands. The
-constant is public for that reason and for no other.
+**The formula version is recorded, not only hashed.** `RRA-008` requires the
+formula version recorded as provenance, and hashing `COMPARISON_FORMULA_VERSION`
+into a fact identity is not recording -- a hash names a fact and cannot be read
+back off one. `APP-014` amended `RRA-004` to add `Fact.formula_version`, and
+`#81` made every fact built below carry `COMPARISON_FORMULA_VERSION` in it, so a
+serialized fact discloses the formula that produced it. The constant is public
+because its readers sit outside this module: the report bundle's comparison
+family (`bundle._FAMILIES`), the metric definitions (`definitions`), and the
+semantic view registry (`semantic_views.registry`).
 """
 
 from __future__ import annotations
