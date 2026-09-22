@@ -174,6 +174,55 @@ class TestTheShippedOriginServesTheArtwork:
             finally:
                 browser.close()
 
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_the_overview_surface_makes_the_browser_fetch_the_artwork(
+        self, language: str
+    ) -> None:
+        """`U1` slice 11's central claim, read from the wire rather than from the markup.
+
+        The in-process tests prove the template *names* the address. They cannot prove a browser
+        rendering that page issues the request and is answered -- which is the whole `#489` lesson
+        the font module records: a surface can name an asset that never arrives and look fine,
+        because nothing falls over when an image 404s.
+
+        So this navigates to the real overview surface on a real origin and asserts the browser
+        requested a hero derivative and got a 200. The WebP and the JPEG are both acceptable: the
+        `<picture>` element exists precisely so the browser picks, and pinning which one Chromium
+        chooses would assert a browser's codec support rather than this slice's work.
+        """
+        from playwright.sync_api import sync_playwright
+
+        from khepri.rca.session_cookie import SESSION_COOKIE
+        from tests.test_r811_shell_accessibility import _launch_chromium
+
+        with _origin() as origin, sync_playwright() as playwright:
+            browser = _launch_chromium(playwright)
+            try:
+                context = browser.new_context()
+                context.add_cookies(
+                    [{"name": SESSION_COOKIE, "value": "a-session-token", "url": origin}]
+                )
+                page = context.new_page()
+                seen: list[tuple[str, int]] = []
+                page.on("response", lambda r: seen.append((r.url, r.status)))
+
+                address = f"{origin}/app/{language}/org-acme/overview"
+                landed = page.goto(address, wait_until="load")
+                assert landed is not None and landed.status == 200, (
+                    f"{address} -> {landed.status if landed else 'no response'}"
+                )
+
+                hero = [
+                    (url, status)
+                    for url, status in seen
+                    if any(name in url for name in HERO_FILES)
+                ]
+
+                assert hero, f"the overview requested no hero derivative: {seen}"
+                assert all(status == 200 for _, status in hero), hero
+            finally:
+                browser.close()
+
     def test_an_image_element_actually_decodes_the_artwork(self) -> None:
         """Fetched is not the same as usable: a truncated or mislabelled image 200s and then
         fails to decode. This loads it as an `Image` and reads the dimensions the browser

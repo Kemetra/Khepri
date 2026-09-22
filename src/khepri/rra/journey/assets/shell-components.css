@@ -480,3 +480,57 @@ body {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
+
+/* ---- The hero band: `RCA-012` `FR-212`, placed by `U1` slice 11 --------------------------------
+ *
+ * The approved artwork, served from the shell's own audited address (`#514`) and placed here for
+ * the first time. Master specification §7.2 and the handoff both allow exactly one treatment:
+ * **crop only**. No filter, no recolour, no rotation, and no CSS or SVG recreation of the
+ * monument, sun, water or sky under any circumstance -- `FR-206` and §7.2 name that prohibition
+ * outright.
+ *
+ * **The ground is painted behind the image, not under a transparent band.** The handoff requires
+ * it: "The ground color must stay behind the image so headlines are legible before it decodes."
+ * A band with no ground flashes whatever sits beneath it while the image is in flight.
+ *
+ * **The artwork is never mirrored.** The composition is symmetrical and the handoff is explicit
+ * that it is not flipped; `object-position` moves to the mirrored focal point so the monument
+ * stays on the copy-free side. A `scaleX(-1)` here would be redrawing the supplied asset.
+ *
+ * **No scrim ships yet, deliberately.** The handoff pairs the band with a gradient scrim because
+ * its composition puts the headline *over* the artwork. This slice does not: the heading and lede
+ * stay in the document card below, which is what keeps the surface complete when the image fails
+ * to load (`FR-218`). A scrim with no copy over it would be decoration, and `test_r807`'s
+ * no-artwork scan rightly refuses a painted background the surface does not need. Moving the
+ * headline onto the band is a composition change governed by the `03-workspace-overview.png`
+ * reference, and it belongs to the slice that makes it -- with the scrim it then requires.
+ *
+ * Values are the handoff §09 row for 01 Home: 238px band, `62% 46%` (`38% 46%` mirrored). They
+ * are composition evidence, not product fact (§16.3, `FR-205`).
+ */
+.hero-band {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  block-size: 238px;
+  margin-block-end: var(--density-region);
+  overflow: hidden;
+  background-color: var(--hero-ground);
+}
+
+.hero-band__image {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  object-position: 62% 46%;
+}
+
+
+/* Right-to-left: the focal point mirrors; the artwork itself does not. */
+[dir="rtl"] .hero-band__image {
+  object-position: 38% 46%;
+}
+

@@ -76,6 +76,12 @@ _EN = {
     "frame_surfaces_label": "Sections",
     "overview_title": "Overview",
     "overview_intro": "What happened most recently, and what to do next.",
+    # `RCA-012` `FR-218`. The hero artwork is decorative: it states no figure, no population, no
+    # refusal, no caveat and no state, so this describes the picture and nothing about the data.
+    # It lives here rather than in the template because `FR-218` names the *mechanism* -- an alt
+    # string written into the markup would render correctly in English and ship the English to
+    # Arabic readers. The English wording is the one the approved handoff supplies.
+    "overview_hero_alt": "Khepri monument at sunrise",
     "latest_work_title": "Latest work",
     "overview_no_work": "No analysis has run yet.",
     "overview_no_data": "No data has been submitted yet.",
@@ -242,6 +248,8 @@ _AR = {
     "frame_surfaces_label": "الأقسام",
     "overview_title": "نظرة عامة",
     "overview_intro": "ما حدث مؤخرًا، وما الخطوة التالية.",
+    # `RCA-012` `FR-218`, the Arabic half. Describes the artwork, not the data.
+    "overview_hero_alt": "نُصُب خِبري عند الشروق",
     "latest_work_title": "آخر الأعمال",
     "overview_no_work": "لم يُجرَ أي تحليل بعد.",
     "overview_no_data": "لم تُرسَل أي بيانات بعد.",
