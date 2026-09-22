@@ -329,10 +329,33 @@ class TestFR216NoExternalReference:
     """No CDN, no image host, no runtime download, and an unweakened policy."""
 
     def test_the_shipped_policy_still_allows_only_same_origin_images(self) -> None:
-        policy = SECURITY_HEADERS["Content-Security-Policy"]
+        """The directive parsed and compared whole, not matched as a substring.
 
-        assert "img-src 'self'" in policy
-        assert "default-src 'none'" in policy
+        `"img-src 'self'" in policy` is satisfied by `img-src 'self' https://cdn.example`, which
+        is the exact widening `FR-216` forbids -- a guard that passes in the one case it exists
+        to catch. Equality on the parsed source list makes it an extent assertion: an added host
+        fails here rather than reading as unchanged.
+        """
+        directives = {
+            parts[0]: parts[1:]
+            for directive in SECURITY_HEADERS["Content-Security-Policy"].split(";")
+            if (parts := directive.split())
+        }
+
+        assert directives["img-src"] == ["'self'"]
+        assert directives["default-src"] == ["'none'"]
+
+    def test_the_policy_check_would_fire_on_an_added_image_host(self) -> None:
+        """The positive control for the assertion above, run through the same parse."""
+        widened = "default-src 'none'; img-src 'self' https://cdn.example"
+
+        directives = {
+            parts[0]: parts[1:]
+            for directive in widened.split(";")
+            if (parts := directive.split())
+        }
+
+        assert directives["img-src"] != ["'self'"]
 
     def test_no_shell_stylesheet_names_an_external_host(self) -> None:
         for path in _SHELL_STYLESHEETS:
