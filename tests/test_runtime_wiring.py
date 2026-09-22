@@ -392,3 +392,22 @@ def test_a_pre_existing_render_directory_is_made_private(tmp_path) -> None:
     build_shell_services(runtime_stack(), comparisons=chosen)
 
     assert chosen.stat().st_mode & 0o777 == 0o700
+
+
+def test_the_deployed_app_serves_no_api_schema_or_documentation() -> None:
+    """`#530` S-02: the schema was public although the docs pages were not.
+
+    `create_app` passed `docs_url=None` and `redoc_url=None` and left `openapi_url`
+    at its default, so `/openapi.json` enumerated every route to anyone who asked,
+    unauthenticated. Built through the production root so the assertion covers the
+    app that is deployed, and checked on the attribute as well as the path so a
+    schema moved to another URL fails too.
+    """
+    app = build_web_app(runtime_stack())
+    client = TestClient(app, base_url="https://testserver")
+
+    assert app.openapi_url is None
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        response = client.get(path)
+        assert response.status_code == 404, path
+        assert b"openapi" not in response.content.lower(), path

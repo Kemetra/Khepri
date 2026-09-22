@@ -155,7 +155,7 @@ def create_app(
     report_services: ReportServices | None = None,
     journey_services: JourneyServices | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.post(
         "/api/v1/beta/sessions/redeem",
