@@ -196,6 +196,12 @@ reconciled.
   row for it — 210px band, `object-position: 64% 46%`, ivory wash to transparent at 76%, actions
   top-trailing. **See the second open question.**
 
+  **Discharged by the follow-on slice** (`feat/u1-analysis-hero-placement`). It took the 210px band
+  and the `64% 46%` focal point, and mirrored that focal point to `36% 46%` by the handoff's rule,
+  since the handoff states a mirrored value for Home only. It kept this slice's composition: the
+  heading, lede and decision link stay in the document card, so no scrim ships and the actions are
+  not moved top-trailing into the band.
+
 - **The hero on the journey and report surfaces.** Upload, Review, Processing and the report cover
   *are* `RRA-010`'s and `RRA-015`'s. `FR-217` moves the *asset* into the shell's ownership without
   letting the shell reach into the journey's, so a journey hero needs its own RRA-family artifact.
@@ -305,6 +311,8 @@ RTL mirror, the pre-decode ground and the governed alt text — before it is rep
 "repeat the pattern" is not a copy — and a placement defect found on the second surface after the
 first is merged is cheaper than one found across both. But this is a scoping call that changes what
 ships, so the owner takes it.
+
+**Resolved as (i).** Overview shipped at `#515`, and analysis detail followed as its own slice.
 
 ## Acceptance
 

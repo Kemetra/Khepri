@@ -6,18 +6,16 @@ naming the discipline `test_rca011_shell_font_load.py` established: an allowlist
 file the shipped image does not carry passes every in-process test and 404s in production. Only a
 real HTTP origin can tell those two apart.
 
-**Why this is a direct fetch and not a page navigation.** The font module could navigate to a
-surface and watch the wire, because a stylesheet `@font-face` links the file and the browser goes
-and gets it. Nothing links the artwork yet -- this is the asset slice, and placing the hero is
-`RCA-010`'s presentation slice, which `test_rca012_shell_hero_artwork.py` asserts has not happened.
-A navigation test here would therefore watch for a request no page makes, and pass whether or not
-the route worked.
+**Two kinds of evidence, both over a real socket.** The direct fetches read the response for each
+derivative: the status, the `Content-Type` the browser was actually handed, and the SHA-256 of the
+bytes that came over the wire against the audited manifest. They were this module's only claim
+when `#514` shipped the asset with no page placing it, because a navigation then would have
+watched for a request no page makes.
 
-So the browser fetches the shell's own address directly and the assertions read the response: the
-status, the `Content-Type` the browser was actually handed, and the SHA-256 of the bytes that came
-over the wire against the audited manifest. That is the claim this file can honestly make -- the
-shipped application, on a real socket, serves the audited artwork at the address a stylesheet will
-name -- and it is exactly the claim the in-process module cannot.
+The placing surfaces now exist -- the overview (`U1` slice 11) and analysis detail (its
+follow-on) -- so the navigation case visits each one, as the font module does for `@font-face`,
+and asserts the browser requested a derivative, was answered 200, and resolved that surface's
+handoff row in its computed style.
 """
 
 from __future__ import annotations
@@ -26,7 +24,7 @@ import hashlib
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 import pytest
@@ -49,6 +47,18 @@ from tests.test_m2_persistent_frame import (
     _StubRecords,
     _StubResolver,
 )
+from tests.test_r807_shell_quality import NOW as QUALITY_NOW
+from tests.test_r807_shell_quality import (
+    _StubBridge,
+    _StubComparisons,
+    _StubDecisions,
+    _StubInvitations,
+    _StubProvenance,
+)
+from tests.test_r807_shell_quality import _StubIsolation as _QualityIsolation
+from tests.test_r807_shell_quality import _StubOrganizations as _QualityOrganizations
+from tests.test_r807_shell_quality import _StubRecords as _QualityRecords
+from tests.test_r807_shell_quality import _StubResolver as _QualityResolver
 from tests.test_rra006_pdf_surface import chromium_available
 
 needs_chromium = pytest.mark.skipif(
@@ -93,15 +103,50 @@ def _app() -> FastAPI:
     return app
 
 
+def _detail_app() -> FastAPI:
+    """The same shipped routes, wired so analysis detail renders.
+
+    Detail needs the provenance read and the artifact handoff (`FR-049`); without them the address
+    404s and a navigation would watch a page that never placed the artwork. These are the stubs
+    `test_r807_shell_quality.py` measures the `analysis` surface through, so "the detail surface"
+    here is the one the shell's quality matrix already renders.
+    """
+    app = FastAPI()
+    add_shell_routes(
+        app,
+        services=ShellServices(
+            resolver=_QualityResolver(),
+            organizations=_QualityOrganizations(memberships=True),
+            invitations=_StubInvitations(),
+            records=_QualityRecords(),
+            isolation=_QualityIsolation(),
+            provenance=_StubProvenance(),
+            bridge=_StubBridge(),
+            comparisons=_StubComparisons(),
+            decisions=_StubDecisions(),
+        ),
+        clock=lambda: QUALITY_NOW,
+    )
+    return app
+
+
+#: Each placing surface: its address under `/app/{language}`, the app that renders it, and the
+#: handoff §09 row the browser must resolve -- band height, focal point, mirrored focal point.
+_PLACING_SURFACES = {
+    "overview": ("/org-acme/overview", _app, ("238px", "62% 46%", "38% 46%")),
+    "analysis": ("/org-acme/analyses/run-a", _detail_app, ("210px", "64% 46%", "36% 46%")),
+}
+
+
 @contextmanager
-def _origin() -> Iterator[str]:
+def _origin(build: Callable[[], FastAPI] = _app) -> Iterator[str]:
     """The application on a loopback port, torn down whatever happens."""
     import uvicorn
 
     listener = _listener()
     port = int(listener.getsockname()[1])
     server = uvicorn.Server(
-        uvicorn.Config(_app(), host="127.0.0.1", port=port, log_level="warning")
+        uvicorn.Config(build(), host="127.0.0.1", port=port, log_level="warning")
     )
     server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
     thread = threading.Thread(target=lambda: server.run(sockets=[listener]), daemon=True)
@@ -175,10 +220,12 @@ class TestTheShippedOriginServesTheArtwork:
                 browser.close()
 
     @pytest.mark.parametrize("language", ["en", "ar"])
-    def test_the_overview_surface_makes_the_browser_fetch_the_artwork(
-        self, language: str
+    @pytest.mark.parametrize("surface", sorted(_PLACING_SURFACES))
+    def test_the_placing_surface_makes_the_browser_fetch_the_artwork(
+        self, surface: str, language: str
     ) -> None:
-        """`U1` slice 11's central claim, read from the wire rather than from the markup.
+        """`U1` slice 11's central claim, read from the wire rather than from the markup, on
+        each surface that places the artwork: the overview and analysis detail.
 
         The in-process tests prove the template *names* the address. They cannot prove a browser
         rendering that page issues the request and is answered -- which is the whole `#489` lesson
@@ -189,13 +236,19 @@ class TestTheShippedOriginServesTheArtwork:
         requested a hero derivative and got a 200. The WebP and the JPEG are both acceptable: the
         `<picture>` element exists precisely so the browser picks, and pinning which one Chromium
         chooses would assert a browser's codec support rather than this slice's work.
+
+        It then reads the band's height and the image's focal point **as the browser computed
+        them**. The stylesheet tests read CSS text, and a modifier that loses the cascade -- equal
+        specificity, wrong source order -- passes every one of them while the page renders the
+        other surface's row. Only the computed value sees that.
         """
         from playwright.sync_api import sync_playwright
 
         from khepri.rca.session_cookie import SESSION_COOKIE
         from tests.test_r811_shell_accessibility import _launch_chromium
 
-        with _origin() as origin, sync_playwright() as playwright:
+        path, build, (height, focal, mirrored) = _PLACING_SURFACES[surface]
+        with _origin(build) as origin, sync_playwright() as playwright:
             browser = _launch_chromium(playwright)
             try:
                 context = browser.new_context()
@@ -206,7 +259,7 @@ class TestTheShippedOriginServesTheArtwork:
                 seen: list[tuple[str, int]] = []
                 page.on("response", lambda r: seen.append((r.url, r.status)))
 
-                address = f"{origin}/app/{language}/org-acme/overview"
+                address = f"{origin}/app/{language}{path}"
                 landed = page.goto(address, wait_until="load")
                 assert landed is not None and landed.status == 200, (
                     f"{address} -> {landed.status if landed else 'no response'}"
@@ -218,8 +271,24 @@ class TestTheShippedOriginServesTheArtwork:
                     if any(name in url for name in HERO_FILES)
                 ]
 
-                assert hero, f"the overview requested no hero derivative: {seen}"
+                assert hero, f"the {surface} surface requested no hero derivative: {seen}"
                 assert all(status == 200 for _, status in hero), hero
+
+                resolved = page.evaluate(
+                    """() => [
+                        getComputedStyle(document.querySelector('.hero-band')).height,
+                        getComputedStyle(
+                            document.querySelector('.hero-band__image')
+                        ).objectPosition,
+                        getComputedStyle(
+                            document.querySelector('.hero-band__image')
+                        ).transform,
+                    ]"""
+                )
+                expected = mirrored if language == "ar" else focal
+                assert resolved[:2] == [height, expected], resolved
+                # Crop only: the artwork itself is never mirrored, in either direction.
+                assert resolved[2] == "none", resolved
             finally:
                 browser.close()
 

@@ -137,6 +137,9 @@ _EN = {
     # and are not restated here.
     "analysis_title": "Analysis",
     "analysis_intro": "What this analysis covered, what it answered, and its report.",
+    # `RCA-012` `FR-218`, for the same artwork on analysis detail. The picture is the overview's,
+    # so the description is too; a key per placing surface keeps each template naming its own.
+    "analysis_hero_alt": "Khepri monument at sunrise",
     # `D1-12`. The one way in to the decision surface, offered per run because the address is
     # per run. It is deliberately NOT a fifth entry in `frame_surfaces_label`'s set: design
     # language §3.5 settles that set as Overview · Data · Analyses · Team, and editing it is the
@@ -296,6 +299,8 @@ _AR = {
     # `W1-06`.
     "analysis_title": "التحليل",
     "analysis_intro": "ما شمله هذا التحليل، وما أجاب عنه، وتقريره.",
+    # `RCA-012` `FR-218`, the Arabic half. Describes the artwork, not the data.
+    "analysis_hero_alt": "نُصُب خِبري عند الشروق",
     # `D1-12`. The Arabic half of the entry point; `FR-164`/`FR-171` require neither language to
     # drop the way in.
     "decisions_open": "افتح عرض القرار",

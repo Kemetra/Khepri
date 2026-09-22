@@ -11,6 +11,24 @@
   No report-API address appears here: the handoff route builds it (`shell_artifact_handoff.py`),
   so artifacts are reached from this surface and from nowhere a template could copy them to.
 #}
+{#
+  `RCA-012` `FR-212`: the approved hero artwork on 05 Insights, the second `/app` surface that
+  specification names. The placement is `overview.html.j2`'s, for the same reasons: decorative
+  and outside the labelled region, the heading, lede and every governed region stay in the
+  document card below, and the `alt` comes from the copy module in the page's language
+  (`FR-218`). The modifier carries this surface's handoff row -- band height and focal point.
+#}
+<div class="hero-band hero-band--insights">
+  <picture>
+    <source srcset="{{ assets }}/khepri-hero.webp" type="image/webp">
+    <img class="hero-band__image"
+         src="{{ assets }}/khepri-hero.jpg"
+         alt="{{ copy.analysis_hero_alt }}"
+         loading="eager"
+         fetchpriority="high">
+  </picture>
+</div>
+
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.analysis_title }}</h1>
   <p class="lede">{{ copy.analysis_intro }}</p>
