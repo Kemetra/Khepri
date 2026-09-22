@@ -23,21 +23,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from khepri.rra.job_persistence import ReportJobRow, SqlReportJobRepository
+from khepri.rra.job_persistence import (
+    CLAIMABLE_STATES,
+    SqlReportJobRepository,
+    next_claimable_statement,
+)
 from khepri.rra.jobs import (
-    JOB_QUEUED,
-    JOB_RETRYABLE,
     FailureRequest,
     LeaseAction,
     LeaseRequest,
     ReportJob,
 )
 from khepri.rra.worker import ReportJobMessage
-
-CLAIMABLE_STATES = (JOB_QUEUED, JOB_RETRYABLE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,20 +170,11 @@ class ClaimingReportQueue:
         """Name the job that has been due longest, without transitioning it.
 
         Claiming stays `lease`'s job, so two callers racing here are resolved by the
-        lease rather than by whichever read first.
+        lease rather than by whichever read first. The pick filters on the lease's own
+        predicate, so it never names a job the lease would refuse.
         """
-        statement = (
-            select(ReportJobRow.job_id)
-            .where(
-                ReportJobRow.state.in_(CLAIMABLE_STATES),
-                ReportJobRow.available_at <= now,
-                ReportJobRow.attempt_count < ReportJobRow.max_attempts,
-            )
-            .order_by(ReportJobRow.available_at, ReportJobRow.job_id)
-            .limit(1)
-        )
         with self._factory() as database:
-            return database.execute(statement).scalar_one_or_none()
+            return database.execute(next_claimable_statement(now)).scalar_one_or_none()
 
 
 def _named_worker(worker_id: str) -> str:
