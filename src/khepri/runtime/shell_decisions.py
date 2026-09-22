@@ -398,10 +398,23 @@ def _named(card: Any, language: str) -> _CardView:
             copy.get(f"availability_{availability}") if availability else None
         ),
         reason=card.reason,
-        versions=card.versions,
+        versions=_stated_versions(card.versions),
         caveat_count=len(card.caveats),
         drawer=_drawer(card.metric, card.evidence, language),
     )
+
+
+def _stated_versions(versions: object) -> object:
+    """The projection's `(name, version)` pairs as one line, never a Python tuple (#519).
+
+    `FR-139`'s versions reach the card as ordered pairs now that the view reads them; the
+    drawer states them as written. Any other value is shown exactly as before.
+    """
+    if isinstance(versions, tuple) and all(
+        isinstance(pair, tuple) and len(pair) == 2 for pair in versions
+    ):
+        return ", ".join(f"{name} {version}" for name, version in versions)
+    return versions
 
 
 def _drawer(metric: str, action: EvidenceAction | None, language: str) -> _DrawerView:

@@ -5,12 +5,10 @@ Authority: active `RCA-008` `FR-159`, `FR-161`, `FR-162`, `FR-164`, `FR-171`.
 The read model is driven through the scripted port in `d105_support`, as
 `D1-02`'s, `D1-03`'s and `D1-04`'s were: what is under test is the *selection*.
 **Two cases are driven through the real projector instead**, and deliberately --
-`ReportEvidenceView` publishes a `provenance` and an `absence` column that
-`RRA-014`'s `_FIELD_READERS` gives no reader, so both project as stated
-absences, and the drawer reads provenance from the evidence records instead. A
-hand-built projection could assert the drawer's behaviour but not that fact
-about the view, and the day `RRA-014` gives those columns readers this module
-needs to be looked at rather than to keep silently double-sourcing.
+`ReportEvidenceView` publishes a `provenance` and an `absence` column, and the
+drawer reads provenance from the evidence records instead. `#519` gave those
+columns readers, so the real-projector case now pins that the column and the
+record agree -- a hand-built projection could not assert that about the view.
 
 **The drawer is asserted to be a disclosure and not an address** (`FR-161`: not
 "deferred to a terminal page"), which is a negative about the route table rather
@@ -265,22 +263,24 @@ def _cited(citation_id: str, metric: str, *, complete: bool) -> CitedEvidence:
     )
 
 
-def test_the_views_provenance_and_absence_columns_are_stated_absences() -> None:
-    """Why the drawer reads the records instead of the rows.
+def test_the_views_provenance_and_absence_columns_agree_with_the_records() -> None:
+    """The drawer reads the records; the view's columns now state the same thing.
 
-    `_FIELD_READERS` gives `figure` and `evidence` readers and gives these two
-    none, so `_unstated` answers both -- "a field no member of `RenderableBundle`
-    states, an absence and not a blank". `RCA-008` §Exclusions bars this
-    specification from changing that, so this asserts the fact rather than fixing
-    it: the day `RRA-014` publishes readers for them, this fails and `evidence.py`
-    is looked at rather than left double-sourcing one figure.
+    This used to assert both columns were `None`, because `_FIELD_READERS` gave
+    them no reader -- and said it would fail the day `RRA-014` published readers,
+    so `evidence.py` would be looked at. `#519` published them. `evidence.py`
+    still reads the records, and this pins that the two sources agree: the
+    column's provenance is the record's own, and a fully stated record names no
+    absence. A disagreement between them is what would make double-sourcing a
+    defect, and this fails on it.
     """
-    projected = _projected((_cited("cit_revenue", "revenue", complete=True),))
+    record = _cited("cit_revenue", "revenue", complete=True)
+    projected = _projected((record,))
     named = dict(zip(projected.fields, projected.rows[0], strict=True))  # type: ignore[attr-defined]
     assert named["figure"] == "fig_revenue"
     assert named["evidence"] == "cit_revenue"
-    assert named["provenance"] is None
-    assert named["absence"] is None
+    assert named["provenance"] == record.provenance
+    assert named["absence"] == ()
 
 
 def test_a_governed_absence_arrives_as_a_citation_and_kind_pair() -> None:

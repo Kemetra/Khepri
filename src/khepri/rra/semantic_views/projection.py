@@ -5,8 +5,10 @@
 **This module computes nothing.** `FR-138` bars "arithmetic, aggregation,
 grouping into a new fact, ranking, scoring, normalization, top-N, thresholding,
 or raw-row access", and the shape here is built so that reading the code shows
-it: every output field is produced by a reader in `_FIELD_READERS` that performs
-one attribute access and returns what it found. There is no operator, no `sum`,
+it: every output field is produced by a reader in `_FIELD_READERS` or
+`_STATEMENT_READERS` that performs one lookup -- an attribute, a table entry, or
+the figure carrying a governed label -- and returns what it found. There is no
+operator, no `sum`,
 no `round`, no `sorted(key=...)` and no slice in the projection path, and
 `tests/test_sv105_propagation.py` scans the package to keep it that way.
 
@@ -23,6 +25,15 @@ models it: `precision`, `inputs` and `provenance` are `None` when no retained
 record states them. Those `None`s travel unchanged and are additionally named in
 `ViewProjection.evidence_absences`, so a reader can tell "the record says there
 is none" from "this projection dropped the key".
+
+**Every field the source states is read (`#519`).** `versions`, `provenance`,
+`absence`, `dimension`, and -- for the two views whose row is not a figure --
+`availability`, `reason`, `subject`, `baseline` and `delta` all have readers.
+Availability is read only from what the bundle states: a carried figure, a
+`<result>:<reason>` caveat, or a refused section. The `RRA-004` headline
+refusals live on `FactPackage.refusals`, which `ReportBundle.of` does not carry,
+so this module says nothing about those metrics rather than reaching past the
+bundle for them.
 
 **Two things this module cannot state, recorded rather than improvised.**
 
@@ -43,7 +54,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from khepri.rra.bundle import CitedEvidence, CitedFigure, StatedCaveat
+from khepri.rra import definitions, facts
+from khepri.rra.bundle import FAMILY_VERSIONS, CitedEvidence, CitedFigure, StatedCaveat
+from khepri.rra.crossversion_bundle import LABEL_BASELINE, LABEL_DIFFERENCE, LABEL_SUBJECT
 from khepri.rra.renderable import RenderableBundle
 from khepri.rra.semantic_views.compatibility import (
     SemanticViewRequest,
@@ -194,6 +207,22 @@ def _absences_of(record: CitedEvidence) -> list[tuple[str, str]]:
     return [(record.citation_id, name) for name, value in stated if value is None]
 
 
+def _first_stated(identity: object, names: tuple[str, ...]) -> str | None:
+    """The first of these identity members that states a version, or `None`.
+
+    `A-25`: `BundleIdentity` names its package formula `formula_version` and
+    `CrossVersionIdentity` names the same governed fact `package_formula_version`.
+    Both are the *package* formula, so both project under the one `formula` key;
+    `comparison_formula_version` is not read here, because it already travels as
+    `family:<section>` from the evidence and a second key would state it twice.
+    """
+    for name in names:
+        value = getattr(identity, name, None)
+        if isinstance(value, str):
+            return value
+    return None
+
+
 def _versions_of(
     bundle: RenderableBundle,
     definition: SemanticViewDefinition,
@@ -207,7 +236,7 @@ def _versions_of(
     identity = bundle.identity
     named = (
         ("package", getattr(identity, "package_version", None)),
-        ("formula", getattr(identity, "formula_version", None)),
+        ("formula", _first_stated(identity, ("formula_version", "package_formula_version"))),
         ("mapping", getattr(identity, "mapping_version", None)),
         ("narrative", getattr(identity, "narrative_version", None)),
         ("bundle", bundle.bundle_version),
@@ -240,32 +269,101 @@ def _family_versions(
     return tuple(sections.items())
 
 
-def _metric(figure: CitedFigure, _bundle: RenderableBundle) -> object:
+#: The dimension each composed series metric is keyed by (`A-27`).
+#:
+#: `CitedFigure` states a metric and a label and no dimension, but a series
+#: metric's code is *composed* as `<measure>_by_<dimension>` from the governed
+#: constants in `facts`. This table is that composition read backwards, over the
+#: same two axes `definitions.SERIES_METRICS` composes over -- a lookup, never a
+#: split of the string, so a code no builder composes states no dimension. A
+#: metric absent here (a headline, a family result, the concentration scalars)
+#: states no dimension on the bundle, and the column is an absence for it.
+_SERIES_DIMENSION: dict[str, str] = {
+    f"{measure}_by_{dimension}": dimension
+    for measure in facts.SERIES_MEASURES
+    for dimension in facts.SERIES_DIMENSIONS
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _Source:
+    """What a reader may consult beside its row: the bundle and the view's definition.
+
+    Handed to every reader so the per-row `versions` can name the view version,
+    which only the definition knows. Nothing here is a value a reader could
+    compute with; it is the same bundle the row was selected from.
+    """
+
+    bundle: RenderableBundle
+    definition: SemanticViewDefinition
+
+
+def _metric(figure: CitedFigure, _source: _Source) -> object:
     """The figure's governed metric code."""
     return figure.metric
 
 
-def _value(figure: CitedFigure, _bundle: RenderableBundle) -> object:
+def _value(figure: CitedFigure, _source: _Source) -> object:
     """The figure's own `Decimal`, unrounded and unconverted (`FR-139`)."""
     return figure.value
 
 
-def _label(figure: CitedFigure, _bundle: RenderableBundle) -> object:
+def _label(figure: CitedFigure, _source: _Source) -> object:
     """The customer's own category name, or `None` where the figure has none."""
     return figure.label
 
 
-def _figure_id(figure: CitedFigure, _bundle: RenderableBundle) -> object:
+def _dimension(figure: CitedFigure, _source: _Source) -> object:
+    """The dimension the figure's metric is keyed by, not its member (`A-27`)."""
+    return _SERIES_DIMENSION.get(figure.metric)
+
+
+def _figure_id(figure: CitedFigure, _source: _Source) -> object:
     """The identifier addressing this cell."""
     return figure.figure_id
 
 
-def _citation(figure: CitedFigure, _bundle: RenderableBundle) -> object:
+def _citation(figure: CitedFigure, _source: _Source) -> object:
     """The identifier naming the fact the reader is pointed at."""
     return figure.citation_id
 
 
-def _unstated(_figure: CitedFigure, _bundle: RenderableBundle) -> object:
+def _figure_versions(figure: CitedFigure, source: _Source) -> object:
+    """This figure's governed versions as ordered pairs (`FR-139`).
+
+    Pairs rather than a mapping for `ViewProjection.version_pairs`' reason: a row
+    is a tuple and must not hold a value a caller could edit after the fact.
+    """
+    return _versions_of(source.bundle, source.definition, (figure,))
+
+
+def _record_of(figure: CitedFigure, source: _Source) -> CitedEvidence | None:
+    """The retained record the figure's citation names, or `None` if none is carried."""
+    return next(
+        (record for record in source.bundle.evidence if record.citation_id == figure.citation_id),
+        None,
+    )
+
+
+def _provenance(figure: CitedFigure, source: _Source) -> object:
+    """The record's composite provenance -- `None` is its own governed absence (`FR-140`)."""
+    record = _record_of(figure, source)
+    return None if record is None else record.provenance
+
+
+def _absence(figure: CitedFigure, source: _Source) -> object:
+    """Which governed absences the record states, named (`FR-140`).
+
+    `()` says the record states every value; `None` says no record is carried for
+    this citation at all. The two are different answers and look different.
+    """
+    record = _record_of(figure, source)
+    if record is None:
+        return None
+    return tuple(name for _citation_id, name in _absences_of(record))
+
+
+def _unstated(_row: object, _source: _Source) -> object:
     """A field no member of `RenderableBundle` states -- an absence, not a blank.
 
     `population` is the case that forced this. Several published views name it in
@@ -276,47 +374,147 @@ def _unstated(_figure: CitedFigure, _bundle: RenderableBundle) -> object:
     return None
 
 
-#: How each published output field is read. One attribute access per field, so
-#: `FR-138`'s prohibition is visible in the shape rather than only asserted: a
+#: How each published output field is read from one figure. One lookup per field,
+#: so `FR-138`'s prohibition is visible in the shape rather than only asserted: a
 #: reader that computed something would stand out against every other row here.
 #:
 #: A field absent from this table is read by `_unstated`, which is deliberate
 #: rather than a fallback: `output_field_order` is part of view identity
 #: (`FR-134`) and a view may publish a column the admitted source shape does not
 #: state, which is an absence to report and not a reason to refuse.
-_FIELD_READERS: dict[str, Callable[[CitedFigure, RenderableBundle], object]] = {
+_FIELD_READERS: dict[str, Callable[[CitedFigure, _Source], object]] = {
     "metric": _metric,
     "value": _value,
     "label": _label,
     "member": _label,
     "store": _label,
-    "dimension": _label,
+    "dimension": _dimension,
     "figure": _figure_id,
     "evidence": _citation,
+    "versions": _figure_versions,
+    "provenance": _provenance,
+    "absence": _absence,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _Statement:
+    """What the bundle states about one metric, or one cited fact, as one row.
+
+    `MetricAvailabilityView` and `PeriodComparisonView` publish no per-figure
+    column, so their row is not a figure: it is the figures and refusal the
+    bundle already carries for one metric (availability) or one citation
+    (comparison), selected together. Nothing here is computed -- `availability`
+    and `reason` are governed words chosen by which of the bundle's own
+    statements applies, and every value is a figure's own object.
+    """
+
+    metric: str
+    figures: tuple[CitedFigure, ...]
+    availability: str | None = None
+    reason: str | None = None
+
+
+def _statement_metric(statement: _Statement, _source: _Source) -> object:
+    return statement.metric
+
+
+def _statement_availability(statement: _Statement, _source: _Source) -> object:
+    return statement.availability
+
+
+def _statement_reason(statement: _Statement, _source: _Source) -> object:
+    return statement.reason
+
+
+def _statement_versions(statement: _Statement, source: _Source) -> object:
+    """The versions behind every figure this row selects (`FR-139`)."""
+    return _versions_of(source.bundle, source.definition, statement.figures)
+
+
+def _labelled(statement: _Statement, label: str) -> object:
+    """The value of this row's figure carrying `label`, or `None` -- an absence (`FR-140`)."""
+    return next((figure.value for figure in statement.figures if figure.label == label), None)
+
+
+def _subject(statement: _Statement, _source: _Source) -> object:
+    return _labelled(statement, LABEL_SUBJECT)
+
+
+def _baseline(statement: _Statement, _source: _Source) -> object:
+    return _labelled(statement, LABEL_BASELINE)
+
+
+def _delta(statement: _Statement, _source: _Source) -> object:
+    """The source's own difference figure -- selected by label, never subtracted."""
+    return _labelled(statement, LABEL_DIFFERENCE)
+
+
+_STATEMENT_READERS: dict[str, Callable[[_Statement, _Source], object]] = {
+    "metric": _statement_metric,
+    "availability": _statement_availability,
+    "reason": _statement_reason,
+    "versions": _statement_versions,
+    "subject": _subject,
+    "baseline": _baseline,
+    "delta": _delta,
 }
 
 
 def _row(
-    figure: CitedFigure, bundle: RenderableBundle, fields: tuple[str, ...]
+    figure: CitedFigure, source: _Source, fields: tuple[str, ...]
 ) -> tuple[object, ...]:
     """One figure as one row, in the view's published field order (`FR-134`)."""
-    return tuple(_FIELD_READERS.get(name, _unstated)(figure, bundle) for name in fields)
+    return tuple(_FIELD_READERS.get(name, _unstated)(figure, source) for name in fields)
+
+
+def _statement_row(
+    statement: _Statement, source: _Source, fields: tuple[str, ...]
+) -> tuple[object, ...]:
+    """One statement as one row, in the view's published field order (`FR-134`)."""
+    return tuple(_STATEMENT_READERS.get(name, _unstated)(statement, source) for name in fields)
 
 
 def _matches(figure: CitedFigure, filters: tuple[tuple[str, str], ...]) -> bool:
     """Whether this figure is inside every requested filter.
 
-    A filter names a dimension and a member, and the only member a
-    `RenderableBundle` states per figure is `CitedFigure.label`. So a filter
-    matches when the figure carries that label. This is selection -- comparing
-    two governed values -- and not a computation.
+    A filter names a dimension and a member, and a figure states its member as
+    `CitedFigure.label` and its dimension through its composed metric code. Both
+    must match (`A-30`): a product and a category can share a customer label, and
+    matching the label alone let a category figure satisfy a product filter.
 
     Two filters naming different dimensions therefore match nothing, because one
-    figure carries one label. That is a real limit of what the admitted source
-    shape states, and it fails *closed*: the reader gets a stated empty result
-    under the definition's own empty rule, never a widened one.
+    figure is keyed by one dimension. That fails *closed*: the reader gets a
+    stated empty result under the definition's own empty rule, never a widened
+    one. A figure stating no dimension matches no filter for the same reason.
     """
-    return all(figure.label == member for _dimension, member in filters)
+    return all(
+        _SERIES_DIMENSION.get(figure.metric) == dimension and figure.label == member
+        for dimension, member in filters
+    )
+
+
+def _admits_dimension(
+    metric: str, definition: SemanticViewDefinition, request: SemanticViewRequest
+) -> bool:
+    """Whether a metric is inside the dimensions that applied (`FR-137`, `A-27`).
+
+    `_effective` states the requested dimensions -- or the definition's own when
+    none are named -- as what applied, so they must be what applied: a request
+    naming `product` gets no category figure.
+
+    A metric stating no dimension is admitted only when the effective dimensions
+    are the view's whole allowlist. A narrower request would otherwise receive a
+    figure the bundle cannot show is in that dimension -- a concentration scalar
+    computed over category, answered to a request for product -- which is the
+    nearby substitution `FR-142` bars. Under the whole allowlist nothing was
+    narrowed, so the default and an explicit full request answer alike.
+    """
+    effective = request.dimensions or definition.dimension_allowlist
+    dimension = _SERIES_DIMENSION.get(metric)
+    if dimension is None:
+        return frozenset(effective) == frozenset(definition.dimension_allowlist)
+    return dimension in effective
 
 
 def _admitted_figures(
@@ -337,13 +535,140 @@ def _admitted_figures(
     because `FR-138` bars ranking and `FR-134` makes output order part of view
     identity rather than something computed per request.
     """
-    requested, filters = request.metrics, request.filters
-    allowed = frozenset(requested or definition.metric_allowlist)
+    allowed = frozenset(request.metrics or definition.metric_allowlist)
     return tuple(
         figure
         for figure in bundle.figures
-        if figure.metric in allowed and _matches(figure, filters)
+        if figure.metric in allowed
+        and _admits_dimension(figure.metric, definition, request)
+        and _matches(figure, request.filters)
     )
+
+
+def _metric_of(result: str) -> str:
+    """The metric a refused result names -- `revenue_delta_percent.year_over_year`'s
+    is `revenue_delta_percent`, because a result is mode-qualified with a dot."""
+    metric, _dot, _mode = result.partition(".")
+    return metric
+
+
+def _result_refusals(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
+    """`(metric, reason)` for each result refused inside a present section.
+
+    `bundle._scoped` carries these as caveats coded `<result>:<reason>`, and
+    `definitions.summarize` is the one reader of that channel -- selected by the
+    separator, split on its last occurrence. Read through it rather than parsed
+    a second time here, so the two can never disagree about what a code means.
+    """
+    return tuple(
+        (_metric_of(result), reason)
+        for result, reason in definitions.summarize(bundle).refused_results
+    )
+
+
+def _section_refusals(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
+    """`(metric, reason)` for every metric of a refused section.
+
+    A refused section carries no figures, so only the section states the refusal.
+    Which metrics it would have carried is governed declaration, not package data:
+    `bundle.FAMILY_VERSIONS` names each section's family version and
+    `definitions.FAMILY_METRICS` that version's metrics. A section no family
+    table names (the overview; the two-population section) contributes nothing.
+    """
+    return tuple(
+        (metric, section.reason)
+        for section in bundle.sections
+        if section.reason is not None
+        for metric in definitions.FAMILY_METRICS.get(
+            FAMILY_VERSIONS.get(section.section_id, ""), ()
+        )
+    )
+
+
+def _availability_of(
+    metric: str,
+    figures: tuple[CitedFigure, ...],
+    refusals: tuple[tuple[str, str], ...],
+) -> _Statement:
+    """What the bundle states about one metric's availability (`#531`).
+
+    In this order, and the first that applies decides: a figure is carried, so
+    the metric is available; otherwise its own refused result names a reason;
+    otherwise its section's refusal does. A figure outranks a refusal of another
+    mode because a stated figure exists -- and that refusal still survives on the
+    projection's caveats (`FR-140`), which is also what keeps a card beside it
+    from reading verified. `partial` is not used: its governed meaning is mapping
+    input resolution, which no bundle states.
+    """
+    own = tuple(figure for figure in figures if figure.metric == metric)
+    if own:
+        return _Statement(metric, own, definitions.AVAILABLE)
+    reason = next((why for named, why in refusals if named == metric), None)
+    return _Statement(metric, own, definitions.UNAVAILABLE, reason)
+
+
+def _availability_statements(
+    bundle: RenderableBundle,
+    definition: SemanticViewDefinition,
+    request: SemanticViewRequest,
+    figures: tuple[CitedFigure, ...],
+) -> tuple[_Statement, ...]:
+    """One statement per metric the bundle states anything about, in source order.
+
+    Figures first, then result refusals, then refused sections -- the order the
+    bundle carries them in. A metric the bundle states nothing about gets no row:
+    the `RRA-004` headline refusals live on `FactPackage.refusals` and never reach
+    the bundle, and `#531` forbids reaching past it to find them.
+    """
+    refusals = (*_result_refusals(bundle), *_section_refusals(bundle))
+    allowed = frozenset(request.metrics or definition.metric_allowlist)
+    metrics = dict.fromkeys(
+        (*(figure.metric for figure in figures), *(metric for metric, _why in refusals))
+    )
+    return tuple(
+        _availability_of(metric, figures, refusals)
+        for metric in metrics
+        if metric in allowed and _admits_dimension(metric, definition, request)
+    )
+
+
+def _comparison_statements(figures: tuple[CitedFigure, ...]) -> tuple[_Statement, ...]:
+    """One statement per cited fact, holding its labelled cells, in source order.
+
+    Keyed by citation and not by metric: two facts can share a metric under
+    different scopes, and keying by metric would silently keep one and suppress
+    the other (`FR-140`).
+    """
+    citations = dict.fromkeys(figure.citation_id for figure in figures)
+    return tuple(
+        _Statement(own[0].metric, own)
+        for own in (
+            tuple(figure for figure in figures if figure.citation_id == citation)
+            for citation in citations
+        )
+    )
+
+
+def _rows(
+    request: SemanticViewRequest, source: _Source, figures: tuple[CitedFigure, ...]
+) -> tuple[tuple[object, ...], ...]:
+    """The view's rows at the grain its published fields name.
+
+    A view publishing `availability` is one row per metric; one publishing
+    `subject` is one row per cited fact; every other view is one row per figure.
+    Read off `output_field_order`, which is part of view identity (`FR-134`),
+    rather than off a view name a later version could keep while changing shape.
+    """
+    fields = source.definition.output_field_order
+    if "availability" in fields:
+        statements = _availability_statements(
+            source.bundle, source.definition, request, figures
+        )
+    elif "subject" in fields:
+        statements = _comparison_statements(figures)
+    else:
+        return tuple(_row(figure, source, fields) for figure in figures)
+    return tuple(_statement_row(statement, source, fields) for statement in statements)
 
 
 def _resolve(view_id: str) -> SemanticViewDefinition | None:
@@ -380,18 +705,20 @@ def _projection(
 ) -> ViewProjection:
     """Select, order and propagate -- the whole of what this module does."""
     figures = _admitted_figures(bundle, definition, request)
-    fields = definition.output_field_order
+    rows = _rows(request, _Source(bundle, definition), figures)
     return ViewProjection(
         view_id=definition.view_id,
         view_version=definition.view_version,
-        fields=fields,
-        rows=tuple(_row(figure, bundle, fields) for figure in figures),
+        fields=definition.output_field_order,
+        rows=rows,
         version_pairs=_versions_of(bundle, definition, figures),
         caveats=bundle.caveats,
         population_qualifiers=(),
         evidence=bundle.evidence,
         evidence_absences=_evidence_absences(bundle.evidence),
-        is_empty=not figures,
+        # Rows, not figures: a bundle stating only refusals is not empty to a
+        # view whose row is a metric's availability.
+        is_empty=not rows,
         empty_rule=definition.empty_result_rule,
     )
 
