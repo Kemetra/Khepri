@@ -576,3 +576,13 @@ def test_a_figure_stating_no_dimension_fails_closed_under_a_narrowing_request() 
     assert row["dimension"] is None
     assert _rows(_CONCENTRATION, bundle, dimensions=("product",)) == ()
     assert len(_rows(_CONCENTRATION, bundle, dimensions=("product", "category"))) == 1
+
+
+def test_the_drawer_states_version_pairs_as_text_not_a_python_tuple() -> None:
+    """Once the view reads `versions`, the card carries pairs; the drawer writes them out."""
+    from khepri.runtime.shell_decisions import _stated_versions
+
+    pairs = (("formula", "rra004.v3"), ("view", "sv.v1"))
+    assert _stated_versions(pairs) == "formula rra004.v3, view sv.v1"
+    assert _stated_versions(None) is None
+    assert _stated_versions("stated") == "stated"
