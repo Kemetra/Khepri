@@ -192,9 +192,11 @@ reconciled.
   It is held out **to bound this slice**, not because it is someone else's. Verified mapping at
   `d534bea`: `_WORKSPACE_SURFACES` and the render calls give **`overview.html.j2` = 01 Home** and
   **`analysis.html.j2` = 05 Insights** (`shell_api.py:533` and `:660`; `analyses.html.j2:575` is
-  the list, not the detail). The follow-on slice takes `analysis.html.j2` with the handoff's own
+  the list, not the detail). ~~The follow-on slice takes `analysis.html.j2` with the handoff's own
   row for it — 210px band, `object-position: 64% 46%`, ivory wash to transparent at 76%, actions
-  top-trailing. **See the second open question.**
+  top-trailing.~~ **Superseded by the record below**, which is what shipped; struck rather than
+  deleted so a reader arriving from an older note sees what changed. **See the second open
+  question.**
 
   **Discharged by the follow-on slice** (`feat/u1-analysis-hero-placement`). It took the 210px band
   and the `64% 46%` focal point, and mirrored that focal point to `36% 46%` by the handoff's rule,
