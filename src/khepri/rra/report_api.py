@@ -43,7 +43,7 @@ from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from khepri.rra import definitions
-from khepri.rra.artifact_publication import ArtifactDocument
+from khepri.rra.artifact_publication import ArtifactDocument, ArtifactUnavailable
 from khepri.rra.bundle import ReportBundle
 from khepri.rra.datasets import ProfileCorrupted
 from khepri.rra.facts import FactPackage
@@ -409,21 +409,17 @@ def add_report_routes(
             session_id: str | None,
         ) -> Response:
             caller = _require_session(session_id)
-            try:
-                document = services.artifacts.get_session_artifact(
-                    session_id=caller,
-                    job_id=job_id,
-                    artifact_kind=artifact_kind,
-                    now=clock(),
+            return _artifact_response(
+                _found(
+                    lambda: services.artifacts.get_session_artifact(
+                        session_id=caller,
+                        job_id=job_id,
+                        artifact_kind=artifact_kind,
+                        now=clock(),
+                    ),
+                    missing=_NO_ARTIFACT,
                 )
-            except Exception as error:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Report artifact is unavailable.",
-                ) from error
-            if document is None:
-                raise HTTPException(status_code=404, detail=_NO_ARTIFACT)
-            return _artifact_response(document)
+            )
 
         @app.get("/api/v1/beta/reports/{job_id}/surfaces/web/{language}")
         def read_business_html(
@@ -483,7 +479,7 @@ def _requested_report(
 def _found[T](read: Callable[[], T | None], *, missing: str) -> T:
     """Whatever this caller's own scope holds, or a plain absence.
 
-    Both reads this surface makes are keyed by the caller's session, so a
+    Every read this surface makes is keyed by the caller's session, so a
     resource belonging to somebody else is absent here rather than forbidden.
     That is why one shared absence is correct: an identifier that names another
     caller's report and one that names nothing at all get the same answer, byte
@@ -584,6 +580,10 @@ _REPORT_REFUSALS: tuple[tuple[type[Exception], int, str | None], ...] = (
     (PackageRefused, 409, None),
     (PackageCorrupted, 503, "Stored fact package is unavailable."),
     (ProfileCorrupted, 503, "Stored fact package is unavailable."),
+    # The artifact boundary's one failure. Its own message is not for a caller,
+    # so the sentence is fixed here; the publisher has already folded every
+    # storage failure into it, which is why no route needs an `except` of its own.
+    (ArtifactUnavailable, 503, "Report artifact is unavailable."),
 )
 
 
