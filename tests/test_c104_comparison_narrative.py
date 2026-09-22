@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pytest
 
+from khepri.rra.analysis import compatibility, dataset_period
 from khepri.rra.analysis.comparison_narrative import (
     CROSSVERSION_CAVEATS,
     CROSSVERSION_REFUSALS,
@@ -58,6 +59,85 @@ ALL_CAUSES = (
     CAUSE_INCOMPLETE,
     CAUSE_UNORDERED_PAIR,
 )
+
+
+def _raised_causes() -> frozenset[str]:
+    """Every cause the raising modules export, read from their `__all__`.
+
+    A set, because `CAUSE_CURRENCY` and `CAUSE_FILTERS` alias `CAUSE_BASIS`.
+    """
+    return frozenset(
+        getattr(module, name)
+        for module in (compatibility, dataset_period)
+        for name in module.__all__
+        if name.startswith("CAUSE_")
+    )
+
+
+RAISED_CAUSES = tuple(sorted(_raised_causes()))
+
+#: `RRA-009` §Refusals part 3, stated on every whole-response refusal (`#532` A-28).
+REST_STANDS = {
+    LANGUAGE_ENGLISH: "Neither period's own report is affected.",
+    LANGUAGE_ARABIC: "لا يتأثر تقرير أي من الفترتين.",
+}
+
+#: `RRA-009` §Refusals part 4 for the one cause whose evidence the text did not
+#: name. The refusal carries no period, and `FR-131`/`FR-133` keep the wording
+#: static, so it names the missing evidence without naming which period. It must
+#: also hold where `crossversion_assembly` raises this cause for two packages that
+#: share no measured figure.
+INCOMPLETE_EVIDENCE = {
+    LANGUAGE_ENGLISH: (
+        "What is missing is a complete record: one of the two datasets does not "
+        "cover its whole period, or does not record the same figures as the other."
+    ),
+    LANGUAGE_ARABIC: (
+        "الناقص هو سجل مكتمل: إحدى المجموعتين لا تغطي فترتها كاملة، أو لا تسجل "
+        "الأرقام نفسها التي تسجلها الأخرى."
+    ),
+}
+
+#: The two causes whose wording ends without an instruction; part 3 closes them.
+_ENDS_WITHOUT_REMEDY = frozenset({CAUSE_STORE_SET, CAUSE_GRANULARITY})
+
+
+class TestRefusalParts:
+    """`RRA-009` §Refusals: why, whether the rest stands, what is missing, how."""
+
+    def test_the_raised_set_is_the_worded_set(self) -> None:
+        """An empty derivation would skip every case below green."""
+        assert len(RAISED_CAUSES) == 10
+        assert set(RAISED_CAUSES) == set(CROSSVERSION_REFUSALS)
+
+    @pytest.mark.parametrize("cause", RAISED_CAUSES)
+    @pytest.mark.parametrize("language", REQUIRED_LANGUAGES)
+    def test_every_refusal_states_that_the_rest_stands(
+        self, cause: str, language: str
+    ) -> None:
+        assert REST_STANDS[language] in CROSSVERSION_REFUSALS[cause][language]
+
+    @pytest.mark.parametrize("cause", RAISED_CAUSES)
+    @pytest.mark.parametrize("language", REQUIRED_LANGUAGES)
+    def test_the_rest_stands_follows_the_why_and_precedes_the_remedy(
+        self, cause: str, language: str
+    ) -> None:
+        text = CROSSVERSION_REFUSALS[cause][language]
+        sentence = REST_STANDS[language]
+
+        assert not text.startswith(sentence)
+        assert text.endswith(sentence) == (cause in _ENDS_WITHOUT_REMEDY)
+
+    @pytest.mark.parametrize("language", REQUIRED_LANGUAGES)
+    def test_incomplete_coverage_names_the_missing_evidence_after_part_three(
+        self, language: str
+    ) -> None:
+        text = CROSSVERSION_REFUSALS[CAUSE_INCOMPLETE][language]
+
+        assert INCOMPLETE_EVIDENCE[language] in text
+        assert text.index(REST_STANDS[language]) < text.index(
+            INCOMPLETE_EVIDENCE[language]
+        )
 
 
 class TestCoverage:

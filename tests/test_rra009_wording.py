@@ -170,8 +170,8 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "كل الصفوف لعرض هذه النسب. عدد الأصناف لكل عملية بيع غير متأثر."
     ),
     REASON_NEGATIVE_BASE: (
-        "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
-        "المعنى الظاهر للتغير. التغير المطلق في الإيرادات غير متأثر."
+        "{metric} غير معروض — الرقم الذي يُحسب على أساسه سالب، وحسابه منه "
+        "سيعكس المعنى الظاهر. الأرقام الأخرى في هذا القسم غير متأثرة."
     ),
     REASON_COVERAGE_INCOMPATIBLE: (
         "{metric} غير معروض — الفترتان المقارنتان غير مغطاتين بالطريقة "
@@ -449,6 +449,40 @@ def test_composite_negative_base_uses_a_localized_metric_name() -> None:
     assert "نسبة تغير الإيرادات" in arabic
     assert "revenue_delta_percent" not in english
     assert "year_over_year" not in english
+
+
+# `#532` A-10: `_add_ratio` refuses average order value, average selling price and
+# gross margin with `negative_base` when the denominator is negative, so the
+# sentence must be true for a ratio, not only for a percentage change. The old
+# text promised "the absolute revenue change is unaffected" on a margin refusal.
+_NEGATIVE_BASE_DECIDED = {
+    LANGUAGE_ENGLISH: (
+        "{metric} is not shown — the figure it is calculated against is negative, "
+        "so calculating it would reverse its apparent meaning. The other figures "
+        "in this section are unaffected."
+    ),
+    LANGUAGE_ARABIC: (
+        "{metric} غير معروض — الرقم الذي يُحسب على أساسه سالب، وحسابه منه سيعكس "
+        "المعنى الظاهر. الأرقام الأخرى في هذا القسم غير متأثرة."
+    ),
+}
+_NEGATIVE_BASE_FALSE_CLAUSE = {
+    LANGUAGE_ENGLISH: "absolute revenue change",
+    LANGUAGE_ARABIC: "التغير المطلق في الإيرادات",
+}
+
+
+@pytest.mark.parametrize("language", [LANGUAGE_ENGLISH, LANGUAGE_ARABIC])
+def test_negative_base_on_a_ratio_states_the_decided_sentence(language: str) -> None:
+    code = (
+        METRIC_GROSS_MARGIN + wording.RESULT_CAVEAT_SEPARATOR + REASON_NEGATIVE_BASE
+    )
+
+    message = wording.caveat_prose(code, language)
+
+    metric = wording.business_metric_name(METRIC_GROSS_MARGIN, language)
+    assert message == _NEGATIVE_BASE_DECIDED[language].format(metric=metric)
+    assert _NEGATIVE_BASE_FALSE_CLAUSE[language] not in message
 
 
 def _iter_language_values():
