@@ -481,10 +481,9 @@ def _allowed_identity_text(bundle: ReportBundle) -> set[str]:
     allowed |= {str(value) for value in identity.values()}
     # Not `narrative_state`: it is Internal under RRA-009 and reaches no sheet.
     allowed |= {bundle.bundle_id, EXCEL_SURFACE_VERSION}
-    allowed |= {caveat.code for caveat in bundle.caveats}
-    # A section identifier is governed vocabulary, like a caveat code. The caveats
-    # block names the section a scoped caveat qualifies, because one caveats heading
-    # per language cannot otherwise tell a report-level warning from an analysis one.
+    # Not `caveat.code`: RRA-009 states caveats as customer prose on the limitations
+    # sheet, so a bare code in any cell is the leak A-18 names (#524).
+    # A section identifier is governed vocabulary.
     allowed |= set(bundle.section_ids)
     # A refusal reason is bundle content, and the sections block states it so a
     # workbook reader learns why an analysis is missing rather than just that it is.
