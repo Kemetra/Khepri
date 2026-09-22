@@ -692,9 +692,9 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "no action is needed from you."
             ),
             "negative_base": (
-                "{metric} is not shown — calculating a percentage change from a "
-                "negative starting value would reverse the apparent direction of "
-                "change. The absolute revenue change is unaffected."
+                "{metric} is not shown — the figure it is calculated against is "
+                "negative, so calculating it would reverse its apparent meaning. "
+                "The other figures in this section are unaffected."
             ),
             "coverage_structurally_incompatible": (
                 "{metric} is not shown — the two periods being compared are not "
@@ -762,8 +762,8 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "يلزمك أي إجراء."
             ),
             "negative_base": (
-                "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
-                "المعنى الظاهر للتغير. التغير المطلق في الإيرادات غير متأثر."
+                "{metric} غير معروض — الرقم الذي يُحسب على أساسه سالب، وحسابه منه "
+                "سيعكس المعنى الظاهر. الأرقام الأخرى في هذا القسم غير متأثرة."
             ),
             "coverage_structurally_incompatible": (
                 "{metric} غير معروض — الفترتان المقارنتان غير مغطاتين بالطريقة نفسها "

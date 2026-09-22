@@ -54,45 +54,52 @@ CROSSVERSION_REFUSALS: dict[str, dict[str, str]] = {
     CAUSE_SCOPE: {
         LANGUAGE_ENGLISH: (
             "These two datasets do not describe the same scope, so a comparison "
-            "between them would not be a comparison. Choose two datasets covering "
-            "the same stores or the same aggregate."
+            "between them would not be a comparison. Neither period's own report "
+            "is affected. Choose two datasets covering the same stores or the same "
+            "aggregate."
         ),
         LANGUAGE_ARABIC: (
             "لا تصف مجموعتا البيانات هاتان النطاق نفسه، لذا لن تكون المقارنة بينهما "
-            "مقارنة فعلية. اختر مجموعتين تغطيان المتاجر نفسها أو المستوى الإجمالي نفسه."
+            "مقارنة فعلية. لا يتأثر تقرير أي من الفترتين. اختر مجموعتين تغطيان "
+            "المتاجر نفسها أو المستوى الإجمالي نفسه."
         ),
     },
     CAUSE_MAPPING_DRIFT: {
         LANGUAGE_ENGLISH: (
             "The two datasets were mapped differently, so their figures were "
             "measured differently and the difference between them would have no "
-            "meaning. Re-admit the older dataset under the current mapping."
+            "meaning. Neither period's own report is affected. Re-admit the older "
+            "dataset under the current mapping."
         ),
         LANGUAGE_ARABIC: (
             "جرى ربط مجموعتي البيانات بطريقتين مختلفتين، لذا قيست أرقامهما بطريقتين "
-            "مختلفتين ولن يكون للفرق بينهما معنى. أعد إدخال المجموعة الأقدم وفق "
-            "الربط الحالي."
+            "مختلفتين ولن يكون للفرق بينهما معنى. لا يتأثر تقرير أي من الفترتين. "
+            "أعد إدخال المجموعة الأقدم وفق الربط الحالي."
         ),
     },
     CAUSE_FORMULA_DRIFT: {
         LANGUAGE_ENGLISH: (
             "The two datasets were calculated under different governed formulas, "
-            "so their figures are not the same measure. Re-run the older dataset "
-            "to bring it onto the current formula."
+            "so their figures are not the same measure. Neither period's own "
+            "report is affected. Re-run the older dataset to bring it onto the "
+            "current formula."
         ),
         LANGUAGE_ARABIC: (
             "حُسبت مجموعتا البيانات وفق صيغتين محكومتين مختلفتين، لذا ليست أرقامهما "
-            "المقياس نفسه. أعد تشغيل المجموعة الأقدم لتصبح وفق الصيغة الحالية."
+            "المقياس نفسه. لا يتأثر تقرير أي من الفترتين. أعد تشغيل المجموعة "
+            "الأقدم لتصبح وفق الصيغة الحالية."
         ),
     },
     CAUSE_PACKAGE_DRIFT: {
         LANGUAGE_ENGLISH: (
             "The two analyses were packaged under different governed shapes, so "
-            "their figures cannot be addressed alike. Re-run the older analysis."
+            "their figures cannot be addressed alike. Neither period's own report "
+            "is affected. Re-run the older analysis."
         ),
         LANGUAGE_ARABIC: (
             "جُمعت نتيجتا التحليلين وفق بنيتين محكومتين مختلفتين، لذا لا يمكن "
-            "الإشارة إلى أرقامهما بالطريقة نفسها. أعد تشغيل التحليل الأقدم."
+            "الإشارة إلى أرقامهما بالطريقة نفسها. لا يتأثر تقرير أي من الفترتين. "
+            "أعد تشغيل التحليل الأقدم."
         ),
     },
     # `D-5`'s one basis cause covers currency and admitted filters alike (`RRA-008`
@@ -102,68 +109,84 @@ CROSSVERSION_REFUSALS: dict[str, dict[str, str]] = {
         LANGUAGE_ENGLISH: (
             "The two datasets are not stated on the same basis: they differ in "
             "currency, in the kinds of transaction admitted, or in the statuses "
-            "admitted, so their figures do not measure the same events. Compare "
-            "datasets stated on one basis."
+            "admitted, so their figures do not measure the same events. Neither "
+            "period's own report is affected. Compare datasets stated on one basis."
         ),
         LANGUAGE_ARABIC: (
             "مجموعتا البيانات غير مذكورتين على الأساس نفسه: تختلفان في العملة، أو في "
             "أنواع الحركات المدخلة، أو في الحالات المدخلة، لذا لا تقيس أرقامهما الأحداث "
-            "نفسها. قارن مجموعات بيانات مذكورة على أساس واحد."
+            "نفسها. لا يتأثر تقرير أي من الفترتين. قارن مجموعات بيانات مذكورة على "
+            "أساس واحد."
         ),
     },
     CAUSE_STORE_SET: {
         LANGUAGE_ENGLISH: (
             "The two datasets cover different sets of stores. Each is complete on "
             "its own, but comparing them would compare different populations "
-            "rather than the same population over time."
+            "rather than the same population over time. Neither period's own "
+            "report is affected."
         ),
         LANGUAGE_ARABIC: (
             "تغطي مجموعتا البيانات مجموعتين مختلفتين من المتاجر. كل منهما مكتملة "
             "بذاتها، لكن مقارنتهما ستقارن مجتمعين مختلفين بدل مقارنة المجتمع نفسه "
-            "على مدى الزمن."
+            "على مدى الزمن. لا يتأثر تقرير أي من الفترتين."
         ),
     },
     CAUSE_GRANULARITY: {
         LANGUAGE_ENGLISH: (
             "One dataset covers days and the other covers months. Khepri compares "
-            "periods as they are stated and never rescales one to fit the other."
+            "periods as they are stated and never rescales one to fit the other. "
+            "Neither period's own report is affected."
         ),
         LANGUAGE_ARABIC: (
             "تغطي إحدى المجموعتين أيامًا وتغطي الأخرى أشهرًا. تقارن خِبري الفترات كما "
-            "هي مذكورة ولا تعيد قياس إحداهما لتوافق الأخرى."
+            "هي مذكورة ولا تعيد قياس إحداهما لتوافق الأخرى. لا يتأثر تقرير أي من "
+            "الفترتين."
         ),
     },
     CAUSE_RETAIL_DAY: {
         LANGUAGE_ENGLISH: (
             "The two datasets close their retail day at different hours, so their "
-            "days do not hold the same trading. Compare datasets sharing one "
-            "retail day boundary."
+            "days do not hold the same trading. Neither period's own report is "
+            "affected. Compare datasets sharing one retail day boundary."
         ),
         LANGUAGE_ARABIC: (
             "تُغلق مجموعتا البيانات اليوم البيعي في ساعتين مختلفتين، لذا لا يحتوي "
-            "يوماهما التداول نفسه. قارن مجموعات بيانات تشترك في حد اليوم البيعي نفسه."
+            "يوماهما التداول نفسه. لا يتأثر تقرير أي من الفترتين. قارن مجموعات "
+            "بيانات تشترك في حد اليوم البيعي نفسه."
         ),
     },
+    # Part 4 names the missing evidence without naming the period: the refusal
+    # carries only its cause, and the wording is static (`FR-131`/`FR-133`). It
+    # must also hold where `crossversion_assembly` raises this cause for two
+    # packages that share no measured figure.
     CAUSE_INCOMPLETE: {
         LANGUAGE_ENGLISH: (
             "At least one of the two periods is not fully covered. Khepri compares "
             "complete periods only, and will not compare part of one period "
-            "against the whole of another."
+            "against the whole of another. Neither period's own report is "
+            "affected. What is missing is a complete record: one of the two "
+            "datasets does not cover its whole period, or does not record the "
+            "same figures as the other."
         ),
         LANGUAGE_ARABIC: (
             "إحدى الفترتين على الأقل غير مغطاة بالكامل. تقارن خِبري الفترات المكتملة "
-            "فقط، ولا تقارن جزءًا من فترة بفترة كاملة أخرى."
+            "فقط، ولا تقارن جزءًا من فترة بفترة كاملة أخرى. لا يتأثر تقرير أي من "
+            "الفترتين. الناقص هو سجل مكتمل: إحدى المجموعتين لا تغطي فترتها كاملة، "
+            "أو لا تسجل الأرقام نفسها التي تسجلها الأخرى."
         ),
     },
     CAUSE_UNORDERED_PAIR: {
         LANGUAGE_ENGLISH: (
             "A comparison needs two different datasets, and needs to know which is "
-            "the subject and which the baseline. Choose two and state which one is "
-            "being measured against the other."
+            "the subject and which the baseline. Neither period's own report is "
+            "affected. Choose two and state which one is being measured against "
+            "the other."
         ),
         LANGUAGE_ARABIC: (
             "تحتاج المقارنة إلى مجموعتي بيانات مختلفتين، وإلى معرفة أيهما الموضوع "
-            "وأيهما الأساس. اختر مجموعتين وحدد أيهما تُقاس مقابل الأخرى."
+            "وأيهما الأساس. لا يتأثر تقرير أي من الفترتين. اختر مجموعتين وحدد "
+            "أيهما تُقاس مقابل الأخرى."
         ),
     },
 }
