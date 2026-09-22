@@ -462,6 +462,33 @@ def test_an_absent_comparison_cell_projects_as_an_absence() -> None:
         assert row["subject"] is not None
 
 
+def test_availability_over_a_real_two_population_source_is_admitted_and_affirmed() -> None:
+    """`MetricAvailabilityView` admits both shapes; the two-population one must not raise."""
+    bundle = _real_crossversion()
+    rows = _rows(_AVAILABILITY, bundle)
+    stated = {f.metric for f in bundle.figures} & set(_AVAILABILITY.metric_allowlist)
+
+    assert stated
+    assert {str(row["metric"]) for row in rows} == stated
+    assert {row["availability"] for row in rows} == {definitions.AVAILABLE}
+
+
+def test_evidence_over_a_real_two_population_source_carries_its_pair_provenance() -> None:
+    """The cross-version record is the one source stating provenance today (`FR-140`)."""
+    bundle = _real_crossversion()
+    records = {record.citation_id: record for record in bundle.evidence}
+    outcome = projection.project(_request(_EVIDENCE), (bundle,))
+    assert outcome.projection is not None
+    fields = outcome.projection.fields
+
+    assert outcome.projection.rows
+    for row in outcome.projection.rows:
+        named = dict(zip(fields, row, strict=True))
+        record = records[str(named["evidence"])]
+        assert record.provenance
+        assert named["provenance"] == record.provenance
+
+
 def test_two_facts_sharing_a_metric_keep_two_comparison_rows() -> None:
     """Rows are keyed by citation: keying by metric would suppress one fact (`FR-140`)."""
     real = _real_crossversion()
