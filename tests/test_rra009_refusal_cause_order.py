@@ -360,16 +360,18 @@ def test_a_violating_return_is_not_summed_into_the_daily_bases() -> None:
     assert control.daily_bases, "the control retains no daily basis to compare against"
     assert violated.value(METRIC_REVENUE) is None
     assert violated.daily_bases
-    for basis in violated.daily_bases:
-        assert all(value.revenue is None for value in basis.values), basis
-    control_units = [value.units for basis in control.daily_bases for value in basis.values]
-    violated_units = [value.units for basis in violated.daily_bases for value in basis.values]
-    assert violated_units == control_units
-    assert any(
-        value.revenue == Decimal("-30.00")
-        for basis in control.daily_bases
-        for value in basis.values
-    ), "the control's basis does not carry the return, so it cannot show the difference"
+    control_values = _basis_values(control)
+    violated_values = _basis_values(violated)
+    assert all(value.revenue is None for value in violated_values), violated_values
+    assert [value.units for value in violated_values] == [value.units for value in control_values]
+    assert any(value.revenue == Decimal("-30.00") for value in control_values), (
+        "the control's basis does not carry the return, so it cannot show the difference"
+    )
+
+
+def _basis_values(package):
+    """Every per-day value across a package's daily bases, in order."""
+    return [value for basis in package.daily_bases for value in basis.values]
 
 
 def test_a_violating_return_withholds_the_financial_retained_bases_only() -> None:
