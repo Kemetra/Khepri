@@ -79,17 +79,20 @@ independent approved reference.
 Binding placement values, taken from the handoff's §09 table and §6 (composition evidence, not
 product fact — §16.3, `FR-205`):
 
-- 238px band, ground `--hero-ground` `#F6EDDF` **behind** the image, so the headline is legible
-  before the image decodes (§7 and the handoff both require the solid ground);
+- 238px band, ground `--hero-ground` `#F6EDDF` **behind** the image, as the loading fallback: the
+  band shows a solid ground, never whatever sits beneath it, before the image decodes or if it
+  fails (§7 and the handoff both require the solid ground);
 - `object-fit: cover`, `object-position: 62% 46%`; RTL mirrors to `38% 46%` so the monument stays
-  on the copy-free side — **the artwork itself is never mirrored**, only the scrim flips;
-- ivory 90° wash to transparent at 74% as the scrim; legibility comes from the scrim, never from
-  dimming the artwork;
+  on the copy-free side — **the artwork itself is never mirrored**, only the focal point moves;
+- **no scrim.** The heading and lede stay in the document card below the band, not over the
+  artwork, so there is no copy on the image for a scrim to make legible. The handoff's ivory wash
+  belongs to the composition that puts the headline on the band, and ships with the slice that
+  makes that change;
 - `loading="eager"` and `fetchpriority="high"`, as it is above the fold;
 - `<picture>` with the WebP source and the JPEG fallback, both from `/app/assets/`.
 
 **Crop only.** §7.2 and the handoff both forbid recreating, filtering, recolouring or rotating the
-artwork. If a placement cannot be achieved by `object-position` and the scrim, it is not achieved.
+artwork. If a placement cannot be achieved by `object-position` alone, it is not achieved.
 
 #### The palette premise, checked rather than assumed
 
@@ -214,9 +217,10 @@ Written to fail against `d534bea`, and each one must be shown failing before imp
    the template contains no literal alt string.
 3. **The surface is complete with the artwork absent** (`FR-218`) — render with the image
    unreachable and assert the headline, the navigation and the region's accessible name all survive.
-4. **The ground colour sits behind the image** — the band carries `--hero-ground` so the headline is
-   legible pre-decode; assert the declaration, not the screenshot.
-5. **RTL mirrors the scrim and the `object-position`, never the artwork** — `38% 46%` under
+4. **The ground colour sits behind the image, and no scrim ships** — the band carries
+   `--hero-ground` as the pre-decode and failed-load fallback, and no `hero-band__scrim` rule
+   exists while no copy sits over the artwork; assert the declarations, not the screenshot.
+5. **RTL mirrors the `object-position`, never the artwork** — `38% 46%` under
    `[dir="rtl"]`, and no `transform: scaleX(-1)` or equivalent anywhere on the hero.
 6. **Logical properties only** (`FR-199`) — the hero rules introduce no physical directional
    property.
@@ -288,8 +292,8 @@ hero lands; under (c) nothing lands until an asset arrives.
 
 `RCA-012` names **both** 01 Home (`overview.html.j2`) and 05 Insights (`analysis.html.j2`), and both
 sit under this slice's authority with pack coverage for each. The plan above takes **one**
-(Overview) to keep the change bounded and to let the first placement prove the pattern — the scrim,
-the RTL mirror, the pre-decode ground and the governed alt text — before it is repeated.
+(Overview) to keep the change bounded and to let the first placement prove the pattern — the
+RTL mirror, the pre-decode ground and the governed alt text — before it is repeated.
 
 - **(i) One surface now** *(what this plan is written for)*, Insights as an immediate follow-on
   slice reusing the proven pattern.
@@ -297,7 +301,7 @@ the RTL mirror, the pre-decode ground and the governed alt text — before it is
   Larger diff, one round of review, and `RCA-012`'s "two `/app` surfaces" sentence is fully
   discharged in one go.
 
-**Recommendation: (i).** The two surfaces carry different band heights, crops and scrim stops, so
+**Recommendation: (i).** The two surfaces carry different band heights and crops, so
 "repeat the pattern" is not a copy — and a placement defect found on the second surface after the
 first is merged is cheaper than one found across both. But this is a scoping call that changes what
 ships, so the owner takes it.
