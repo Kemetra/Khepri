@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from khepri.rra.api import create_app
 from khepri.rra.artifact_publication import ArtifactDocument, ArtifactUnavailable
+from khepri.rra.report_api import _REPORT_REFUSALS, _refusal_for
 from khepri.rra.reports import ReportServices
 from tests.test_rra006_report_api import (
     NOW,
@@ -44,7 +45,7 @@ class Artifacts:
         return self.held.get((session_id, job_id, artifact_kind))
 
 
-def _harness() -> tuple[TestClient, object, Artifacts]:
+def _harness(*, raise_server_exceptions: bool = True) -> tuple[TestClient, object, Artifacts]:
     invitations = invitation_service()
     artifacts = Artifacts()
     app = create_app(
@@ -56,7 +57,12 @@ def _harness() -> tuple[TestClient, object, Artifacts]:
             artifacts=artifacts,
         ),
     )
-    return TestClient(app, base_url="https://testserver"), invitations, artifacts
+    client = TestClient(
+        app,
+        base_url="https://testserver",
+        raise_server_exceptions=raise_server_exceptions,
+    )
+    return client, invitations, artifacts
 
 
 def _redeem(client: TestClient, invitations) -> str:
@@ -117,14 +123,56 @@ def test_foreign_and_unknown_artifacts_are_byte_identical_absences() -> None:
     assert foreign.content == unknown.content
 
 
-@pytest.mark.parametrize("error", [ArtifactUnavailable("provider/key detail"), RuntimeError("db")])
-def test_artifact_boundary_failures_are_one_generic_unavailability(error: Exception) -> None:
+def test_artifact_boundary_failures_are_one_generic_unavailability() -> None:
     client, invitations, artifacts = _harness()
     _redeem(client, invitations)
-    artifacts.error = error
+    artifacts.error = ArtifactUnavailable("provider/key detail")
 
     response = client.get("/api/v1/beta/reports/job_alpha/surfaces/excel")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Report artifact is unavailable."}
     assert "provider" not in response.text
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [kind for kind, _, _ in _REPORT_REFUSALS],
+    ids=lambda kind: kind.__name__,
+)
+def test_artifact_routes_map_every_governed_refusal_through_the_table(
+    kind: type[Exception],
+) -> None:
+    # Iterates the table rather than a literal list, so an entry added later is
+    # covered without editing this test. The expectation is whatever
+    # `_refusal_for` answers, so the route cannot keep a mapping of its own.
+    client, invitations, artifacts = _harness()
+    _redeem(client, invitations)
+    artifacts.error = kind("A governed refusal sentence.")
+    expected = _refusal_for(artifacts.error)
+
+    response = client.get("/api/v1/beta/reports/job_alpha/surfaces/excel")
+
+    assert (response.status_code, response.json()) == (
+        expected.status_code,
+        {"detail": expected.detail},
+    )
+
+
+class _Unexpected(Exception):
+    """A failure no governed refusal names."""
+
+
+def test_an_unmapped_artifact_failure_is_not_described_as_a_refusal() -> None:
+    # `ReportArtifactPublisher.read` already turns every storage failure into
+    # `ArtifactUnavailable`. Anything else reaching the route is a broken
+    # reader, and it fails closed as a server error rather than being reported
+    # to the caller as a governed unavailability -- and without its own text.
+    client, invitations, artifacts = _harness(raise_server_exceptions=False)
+    _redeem(client, invitations)
+    artifacts.error = _Unexpected("private db detail")
+
+    response = client.get("/api/v1/beta/reports/job_alpha/surfaces/excel")
+
+    assert response.status_code == 500
+    assert "private db detail" not in response.text
