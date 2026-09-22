@@ -534,3 +534,25 @@ body {
   object-position: 38% 46%;
 }
 
+/* 05 Insights, the second `/app` surface `RCA-012` names (`analysis.html.j2`).
+ *
+ * The same band, with the handoff §09 row for 05 Insights in place of 01 Home's: a 210px band and
+ * the `64% 46%` focal point. The handoff states the mirrored value for Home only (`38% 46%`); its
+ * rule is that the focal point mirrors, so this row's is `36% 46%`. Nothing else differs, and no
+ * scrim ships here for the reason given above -- the heading, lede and decision link stay in the
+ * document card below the band, so no copy sits over the artwork.
+ *
+ * The right-to-left rule carries the modifier as well, so it outranks the base right-to-left rule
+ * on specificity rather than on source order alone. */
+.hero-band--insights {
+  block-size: 210px;
+}
+
+.hero-band--insights .hero-band__image {
+  object-position: 64% 46%;
+}
+
+[dir="rtl"] .hero-band--insights .hero-band__image {
+  object-position: 36% 46%;
+}
+

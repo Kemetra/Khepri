@@ -192,9 +192,17 @@ reconciled.
   It is held out **to bound this slice**, not because it is someone else's. Verified mapping at
   `d534bea`: `_WORKSPACE_SURFACES` and the render calls give **`overview.html.j2` = 01 Home** and
   **`analysis.html.j2` = 05 Insights** (`shell_api.py:533` and `:660`; `analyses.html.j2:575` is
-  the list, not the detail). The follow-on slice takes `analysis.html.j2` with the handoff's own
+  the list, not the detail). ~~The follow-on slice takes `analysis.html.j2` with the handoff's own
   row for it — 210px band, `object-position: 64% 46%`, ivory wash to transparent at 76%, actions
-  top-trailing. **See the second open question.**
+  top-trailing.~~ **Superseded by the record below**, which is what shipped; struck rather than
+  deleted so a reader arriving from an older note sees what changed. **See the second open
+  question.**
+
+  **Discharged by the follow-on slice** (`feat/u1-analysis-hero-placement`). It took the 210px band
+  and the `64% 46%` focal point, and mirrored that focal point to `36% 46%` by the handoff's rule,
+  since the handoff states a mirrored value for Home only. It kept this slice's composition: the
+  heading, lede and decision link stay in the document card, so no scrim ships and the actions are
+  not moved top-trailing into the band.
 
 - **The hero on the journey and report surfaces.** Upload, Review, Processing and the report cover
   *are* `RRA-010`'s and `RRA-015`'s. `FR-217` moves the *asset* into the shell's ownership without
@@ -305,6 +313,8 @@ RTL mirror, the pre-decode ground and the governed alt text — before it is rep
 "repeat the pattern" is not a copy — and a placement defect found on the second surface after the
 first is merged is cheaper than one found across both. But this is a scoping call that changes what
 ships, so the owner takes it.
+
+**Resolved as (i).** Overview shipped at `#515`, and analysis detail followed as its own slice.
 
 ## Acceptance
 
