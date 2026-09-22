@@ -52,7 +52,13 @@ class MemorySessionStore:
         return True
 
     def update_session(self, session: BetaSession) -> None:
-        self.sessions[session.session_id] = session
+        # Deletion instants are write-once, as in `SqlSessionStore.update_session` (#527).
+        current = self.sessions[session.session_id]
+        self.sessions[session.session_id] = replace(
+            session,
+            deletion_requested_at=current.deletion_requested_at or session.deletion_requested_at,
+            content_deleted_at=current.content_deleted_at or session.content_deleted_at,
+        )
 
     def get_session(self, session_id: str) -> BetaSession | None:
         return self.sessions.get(session_id)
