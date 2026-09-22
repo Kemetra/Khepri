@@ -12,8 +12,9 @@ source text:
 
 * the composed `RetentionPasses` has every field set, to the expected class, checked against the
   *emitted* field set so a new field without a composition entry fails here; and
-* one sweep invokes each pass exactly once. The count is taken by wrapping each pass class's
-  `sweep`, so the assertion does not depend on how `RetentionPasses.run` handles a failing pass.
+* one sweep completes each pass exactly once. The count is taken by wrapping each pass class's
+  `sweep` and incrementing only after it returns, so the assertion does not depend on how
+  `RetentionPasses.run` handles a failing pass.
 """
 
 from __future__ import annotations
@@ -120,8 +121,11 @@ def test_one_deployed_sweep_runs_every_retention_pass_once(
         real_sweep = pass_class.sweep
 
         def counted(self, *, now: datetime, _name: str = field.name, _real=real_sweep):
+            # Counted on completion, so a pass that raises is uncounted whether `run` lets the
+            # failure propagate or isolates it and continues.
+            report = _real(self, now=now)
             calls[_name] += 1
-            return _real(self, now=now)
+            return report
 
         monkeypatch.setattr(pass_class, "sweep", counted)
 
