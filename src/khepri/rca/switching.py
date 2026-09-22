@@ -4,7 +4,8 @@
 succeed only into an organization where the actor holds a *current* membership, **and** must "take
 effect for every subsequent authorization decision in that session". A service that computes an
 updated record and returns it satisfies the first clause and fails the second — and passes every
-test that inspects only the return value. So each verb here writes through `save_session`.
+test that inspects only the return value. So each verb here writes through
+`SessionService.point_at_organization`.
 
 **Its own module rather than a method on `SessionService`.** That service deliberately holds no
 account or organization store: `R3-05` put the account chokepoint in `ActorResolver` for the same

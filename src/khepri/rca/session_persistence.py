@@ -96,16 +96,43 @@ class SqlSessionStore:
             row = database.get(SessionRow, session_id_hash)
             return None if row is None else _session_from_row(row)
 
-    def save_session(self, session: Session) -> bool:
-        """Write a session's current state back. Returns False if the row has gone."""
-        assert_sealed(session)
+    def point_session_at_organization(
+        self, session_id_hash: str, organization_id: str | None
+    ) -> bool:
+        """Set one live session's active organization. False if it is gone or revoked (`FR-029`).
+
+        **There is no general "write this session back" verb, deliberately (#517).** Its
+        predecessor, `save_session`, copied `revoked_at` from the caller's snapshot, so a snapshot
+        read before account recovery (`FR-007`) and written after it cleared the revocation: the
+        session outlived recovery, which `KHEPRI-DEC-015` forbids ("authorizes nothing from the
+        trigger instant"). This writes only the organization, and only while the row is still
+        unrevoked -- one statement, so the predicate and the write cannot be separated by a
+        concurrent revocation.
+        """
+        return self._update_live_session(
+            session_id_hash, active_organization_id=organization_id
+        )
+
+    def revoke_session(self, session_id_hash: str, *, now: datetime) -> bool:
+        """End one live session. False if it is gone or was already revoked (`FR-008`, `FR-219`).
+
+        **Never re-dates a revocation.** `revoked_at` records when authority actually ended, so a
+        revocation that lands between a caller's read and this write -- account recovery, a
+        concurrent logout -- wins and this reports False. Mirrors `revoke_all_for_account`.
+        """
+        return self._update_live_session(session_id_hash, revoked_at=now)
+
+    def _update_live_session(self, session_id_hash: str, **values: object) -> bool:
         with self._factory.begin() as database:
-            row = database.get(SessionRow, session.session_id_hash)
-            if row is None:
-                return False
-            row.active_organization_id = session.active_organization_id
-            row.revoked_at = session.revoked_at
-        return True
+            updated = database.execute(
+                update(SessionRow)
+                .where(
+                    SessionRow.session_id_hash == session_id_hash,
+                    SessionRow.revoked_at.is_(None),
+                )
+                .values(**values)
+            )
+        return updated.rowcount == 1
 
     def revoke_all_for_account(self, account_id: str, *, now: datetime) -> int:
         """Revoke every live session for one account (`FR-007`, `FR-008`).

@@ -139,7 +139,7 @@ class TestTheSessionStore:
         store.add_session(issued.session)
 
         revoked_at = NOW + timedelta(minutes=5)
-        assert store.save_session(issued.session.revoked(now=revoked_at))
+        assert store.revoke_session(issued.session.session_id_hash, now=revoked_at)
 
         resolved = store.get_session(issued.session.session_id_hash)
         assert resolved is not None
@@ -152,7 +152,7 @@ class TestTheSessionStore:
         issued = Session.issue(account_id, now=NOW, lifetime=LIFETIME)
         store.add_session(issued.session)
 
-        assert store.save_session(issued.session.switched_to("org_acme"))
+        assert store.point_session_at_organization(issued.session.session_id_hash, "org_acme")
 
         resolved = store.get_session(issued.session.session_id_hash)
         assert resolved is not None
@@ -219,7 +219,7 @@ class TestRevokingEverySessionForAnAccount:
         issued = Session.issue(account_id, now=NOW, lifetime=LIFETIME)
         store.add_session(issued.session)
         first = NOW + timedelta(minutes=1)
-        store.save_session(issued.session.revoked(now=first))
+        assert store.revoke_session(issued.session.session_id_hash, now=first)
 
         store.revoke_all_for_account(account_id, now=NOW + timedelta(minutes=30))
 

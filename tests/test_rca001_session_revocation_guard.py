@@ -7,8 +7,8 @@ recovery. `KHEPRI-DEC-015` requires a revoked session to authorize nothing "from
 instant". The shipped path is `external_auth_api`: mint a session, then `switcher.switch(...)`, with
 recovery able to commit between the two.
 
-**Why every test re-reads through a fresh store.** The defect is in what is persisted, not in what is
-returned, so an assertion on the returned record cannot see it.
+**Why every test re-reads through a fresh store.** The defect is in what is persisted, not in what
+is returned, so an assertion on the returned record cannot see it.
 
 **How the interleaving is made deterministic on SQLite.** `OrganizationSwitcher` and
 `SessionService.revoke` read the session *inside* the call, so the stale snapshot cannot be handed
@@ -181,3 +181,25 @@ class TestRevokeRacingRecovery:
         service.revoke(token, now=RECOVERED_AT)
 
         assert service.resolve(other, now=LATER).revoked_at is None
+
+
+class TestTheStoreVerbs:
+    """The store-level contract the service relies on: both verbs write only an unrevoked row."""
+
+    def test_neither_verb_writes_a_revoked_row(self, factory: sessionmaker) -> None:
+        account_id, organization_id, token = _live_session(factory)
+        store = SqlSessionStore(factory)
+        store.revoke_all_for_account(account_id, now=RECOVERED_AT)
+        digest = hash_session_id(token)
+
+        assert not store.point_session_at_organization(digest, organization_id)
+        assert not store.point_session_at_organization(digest, None)
+        assert not store.revoke_session(digest, now=LATER)
+
+        _assert_still_revoked(factory, token)
+        assert _stored(factory, token).active_organization_id is None
+
+    def test_both_verbs_report_an_absent_row(self, factory: sessionmaker) -> None:
+        store = SqlSessionStore(factory)
+        assert not store.point_session_at_organization("absent", None)
+        assert not store.revoke_session("absent", now=NOW)
