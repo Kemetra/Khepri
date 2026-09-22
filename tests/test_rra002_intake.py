@@ -217,3 +217,75 @@ def _xlsx(
         if macro_enabled:
             archive.writestr("xl/vbaProject.bin", b"macro")
     return buffer.getvalue()
+
+
+_WORKSHEET_PART = "xl/worksheets/sheet1.xml"
+_UTF16_WORKSHEET = (
+    '<?xml version="1.0" encoding="UTF-16"?>'
+    "{doctype}"
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>revenue</t></is></c>'
+    "</row></sheetData></worksheet>"
+)
+
+
+def _with_part(content: bytes, path: str, replacement: bytes) -> bytes:
+    """The same workbook with one part's bytes replaced verbatim."""
+    source = zipfile.ZipFile(io.BytesIO(content))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in source.namelist():
+            archive.writestr(name, replacement if name == path else source.read(name))
+    return buffer.getvalue()
+
+
+def _utf16_worksheet_upload(doctype: str) -> UploadAccumulator:
+    part = _UTF16_WORKSHEET.format(doctype=doctype).encode("utf-16")
+    content = _with_part(_xlsx({"Sales": ["revenue"]}), _WORKSHEET_PART, part)
+    upload = UploadAccumulator(declared_size=len(content))
+    upload.append(content)
+    return upload
+
+
+def test_a_utf16_worksheet_without_a_document_type_is_accepted() -> None:
+    """The control for the test below: UTF-16 alone is a legal XML encoding.
+
+    Without it, a guard that refused every UTF-16 part would pass the DTD test
+    for the wrong reason.
+    """
+    validated = _utf16_worksheet_upload("").finish()
+
+    assert validated.media_type == XLSX_MEDIA_TYPE
+
+
+@pytest.mark.parametrize(
+    "doctype",
+    [
+        '<!DOCTYPE worksheet [<!ENTITY cell "revenue">]>',
+        "<!DOCTYPE worksheet>",
+    ],
+)
+def test_a_document_type_in_a_utf16_part_is_rejected(doctype: str) -> None:
+    """`#530` S-05: the DTD guard compared raw bytes against ASCII markers.
+
+    `<!DOCTYPE` encoded as UTF-16 interleaves a zero byte after every character,
+    so it never contains the byte string `<!DOCTYPE`, while `ElementTree` decodes
+    the part per its BOM and parses the declaration anyway. The guard must see
+    what the parser sees.
+    """
+    with pytest.raises(IntakeRejected):
+        _utf16_worksheet_upload(doctype).finish()
+
+
+def test_a_malformed_xml_part_is_rejected_not_raised() -> None:
+    """The DTD guard parses before `ElementTree` does, so it meets malformed XML first.
+
+    Its parser raises `ExpatError`, which is not the `ElementTree.ParseError` the
+    caller maps to a refusal; escaping, it would be a server error instead.
+    """
+    content = _with_part(_xlsx({"Sales": ["revenue"]}), _WORKSHEET_PART, b"<worksheet")
+    upload = UploadAccumulator(declared_size=len(content))
+    upload.append(content)
+
+    with pytest.raises(IntakeRejected):
+        upload.finish()
