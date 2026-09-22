@@ -90,6 +90,16 @@ def trial(
     )
 
 
+def test_the_trial_contract_states_the_one_currency_dec_029_pins() -> None:
+    # `KHEPRI-DEC-029`: "one currency, `AED`". The contract once said `EGP` while the
+    # governed generator said `AED`; both now read one constant (#525).
+    from khepri.rra.benchmark_rows import CURRENCY
+    from khepri.rra.benchmark_trial import _benchmark_contract
+
+    assert CURRENCY == "AED"
+    assert _benchmark_contract().events.currency_code == CURRENCY
+
+
 def test_a_generated_dataset_is_one_the_report_path_can_measure() -> None:
     # A workload the profiler or the mapper refuses would measure a refusal
     # rather than a report, and certify nothing while looking busy.

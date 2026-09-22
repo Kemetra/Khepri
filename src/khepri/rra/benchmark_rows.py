@@ -1,4 +1,4 @@
-"""The rows a `KHEPRI-BMK-001` dataset contains, as `KHEPRI-DEC-006` fixes them.
+"""The rows a `KHEPRI-BMK-001` dataset contains, as `KHEPRI-DEC-029` fixes them.
 
 **Every field is derived from a digest, not from a random number generator.** The decision
 requires generation free of wall-clock, locale, environment, and iteration-order
@@ -8,7 +8,7 @@ Mersenne Twister stream never changes; deriving each field from
 in any language, forever. A workload that cannot be regenerated identically cannot have
 a stable `workload_digest`.
 
-**Money never touches a binary float.** `KHEPRI-DEC-005` makes exact decimals the only
+**Money never touches a binary float.** `KHEPRI-DEC-028` makes exact decimals the only
 authoritative financial facts, so amounts are assembled from integer minor units and
 rendered as text with exactly two fraction digits. Nothing here divides.
 
@@ -177,7 +177,7 @@ def csv_document_of_exact_size(
 ) -> bytes:
     """A CSV dataset whose stored size equals `target_bytes` exactly.
 
-    `KHEPRI-DEC-006` requires each band to contain at least one CSV dataset sitting
+    `KHEPRI-DEC-029` requires each band to contain at least one CSV dataset sitting
     exactly on the band's upper edge. Sizes are hit by selecting each row's length as it
     is placed, never by padding: a padded field would not be a retail value, and the
     dataset has to remain one `RRA-003` admits.
