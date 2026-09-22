@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
 from khepri.rra.sessions import (
@@ -346,7 +347,7 @@ def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
                 raise IntakeRejected("Upload content is invalid or unsupported.")
 
             content_types = _read_xml_part(archive, _CONTENT_TYPES_PATH)
-            if b"macroenabled" in content_types.lower():
+            if b"macroenabled" in content_types.lower() or _declares_macros(content_types):
                 raise IntakeRejected("Upload content is invalid or unsupported.")
             workbook = ElementTree.fromstring(_read_xml_part(archive, _WORKBOOK_PATH))
             relationships = ElementTree.fromstring(
@@ -379,7 +380,58 @@ def _read_xml_part(archive: zipfile.ZipFile, path: str) -> bytes:
     content = archive.read(path)
     if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
         raise IntakeRejected("Upload content is invalid or unsupported.")
+    if _declares_document_type(content):
+        raise IntakeRejected("Upload content is invalid or unsupported.")
     return content
+
+
+def _declares_macros(content_types: bytes) -> bool:
+    """Whether any declared content type is macro-enabled, read as the parser decodes it.
+
+    The byte check beside it misses a UTF-16 `[Content_Types].xml` for the same reason
+    `_declares_document_type` exists (`#530` S-05): the markers are compared as ASCII
+    bytes, while the parser decodes the part per its BOM.
+    """
+    root = ElementTree.fromstring(content_types)
+    return any(
+        "macroenabled" in element.get("ContentType", "").casefold() for element in root.iter()
+    )
+
+
+class _PrologEnded(Exception):
+    """The root element began, so no document type declaration can follow."""
+
+
+def _declares_document_type(content: bytes) -> bool:
+    """Whether the part declares a DTD, as the parser that will read it decodes it.
+
+    The byte check above compares raw bytes against ASCII markers, and a part
+    encoded as UTF-16 never contains them while `ElementTree` -- expat -- decodes
+    it per its BOM and parses the declaration anyway (`#530` S-05). Asking expat
+    itself sees exactly what the consumer sees. Only the prolog is read: a
+    declaration cannot follow the root element, so the parse stops there rather
+    than reading every worksheet twice.
+    """
+    parser = expat.ParserCreate()
+    declared = False
+
+    def on_doctype(*_: object) -> None:
+        nonlocal declared
+        declared = True
+        raise _PrologEnded
+
+    def on_root(*_: object) -> None:
+        raise _PrologEnded
+
+    parser.StartDoctypeDeclHandler = on_doctype
+    parser.StartElementHandler = on_root
+    try:
+        parser.Parse(content, True)
+    except _PrologEnded:
+        return declared
+    except expat.ExpatError as error:
+        raise IntakeRejected("Upload content is invalid or unsupported.") from error
+    return declared
 
 
 def _worksheet_paths(

@@ -230,6 +230,9 @@ def _completed_for(run: AnalysisRun, version_id: str) -> bool:
 
 def _completion_key(run: AnalysisRun) -> tuple[datetime, str]:
     completed = run.completed_at
-    if completed is None:
-        return (datetime.min, run.run_id)
+    # A completed run always carries its instant: `RunOutcome._has_provenance` refuses one
+    # without it at the only doors that build an `AnalysisRun`, and the schema CHECK
+    # `ck_rca_workspace_run_completion_provenance` refuses the row. `_completed_for` admits
+    # only completed runs, so there is no absent instant left to rank.
+    assert completed is not None
     return (completed, run.run_id)

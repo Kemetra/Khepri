@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date, datetime
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel
 
 from khepri.rra.datasets import (
@@ -91,6 +91,7 @@ def add_coverage_routes(
         scope: str,
         start: date,
         end: date,
+        response: Response,
         session_id: BetaSessionCookie = None,
     ) -> CompletenessResponse:
         if session_id is None:
@@ -124,6 +125,9 @@ def add_coverage_routes(
                     message=str(error),
                 ).model_dump(),
             ) from error
+        # A session-scoped answer, marked as the journey's own session read is
+        # (`journey/routes.py`): no shared cache may keep one session's answer.
+        response.headers["Cache-Control"] = "private, no-store"
         return CompletenessResponse(
             complete=True,
             manifest_version=manifest.manifest_version,

@@ -37,12 +37,13 @@ comes from `KHEPRI-DEC-007`, which is still proposed.
 would require the published image to match. Writing `X86_64` here records what would otherwise be
 an invisible default; changing it needs an artifact that settles it and an image built for it.
 
-**Chromium's launch flag is not set here, and cannot be.** `KHEPRI-DEC-007` requires
-`--disable-dev-shm-usage` because Fargate fixes `/dev/shm` at 64 MiB and does not support
-`sharedMemorySize`. The ephemeral storage this module requests is sized to absorb what that flag
-displaces, but the flag itself belongs to `khepri.rra.rendering.chromium.launch_chromium`, which
-currently passes no `args`. Wiring it is an obligation of the rendering slice, recorded here
-because this is where the reason for the storage figure lives.
+**Chromium's launch flag is not set here, because a task definition cannot pass it.**
+`--disable-dev-shm-usage` was required by `KHEPRI-DEC-007` (retired) and is carried forward by
+`KHEPRI-DEC-028` §Report generation, and on Fargate the reason is concrete: `/dev/shm` is fixed at
+64 MiB and `sharedMemorySize` is not supported. The ephemeral storage this module requests is
+sized to absorb what that flag displaces; the flag itself is passed by the renderer, as
+`khepri.rra.rendering.chromium.LAUNCH_ARGS` on every launch. It is recorded here because this is
+where the reason for the storage figure lives.
 
 **Log groups are not customer-content stores.** `RRA-007` and `KHEPRI-DEC-005` require logs to
 carry opaque identifiers, stage names, durations, and sizes only. They are left under the default
