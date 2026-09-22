@@ -73,6 +73,23 @@
    * as raised, and collapsing it is R8-02's call once a card component exists. */
   --surface-raised: #fafbfd;
 
+  /* ---- Hero ground: the one supplied palette value this slice takes -------------------------- */
+  /* Master specification §16.5 records the owner's supplied handoff token set as the approved
+   * palette, "binding for color values, taken as custom properties on `:root` in
+   * `src/khepri/rra/journey/assets/shell.css` under `RCA-010` §Scope" — this file, by name. This
+   * is its `hero-ground` from the "Ivory and sand — surfaces" row.
+   *
+   * **Why this one and not the rest of §16.5.** It is the value the hero band's own markup
+   * consumes: the handoff requires a solid ground *behind* the artwork so the headline is legible
+   * before the image decodes, and a transparent band would flash whatever sits underneath. The
+   * navy, gold and remaining ivory steps are a larger change than placing one image needs, and
+   * `FR-201`'s cross-family prohibition plus the dark-rail composition question make importing
+   * them a slice of their own. Taken here: one token, one consumer.
+   *
+   * It is a *supplied* value, not a derivation of a shipped ink, which is why
+   * `test_r801_shell_tokens.py` records it as §16.5-supplied rather than in `_DERIVED`. */
+  --hero-ground: #F6EDDF;
+
   /* ---- Accent: journey.css:22-23 plus its tint ---------------------------------------------- */
   --accent: #1e5b96;
   --accent-dark: #174a7c;

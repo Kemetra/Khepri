@@ -26,6 +26,24 @@ JOURNEY = _ASSETS / "journey.css"
 #: reviewable allowance rather than a loosened assertion.
 _DERIVED = {"#a0d9be", "#eafaf3"}
 
+#: Values the **owner supplied**, admitted by name and by the §16.5 row that supplies each one.
+#:
+#: A third category exists because the other two cannot honestly hold these. `_ORPHAN_BASELINE`
+#: and the `shipped` set are values already in `journey.css`; `_DERIVED` is for a value *derived
+#: from* a shipped ink, and the derivation test proves each one against its source. A supplied
+#: palette value is neither: it comes from outside the stylesheet, and pretending it was derived
+#: would make `_DERIVATION` assert a lineage that does not exist.
+#:
+#: **Enumerated, never a blanket allowance.** Widening the subtraction in the palette check to
+#: "any value with a comment" would disarm the guard rather than honour it — the recorded
+#: guard-that-disarms-itself defect. A fourth colour still fails until it is listed here with its
+#: §16.5 row, which is the whole point: the set exists so surfaces do not each pick their own.
+_SUPPLIED = {
+    # §16.5, "Ivory and sand — surfaces": `hero-ground #F6EDDF`. `RCA-012` `FR-212`'s hero band
+    # paints it behind the artwork so the headline is legible before the image decodes.
+    "#f6eddf",
+}
+
 #: `R8-01` §2's census of values `journey.css` uses below its `:root` block. The count is the
 #: baseline: a slice that adds an eleventh is choosing a colour outside the system.
 #: The exact hex literals `journey.css` uses below its `:root` block -- the census `R8-01`
@@ -127,12 +145,32 @@ def test_shell_introduces_no_colour_outside_the_shipped_palette() -> None:
     declared = _hexes(_declarations(SHELL.read_text(encoding="utf-8")))
     shipped = _hexes(JOURNEY.read_text(encoding="utf-8"))
 
-    unexplained = declared - shipped - _DERIVED
+    unexplained = declared - shipped - _DERIVED - _SUPPLIED
     assert not unexplained, (
         f"{sorted(unexplained)} appear in shell.css but not in journey.css and are not declared "
-        "as derived. Either reuse a shipped value or record the derivation in _DERIVED and in the "
-        "note."
+        "as derived or supplied. Either reuse a shipped value, record the derivation in _DERIVED "
+        "and in the note, or — for an owner-supplied palette value — list it in _SUPPLIED with "
+        "the master specification §16.5 row that supplies it."
     )
+
+
+def test_the_palette_check_still_refuses_an_unlisted_colour() -> None:
+    """The positive control for the check above, added with `_SUPPLIED` (`RCA-012` slice 11).
+
+    A third category is a third way to weaken the guard. If `_SUPPLIED` had been written as a
+    blanket allowance — anything commented, anything matching a pattern — the assertion above
+    would still pass and would no longer be measuring anything. This drives the same subtraction
+    with a colour in none of the three sets and requires it to survive as unexplained.
+    """
+    invented = "#abcdef"
+
+    assert invented not in _DERIVED
+    assert invented not in _SUPPLIED
+
+    shipped = _hexes(JOURNEY.read_text(encoding="utf-8"))
+    assert invented not in shipped
+
+    assert {invented} - shipped - _DERIVED - _SUPPLIED == {invented}
 
 
 #: The token *pairings* the derivation asserts — which shipped ink supplies the hue, and which

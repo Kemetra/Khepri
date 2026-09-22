@@ -409,27 +409,51 @@ class TestFR217NoShellStylesheetNamesAJourneyAddress:
             assert _client().get(f"/beta/assets/{file_name}").status_code in (404, 405)
 
 
-class TestFR218TheArtworkCarriesNoGovernedMeaning:
-    """The asset half. The bilingual alternative text is `RCA-010`'s; see the module note below.
+#: The shell templates that place the artwork. One entry, and `U1` slice 11 put it there.
+#:
+#: **This was `#514`'s "reaches no template" tripwire, and it was updated rather than deleted.**
+#: That assertion existed to catch the artwork arriving on a surface unnoticed; when slice 11
+#: placed it deliberately, deleting the test would have discarded the guard, and relaxing it to
+#: "at least one template" would have stopped it ever seeing a second. Stated as an extent, it
+#: still does the original job: the next surface to place the hero fails here until it is listed.
+_PLACING_TEMPLATES = frozenset({"overview.html.j2"})
 
-    `RCA-012` §Exclusions places the handoff §6 placement rules under a presentation slice
-    governed by `RCA-010`, whose §Scope admits `shell_copy.py` and the shell templates. This slice
-    adds no template and no copy entry, so what is provable here is that the artwork states
-    nothing governed and that no surface depends on it.
+
+class TestFR218TheArtworkCarriesNoGovernedMeaning:
+    """The artwork is decorative, and exactly the intended surfaces place it.
+
+    `RCA-012` §Exclusions put the handoff §6 placement rules under a presentation slice governed
+    by `RCA-010`, whose §Scope admits `shell_copy.py` and the shell templates. `U1` slice 11 is
+    that slice: it places the artwork on the workspace overview and supplies the bilingual
+    alternative text, which is `FR-218`'s other half. The placement's own evidence lives in
+    `test_u1_slice11_hero_placement.py`; what stays provable here is that the artwork states
+    nothing governed and that its reach is exactly the set below.
     """
 
-    def test_the_artwork_reaches_no_template(self) -> None:
-        """Asset-only: no shell template references the derivatives yet, so no surface can have
-        become dependent on one loading."""
+    def test_the_artwork_reaches_exactly_the_placing_templates(self) -> None:
+        """An extent assertion over the surfaces that place the artwork.
+
+        `RCA-012` names two `/app` workspace surfaces -- 01 Home and 05 Insights -- and slice 11
+        took the first. A subset check ("the overview places it") could not see the second arrive
+        unreviewed, so the set is compared for equality and the follow-on slice updates it here.
+        """
         templates = _ROOT / "src" / "khepri" / "runtime" / "shell_templates"
         assert templates.is_dir()
 
-        for path in templates.rglob("*.j2"):
-            body = path.read_text(encoding="utf-8")
-            for file_name in HERO_FILES:
-                assert file_name not in body, (
-                    f"{path.name} places the artwork; that is RCA-010's slice"
-                )
+        placing = {
+            path.name
+            for path in templates.rglob("*.j2")
+            if any(file_name in path.read_text(encoding="utf-8") for file_name in HERO_FILES)
+        }
+
+        assert placing == _PLACING_TEMPLATES
+
+    def test_the_scan_would_notice_a_template_that_placed_the_artwork(self) -> None:
+        """The positive control: the predicate finds a placement in text it is given, so the
+        equality above is a measurement rather than a scan that matches nothing."""
+        pretend = f'<img src="/app/assets/{HERO_JPEG_FILE}" alt="x">'
+
+        assert any(file_name in pretend for file_name in HERO_FILES)
 
     def test_the_module_names_no_figure_population_or_state(self) -> None:
         """`FR-218`: decorative. The manifest carries file names, media types and digests -- no

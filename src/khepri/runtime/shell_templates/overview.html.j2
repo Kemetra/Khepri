@@ -13,6 +13,30 @@
   The attention region is rendered only when non-empty. An always-present "no issues" panel is
   decoration, not reassurance (§7.1).
 #}
+{#
+  `RCA-012` `FR-212`: the approved hero artwork, from the shell's own audited address.
+
+  Decorative and outside the labelled region deliberately. It states no figure, no population, no
+  refusal and no state (`FR-218`), and the heading and lede stay in the document card below, so a
+  reader whose image never loads keeps a complete, legible surface. The `alt` comes from the copy
+  module rather than this file: a literal here would render correctly in English and ship the
+  English string to Arabic readers.
+
+  `eager` and `fetchpriority="high"` because it is above the fold. The WebP source is listed first
+  so a browser that supports it takes the smaller file; the JPEG is the `<img>` fallback, which is
+  also what the alt text and the loading hints attach to.
+#}
+<div class="hero-band">
+  <picture>
+    <source srcset="{{ assets }}/khepri-hero.webp" type="image/webp">
+    <img class="hero-band__image"
+         src="{{ assets }}/khepri-hero.jpg"
+         alt="{{ copy.overview_hero_alt }}"
+         loading="eager"
+         fetchpriority="high">
+  </picture>
+</div>
+
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.overview_title }}</h1>
   <p class="lede">{{ copy.overview_intro }}</p>
