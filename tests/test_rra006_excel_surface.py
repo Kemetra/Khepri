@@ -264,27 +264,6 @@ def _declared_sections(
     return tuple(row[0] for row in rows[start:end])
 
 
-def _section_figure_rows(
-    workbook: rra_workbooks.ReadWorkbook,
-    language: str,
-    section_id: str,
-    headers: list[str],
-) -> list[list[str]]:
-    """The figure rows on one section's sheet, and none if it has no table.
-
-    A refused section has a sheet and no figures, which is the shape that makes the
-    refusal visible in the workbook rather than only in the claim.
-    """
-    rows = workbook.cells[excel._section_sheet(section_id, language)]
-    if headers not in rows:
-        return []
-    start = rows.index(headers) + 1
-    end = len(rows)
-    if [excel._CAVEATS_HEADING[language]] in rows:
-        end = rows.index([excel._CAVEATS_HEADING[language]])
-    return [row for row in rows[start:end] if row]
-
-
 def _provenance(workbook: rra_workbooks.ReadWorkbook) -> dict[str, str]:
     rows = next(
         rows
@@ -500,7 +479,8 @@ def _allowed_identity_text(bundle: ReportBundle) -> set[str]:
         allowed |= refusal_prose(bundle, language)
     allowed |= set(identity)
     allowed |= {str(value) for value in identity.values()}
-    allowed |= {bundle.bundle_id, bundle.narrative_state, EXCEL_SURFACE_VERSION}
+    # Not `narrative_state`: it is Internal under RRA-009 and reaches no sheet.
+    allowed |= {bundle.bundle_id, EXCEL_SURFACE_VERSION}
     allowed |= {caveat.code for caveat in bundle.caveats}
     # A section identifier is governed vocabulary, like a caveat code. The caveats
     # block names the section a scoped caveat qualifies, because one caveats heading
@@ -651,14 +631,59 @@ def _workbook_strings(workbook: rra_workbooks.ReadWorkbook) -> set[str]:
     }
 
 
-def test_the_arabic_sheets_are_declared_right_to_left(tmp_path: Path) -> None:
-    bundle = ReportBundle.of(package())
+def sheet_languages() -> dict[str, str]:
+    """Every sheet name the workbook may write, mapped to the language it is in.
 
-    _, workbook = rendered(bundle, tmp_path)
+    Built from the renderer's own name tables, so a sheet added without a place in
+    them is unclassifiable and `assert_every_sheet_declares_its_direction` fails on
+    it rather than skipping it. The provenance sheet is machine-readable and
+    written left to right, so it is classified as English.
+    """
+    from khepri.rra.bundle import SECTION_CROSSVERSION
+    from khepri.rra.rendering.wording import BUSINESS_SHEET_NAMES, SECTION_HEADINGS
 
-    for sheet in (excel._AUDIT_SHEET, excel._LIMITATIONS_SHEET, excel._CITATION_SHEET):
-        assert 'rightToLeft="1"' in workbook.sheets[sheet[LANGUAGE_ARABIC]]
-        assert 'rightToLeft="1"' not in workbook.sheets[sheet[LANGUAGE_ENGLISH]]
+    languages: dict[str, str] = {excel._PROVENANCE_SHEET: LANGUAGE_ENGLISH}
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        names = [
+            *BUSINESS_SHEET_NAMES[language].values(),
+            SECTION_HEADINGS[language][SECTION_CROSSVERSION],
+            excel._LIMITATIONS_SHEET[language],
+            excel._AUDIT_SHEET[language],
+            excel._CITATION_SHEET[language],
+            excel._chartdata_sheet(language),
+        ]
+        languages.update(dict.fromkeys(names, language))
+    return languages
+
+
+def assert_every_sheet_declares_its_direction(
+    workbook: rra_workbooks.ReadWorkbook,
+) -> None:
+    """Every sheet the workbook holds, iterated from the workbook's own list.
+
+    Naming three sheets left the business sheets -- the ones a customer reads
+    first -- unchecked, so an Arabic executive summary laid out left to right
+    passed.
+    """
+    languages = sheet_languages()
+    seen: set[str] = set()
+    for name, xml in workbook.sheets.items():
+        assert name in languages, f"unclassified sheet: {name}"
+        language = languages[name]
+        right_to_left = 'rightToLeft="1"' in xml
+        assert right_to_left == (LANGUAGE_DIRECTION[language] == "rtl"), name
+        seen.add(language)
+    assert seen == {LANGUAGE_ENGLISH, LANGUAGE_ARABIC}, seen
+
+
+def test_every_arabic_sheet_is_declared_right_to_left(tmp_path: Path) -> None:
+    from tests.rra009_fixtures import rich_bundle
+
+    # The rich bundle writes every business sheet and a chart data sheet; the
+    # golden one writes the smaller set a plain export produces.
+    for bundle in (rich_bundle(), ReportBundle.of(package())):
+        _, workbook = rendered(bundle, tmp_path)
+        assert_every_sheet_declares_its_direction(workbook)
 
 
 # --- provenance and determinism -------------------------------------------
@@ -674,8 +699,95 @@ def test_the_workbook_carries_machine_readable_provenance(tmp_path: Path) -> Non
     assert provenance["source_sha256_hex"] == hashlib.sha256(GOLDEN).hexdigest()
     assert provenance["profile_digest"] == bundle.identity.profile_digest
     assert provenance["package_version"] == bundle.identity.package_version
-    assert provenance["narrative_state"] == bundle.narrative_state
     assert provenance["excel_surface_version"] == EXCEL_SURFACE_VERSION
+
+
+def assert_no_internal_field_is_written(workbook: rra_workbooks.ReadWorkbook) -> None:
+    """RRA-009: an Internal field is rendered "on no customer surface, including the
+    audit region" -- and the provenance sheet is part of the workbook a customer
+    receives.
+
+    On the field name, not the value: `narrative_state` takes `refused`, which is
+    also ordinary prose.
+    """
+    for name, rows in workbook.cells.items():
+        for row in rows:
+            assert "narrative_state" not in row, name
+
+
+def test_the_narrative_state_reaches_no_sheet(tmp_path: Path) -> None:
+    """A-12 (#524). `narrative_state` is tier I in the visibility matrix, and the
+    page already omits it (`html._provenance`); the workbook wrote it to its
+    provenance sheet."""
+    bundle = ReportBundle.of(package())
+
+    _, workbook = rendered(bundle, tmp_path)
+
+    assert_no_internal_field_is_written(workbook)
+    assert "narrative_state" not in _provenance(workbook)
+
+
+# --- every cell write is checked -------------------------------------------
+
+
+def _long_label_bundle(length: int) -> ReportBundle:
+    """One figure whose label is `length` characters: Excel holds at most 32,767."""
+    base = hostile_bundle()
+    figure = replace(base.figures[0], label="L" * length)
+    return replace(
+        base,
+        figures=(figure,),
+        sections=(replace(base.sections[0], figure_ids=(figure.figure_id,)),),
+    )
+
+
+def test_a_cell_excel_would_truncate_fails_the_workbook(tmp_path: Path) -> None:
+    """A-13 (#524). XlsxWriter reports a refused write by return code -- `-2` when it
+    cut a string to 32,767 characters, `-1` when the cell is past the sheet's last
+    row or column -- and raises nothing. Unchecked, the cell held a label the bundle
+    never carried while the claim still reconciled.
+    """
+    bundle = _long_label_bundle(32_768)
+    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+
+    with pytest.raises(WorkbookUnavailable):
+        renderer.render(bundle)
+    assert not renderer.path_for(bundle).exists()
+    # Nor is the abandoned attempt left behind carrying the customer's content.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_label_at_the_cell_limit_is_written_whole(tmp_path: Path) -> None:
+    """The boundary: 32,767 characters is a legal cell, and is written verbatim."""
+    bundle = _long_label_bundle(32_767)
+
+    _, workbook = rendered(bundle, tmp_path)
+
+    assert "L" * 32_767 in workbook.texts
+
+
+def test_a_write_past_the_last_row_is_refused(tmp_path: Path) -> None:
+    """`-1`: the row limit, which a long enough figure table would reach."""
+    import xlsxwriter
+
+    from khepri.rra.rendering import excel_rows
+
+    with xlsxwriter.Workbook(str(tmp_path / "rows.xlsx")) as workbook:
+        sheet = workbook.add_worksheet()
+        assert excel_rows.write_row(sheet, 1_048_575, ("last",)) == 1_048_576
+        with pytest.raises(WorkbookUnavailable):
+            excel_rows.write_row(sheet, 1_048_576, ("past",))
+        with pytest.raises(WorkbookUnavailable):
+            excel_rows.write_number(sheet, 1_048_576, 0, 1.0)
+
+
+def test_the_workbook_error_is_one_class() -> None:
+    """Re-exported rather than redefined, so `except WorkbookUnavailable` catches
+    a refused cell write wherever a caller imported it from."""
+    from khepri.rra.rendering import WorkbookUnavailable as exported
+    from khepri.rra.rendering import excel_rows
+
+    assert excel_rows.WorkbookUnavailable is WorkbookUnavailable is exported
 
 
 def test_regenerating_the_workbook_reproduces_the_same_cells(tmp_path: Path) -> None:

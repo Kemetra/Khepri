@@ -11,6 +11,7 @@ from khepri.rra.narrative import LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from tests.rra003_contract_fixtures import landed_sections
 from tests.rra009_fixtures import rich_bundle
+from tests.test_rra006_excel_surface import presented, rendered
 from tests.test_rra006_html_sections import ROWS, package_for
 
 LEAKAGE_METRICS = frozenset(
@@ -425,41 +426,168 @@ def test_the_workbook_still_reconciles(tmp_path: Path) -> None:
     from khepri.rra.bundle import reconcile
 
     for bundle in (rich_bundle(), _plain_bundle()):
-        content = ExcelSurfaceRenderer(directory=tmp_path).render(bundle)
+        content, workbook = rendered(bundle, tmp_path)
         reconcile(content, bundle=bundle)
+        # The claim is built from the bundle (`excel._content`), so reconciling it
+        # alone compares the bundle with itself. What the file presents is read
+        # back and held against the claim, field by field -- caveats excepted,
+        # because the sheets carry them as prose and `presented` cannot read a
+        # code back out of prose.
+        read = presented(workbook)
+        assert read.bundle_id == content.bundle_id == bundle.bundle_id
+        for shown, claimed in zip(read.languages, content.languages, strict=True):
+            assert shown.language == claimed.language
+            assert shown.direction == claimed.direction
+            assert shown.sections == claimed.sections
+            assert shown.stated == claimed.stated
+            assert shown.disclosure == claimed.disclosure
 
 
-def test_the_claim_still_states_every_figure(tmp_path: Path) -> None:
+def test_the_workbook_states_every_figure_the_bundle_carries(tmp_path: Path) -> None:
     """A surface that relocated a figure and also stopped claiming it would
-    reconcile, and would have lost the figure."""
+    reconcile, and would have lost the figure.
+
+    Read from the workbook, never from the claim: the claim is derived from the
+    bundle, so asserting it against the bundle can only ever pass.
+    """
     bundle = rich_bundle()
-    content = ExcelSurfaceRenderer(directory=tmp_path).render(bundle)
+    _, workbook = rendered(bundle, tmp_path)
 
-    expected = {figure.figure_id for figure in bundle.figures}
-    for entry in content.languages:
-        assert {stated.figure_id for stated in entry.stated} == expected, entry.language
+    for entry in presented(workbook).languages:
+        assert [
+            (stated.figure_id, stated.text, stated.section) for stated in entry.stated
+        ] == [
+            (figure.figure_id, figure.renderings[entry.language], figure.section)
+            for figure in bundle.figures
+        ], entry.language
 
 
-def test_the_claim_still_states_every_section(tmp_path: Path) -> None:
+def test_the_workbook_states_every_section_the_bundle_carries(tmp_path: Path) -> None:
     bundle = rich_bundle()
-    content = ExcelSurfaceRenderer(directory=tmp_path).render(bundle)
+    _, workbook = rendered(bundle, tmp_path)
 
-    for entry in content.languages:
+    for entry in presented(workbook).languages:
         assert entry.sections == bundle.section_ids, entry.language
 
 
-def test_every_figure_value_is_still_in_the_file(tmp_path: Path) -> None:
+def test_every_figure_value_is_on_its_own_business_sheet(tmp_path: Path) -> None:
     """The other direction: the claim could be complete while the workbook dropped
-    a cell, and reconciliation would never notice."""
-    bundle = rich_bundle()
-    strings = _shared_strings(bundle, tmp_path)
+    a cell, and reconciliation would never notice.
 
-    for figure in bundle.figures:
-        for language in REQUIRED_LANGUAGES:
-            assert figure.renderings[language] in strings, (
-                figure.figure_id,
-                language,
+    Checked per business sheet, as a (name, value) row. The shared string table
+    is filled by the audit trail whatever the business sheets hold, so a figure
+    dropped from its business sheet was still "in the file".
+    """
+    from collections import Counter
+
+    from khepri.rra.bundle import SECTION_CROSSVERSION
+    from khepri.rra.rendering import excel_layout, wording
+    from khepri.rra.rendering.excel_rows import business_name
+
+    bundle = rich_bundle()
+    _, workbook = rendered(bundle, tmp_path)
+
+    checked = 0
+    for language in REQUIRED_LANGUAGES:
+        for sheet in excel_layout.BUSINESS_SHEETS:
+            expected = Counter(
+                (business_name(figure, language), figure.renderings[language])
+                for figure in bundle.figures
+                if figure.metric in sheet.metrics
+                and figure.section != SECTION_CROSSVERSION
             )
+            name = wording.BUSINESS_SHEET_NAMES[language][sheet.key]
+            if not expected:
+                assert name not in workbook.cells, (name, language)
+                continue
+            written = Counter(
+                (row[0], row[1]) for row in workbook.cells[name] if len(row) >= 2
+            )
+            missing = expected - written
+            assert not missing, (sheet.key, language, sorted(missing))
+            checked += 1
+    assert checked, "no business sheet was checked, so the loop proved nothing"
+
+
+def test_no_limitation_is_stated_twice(tmp_path: Path) -> None:
+    """A-11 (#524): one sentence, once, whichever codes it was resolved from.
+
+    The rich fixture's single comparison window emits
+    `revenue_delta_absolute.year_over_year:prior_window_absent` and
+    `revenue_delta_percent.year_over_year:prior_window_absent`, and `caveat_prose`
+    maps both to one paragraph. The page collapses them (`html._stated_once`);
+    the workbook printed the paragraph twice in consecutive rows.
+    """
+    from collections import Counter
+
+    from khepri.rra.rendering import excel
+    from khepri.rra.rendering.wording import caveat_prose
+
+    bundle = rich_bundle()
+    _, workbook = rendered(bundle, tmp_path)
+
+    for language in REQUIRED_LANGUAGES:
+        # The precondition, asserted: without two codes sharing one sentence the
+        # check below passes on any renderer.
+        prose = Counter(caveat_prose(caveat.code, language) for caveat in bundle.caveats)
+        assert any(count > 1 for count in prose.values()), language
+        cells = Counter(
+            cell
+            for row in workbook.cells[excel._LIMITATIONS_SHEET[language]]
+            for cell in row
+            if cell
+        )
+        repeated = sorted(text for text, count in cells.items() if count > 1)
+        assert not repeated, (language, repeated)
+        # And nothing was lost: every caveat's sentence is still on the sheet.
+        assert set(prose) <= set(cells), language
+
+
+def test_the_page_collapses_the_same_codes_through_the_same_helper() -> None:
+    """One rule for both surfaces: the page's per-section collapse is
+    `wording.stated_once` over that section's caveats, so a helper that keyed on
+    the code rather than the prose fails here as well as on the workbook.
+
+    Asserted on the rich fixture, because the page's own readability test runs on
+    a fixture with a single caveat and so cannot see a repeat.
+    """
+    from khepri.rra.rendering import html
+    from khepri.rra.rendering.wording import stated_once
+
+    bundle = rich_bundle()
+    comparison = [c for c in bundle.caveats if c.section == "comparison"]
+    absent = [c.code for c in comparison if c.code.endswith(":prior_window_absent")]
+    assert len(absent) == 2, absent
+
+    for language in REQUIRED_LANGUAGES:
+        collapsed = html._stated_once(bundle, "comparison", language)
+        assert collapsed == stated_once(comparison, language), language
+        assert len([code for code in collapsed if code in absent]) == 1, language
+
+
+def test_collapsing_is_decided_per_language(monkeypatch) -> None:
+    """Two codes sharing English prose need not share Arabic prose. No governed pair
+    does that today, so the property is held with stand-in prose: a helper keyed on
+    one language's text would drop a sentence the other still distinguishes.
+    """
+    from khepri.rra.bundle import StatedCaveat
+    from khepri.rra.narrative import LANGUAGE_ARABIC
+    from khepri.rra.rendering import wording
+
+    prose = {
+        ("one", LANGUAGE_ENGLISH): "same",
+        ("two", LANGUAGE_ENGLISH): "same",
+        ("one", LANGUAGE_ARABIC): "first",
+        ("two", LANGUAGE_ARABIC): "second",
+    }
+    monkeypatch.setattr(wording, "caveat_prose", lambda code, language: prose[code, language])
+    caveats = (
+        StatedCaveat(code="one", section=None),
+        StatedCaveat(code="two", section=None),
+    )
+
+    assert wording.stated_once(caveats, LANGUAGE_ENGLISH) == ("one",)
+    assert wording.stated_once(caveats, LANGUAGE_ARABIC) == ("one", "two")
 
 
 def test_the_governed_disclosure_reaches_the_workbook(tmp_path: Path) -> None:

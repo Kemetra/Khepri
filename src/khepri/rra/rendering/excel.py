@@ -96,15 +96,13 @@ from khepri.rra.bundle import (
     SURFACE_EXCEL,
     ChartSpec,
     CitedFigure,
-    StatedCaveat,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
-    SurfaceUnavailable,
     is_drawable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from khepri.rra.renderable import PresentationSection, RenderableBundle
+from khepri.rra.renderable import RenderableBundle
 from khepri.rra.rendering.excel_crossversion import write_crossversion_sheet
 from khepri.rra.rendering.excel_layout import (
     BUSINESS_SHEETS,
@@ -123,13 +121,22 @@ from khepri.rra.rendering.excel_rows import (
     VALUE_WIDTH as _VALUE_WIDTH,
 )
 from khepri.rra.rendering.excel_rows import (
+    WorkbookUnavailable,
+)
+from khepri.rra.rendering.excel_rows import (
     business_cells as _business_cells,
 )
 from khepri.rra.rendering.excel_rows import (
     sheet as _sheet,
 )
 from khepri.rra.rendering.excel_rows import (
+    write_number as _write_number,
+)
+from khepri.rra.rendering.excel_rows import (
     write_row as _write_row,
+)
+from khepri.rra.rendering.excel_rows import (
+    write_text as _write_text,
 )
 from khepri.rra.rendering.wording import (
     BUSINESS_SHEET_NAMES,
@@ -144,6 +151,7 @@ from khepri.rra.rendering.wording import (
     category_of,
     caveat_prose,
     section_refusal_message,
+    stated_once,
     worded,
 )
 from khepri.rra.report_artifacts import (
@@ -188,20 +196,17 @@ _PROVENANCE_SHEET = "Provenance"
 _PROVENANCE_FIELD = "field"
 _PROVENANCE_VALUE = "value"
 _PROVENANCE_BUNDLE_ID = "bundle_id"
-_PROVENANCE_NARRATIVE_STATE = "narrative_state"
 _PROVENANCE_EXCEL_VERSION = "excel_surface_version"
 
 # Bilingual by construction. A sheet name, a heading, and a column header are
 # labels a reader sees, so each governed language gets its own sheets rather
 # than one sheet with English chrome and Arabic values in it.
-_REPORT_SHEET = {LANGUAGE_ENGLISH: "Report (English)", LANGUAGE_ARABIC: "التقرير (العربية)"}
 _CITATION_SHEET = {LANGUAGE_ENGLISH: "Citations (English)", LANGUAGE_ARABIC: "الإسنادات (العربية)"}
 
 # A worksheet per section per language. The name is built from the section identifier
 # rather than translated, because a sheet name is an address: a reader following a
 # reference, and any tooling reading the file, needs the same name in both workbooks.
-# The heading inside the sheet is where the language belongs, and `_SECTION_COLUMNS`
-# carries it.
+# The heading inside the sheet is where the language belongs.
 _SECTION_SHEET_PREFIX = {LANGUAGE_ENGLISH: "en", LANGUAGE_ARABIC: "ar"}
 
 
@@ -219,7 +224,6 @@ def _chartdata_sheet(language: str) -> str:
     return _section_sheet(_CHARTDATA_SECTION, language)
 
 _FIGURES_HEADING = {LANGUAGE_ENGLISH: "Figures", LANGUAGE_ARABIC: "الأرقام"}
-_CAVEATS_HEADING = {LANGUAGE_ENGLISH: "Caveats", LANGUAGE_ARABIC: "التحذيرات"}
 
 # The figure identifier leads the row. It is what makes a cell addressable
 # without customer text -- `bundle._figure_id` keeps labels out of it precisely
@@ -272,10 +276,6 @@ _LIMITATIONS_HEADING = {
 # the claim against the bundle, never against the file. A reader of the workbook is
 # owed the same disclosure as a reader of the page: the heading, and the reason.
 _SECTIONS_HEADING = {LANGUAGE_ENGLISH: "Sections", LANGUAGE_ARABIC: "الأقسام"}
-_SECTION_COLUMNS = {
-    LANGUAGE_ENGLISH: ("Section", "State", "Reason"),
-    LANGUAGE_ARABIC: ("القسم", "الحالة", "السبب"),
-}
 # The audit trail's section table. Two columns, not three: `state` is Internal
 # under RRA-009's classification and reaches no customer surface including this
 # one, and a row carrying a reason is a refused section by construction.
@@ -324,23 +324,20 @@ GOVERNED_LABELS = frozenset(
         _PROVENANCE_FIELD,
         _PROVENANCE_VALUE,
         _PROVENANCE_BUNDLE_ID,
-        _PROVENANCE_NARRATIVE_STATE,
         _PROVENANCE_EXCEL_VERSION,
     }
     | {
         text
         for mapping in (
-            _REPORT_SHEET,
             _CITATION_SHEET,
             _DISCLOSURE_HEADING,
             _FIGURES_HEADING,
-            _CAVEATS_HEADING,
         )
         for text in mapping.values()
     }
     | {
         header
-        for mapping in (_FIGURE_COLUMNS, _CITATION_COLUMNS, _SECTION_COLUMNS)
+        for mapping in (_FIGURE_COLUMNS, _CITATION_COLUMNS)
         for headers in mapping.values()
         for header in headers
     }
@@ -371,10 +368,14 @@ GOVERNED_LABELS = frozenset(
         for names in table.values()
         for text in names.values()
     }
-    # Refusal and caveat prose is governed wording too. Resolved per bundle rather
-    # than enumerable at import -- a composite `<result>:<reason>` caveat code is
-    # built from a figure's own identity -- so the limitations sheet's prose is
-    # admitted by `_governed_prose` at write time instead.
+    # Refusal and caveat prose is governed wording too, and these are its templates.
+    # The limitations sheet writes the *resolved* prose, which is not enumerable at
+    # import -- a composite `<result>:<reason>` caveat code is built from a figure's
+    # own identity, and a section refusal names its section -- so no resolved
+    # sentence is a member of this set. It reaches a cell only through
+    # `caveat_prose` and `section_refusal_message`, and the cell-provenance test
+    # admits a bundle's refused-section prose per bundle (`refusal_prose` in
+    # `tests/rra003_contract_fixtures.py`).
     | {
         message
         for tier in REFUSAL_WORDING.values()
@@ -393,16 +394,6 @@ GOVERNED_LABELS = frozenset(
     # the SVG cannot read differently.
     | {text for wording in LABEL_WORDING.values() for text in wording.values()}
 )
-
-
-
-class WorkbookUnavailable(SurfaceUnavailable, RuntimeError):
-    """The workbook could not be written, so this surface does not exist.
-
-    Subclasses `SurfaceUnavailable` so the assembler treats it as a failed
-    surface, and `RuntimeError` because it is operational rather than a
-    statement about the bundle.
-    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,6 +446,12 @@ class ExcelSurfaceRenderer:
                 _write_workbook(workbook, bundle)
             written = attempt.stat().st_size
             attempt.replace(self.path_for(bundle))
+        except WorkbookUnavailable:
+            # A refused cell or chart is raised inside the `with`, whose exit still
+            # closes -- and so writes -- the archive. That file holds customer
+            # content under a name nothing will ever claim, so it goes here.
+            attempt.unlink(missing_ok=True)
+            raise
         except OSError as error:
             raise WorkbookUnavailable("The Excel surface could not be written.") from error
         return _content(bundle, written)
@@ -573,33 +570,6 @@ def _write_business_sheet(
     return worksheet
 
 
-def _write_report(workbook: Workbook, bundle: RenderableBundle, language: str) -> None:
-    """The index sheet: the disclosure, the sections, and the report-level caveats.
-
-    It carries no figures. Each analysis has its own worksheet, so a reader opening
-    the workbook lands on what the report says about itself and then chooses an
-    analysis by name -- which is how the sections read on the page and on paper, and
-    a workbook that ran all five together in one grid was the surface disagreeing
-    with the other two about what a section is.
-    """
-    sheet = _sheet(workbook, _REPORT_SHEET[language], language)
-    sheet.set_column(0, 0, _LABEL_WIDTH)
-    sheet.set_column(1, len(_SECTION_COLUMNS[language]) - 1, _VALUE_WIDTH)
-
-    row = _write_row(sheet, 0, (_DISCLOSURE_HEADING[language], bundle.disclosure(language)))
-    row = _write_row(sheet, row + 1, (_SECTIONS_HEADING[language],))
-    row = _write_row(sheet, row, _SECTION_COLUMNS[language])
-    for section in bundle.sections:
-        row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
-
-    row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
-    for caveat in bundle.caveats:
-        # Report-level here; a section's own caveats are written on its sheet. The
-        # section is still named beside the code, because the index is where a reader
-        # sees every caveat at once and a bare code there cannot say what it qualifies.
-        row = _write_row(sheet, row, _caveat_cells(caveat))
-
-
 def _write_audit_trail(
     workbook: Workbook,
     bundle: RenderableBundle,
@@ -647,7 +617,8 @@ def _write_limitations(
 
     Every caveat is present, not a curated subset. `_reconcile_language` compares
     caveat sets for equality, so a friendlier subset is a refused report rather than
-    a tidier sheet.
+    a tidier sheet. Codes whose prose reads identically are stated once, which drops
+    no sentence: every caveat's prose is still on the sheet.
     """
     sheet = _sheet(workbook, _LIMITATIONS_SHEET[language], language)
     sheet.set_column(0, 0, _LABEL_WIDTH * 4)
@@ -667,69 +638,11 @@ def _write_limitations(
                 ),
             ),
         )
-    for caveat in bundle.caveats:
-        row = _write_row(sheet, row + 1, (caveat_prose(caveat.code, language),))
-
-
-def _write_section(
-    workbook: Workbook,
-    bundle: RenderableBundle,
-    language: str,
-    section: PresentationSection,
-) -> Worksheet:
-    """One analysis: its state, its figures, and the caveats that qualify it.
-
-    A refused section still gets a worksheet. `RRA-008` refuses the affected analysis
-    rather than the report, and a missing sheet is the one disclosure a reader cannot
-    distinguish from an analysis nobody ran -- the same reason the page renders a
-    heading and a reason rather than nothing.
-
-    Returns the sheet so a chart can be drawn onto it once the data it plots exists.
-    """
-    sheet = _sheet(workbook, _section_sheet(section.section_id, language), language)
-    sheet.set_column(0, 0, _LABEL_WIDTH)
-    sheet.set_column(1, len(_FIGURE_COLUMNS[language]) - 1, _VALUE_WIDTH)
-
-    row = _write_row(sheet, 0, _SECTION_COLUMNS[language])
-    row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
-    row = _write_section_figures(sheet, row, bundle, language, section.section_id)
-    _write_section_caveats(sheet, row, bundle, language, section.section_id)
-    return sheet
-
-
-def _write_section_figures(
-    sheet: Worksheet,
-    row: int,
-    bundle: RenderableBundle,
-    language: str,
-    section_id: str,
-) -> int:
-    """The section's figure table, or nothing at all when it refused."""
-    figures = [figure for figure in bundle.figures if figure.section == section_id]
-    if not figures:
-        return row
-    row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
-    row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
-    for figure in figures:
-        row = _write_row(sheet, row, _figure_cells(figure, language))
-    return row
-
-
-def _write_section_caveats(
-    sheet: Worksheet,
-    row: int,
-    bundle: RenderableBundle,
-    language: str,
-    section_id: str,
-) -> int:
-    """The caveats qualifying this analysis. The heading supplies their scope."""
-    scoped = [caveat for caveat in bundle.caveats if caveat.section == section_id]
-    if not scoped:
-        return row
-    row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
-    for caveat in scoped:
-        row = _write_row(sheet, row, (caveat.code,))
-    return row
+    # One sentence once: two codes resolving to the same prose are one limitation to
+    # a reader. `stated_once` is the page's rule too, applied here over the sheet's
+    # one list rather than per section.
+    for code in stated_once(bundle.caveats, language):
+        row = _write_row(sheet, row + 1, (caveat_prose(code, language),))
 
 
 @dataclass(frozen=True, slots=True)
@@ -904,7 +817,7 @@ def _write_chart_block(sheet: Worksheet, block: _ChartBlock) -> None:
     _write_row(sheet, block.first_row - 1, (block.section_id,))
     for offset, figure in enumerate(block.figures):
         row = block.first_row + offset
-        sheet.write_string(row, _CHART_CATEGORY_COLUMN, block.categories[offset])
+        _write_text(sheet, row, _CHART_CATEGORY_COLUMN, block.categories[offset])
         _write_chart_value(sheet, row, _CHART_VALUE_COLUMN, figure)
 
 
@@ -937,7 +850,7 @@ def _write_chart_value(
     `Decimal` the decision refuses: a percentage is divided back by one hundred, so
     the series plots the ratio the section sheet states.
     """
-    sheet.write_number(row, column, _chart_number(figure))
+    _write_number(sheet, row, column, _chart_number(figure))
 
 
 def _chart_number(figure: CitedFigure) -> float:
@@ -1050,7 +963,6 @@ def _provenance(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
     entries = {
         **{field: str(value) for field, value in bundle.identity.as_document().items()},
         _PROVENANCE_BUNDLE_ID: bundle.bundle_id,
-        _PROVENANCE_NARRATIVE_STATE: bundle.narrative_state,
         _PROVENANCE_EXCEL_VERSION: EXCEL_SURFACE_VERSION,
     }
     return tuple(sorted(entries.items()))
@@ -1102,13 +1014,6 @@ def _content_language(bundle: RenderableBundle, language: str) -> SurfaceLanguag
         caveats=bundle.caveats,
         disclosure=bundle.disclosure(language),
     )
-
-
-def _caveat_cells(caveat: StatedCaveat) -> tuple[str, ...]:
-    """A caveat code, and the section it qualifies when it qualifies only one."""
-    if caveat.section is None:
-        return (caveat.code,)
-    return (caveat.code, caveat.section)
 
 
 def _require_directory(value: Path, name: str) -> None:

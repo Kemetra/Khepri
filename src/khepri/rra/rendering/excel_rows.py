@@ -11,7 +11,12 @@ from __future__ import annotations
 from xlsxwriter.workbook import Workbook
 from xlsxwriter.worksheet import Worksheet
 
-from khepri.rra.bundle import DIRECTION_RTL, LANGUAGE_DIRECTION, CitedFigure
+from khepri.rra.bundle import (
+    DIRECTION_RTL,
+    LANGUAGE_DIRECTION,
+    CitedFigure,
+    SurfaceUnavailable,
+)
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.wording import (
     business_metric_name,
@@ -25,10 +30,13 @@ __all__ = [
     "DISCLOSURE_HEADING",
     "LABEL_WIDTH",
     "VALUE_WIDTH",
+    "WorkbookUnavailable",
     "business_cells",
     "business_name",
     "sheet",
+    "write_number",
     "write_row",
+    "write_text",
 ]
 
 LABEL_WIDTH = 34
@@ -42,6 +50,17 @@ DISCLOSURE_HEADING = {
     LANGUAGE_ENGLISH: "About this report",
     LANGUAGE_ARABIC: "عن هذا التقرير",
 }
+
+
+class WorkbookUnavailable(SurfaceUnavailable, RuntimeError):
+    """The workbook could not be written, so this surface does not exist.
+
+    Subclasses `SurfaceUnavailable` so the assembler treats it as a failed
+    surface, and `RuntimeError` because it is operational rather than a
+    statement about the bundle. Defined here rather than in `excel.py`, which
+    re-exports it, because the checked writes below raise it and `excel.py`
+    imports this module.
+    """
 
 
 def sheet(workbook: Workbook, name: str, language: str) -> Worksheet:
@@ -63,8 +82,35 @@ def write_row(sheet: Worksheet, row: int, values: tuple[str | None, ...]) -> int
     """
     for column, value in enumerate(values):
         if value is not None:
-            sheet.write_string(row, column, value)
+            write_text(sheet, row, column, value)
     return row + 1
+
+
+def write_text(sheet: Worksheet, row: int, column: int, value: str) -> None:
+    """One text cell, refused rather than altered.
+
+    XlsxWriter reports a refused write by return code and raises nothing: `-1`
+    when the cell lies past the sheet's last row or column, which drops it, and
+    `-2` when the string exceeds 32,767 characters, which stores it cut short. A
+    dropped figure and a truncated label both leave a workbook that says something
+    other than the bundle while the claim -- built from the bundle -- still
+    reconciles. So a non-zero code fails the surface, the way `insert_chart`'s does.
+    """
+    _checked(sheet.write_string(row, column, value))
+
+
+def write_number(sheet: Worksheet, row: int, column: int, number: float) -> None:
+    """One numeric cell, checked on the same terms as `write_text`.
+
+    Only the chart data sheet writes numbers (`excel._write_chart_value`), and a
+    dropped one would draw a series short of the figures it was built from.
+    """
+    _checked(sheet.write_number(row, column, number))
+
+
+def _checked(result: int) -> None:
+    if result != 0:
+        raise WorkbookUnavailable("A governed cell could not be written.")
 
 
 def business_cells(figure: CitedFigure, language: str) -> tuple[str, ...]:

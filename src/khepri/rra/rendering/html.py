@@ -70,6 +70,7 @@ from khepri.rra.rendering.wording import (
     component_chrome,
     kind_qualifier,
     section_refusal_message,
+    stated_once,
     worded,
 )
 from khepri.rra.report_artifacts import (
@@ -683,11 +684,8 @@ def _provenance(
     # function was wrong to add it. It is tier I -- Internal -- and RRA-009 renders
     # an Internal field "on no customer surface, including the audit region", so
     # there is nowhere on either document it may go. Internal is not a quieter
-    # Audit: an Audit field is relocated, an Internal one is not rendered.
-    #
-    # `excel.py:701` writes it to the workbook's provenance sheet. That is a
-    # pre-existing divergence from this classification rather than a precedent to
-    # copy, and it belongs to the Excel slice.
+    # Audit: an Audit field is relocated, an Internal one is not rendered. The
+    # workbook's provenance sheet omits it on the same terms (`excel._provenance`).
     entries.update(extra)
     return tuple(sorted(entries.items()))
 
@@ -1036,33 +1034,15 @@ def _stated_once(
 ) -> tuple[str, ...]:
     """One section's caveat codes, with codes that read identically collapsed.
 
-    **Deduplicated by prose rather than by code, because the codes differ and the
-    sentences do not.** A single-period upload emits
-    `revenue_delta_absolute.year_over_year:prior_window_absent` and
-    `revenue_delta_percent.year_over_year:prior_window_absent` -- two governed
-    codes, one per affected metric, which is correct: the caveat is a property of
-    a figure and both figures have it. `caveat_prose` then maps both to the same
-    paragraph, so the comparison section stated "comparison with an earlier
-    period is not available" twice in consecutive list items.
-    See `test_no_section_caveat_paragraph_is_repeated`.
-
-    The first code wins and the bundle's order is preserved, so the surviving
-    entry is the one a reader would have seen first. No code is dropped from the
-    bundle: `_reconcile_language` compares the caveat *codes* both languages
-    carry and would refuse a surface that had actually lost one -- this narrows
-    what is *printed*, which is the same distinction `RRA-006` draws between a
-    figure and its presentation.
-
-    Collapsing is per language deliberately. Two codes sharing English prose need
-    not share Arabic prose, and deduplicating on one language's text would drop a
-    sentence the other language still distinguishes.
+    The collapsing is `wording.stated_once`, shared with the workbook's limitations
+    sheet so the two surfaces cannot disagree about what counts as one sentence; this
+    only supplies the page's scope, which is one section. See
+    `test_no_section_caveat_paragraph_is_repeated`.
     """
-    stated: dict[str, str] = {}
-    for caveat in bundle.caveats:
-        if caveat.section != section_id:
-            continue
-        stated.setdefault(caveat_prose(caveat.code, language), caveat.code)
-    return tuple(stated.values())
+    return stated_once(
+        (caveat for caveat in bundle.caveats if caveat.section == section_id),
+        language,
+    )
 
 
 def _chart_of(

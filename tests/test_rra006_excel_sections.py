@@ -134,6 +134,11 @@ def test_a_business_sheet_lists_only_the_figures_it_presents() -> None:
     exists to prevent, and no text comparison would catch it. Checked against the
     layout table's metric list rather than a section identifier, because a business
     sheet is defined by the figures it presents.
+
+    Both directions, per sheet and per language. Only the *extra* names used to be
+    checked here, and membership was left to the shared string table -- which the
+    audit trail fills whatever a business sheet holds, so a figure dropped from its
+    business sheet passed.
     """
     from khepri.rra.rendering.excel_layout import BUSINESS_SHEETS
     from khepri.rra.rendering.excel_rows import business_name as _business_name
@@ -142,22 +147,26 @@ def test_a_business_sheet_lists_only_the_figures_it_presents() -> None:
     workbook = workbook_of()
     bundle = ReportBundle.of(package())
     checked = 0
-    for sheet in BUSINESS_SHEETS:
-        name = BUSINESS_SHEET_NAMES[LANGUAGE_ENGLISH][sheet.key]
-        if name not in workbook.cells:
-            continue
-        expected = {
-            _business_name(figure, LANGUAGE_ENGLISH)
-            for figure in bundle.figures
-            if figure.metric in sheet.metrics
-        }
-        written = {row[0] for row in workbook.cells[name] if row and row[0]}
-        unexplained = written - expected - {
-            excel._BUSINESS_COLUMNS[LANGUAGE_ENGLISH][0],
-            excel._DISCLOSURE_HEADING[LANGUAGE_ENGLISH],
-        }
-        assert not unexplained, (sheet.key, sorted(unexplained))
-        checked += 1
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        for sheet in BUSINESS_SHEETS:
+            name = BUSINESS_SHEET_NAMES[language][sheet.key]
+            expected = {
+                _business_name(figure, language)
+                for figure in bundle.figures
+                if figure.metric in sheet.metrics
+            }
+            if name not in workbook.cells:
+                assert not expected, (sheet.key, language)
+                continue
+            written = {row[0] for row in workbook.cells[name] if row and row[0]}
+            unexplained = written - expected - {
+                excel._BUSINESS_COLUMNS[language][0],
+                excel._DISCLOSURE_HEADING[language],
+            }
+            assert not unexplained, (sheet.key, language, sorted(unexplained))
+            missing = expected - written
+            assert not missing, (sheet.key, language, sorted(missing))
+            checked += 1
     assert checked, "no business sheet was written, so the loop proved nothing"
 
 

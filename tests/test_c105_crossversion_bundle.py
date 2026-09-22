@@ -212,6 +212,31 @@ def test_workbook_writes_the_sibling_cells_to_their_own_sheet(
     assert "Revenue — Difference" in texts
 
 
+def test_workbook_writes_no_internal_field_and_every_sheet_declares_direction(
+    comparison_request: CrossVersionRequest,
+    tmp_path,
+) -> None:
+    """The report bundle's provenance writer runs for this bundle too.
+
+    A-12 (#524): `narrative_state` is Internal under RRA-009 and reaches no sheet
+    of this workbook either. T-04: its one business sheet declares its direction
+    like every other.
+    """
+    from tests import rra_workbooks
+    from tests.test_rra006_excel_surface import (
+        assert_every_sheet_declares_its_direction,
+        assert_no_internal_field_is_written,
+    )
+
+    bundle = _bundle(comparison_request)
+    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+    renderer.render(bundle)
+    workbook = rra_workbooks.read(renderer.path_for(bundle).read_bytes())
+
+    assert_no_internal_field_is_written(workbook)
+    assert_every_sheet_declares_its_direction(workbook)
+
+
 def test_identity_document_is_flat(comparison_request: CrossVersionRequest) -> None:
     """Every value is one governed string, so no surface can print a Python repr.
 
