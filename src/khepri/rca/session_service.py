@@ -102,8 +102,13 @@ class SessionService:
     def revoke(self, token: str, *, now: datetime) -> Session:
         """End one session immediately — logout, and `R5-05`'s per-session case.
 
-        Refuses an already-revoked session rather than re-dating it, matching `Session.revoked`:
-        `revoked_at` is when authority actually ended, and moving it would misreport that.
+        **Contract.** Returns the revoked record when this call ended a live session. Raises
+        `AuthenticationFailed` for an absent, unknown, or already-revoked session -- including one
+        revoked by someone else (account recovery, a concurrent logout) between this call's read
+        and its write. Refuses rather than re-dating, matching `Session.revoked`: `revoked_at` is
+        when authority actually ended, and moving it would misreport that. The store writes only
+        where `revoked_at` is still unset, so no snapshot can move or clear it (#517). A caller that
+        must answer identically whether or not the session was live (`FR-219`) catches the refusal.
 
         **Does not consult expiry.** Revoking an expired session is a no-op in effect but not in
         record, and refusing it would leak the distinction `resolve` is careful to hide.
@@ -113,7 +118,7 @@ class SessionService:
         if session is None or session.is_revoked:
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         revoked = session.revoked(now=moment)
-        if not self._sessions.save_session(revoked):
+        if not self._sessions.revoke_session(session.session_id_hash, now=moment):
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         return revoked
 
@@ -125,12 +130,16 @@ class SessionService:
         organization store, deliberately (`R3-05`, `R3-08`). `R6-03`'s `OrganizationSwitcher`
         makes that decision and calls this to record it.
 
-        **A narrow verb rather than a general `save_session`.** Exposing "write this record" would
-        let any caller persist an arbitrary session, including one with a revoked-at cleared or an
-        expiry moved. This writes one field's worth of intent and nothing else.
+        **A narrow verb rather than a general "write this record".** That would let any caller
+        persist an arbitrary session, including one with a revoked-at cleared or an expiry moved.
+        This writes one field's worth of intent and nothing else, and the store writes it only
+        while the session is unrevoked: `session` is a snapshot, and a revocation that committed
+        after it was read (account recovery, `FR-007`) must win. Refused uniformly if it did (#517).
         """
         pointed = session.switched_to(organization_id)
-        if not self._sessions.save_session(pointed):
+        if not self._sessions.point_session_at_organization(
+            session.session_id_hash, organization_id
+        ):
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         return pointed
 

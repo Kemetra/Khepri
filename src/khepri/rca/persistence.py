@@ -397,7 +397,7 @@ def account_for_update(account_id: str):
     it.
 
     **The counterpart writes need no change.** They already take conflicting row locks by virtue of
-    being `UPDATE`s -- `_apply_account` on the disable path, `save_session` and the bulk
+    being `UPDATE`s -- `_apply_account` on the disable path, `revoke_session` and the bulk
     `update(SessionRow)` on the session-ending paths -- so this lock is the second half of a mutual
     exclusion rather than one waiting for a partner. §8.4 withdrew the counterpart slice two earlier
     revisions of the design note required.

@@ -71,7 +71,7 @@ class TestSwitchingIn:
         """`FR-029`'s second clause: it must take effect for *subsequent* decisions.
 
         Re-resolved through a new store, so a service that computed the new record and never
-        called `save_session` fails here while passing every assertion on the return value.
+        persisted it fails here while passing every assertion on the return value.
         """
         stack = two_owner_organization(factory)
         token = _sessions(factory).create(stack.first.account_id, now=NOW)
