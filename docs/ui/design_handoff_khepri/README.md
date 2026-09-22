@@ -1,5 +1,17 @@
 # Handoff: Khepri — data-to-report product UI (Arabic-first, RTL)
 
+> ## Superseded for Product UI visual direction (2026-09-22)
+>
+> **This is the previous handoff round.** For Product UI visual direction it is superseded by
+> **`docs/ui/design_handoff_khepri_product_ui/`**, which the owner supplied as final on
+> 2026-09-22. That package's §7 names this one explicitly: *"Not superseded as a record, but not
+> the target for this work. Where the two conflict, this package wins."*
+>
+> This pack **remains** as the historical record of the journey-screens round, and its screenshots
+> stay a legitimate reference for what that round decided. It is **not** authoritative for current
+> Product UI visual direction, and neither pack is implementation authority — active
+> specifications and their `§Scope` govern what product code may change.
+
 ## Overview
 
 Khepri turns an uploaded Excel/CSV file into a reviewable executive report. The design covers the full
