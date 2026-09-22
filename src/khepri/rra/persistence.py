@@ -488,10 +488,8 @@ class SqlSessionStore:
                 raise LookupError("Session is unavailable.")
             row.consent_version = session.consent_version
             row.consented_at = session.consented_at
-            if row.deletion_requested_at is None:
-                row.deletion_requested_at = session.deletion_requested_at
-            if row.content_deleted_at is None:
-                row.content_deleted_at = session.content_deleted_at
+            row.deletion_requested_at = row.deletion_requested_at or session.deletion_requested_at
+            row.content_deleted_at = row.content_deleted_at or session.content_deleted_at
 
 
 class SqlUploadRepository:
