@@ -344,6 +344,10 @@ def invitation_for_update_statement(
     )
 
 
+def session_for_update_statement(session_id: str) -> Select[tuple[BetaSessionRow]]:
+    return select(BetaSessionRow).where(BetaSessionRow.session_id == session_id).with_for_update()
+
+
 class SqlSessionStore:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
@@ -467,14 +471,27 @@ class SqlSessionStore:
             return _session_from_row(row)
 
     def update_session(self, session: BetaSession) -> None:
+        """Persist a session's consent, never undoing a deletion the row already records.
+
+        **Deletion instants are write-once (`#527`).** The consent path reads a session, then
+        saves a changed copy. A copy read before `SqlDeletionRepository.begin` carries
+        `deletion_requested_at = None`, and writing it back reopened a session that RRA-002's
+        deletion lifecycle had closed -- `require_upload_consent` admitted uploads again. So a
+        deletion column is written only while the row's is still empty: a `None` from a stale
+        snapshot is not a request to cancel, and a different instant does not move the one
+        recorded. This mirrors `begin`'s own `or` and the `save_invitation` hardening from
+        `#217`. The row is locked so that fill-if-empty check cannot interleave with `begin`.
+        """
         with self._factory.begin() as database:
-            row = database.get(BetaSessionRow, session.session_id)
+            row = database.scalar(session_for_update_statement(session.session_id))
             if row is None:
                 raise LookupError("Session is unavailable.")
             row.consent_version = session.consent_version
             row.consented_at = session.consented_at
-            row.deletion_requested_at = session.deletion_requested_at
-            row.content_deleted_at = session.content_deleted_at
+            if row.deletion_requested_at is None:
+                row.deletion_requested_at = session.deletion_requested_at
+            if row.content_deleted_at is None:
+                row.content_deleted_at = session.content_deleted_at
 
 
 class SqlUploadRepository:
