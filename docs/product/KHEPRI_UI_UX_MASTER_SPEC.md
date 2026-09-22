@@ -887,8 +887,26 @@ restriction, and names this section as its successor. Corrected in place, never 
 arriving from an older note sees what changed.
 
 **What the override does not reach:** it does not authorize a new typeface or icon family to bypass
-the licence-plus-audited-digest process, an external font host or CDN (CSP-blocked), a dark palette
-(an unmade product decision), or any change to governed facts, privacy, evidence, or isolation.
+the licence-plus-audited-digest process, an external font host or CDN (CSP-blocked), ~~a dark palette
+(an unmade product decision),~~ or any change to governed facts, privacy, evidence, or isolation.
+
+**The palette clause is struck rather than deleted.** "A dark palette (an unmade product decision)"
+recorded a decision the owner had not yet taken; it was never a prohibition on the palette itself,
+and **no prior governance artifact selected these palette values.** That is the narrow claim and the
+only one this section needs. It is not the claim that `governance/` is silent on color: `RCA-010`
+§Scope governs `src/khepri/rra/journey/assets/shell.css` as the shell's token sheet — the very file
+§16.5 names — and `RCA-004`, `RCA-005`, `RRA-012` and `RCA-010` each require that meaning never rest
+on color alone. Those constraints bind the values recorded in §16.5 exactly as they bound the shipped
+ones. The owner supplied the approved product-UI handoff on 2026-09-21 and its token set is
+reproduced in §16.5, which makes the decision taken and the clause spent. The strikethrough is
+retained rather than deleted so a reader arriving from an older note sees what changed, exactly as
+§16.1's own correction of `DESIGN_LANGUAGE` §0 was made in place.
+
+**What the correction does *not* widen.** The other three items in the sentence are untouched and
+unrelaxed: no typeface or icon family bypasses the licence-plus-audited-digest process, no external
+font host or CDN is reachable under the shipped `default-src 'none'` CSP, and no governed fact,
+privacy boundary, evidence derivation, or isolation boundary changes. A palette decision is a
+decision about color values on `:root`. It grants no asset, no icon, no motif, and no surface.
 
 ### 16.2 The twelve references
 
@@ -940,6 +958,34 @@ family board does not count as a screen reference.
 The pack is acceptance evidence for the surfaces it covers and is **silent** on the rest; §16.3's
 prohibition on substituting a coding agent's own visual interpretation applies regardless. The pack
 carries no authority of its own and changes nothing in §16.0–§16.3, §18, or §19.
+
+### 16.5 The approved palette
+
+The owner supplied `design_handoff_khepri_product_ui/` on 2026-09-21. Its §8 token set is the
+approved palette and is **binding for color values**, taken as custom properties on `:root` in
+`src/khepri/rra/journey/assets/shell.css` under `RCA-010` §Scope.
+
+- **Navy — chrome and ink.** `navy-900 #101C26` · `navy-950 #0B1017` · `ink #16212B` ·
+  `ink-muted #55616C` · `ink-secondary #6B7580` · `ink-tertiary #98A0A8` · `nav-label #A9B2B9` ·
+  `ink-disabled #B2B7BC`
+- **Gold — brand and primary.** `gold-400 #D5AE63` · `gold-500 #C9A45C` · `gold-600 #B98C39` ·
+  `gold-link #8C6B22` · `gold-eyebrow #9A7B34` · `gold-ink #7A5A17` · `gold-tint #F6EBD6` ·
+  `gold-border #E3CE9F`
+- **Ivory and sand — surfaces.** `surface-card #FFFFFF` · `surface-canvas #FBF9F6` ·
+  `surface-page #E9E3DA` · `surface-sand #F4EEE4` · `hero-ground #F6EDDF` · `border-card #EBE5DC` ·
+  `border-inner #EFE9E0` · `border-strong #DED7CC`
+- **Status triplets**, each an ink, a fill, and a border or bar: success `#27724F` / `#E7F2EB` /
+  `#D5E5DA`; warning `#7A5A17` / `#FAEEDA` / `#F0E1C2`; error `#B0392F` / `#FBE9E7` / `#F2DAD6`.
+
+**This is the dark *rail*, not a dark *theme*.** The composition the approved references fix is a
+warm limestone content surface against a dark navigation rail — one frame region carrying the navy,
+analytical regions staying on the ivory and sand surfaces. The Light/Dark/System control drawn on
+panel 14 of `90-visual-family-board.png` remains an unmade product decision and is **not** taken
+here; §16.2's note on that panel stands unamended.
+
+**Status color never carries meaning alone.** §11's non-color differentiation is unrelaxed: a status
+triplet is paint over a badge, label, or shape that already states the state in words. A slice that
+introduces a triplet as the sole discriminator of a governed state is outside this section.
 
 ---
 
