@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Context, Decimal, InvalidOperation, localcontext
 
@@ -53,6 +53,7 @@ from khepri.rra.mapping import (
     SEMANTIC_TRANSACTION_ID,
     SEMANTIC_UNITS,
     STATE_AMBIGUOUS,
+    STATE_MAPPED,
     RetailMapping,
     build_mapping,
 )
@@ -523,19 +524,32 @@ class _Measures:
 
 
 @dataclass(frozen=True, slots=True)
+class _Causes:
+    """What can refuse one result, in the terms `_reason_for` orders.
+
+    `gapped` is the result's own input columns whose gap *refuses* it, already
+    narrowed by the caller: a gap the result survives (AOV narrows to its
+    matched rows; a trend survives a blank cell) is not a cause and is not
+    stated.
+    """
+
+    mapping: RetailMapping
+    gapped: frozenset[str] = frozenset()
+    repeated: bool = False
+    identifiers_complete: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class _Aggregated:
     measure: str
     values: list[Decimal | None]
     total: Decimal | None
     precision: int
     unit_kind: str
-    #: The cause to state when `total` is absent. `required_input_unavailable`
-    #: renders as "the file does not contain" the column, which is the truthful
-    #: answer when the measure was never mapped and a misdirection when the
-    #: column is present and one of its rows broke a contract. Carried on the
-    #: entry rather than chosen by each consumer so `_series` and `_comparisons`
-    #: cannot drift apart on one requirement's cause.
-    reason: str = REASON_INPUT_UNAVAILABLE
+    #: What can refuse this measure's surfaces. Carried on the entry rather
+    #: than chosen by each consumer so `_series` and `_comparisons` cannot drift
+    #: apart on one requirement's cause.
+    causes: _Causes
 
 
 @dataclass(frozen=True, slots=True)
@@ -617,13 +631,14 @@ class _Totals:
     revenue: Decimal | None
     units: int | None
     transactions: int | None
-    transactions_reason: str
     cost: Decimal | None
     discount: Decimal | None
     returns: Decimal | None
-    #: Set when a repeated canonical row signature refused the additive family,
-    #: so every one of them states the same governed reason.
-    additive_reason: str = REASON_INPUT_UNAVAILABLE
+    #: `RRA-003`:93 -- an admitted return row whose revenue is missing or
+    #: positive, which refuses returns and the financial revenue population.
+    #: Recorded on both paths, because it is a cause in its own right that a
+    #: repeated signature does not make false.
+    returns_violated: bool = False
     #: Which headlines refused because their own column had gaps, so each names
     #: a cause the reader can act on rather than "the file does not contain" it.
     gapped_semantics: frozenset[str] = frozenset()
@@ -643,20 +658,6 @@ class _Totals:
     #: population, which is the whole distinction it now encodes.
     series_revenue: Decimal | None = None
     series_units: int | None = None
-
-
-def _identifier_reason(measures: _Measures) -> str:
-    """Why a transaction count is missing when the signature is not the cause.
-
-    Stated in one place so the duplicate-signature path cannot report a weaker
-    cause than the ordinary one: a repeated *return* leaves the identifiers
-    exactly as they were, and an identifier column with gaps is still that.
-    """
-    return (
-        REASON_INPUT_UNAVAILABLE
-        if measures.transaction_identifiers_complete
-        else REASON_INCOMPLETE_IDENTIFIERS
-    )
 
 
 def _totals(
@@ -687,6 +688,7 @@ def _totals(
     the refusal true of an intermediate object and false of the report.
     """
     complete = measures.transaction_identifiers_complete and not repeated_sale_signature
+    returns_violated = _return_revenue_violates_its_contract(measures)
     if repeated_row_signature:
         # `RRA-003`: a repeated canonical row signature "refuses every additive
         # or distinct-transaction result that could include it", and the
@@ -703,17 +705,10 @@ def _totals(
                 if repeated_sale_signature or not complete
                 else _distinct(_sale_only(measures.transactions, measures))
             ),
-            transactions_reason=(
-                REASON_REPEATED_ROW_SIGNATURE
-                if repeated_sale_signature
-                # A duplicated return says nothing about the identifiers, so the
-                # cause the normal path would have given still stands.
-                else _identifier_reason(measures)
-            ),
             cost=None,
             discount=None,
             returns=None,
-            additive_reason=REASON_REPEATED_ROW_SIGNATURE,
+            returns_violated=returns_violated,
         )
     # `RRA-004`:46 -- headlines "refuse when a required admitted column has
     # gaps", per column. `_sum_decimal` refuses only when every value is absent,
@@ -730,16 +725,15 @@ def _totals(
     # figure that silently excluded it -- two wrong numbers where the contract
     # admits none.
     #
-    # Carried through `gapped_semantics` rather than `additive_reason` so the
-    # cause reaches *revenue* alone. `additive_reason` is the fall-through for
-    # cost, units and discount too, and a violation in the return population
-    # says nothing about those columns. `incomplete_column_coverage` is the
-    # governed code because the revenue column does not cover a row of the
-    # population it must supply -- and it is the same code the missing-revenue
-    # half of `RRA-003`:93 already reaches through the ordinary gap path, so one
-    # requirement reports one cause. The vocabulary is closed (`RRA-009`), and a
-    # dedicated sign-violation code would be an amendment rather than a slice.
-    returns_violated = _return_revenue_violates_its_contract(measures)
+    # Carried through `gapped_semantics` so the cause reaches the results that
+    # read the revenue column and no others: a violation in the return
+    # population says nothing about cost, units or discount.
+    # `incomplete_column_coverage` is the governed code because the revenue
+    # column does not cover a row of the population it must supply -- and it is
+    # the same code the missing-revenue half of `RRA-003`:93 already reaches
+    # through the ordinary gap path, so one requirement reports one cause. The
+    # vocabulary is closed (`RRA-009`), and a dedicated sign-violation code would
+    # be an amendment rather than a slice.
     return _Totals(
         revenue=(
             None
@@ -755,7 +749,6 @@ def _totals(
             if complete
             else None
         ),
-        transactions_reason=_identifier_reason(measures),
         cost=whole(
             SEMANTIC_COST,
             _on_attested_basis(
@@ -774,6 +767,7 @@ def _totals(
         # return-amount measure is admitted." A return event states its own
         # magnitude, so a separate column is a second answer to one question.
         returns=None if returns_violated else _returns_magnitude(admitted_events, measures),
+        returns_violated=returns_violated,
         gapped_semantics=(
             measures.gapped_semantics | {SEMANTIC_REVENUE}
             if returns_violated
@@ -1091,7 +1085,6 @@ def _build(
     revenue_total = totals.revenue
     units_total = totals.units
     transactions_total = totals.transactions
-    transactions_reason = totals.transactions_reason
     cost_total = totals.cost
     discount_total = totals.discount
     returns_total = totals.returns
@@ -1121,16 +1114,28 @@ def _build(
 
     money = measures.monetary_precision
 
-    def headline_reason(semantic: str) -> str:
-        """The cause this headline actually has.
+    # The revenue population `RRA-003`:93 refuses. Unlike a blank cell it
+    # reaches the trend and comparisons too (`#503`), and it is the only gap
+    # that refuses returns, which reads return rows alone.
+    population_gaps = frozenset({SEMANTIC_REVENUE} if totals.returns_violated else ())
+    column_gaps = measures.gapped_semantics | population_gaps
 
-        A gapped column and an absent one are different findings with different
-        remedies, and `required_input_unavailable` renders as "the file does not
-        contain" the column -- advice that cannot work when it is there.
-        """
-        if semantic in totals.gapped_semantics:
-            return REASON_INCOMPLETE_COVERAGE
-        return totals.additive_reason
+    causes = _Causes(
+        mapping=mapping,
+        repeated=repeated_rows,
+        identifiers_complete=measures.transaction_identifiers_complete,
+    )
+
+    # `gaps_from` defaults to the result's own inputs, and narrows only where a
+    # gap in one of them does not refuse the result.
+    def reason(
+        inputs: tuple[str, ...],
+        *,
+        gaps_from: Iterable[str] | None = None,
+        repeated: bool = repeated_rows,
+    ) -> str:
+        gaps = column_gaps.intersection(inputs if gaps_from is None else gaps_from)
+        return _reason_for(inputs, replace(causes, gapped=gaps, repeated=repeated))
 
     add(
         METRIC_REVENUE,
@@ -1138,7 +1143,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE,),
-        reason=headline_reason(SEMANTIC_REVENUE),
+        reason=reason((SEMANTIC_REVENUE,)),
     )
     add(
         METRIC_UNITS,
@@ -1146,7 +1151,7 @@ def _build(
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_UNITS,),
-        reason=headline_reason(SEMANTIC_UNITS),
+        reason=reason((SEMANTIC_UNITS,)),
     )
     add(
         METRIC_TRANSACTIONS,
@@ -1154,7 +1159,7 @@ def _build(
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_TRANSACTION_ID,),
-        reason=transactions_reason,
+        reason=reason((SEMANTIC_TRANSACTION_ID,), repeated=repeated_sales),
     )
     add(
         METRIC_COST,
@@ -1162,7 +1167,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_COST,),
-        reason=headline_reason(SEMANTIC_COST),
+        reason=reason((SEMANTIC_COST,)),
     )
     add(
         METRIC_DISCOUNT,
@@ -1170,12 +1175,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_DISCOUNT,),
-        reason=_measured_or_mapped_reason(
-            gapped=totals.gapped_semantics,
-            mapping=mapping,
-            gap_semantic=SEMANTIC_DISCOUNT,
-            mapped_semantic=SEMANTIC_DISCOUNT,
-        ),
+        reason=reason((SEMANTIC_DISCOUNT,)),
     )
     add(
         METRIC_RETURNS,
@@ -1183,12 +1183,11 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_RETURNS,),
-        reason=_measured_or_mapped_reason(
-            gapped=totals.gapped_semantics,
-            mapping=mapping,
-            gap_semantic=SEMANTIC_REVENUE,
-            mapped_semantic=SEMANTIC_RETURNS,
-        ),
+        # Returns is derived from admitted return *revenue* -- `RRA-003` admits
+        # no independently mapped return-amount measure -- so the gap that
+        # refuses it is the revenue population's, while the mapping that can
+        # call it ambiguous is `returns`.
+        reason=reason((SEMANTIC_RETURNS,), gaps_from=population_gaps),
     )
 
     # A metric combining two measures is computed over the rows that carry both.
@@ -1234,7 +1233,11 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_ID),
-        unavailable_reason=transactions_reason,
+        # AOV narrows to its matched rows, which `RRA-004` defines as its
+        # population, so no gap refuses it.
+        unavailable_reason=reason(
+            (SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_ID), gaps_from=(), repeated=repeated_sales
+        ),
     )
     _add_ratio(
         add,
@@ -1248,7 +1251,12 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
-        unavailable_reason=totals.additive_reason,
+        # A gap refuses ASP only by leaving an unmatched eligible row.
+        unavailable_reason=reason(
+            (SEMANTIC_REVENUE, SEMANTIC_UNITS),
+            gaps_from=() if complete_selling else None,
+            repeated=repeated_sales,
+        ),
     )
 
     margin_revenue, gross_profit = _margin_inputs(
@@ -1270,7 +1278,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
-        reason=headline_reason(SEMANTIC_COST),
+        reason=reason((SEMANTIC_REVENUE, SEMANTIC_COST)),
     )
     _add_ratio(
         add,
@@ -1280,7 +1288,7 @@ def _build(
         unit_kind=UNIT_RATIO,
         precision=RATIO_PRECISION,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
-        unavailable_reason=headline_reason(SEMANTIC_COST),
+        unavailable_reason=reason((SEMANTIC_REVENUE, SEMANTIC_COST)),
     )
 
     # Ordered to match `SERIES_MEASURES`, and asserted against it below: the
@@ -1292,13 +1300,11 @@ def _build(
             measure=SEMANTIC_REVENUE,
             values=measures.revenue,
             # Survives a gap and refuses a population -- the distinction the
-            # field's own note carries. `reason` because the column is present
-            # and a row broke it, so `required_input_unavailable` would tell the
-            # reader to add a column already in their export (`#503`).
+            # field's own note carries -- so only the population's gap is a cause.
             total=totals.series_revenue,
             precision=money,
             unit_kind=UNIT_MONETARY,
-            reason=headline_reason(SEMANTIC_REVENUE),
+            causes=replace(causes, gapped=population_gaps),
         ),
         _Aggregated(
             measure=SEMANTIC_UNITS,
@@ -1308,6 +1314,7 @@ def _build(
             ),
             precision=0,
             unit_kind=UNIT_COUNT,
+            causes=causes,
         ),
     )
     if tuple(entry.measure for entry in aggregated) != SERIES_MEASURES:
@@ -1428,8 +1435,11 @@ def _build(
                 counts=_population_counts(measures),
                 transaction_counts=_population_transaction_counts(measures),
             ),
-            repeated_rows=repeated_rows,
-            repeated_sales=repeated_sales,
+            # A violating return refuses the financial revenue population
+            # (`RRA-003`:93) and leaves the sale-only ones whole, so it withholds
+            # the same side a duplicated return does (`#431` A-09).
+            financial_refused=repeated_rows or totals.returns_violated,
+            sales_refused=repeated_sales,
         ),
     )
 
@@ -1443,10 +1453,10 @@ _FINANCIAL_POPULATION_PREFIX = "financial_"
 def _unrepeated(
     bases: tuple[RetainedBasis, ...],
     *,
-    repeated_rows: bool,
-    repeated_sales: bool,
+    financial_refused: bool,
+    sales_refused: bool,
 ) -> tuple[RetainedBasis, ...]:
-    """The bases whose own population no repeated signature reaches.
+    """The bases whose own population no refusal reaches.
 
     A retained basis is the evidence a figure is reconciled *against*, so one
     built over rows of unproven identity is worse than absent: `RRA-004`:123
@@ -1469,9 +1479,9 @@ def _unrepeated(
         basis
         for basis in bases
         if not (
-            repeated_rows
+            financial_refused
             if basis.population.startswith(_FINANCIAL_POPULATION_PREFIX)
-            else repeated_sales
+            else sales_refused
         )
     )
 
@@ -1610,7 +1620,11 @@ def _daily_bases_of(
     # or mixed currency, and a basis is derived evidence: persisting the raw
     # frame amounts under a `None` currency would retain an authoritative
     # aggregate the package's own admission rejected.
-    monetary = currency is not None
+    #
+    # A violating return (`RRA-003`:93) refuses the financial revenue population
+    # these values sum, so its revenue is withheld the same way, and units --
+    # which the violation does not reach -- stay (`#431` A-09).
+    monetary = currency is not None and not _return_revenue_violates_its_contract(measures)
     return tuple(
         AlignedDailyBasis(
             scope=scope,
@@ -1956,39 +1970,45 @@ def _matched(left: list, right: list) -> _Matched:
     )
 
 
-def _measured_or_mapped_reason(
-    *,
-    gapped: frozenset[str],
-    mapping: RetailMapping,
-    gap_semantic: str,
-    mapped_semantic: str,
-) -> str:
-    """The cause a *measured* headline has, falling back to its mapping's.
+def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> str:
+    """The one cause a refused result states, in the order `RRA-009` governs.
 
-    `#431` item 2. Revenue, units and cost answer `incomplete_column_coverage`
-    when their own column has blank cells; discount and returns answered only
-    from the mapping, which knows *absent* and *ambiguous* and nothing about
-    coverage. So a present-but-gapped discount column reported
-    `required_input_unavailable` -- "the file does not contain
-    discount_amount" -- of a column already in the reader's export.
+    "When more than one cause refuses the same result, state exactly one, chosen
+    in this order: a gap in one of the result's own input columns
+    (`incomplete_column_coverage`); then a repeated canonical row signature
+    (`repeated_row_signature`); then the mapping's own cause." Every result's
+    reason comes through here, because `#431` A-05 was three call sites each
+    choosing their own and each getting one case wrong.
 
-    **Composed with `_unavailable_reason`, not a replacement for it.** `#431`
-    proposed passing `headline_reason` instead, which would have dropped the
-    ambiguity cause: a column named only `discount` states no measure kind, and
-    `ambiguous_mapping` is what tells the reader their *label* is the problem
-    rather than their data. Coverage first because it is the narrower finding;
-    the mapping's answer stands when the column is whole.
-
-    **The two semantics differ for returns, and that is the point.** Returns is
-    derived from admitted return *revenue* -- `RRA-003` admits "no
-    independently mapped return-amount measure" -- so the column whose coverage
-    can refuse it is `revenue`, while the mapping that can call it ambiguous is
-    `returns`. Naming both is what lets `RRA-003`:93 refuse revenue and returns
-    with one cause instead of two.
+    **Pairs `RRA-009` does not order keep their existing order.** Incomplete
+    transaction identifiers came after a repeated sale signature before this
+    resolver existed, and still do; zero and negative denominators,
+    reconciliation, currency and basis are decided by their own call sites and
+    never reach here.
     """
-    if gap_semantic in gapped:
+    if causes.gapped:
         return REASON_INCOMPLETE_COVERAGE
-    return _unavailable_reason(mapping, mapped_semantic)
+    if causes.repeated:
+        return REASON_REPEATED_ROW_SIGNATURE
+    if SEMANTIC_TRANSACTION_ID in inputs and not causes.identifiers_complete:
+        return REASON_INCOMPLETE_IDENTIFIERS
+    return _mapping_reason(causes.mapping, inputs)
+
+
+def _mapping_reason(mapping: RetailMapping, inputs: tuple[str, ...]) -> str:
+    """The first unmapped input's cause, or plain unavailability.
+
+    So a column named only `discount` still says its *label* is the problem
+    (`ambiguous_mapping`) rather than that the file lacks it.
+    """
+    return next(
+        (
+            _unavailable_reason(mapping, semantic)
+            for semantic in inputs
+            if mapping.state_of(semantic) != STATE_MAPPED
+        ),
+        REASON_INPUT_UNAVAILABLE,
+    )
 
 
 def _unavailable_reason(mapping: RetailMapping, semantic: str) -> str:
@@ -2041,29 +2061,25 @@ def _assert_derived_from_profile(admitted: AdmittedInput) -> None:
         raise FactsRefused("Admissibility was not decided for the supplied artifacts.")
 
 
-def _derived_refusal(metric: str, entry: _Aggregated, *, present: bool) -> RefusedResult:
-    """A derived surface's refusal, naming its own missing input or the measure's.
+def _derived_refusal(metric: str, entry: _Aggregated, *, surface: str) -> RefusedResult:
+    """A derived surface's refusal, stating its cause in the `RRA-009` order.
 
-    A series and a comparison each have one precondition of their own -- a dated
-    package, a mapped dimension column -- and both are genuinely *absent inputs*
-    when unmet, so they keep `required_input_unavailable` whatever the measure
-    says. That code renders as "the file does not contain" the column, which is
-    the truthful advice for something that is not there.
+    A series and a comparison each have one input of their own -- the date, a
+    dimension column -- beside the measure. When that input is absent it is a
+    mapping cause like the measure's, so it is ordered like one: a gap that
+    refuses the measure's population, then a repeated signature, and only then
+    the absent column. `#503` put the absent column first; `RRA-009` has since
+    ordered the pair the other way.
 
-    When the surface's own input *is* present, the cause belongs to the measure,
-    and `_Aggregated.reason` carries it -- `incomplete_column_coverage` for a
-    revenue column present but holding a row that broke `RRA-003`:93, where
-    telling the reader to add the column would be a misdirection (`#503`).
-
-    `present` is the surface's own precondition: a dated package for a series, a
-    mapped dimension column for a comparison.
+    `surface` is the surface's own semantic, named first so that when both it
+    and the measure lack a mapping, the surface's own is the one stated.
 
     Stated once because the two call sites answer one question. Inlined at each,
     they were two conditionals that could drift apart on the same requirement.
     """
     return RefusedResult(
         metric=metric,
-        reason=entry.reason if present else REASON_INPUT_UNAVAILABLE,
+        reason=_reason_for((surface, entry.measure), entry.causes),
     )
 
 
@@ -2087,7 +2103,9 @@ def _series(
     for entry in aggregated:
         metric = f"{entry.measure}_by_{PERIOD_DIMENSION}"
         if not dated or entry.total is None:
-            refusals.append(_derived_refusal(metric, entry, present=bool(dated)))
+            refusals.append(
+                _derived_refusal(metric, entry, surface=SEMANTIC_TRANSACTION_DATE)
+            )
             continue
         series = build_series(
             dates=measures.dates,
@@ -2172,7 +2190,7 @@ def _comparisons(
         for entry in aggregated:
             metric = f"{entry.measure}_by_{dimension}"
             if keys is None or entry.total is None:
-                refusals.append(_derived_refusal(metric, entry, present=keys is not None))
+                refusals.append(_derived_refusal(metric, entry, surface=dimension))
                 continue
             comparison = build_comparison(
                 dimension=dimension,

@@ -224,9 +224,7 @@ def test_an_unmapped_column_states_the_mapping_cause() -> None:
 def test_an_ambiguous_label_states_the_mapping_cause() -> None:
     result = _build(_renamed(_csv(_SALE_1, _SALE_2, _RETURN), "discount_amount", "discount"))
 
-    _assert_causes(
-        result, {METRIC_DISCOUNT: AMBIGUOUS, **_all(_CHANNEL, UNAVAILABLE)}
-    )
+    _assert_causes(result, {METRIC_DISCOUNT: AMBIGUOUS, **_all(_CHANNEL, UNAVAILABLE)})
 
 
 # -- two causes at once: the order is the subject --------------------------------------
