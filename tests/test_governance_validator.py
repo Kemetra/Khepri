@@ -81,6 +81,83 @@ def test_identifiers_and_documents_are_unique(tmp_path: Path) -> None:
     assert "registry: duplicate document 'governance/specifications/FND-001.md'" in errors
 
 
+_FAMILY_ENTRY = (
+    "  - type: family\n"
+    "    id: FND\n"
+    "    state: active\n"
+    "    document: governance/families/FND.md\n"
+    "    depends_on: []\n"
+)
+
+
+def test_registry_rejects_a_repeated_top_level_block(tmp_path: Path) -> None:
+    write_registry(tmp_path, valid_artifacts())
+    content = (
+        "schema_version: 2\n"
+        "artifacts:\n"
+        "  - type: nonsense\n"
+        "artifacts:\n" + _FAMILY_ENTRY
+    )
+    write_raw_registry(tmp_path, content)
+    assert validate_repository(tmp_path) == ["registry: duplicate key 'artifacts' at line 4"]
+
+
+def test_registry_rejects_a_repeated_key_inside_an_artifact(tmp_path: Path) -> None:
+    write_registry(tmp_path, valid_artifacts())
+    content = (
+        "schema_version: 2\n"
+        "artifacts:\n"
+        "  - type: family\n"
+        "    id: FND\n"
+        "    state: retired\n"
+        "    state: active\n"
+        "    document: governance/families/FND.md\n"
+        "    depends_on: []\n"
+    )
+    write_raw_registry(tmp_path, content)
+    assert validate_repository(tmp_path) == ["registry: duplicate key 'state' at line 6"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["schema_version: 2\n? [a]\n: 1\n", "schema_version: 2\n? !!set {a: null}\n: 1\n"],
+)
+def test_unhashable_keys_still_fail_as_invalid_yaml(tmp_path: Path, content: str) -> None:
+    write_raw_registry(tmp_path, content)
+    assert validate_repository(tmp_path) == ["registry: invalid YAML"]
+
+
+def test_registry_still_accepts_a_yaml_merge_key(tmp_path: Path) -> None:
+    write_registry(tmp_path, valid_artifacts())
+    content = (
+        "schema_version: 2\n"
+        "artifacts:\n"
+        "  - &base\n"
+        "    type: family\n"
+        "    id: FND\n"
+        "    state: active\n"
+        "    document: governance/families/FND.md\n"
+        "    depends_on: []\n"
+        "  - <<: *base\n"
+        "    id: FND-001\n"
+        "    type: specification\n"
+        "    document: governance/specifications/FND-001.md\n"
+        "    depends_on: [FND]\n"
+    )
+    write_raw_registry(tmp_path, content)
+    assert validate_repository(tmp_path) == []
+
+
+@pytest.mark.parametrize("alias", ["./governance/families/FND.md", "governance/./families/FND.md"])
+def test_documents_are_compared_after_normalization(tmp_path: Path, alias: str) -> None:
+    artifacts = valid_artifacts()
+    alias_entry = decision()
+    alias_entry["document"] = alias
+    artifacts.append(alias_entry)
+    write_registry(tmp_path, artifacts)
+    assert f"registry: duplicate document {alias!r}" in validate_repository(tmp_path)
+
+
 @pytest.mark.parametrize(
     ("document", "expected"),
     [
