@@ -32,7 +32,7 @@ from khepri.rra.aggregates import (
     period_label,
     reconciles,
 )
-from khepri.rra.bases import BasisBinding, RetainedBasis, retain_bases
+from khepri.rra.bases import BASIS_FINANCIAL_UNITS, BasisBinding, RetainedBasis, retain_bases
 from khepri.rra.coverage import CoverageManifest
 from khepri.rra.coverage_signature import (
     CoverageSignature,
@@ -1435,10 +1435,12 @@ def _build(
                 counts=_population_counts(measures),
                 transaction_counts=_population_transaction_counts(measures),
             ),
-            # A violating return refuses the financial revenue population
-            # (`RRA-003`:93) and leaves the sale-only ones whole, so it withholds
-            # the same side a duplicated return does (`#431` A-09).
-            financial_refused=repeated_rows or totals.returns_violated,
+            # A violating return refuses the financial *revenue* population
+            # (`RRA-003`:93): its revenue bases go, while `financial_units_basis`
+            # stays because units still publish and must cite it (`RRA-004`:123),
+            # and the sale-only bases are whole (`#431` A-09).
+            financial_refused=repeated_rows,
+            financial_revenue_refused=totals.returns_violated,
             sales_refused=repeated_sales,
         ),
     )
@@ -1455,6 +1457,7 @@ def _unrepeated(
     *,
     financial_refused: bool,
     sales_refused: bool,
+    financial_revenue_refused: bool = False,
 ) -> tuple[RetainedBasis, ...]:
     """The bases whose own population no refusal reaches.
 
@@ -1478,12 +1481,21 @@ def _unrepeated(
     return tuple(
         basis
         for basis in bases
-        if not (
-            financial_refused
-            if basis.population.startswith(_FINANCIAL_POPULATION_PREFIX)
-            else sales_refused
-        )
+        if not _withheld(basis, financial_refused, sales_refused, financial_revenue_refused)
     )
+
+
+def _withheld(
+    basis: RetainedBasis,
+    financial_refused: bool,
+    sales_refused: bool,
+    financial_revenue_refused: bool,
+) -> bool:
+    """Whether a refusal reaches this basis's own population, or its revenue role."""
+    if not basis.population.startswith(_FINANCIAL_POPULATION_PREFIX):
+        return sales_refused
+    revenue_role = basis.name != BASIS_FINANCIAL_UNITS
+    return financial_refused or (financial_revenue_refused and revenue_role)
 
 
 def _population_counts(measures: _Measures) -> dict[str, int]:
@@ -1635,7 +1647,8 @@ def _daily_bases_of(
             statuses=(STATUS_POSTED,),
             values=_daily_values(measures, days, monetary=monetary),
             precision=measures.monetary_precision,
-            currency=currency,
+            # `None` for a basis carrying units alone (`AlignedDailyBasis.currency`).
+            currency=currency if monetary else None,
         )
         for scope, days in _attested_days(manifest)
     )

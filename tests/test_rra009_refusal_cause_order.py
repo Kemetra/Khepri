@@ -29,6 +29,7 @@ from decimal import Decimal
 import pytest
 
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.bases import BASIS_FINANCIAL_UNITS
 from khepri.rra.facts import (
     GOVERNED_METRICS,
     METRIC_AVERAGE_ORDER_VALUE,
@@ -53,6 +54,7 @@ from khepri.rra.facts import (
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import SEMANTIC_CHANNEL, build_mapping
+from khepri.rra.populations import POPULATION_FINANCIAL_POSTED
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import attesting_manifest, oracle_contract
 
@@ -363,6 +365,9 @@ def test_a_violating_return_is_not_summed_into_the_daily_bases() -> None:
     control_values = _basis_values(control)
     violated_values = _basis_values(violated)
     assert all(value.revenue is None for value in violated_values), violated_values
+    assert all(basis.currency is None for basis in violated.daily_bases), (
+        "a basis carrying units alone states no currency"
+    )
     assert [value.units for value in violated_values] == [value.units for value in control_values]
     assert any(value.revenue == Decimal("-30.00") for value in control_values), (
         "the control's basis does not carry the return, so it cannot show the difference"
@@ -390,4 +395,11 @@ def test_a_violating_return_withholds_the_financial_retained_bases_only() -> Non
     sales = {code for code in populations(control) if code.startswith("sales_")}
     assert financial and sales, "the control retains no bases of one family"
     assert violated.value(METRIC_TRANSACTIONS) is not None
-    assert populations(violated) == sales
+    # Units still publish over `financial_posted`, so their basis stays citable
+    # (`RRA-004`:123); only the revenue-bearing financial bases are withheld.
+    assert violated.value(METRIC_UNITS) is not None
+    kept_financial = {
+        basis.name for basis in violated.retained_bases if basis.population.startswith("financial_")
+    }
+    assert kept_financial == {BASIS_FINANCIAL_UNITS}
+    assert populations(violated) == sales | {POPULATION_FINANCIAL_POSTED}
