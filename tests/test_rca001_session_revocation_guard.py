@@ -84,9 +84,11 @@ def _live_session(factory: sessionmaker) -> tuple[str, str, str]:
 class TestPointingAStaleSnapshot:
     """The reproduction from #517, against the real store."""
 
-    def test_a_switch_from_a_snapshot_taken_before_recovery_does_not_un_revoke(
-        self, factory: sessionmaker
+    @pytest.mark.parametrize("verb", ["switch", "clear"])
+    def test_pointing_from_a_snapshot_taken_before_recovery_does_not_un_revoke(
+        self, factory: sessionmaker, verb: str
     ) -> None:
+        """A switch points the session at an organization; a clear points it at none."""
         account_id, organization_id, token = _live_session(factory)
         service = SessionService(SqlSessionStore(factory), lifetime=LIFETIME)
         stale = service.resolve(token, now=NOW)
@@ -96,20 +98,7 @@ class TestPointingAStaleSnapshot:
             service.resolve(token, now=LATER)
 
         with suppress(AuthenticationFailed):
-            service.point_at_organization(stale, organization_id)
-
-        _assert_still_revoked(factory, token)
-
-    def test_clearing_from_a_snapshot_taken_before_recovery_does_not_un_revoke(
-        self, factory: sessionmaker
-    ) -> None:
-        account_id, _, token = _live_session(factory)
-        service = SessionService(SqlSessionStore(factory), lifetime=LIFETIME)
-        stale = service.resolve(token, now=NOW)
-        service.revoke_all(account_id, now=RECOVERED_AT)
-
-        with suppress(AuthenticationFailed):
-            service.point_at_organization(stale, None)
+            service.point_at_organization(stale, organization_id if verb == "switch" else None)
 
         _assert_still_revoked(factory, token)
 
