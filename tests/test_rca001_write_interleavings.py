@@ -98,42 +98,35 @@ def _promote(factory: sessionmaker, organization_id: str, owner_id: str, member_
 # --- D-03 ------------------------------------------------------------------------------------
 
 
-def test_a_promotion_overtaken_by_a_revocation_is_an_ordinary_refusal(factory) -> None:
+_REVOKE_MEMBER = "DELETE FROM rca_memberships WHERE organization_id = ? AND account_id = ?"
+_PROMOTE_MEMBER = (
+    f"UPDATE rca_memberships SET role = '{OWNER_ROLE}' WHERE organization_id = ? AND account_id = ?"
+)
+
+
+@pytest.mark.parametrize(
+    "competing",
+    [_REVOKE_MEMBER, _PROMOTE_MEMBER],
+    ids=["overtaken-by-a-revocation", "overtaken-by-another-promotion"],
+)
+def test_an_overtaken_promotion_is_an_ordinary_refusal_with_no_event(
+    factory, competing: str
+) -> None:
+    """A revocation or a second promotion commits just before this one's write: it
+    refuses as `RoleChangeFailed` (not `StaleDataError`) and records no member -> owner
+    transition it did not make."""
     organization_id, owner_id, member_id = _organization_with_member(factory)
     events_before = _role_change_events(factory, member_id)
 
-    def revoke(cursor, _statement, _parameters) -> None:
-        cursor.execute(
-            "DELETE FROM rca_memberships WHERE organization_id = ? AND account_id = ?",
-            (organization_id, member_id),
-        )
+    def overtake(cursor, _statement, _parameters) -> None:
+        cursor.execute(competing, (organization_id, member_id))
 
-    _just_before(factory, "UPDATE RCA_MEMBERSHIPS", revoke)
+    _just_before(factory, "UPDATE RCA_MEMBERSHIPS", overtake)
 
     with pytest.raises(RoleChangeFailed):
         _promote(factory, organization_id, owner_id, member_id)
 
     assert _role_change_events(factory, member_id) == events_before
-
-
-def test_a_promotion_overtaken_by_another_writes_no_second_event(factory) -> None:
-    organization_id, owner_id, member_id = _organization_with_member(factory)
-    events_before = _role_change_events(factory, member_id)
-
-    def promoted_elsewhere(cursor, _statement, _parameters) -> None:
-        cursor.execute(
-            "UPDATE rca_memberships SET role = ? WHERE organization_id = ? AND account_id = ?",
-            (OWNER_ROLE, organization_id, member_id),
-        )
-
-    _just_before(factory, "UPDATE RCA_MEMBERSHIPS", promoted_elsewhere)
-
-    with pytest.raises(RoleChangeFailed):
-        _promote(factory, organization_id, owner_id, member_id)
-
-    assert _role_change_events(factory, member_id) == events_before, (
-        "an event recorded a member -> owner transition this call did not make"
-    )
 
 
 def test_an_uncontended_promotion_still_writes_its_row_and_one_event(factory) -> None:
