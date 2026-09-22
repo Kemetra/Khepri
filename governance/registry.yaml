@@ -484,3 +484,10 @@ artifacts:
     depends_on:
       - RCA
       - RCA-010
+  - type: specification
+    id: RCA-012
+    state: active
+    document: governance/specifications/RCA-012.md
+    depends_on:
+      - RCA
+      - RCA-010
