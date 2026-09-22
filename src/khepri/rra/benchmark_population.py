@@ -1,4 +1,4 @@
-"""The population `KHEPRI-BMK-001` measures, exactly as `KHEPRI-DEC-006` fixes it.
+"""The population `KHEPRI-BMK-001` measures, exactly as `KHEPRI-DEC-029` fixes it.
 
 **Nothing here is chosen.** Every count, edge, cardinality, and ordering rule below is
 quoted from the approved decision. Where this module and that decision disagree, the
@@ -74,8 +74,8 @@ EXTENDED_COLUMNS: tuple[tuple[str, str | None], ...] = (
     ("customer_email", None),
 )
 
-# Both read paths KHEPRI-DEC-005 selects, against both profiles. Every band count is a
-# multiple of four, so assigning these round-robin divides each band equally.
+# Both read paths KHEPRI-DEC-028 selects (Polars CSV, calamine XLSX), against both profiles.
+# Every band count is a multiple of four, so assigning these round-robin divides each band equally.
 COMBINATIONS: tuple[tuple[str, str], ...] = (
     (FORMAT_CSV, PROFILE_CORE),
     (FORMAT_CSV, PROFILE_EXTENDED),

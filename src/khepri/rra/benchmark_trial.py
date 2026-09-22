@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.benchmark_rows import CURRENCY as BENCHMARK_CURRENCY
 from khepri.rra.benchmark_workload import BenchmarkDataset
 from khepri.rra.bundle import (
     REQUIRED_SURFACES,
@@ -178,14 +179,18 @@ def _benchmark_contract() -> SourceContract:
             status_column=None,
             posted_only=True,
             currency_column=None,
-            currency_code="EGP",
+            # `KHEPRI-DEC-029`: "one currency, `AED`" -- the generator's own constant, so
+            # the contract and the rows cannot state two currencies.
+            currency_code=BENCHMARK_CURRENCY,
         ),
         identity=IdentityDeclaration(
             event_key_columns=(),
             unique_line_grain_attested=True,
-            # `benchmark_rows` emits `TXN-%08d` from a per-dataset ordinal, so
-            # the identifier is unique across the package by construction and
-            # needs no composite key.
+            # The `KHEPRI-DEC-029` generator (`benchmark_rows`) emits `TXN-%08d` from
+            # a per-dataset ordinal, so the identifier is unique across the package by
+            # construction and needs no composite key. The gate's current workload
+            # (`benchmark_workload`) carries no such column: it is not yet the governed
+            # population, and rewiring it awaits the workload descriptor (#525).
             transaction_id_column="transaction_id",
             transaction_key_components=(),
             transaction_id_unique_package_wide=True,
