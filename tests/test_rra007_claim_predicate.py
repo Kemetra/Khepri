@@ -145,6 +145,25 @@ def test_a_local_drain_counts_only_the_work_it_actually_did() -> None:
     assert stand.state_of("job_stuck") == JOB_QUEUED
 
 
+def test_the_shared_pick_names_the_job_due_longest_first() -> None:
+    """Both pickers now issue one statement, so its order is pinned once here."""
+    stand = _stand()
+    stand.enqueue(stand.live, "job_later", LIVE_KEY, NOW)
+    stand.enqueue(stand.deleting, "job_earlier", STUCK_KEY, NOW - timedelta(minutes=1))
+    handled: list[str] = []
+    worker = build_local_worker(
+        LocalWorkerPorts(
+            jobs=stand.jobs,
+            factory=stand.factory,
+            handler=lambda execution: handled.append(execution.job.job_id),
+        ),
+        clock=lambda: NOW,
+    )
+
+    assert worker.drain(limit=5) == 2
+    assert handled == ["job_earlier", "job_later"]
+
+
 def test_enqueue_refuses_a_session_whose_deletion_committed_first() -> None:
     """The re-check runs under the session row lock `begin` also takes.
 

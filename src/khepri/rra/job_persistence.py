@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
-from sqlalchemy.sql import Select
+from sqlalchemy.sql import ColumnElement, Select
 
 from khepri.rra.jobs import (
     ATTEMPT_LEASE_RECLAIMED,
@@ -42,7 +42,9 @@ from khepri.rra.persistence import (
     _utc,
     session_scope_for_update_statement,
 )
-from khepri.rra.sessions import CrossSessionAccessDenied, SessionScope
+from khepri.rra.sessions import CrossSessionAccessDenied, SessionExpired, SessionScope
+
+CLAIMABLE_STATES = (JOB_QUEUED, JOB_RETRYABLE)
 
 
 class ReportJobRow(Base):
@@ -182,10 +184,7 @@ class SqlReportJobRepository:
             select(ReportJobRow)
             .where(
                 ReportJobRow.job_id == request.job_id,
-                ReportJobRow.state.in_((JOB_QUEUED, JOB_RETRYABLE)),
-                ReportJobRow.available_at <= request.now,
-                ReportJobRow.attempt_count < ReportJobRow.max_attempts,
-                ReportJobRow.session_id.in_(_live_content_sessions()),
+                *claimable_at(request.now),
             )
             .with_for_update()
         )
@@ -309,6 +308,7 @@ class SqlReportJobRepository:
             )
             if session_row is None:
                 raise CrossSessionAccessDenied("Resource is unavailable.")
+            _require_live_content(session_row)
             existing = self._existing(database, request)
             if existing is not None:
                 return _report_job_from_row(existing)
@@ -416,6 +416,43 @@ class SqlReportJobRepository:
     def _release(row: ReportJobRow) -> None:
         row.lease_owner = None
         row.lease_expires_at = None
+
+
+def claimable_at(now: datetime) -> tuple[ColumnElement[bool], ...]:
+    """The one definition of a report job a worker may claim at `now`.
+
+    `lease` and every picker (`next_claimable_statement`) filter on exactly these
+    clauses. A picker that omitted one would name a job the lease then refuses on
+    every poll, and a one-at-a-time worker would stall behind it (#518).
+    """
+    return (
+        ReportJobRow.state.in_(CLAIMABLE_STATES),
+        ReportJobRow.available_at <= now,
+        ReportJobRow.attempt_count < ReportJobRow.max_attempts,
+        ReportJobRow.session_id.in_(_live_content_sessions()),
+    )
+
+
+def next_claimable_statement(now: datetime) -> Select[tuple[str]]:
+    """Name the claimable job that has been due longest, without transitioning it."""
+    return (
+        select(ReportJobRow.job_id)
+        .where(*claimable_at(now))
+        .order_by(ReportJobRow.available_at, ReportJobRow.job_id)
+        .limit(1)
+    )
+
+
+def _require_live_content(session_row: BetaSessionRow) -> None:
+    """Refuse to queue work for a session whose deletion has been requested.
+
+    Read from the row `_insert_or_get` holds `FOR UPDATE` -- the lock
+    `SqlDeletionRepository.begin` also takes -- so a deletion committing after the
+    caller's own liveness check is still seen here rather than leaving a queued job
+    behind it.
+    """
+    if (session_row.deletion_requested_at, session_row.content_deleted_at) != (None, None):
+        raise SessionExpired("Session content has expired.")
 
 
 def _new_job_row(request: EnqueueJob) -> ReportJobRow:

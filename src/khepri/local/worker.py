@@ -24,11 +24,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from khepri.rra.job_persistence import ReportJobRow, SqlReportJobRepository
-from khepri.rra.jobs import JOB_QUEUED, JOB_RETRYABLE
+from khepri.rra.job_persistence import SqlReportJobRepository, next_claimable_statement
 from khepri.rra.worker import ReportJobMessage, ReportWorker
 
 # Matches `KHEPRI-DEC-007`: lease 300s, retry delay 60s.
@@ -42,22 +40,15 @@ class ClaimablePoller:
 
     Claiming is `lease`'s job and stays there: this only answers "is there
     anything to try", so two pollers racing is resolved by the lease rather than
-    by whoever read first.
+    by whoever read first. It picks by the lease's own predicate, so it never
+    names a job the lease would refuse and re-poll it forever.
     """
 
     factory: sessionmaker[Session]
 
     def next_job_id(self, *, now: datetime) -> str | None:
         with self.factory() as database:
-            return database.execute(
-                select(ReportJobRow.job_id)
-                .where(
-                    ReportJobRow.state.in_((JOB_QUEUED, JOB_RETRYABLE)),
-                    ReportJobRow.available_at <= now,
-                )
-                .order_by(ReportJobRow.available_at)
-                .limit(1)
-            ).scalar_one_or_none()
+            return database.execute(next_claimable_statement(now)).scalar_one_or_none()
 
 
 class LocalReportWorker:
