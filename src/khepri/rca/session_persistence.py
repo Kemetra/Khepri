@@ -68,21 +68,30 @@ class SqlSessionStore:
         self._factory = factory
 
     def add_session(self, session: Session) -> bool:
-        """Write a newly issued session. Returns False if the identifier is already present."""
+        """Write a newly issued session. Returns False if the identifier is already present.
+
+        The read is the courteous path; the primary key is the guarantee. A writer that commits the
+        same identifier between the two loses at the constraint, and that loss is the same `False`
+        -- caught as `link_external_identity` catches it (`#526`), so `SessionService.create`
+        answers with its uniform refusal rather than a driver error.
+        """
         assert_sealed(session)
-        with self._factory.begin() as database:
-            if database.get(SessionRow, session.session_id_hash) is not None:
-                return False
-            database.add(
-                SessionRow(
-                    session_id_hash=session.session_id_hash,
-                    account_id=session.account_id,
-                    active_organization_id=session.active_organization_id,
-                    created_at=session.created_at,
-                    expires_at=session.expires_at,
-                    revoked_at=session.revoked_at,
+        try:
+            with self._factory.begin() as database:
+                if database.get(SessionRow, session.session_id_hash) is not None:
+                    return False
+                database.add(
+                    SessionRow(
+                        session_id_hash=session.session_id_hash,
+                        account_id=session.account_id,
+                        active_organization_id=session.active_organization_id,
+                        created_at=session.created_at,
+                        expires_at=session.expires_at,
+                        revoked_at=session.revoked_at,
+                    )
                 )
-            )
+        except IntegrityError:
+            return False
         return True
 
     def get_session(self, session_id_hash: str) -> Session | None:

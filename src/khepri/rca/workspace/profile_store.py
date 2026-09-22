@@ -25,7 +25,9 @@ from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.persistence import _utc
 from khepri.rca.workspace.contracts import SourceProfile
+from khepri.rca.workspace.locks import version_for_update
 from khepri.rca.workspace.schema import RETENTION_ACTIVE, DatasetVersionRow, SourceProfileRow
+from khepri.rca.workspace.store import _refuse_tombstoned_parent
 from khepri.rca.workspace.unit_of_work import reading, writing
 
 
@@ -62,9 +64,24 @@ class SqlSourceProfileStore:
     def __init__(self, factory: sessionmaker) -> None:
         self._factory = factory
 
-    def add(self, profile: SourceProfile) -> SourceProfile:
-        """Store one profile under a version that exists in its scope, or refuse."""
+    def add_source_profile(self, profile: SourceProfile) -> SourceProfile:
+        """Store one profile under a live version that exists in its scope, or refuse.
+
+        **Locks its parent version and refuses one the customer deleted**, exactly as
+        `add_analysis_run` does (`_refuse_tombstoned_parent`): `KHEPRI-DEC-033` §1, derived content
+        never outlives its input's right to exist. The lock is what stops a concurrent deletion
+        landing between the check and the insert. Before `#526` this inserted with neither. A
+        missing or foreign parent is still left to the composite foreign key.
+
+        **Named `add_source_profile`, not `add`.** `test_rca001_lock_scope.py` follows delegation
+        by bare method name, so a locking `add` would make every `database.add(...)` caller in the
+        package a lock reacher.
+        """
         with writing(self._factory) as database:
+            parent = database.scalars(
+                version_for_update(profile.source_version_id, profile.owner_id)
+            ).one_or_none()
+            _refuse_tombstoned_parent(parent)
             database.add(
                 SourceProfileRow(
                     profile_id=profile.profile_id,

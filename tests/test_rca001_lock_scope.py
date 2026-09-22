@@ -233,6 +233,11 @@ _MAY_LOCK = frozenset(
         # derivative of a deleted input that no cascade reaches. Review on `#370` found the window.
         "add_analysis_run",
         "add_artifact_binding",
+        # `#526`: a source profile is a derivative of its version too, so it takes the same
+        # parent lock and liveness check. Named `add_source_profile` rather than `add` because
+        # this scan matches by bare name, and a locking `add` would make every `database.add`
+        # caller in the package a lock reacher.
+        "add_source_profile",
         # `W1-03`: the deletion's cascade locks the live runs it is about to project and tombstone
         # (`live_runs_for_update`), because a plain read there races `complete_analysis_run`'s
         # `run_for_update`: the cascade would project an immutable tombstone from the

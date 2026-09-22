@@ -17,6 +17,7 @@ from sqlalchemy import (
     or_,
     select,
     text,
+    update,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -1008,6 +1009,16 @@ class SqlOrganizationStore:
         Returns False rather than raising if the membership has vanished between the service's
         read and this write, so a concurrent revocation surfaces as an ordinary refusal.
 
+        **One conditional `UPDATE`, predicated on the role the event says it leaves** (`#526`).
+        The first version read the row and then wrote it through the ORM, and the read did not
+        hold: a revocation committed between the two left the ORM's `UPDATE` matching nothing,
+        which SQLAlchemy raises as `StaleDataError` rather than this method's `False`; and a second
+        promotion committed between the two left the row already `owner`, so both callers wrote a
+        `member -> owner` event for one transition. Predicating the statement puts the check and
+        the write in one statement -- PostgreSQL re-evaluates the `WHERE` after waiting on a
+        concurrent writer's row lock -- and the event is added only when it matched. Still no
+        `SELECT ... FOR UPDATE`, for the reason above.
+
         **`prior_role` is checked against the stored row, not against the caller's claim.** The
         event carries no foreign key, so these checks are the only thing between a caller and a
         false audit record -- and `prior_role` is the one `FR-014` field ("what the prior and
@@ -1025,13 +1036,18 @@ class SqlOrganizationStore:
             return False
         try:
             with self._factory.begin() as database:
-                key = (membership.organization_id, membership.account_id)
-                row = database.get(MembershipRow, key)
-                if row is None:
+                promoted = database.execute(
+                    update(MembershipRow)
+                    .where(
+                        MembershipRow.organization_id == membership.organization_id,
+                        MembershipRow.account_id == membership.account_id,
+                        MembershipRow.role == event.prior_role,
+                    )
+                    .values(role=membership.role)
+                    .execution_options(synchronize_session=False)
+                )
+                if promoted.rowcount != 1:
                     return False
-                if event.prior_role != row.role:
-                    return False
-                row.role = membership.role
                 database.add(_event_row(event))
         except IntegrityError:
             return False

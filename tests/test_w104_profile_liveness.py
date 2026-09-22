@@ -38,7 +38,7 @@ def test_a_profile_is_refused_under_a_tombstoned_version() -> None:
     w.store.tombstone_dataset_version(version.version_id, now=LATER, owner_id=who.owner_id)
 
     with pytest.raises(ValueError, match=PARENT_TOMBSTONED_FAILURE):
-        w.profiles.add(_profile_for(who.owner_id, version.version_id))
+        w.profiles.add_source_profile(_profile_for(who.owner_id, version.version_id))
 
     with w.factory() as database:
         from sqlalchemy import func, select
@@ -56,7 +56,7 @@ def test_a_profile_under_a_live_version_is_still_stored() -> None:
     session_id = admitted_session(w, who.owner_id)
     version = w.services.create_dataset_version(who.caller, session_id=session_id, now=NOW)
 
-    profile = w.profiles.add(_profile_for(who.owner_id, version.version_id))
+    profile = w.profiles.add_source_profile(_profile_for(who.owner_id, version.version_id))
 
     assert w.profiles.get(profile.profile_id, who.owner_id) == profile
 
@@ -64,23 +64,26 @@ def test_a_profile_under_a_live_version_is_still_stored() -> None:
 def test_a_version_deleted_mid_remember_is_a_workspace_refusal() -> None:
     """`remember_profile` reads the version live and then inserts. A deletion landing between the
     two reaches the store's refusal, which the service must turn into its content-free
-    `WorkspaceRefused` -- the translation `start_run` already makes for `add_analysis_run`."""
+    `WorkspaceRefused` -- the translation `start_run` already makes for `add_analysis_run`.
+
+    The deletion is injected immediately before the insert, not after the service's read: the
+    admission read between the two runs `RRA` sessions over the fixture's one shared `StaticPool`
+    connection, and their rollback would silently discard a tombstone written earlier in the unit.
+    """
     w = world()
     who = member(w)
     session_id = admitted_session(w, who.owner_id)
     version = w.services.create_dataset_version(who.caller, session_id=session_id, now=NOW)
-    real_read = w.store.get_dataset_version
+    real_add = w.profiles.add_source_profile
 
-    def read_then_delete(version_id: str, owner_id: str | None = None):
-        found = real_read(version_id, owner_id)
-        w.store.tombstone_dataset_version(version_id, now=LATER, owner_id=owner_id)
-        return found
+    def deleted_first(profile: SourceProfile) -> SourceProfile:
+        w.store.tombstone_dataset_version(
+            profile.source_version_id, now=LATER, owner_id=profile.owner_id
+        )
+        return real_add(profile)
 
-    w.store.get_dataset_version = read_then_delete  # type: ignore[method-assign]
-    try:
-        with pytest.raises(WorkspaceRefused):
-            w.services.remember_source_profile(
-                who.caller, version_id=version.version_id, session_id=session_id, now=LATER
-            )
-    finally:
-        w.store.get_dataset_version = real_read  # type: ignore[method-assign]
+    w.profiles.add_source_profile = deleted_first  # type: ignore[method-assign]
+    with pytest.raises(WorkspaceRefused):
+        w.services.remember_source_profile(
+            who.caller, version_id=version.version_id, session_id=session_id, now=LATER
+        )
