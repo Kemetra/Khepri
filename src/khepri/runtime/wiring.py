@@ -107,6 +107,7 @@ from khepri.runtime.retention_sweep import (
     build_retention_sweeper,
 )
 from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
+from khepri.runtime.session_end_api import add_session_end_route
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
@@ -585,6 +586,15 @@ def build_web_app(stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTO
     add_external_authentication_routes(
         app,
         services=build_external_authentication_services(stack),
+        clock=stack.clock,
+    )
+    # FR-219: unconditional, unlike the handoff above -- a session can outlive its provider's
+    # configuration, and ending it needs no provider. See `session_end_api.py`.
+    add_session_end_route(
+        app,
+        sessions=RcaSessionService(
+            SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME
+        ),
         clock=stack.clock,
     )
     add_legal_routes(app)
