@@ -36,8 +36,10 @@
 >
 > ### One file is excluded from this import: `design-files/support.js`
 >
-> The supplied package contains sixteen files. **Fifteen are imported here.** The sixteenth,
-> `design-files/support.js`, is **not in version control**, deliberately.
+> The package as supplied on 2026-09-24 contains eighteen files. **Seventeen are imported here.**
+> The eighteenth, `design-files/support.js`, is **not in version control**, deliberately. (The
+> first supply, 2026-09-22, carried sixteen files and fifteen were imported; see *Second supply*
+> below.)
 >
 > It is generated build output, not authored source. Its own first line says so:
 > `// GENERATED from dc-runtime/src/*.ts — do not edit.`
@@ -47,7 +49,7 @@
 > file must score 10.00. Committing vendored build output is the defect the gate is detecting; the
 > gate is not wrong about it.
 >
-> **What this costs.** The three `.dc.html` prototypes each load it with
+> **What this costs.** The four `.dc.html` prototypes each load it with
 > `<script src="./support.js"></script>`, so they **do not render as live pages** from this
 > directory. They are imported and kept anyway, because they remain the readable design source —
 > markup, tokens, component structure and per-screen inventory — which is what this package is
@@ -55,8 +57,31 @@
 > runnable prototype.
 >
 > **How to restore live prototypes.** Take `design-files/support.js` from the owner's supplied
-> archive (`Ancient Egypt Premium Mockup.zip`, 2026-09-22) and drop it beside the `.dc.html` files.
-> They then render offline exactly as supplied. Do not commit it.
+> archive (`Ancient Egypt Premium Mockup.zip`, 2026-09-22, or `Ancient Egypt Premium Mockup (2).zip`,
+> 2026-09-24) and drop it beside the `.dc.html` files. They then render offline exactly as supplied.
+> Do not commit it.
+>
+> ### Second supply (2026-09-24)
+>
+> The owner re-supplied the package with **interaction guidance added and no visual change**. Every
+> visual source file is byte-identical to the first supply: `Khepri Product UI.dc.html`,
+> `Khepri Handoff.dc.html`, `Khepri Design Language.dc.html`, all eight `references/*.png`, and both
+> copies of `khepri-hero.png`. What the second supply adds:
+>
+> - `INTERACTIONS.md` — per-control behavior for the six screens, derived from the clickable
+>   prototype. It carries the same limit as the rest of this package, in its own words: it "does not
+>   grant product functionality", and a control with no backing in the product is left inert or
+>   omitted.
+> - `design-files/Khepri Clickable Prototype.dc.html` — the same six screens with working
+>   interactions, as a behavior reference. It fakes all data and timing.
+> - Three lines in this README and one in `IMPLEMENTATION_PROMPT.md` pointing at those two files,
+>   applied verbatim below this notice.
+>
+> Everything this notice says about authority applies to the added files unchanged. In particular,
+> `INTERACTIONS.md` describes several journey-screen behaviors (upload, review, processing, report)
+> whose surfaces are `RRA-010`'s and `RRA-015`'s, and interactions that need script, which the
+> commercial shell does not carry (`test_r810_shell_responsive_rtl.py`). Neither is authorized by
+> this import.
 
 # Khepri Product UI — implementation handoff (FINAL)
 
@@ -85,8 +110,10 @@ Verified against `main` at tree `bb497d9a30fe`, 2026-09-21.
 docs/ui/design_handoff_khepri_product_ui/
   README.md                       this file — the implementation contract
   IMPLEMENTATION_PROMPT.md        the executable brief (paste into Claude Code)
+  INTERACTIONS.md                 per-control behavior for every screen (from the clickable prototype)
   design-files/
     Khepri Product UI.dc.html     VISUAL SOURCE OF TRUTH — six screens, LTR+RTL, real states
+    Khepri Clickable Prototype.dc.html  same six screens with working interactions — BEHAVIOR reference
     Khepri Handoff.dc.html        rule set: tokens, components, states, responsive, RTL, inventory
     Khepri Design Language.dc.html  palette / type / motif rationale (read once, for intent)
     support.js                    runtime the .dc.html files need in a browser — NOT for the repo
@@ -115,6 +142,8 @@ and report the difference. Do not reinterpret.
 1. Existing Khepri product semantics, route contracts, read models and repository invariants
 2. `design-files/Khepri Product UI.dc.html` — visual appearance
 3. `design-files/Khepri Handoff.dc.html` — implementation rules
+3b. `INTERACTIONS.md` + `design-files/Khepri Clickable Prototype.dc.html` — interaction behavior
+    (visual only; never grants product functionality — see §3)
 4. Existing frontend architecture, where it does not conflict with the approved visual design
 
 Prototype content is illustrative. Figures, org names, filenames, vendor names, avatars and

@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #E9E3DA; }
+  a { color: #8C6B22; text-decoration: none; }
+  a:hover { color: #6F5316; }
+  @keyframes khSpin { to { transform: rotate(360deg); } }
+  @keyframes khBar { from { transform: translateX(-40%); } to { transform: translateX(340%); } }
+  @keyframes khPulse { 0%,100% { opacity: .35; } 50% { opacity: .85; } }
+</style>
+</helmet>
+
+<div dir="{{ dir }}" style="font-family: 'Noto Sans Arabic', -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #16212B; background: #E9E3DA; padding: 26px; display: flex; justify-content: center;">
+<div style="width: 100%; max-width: 1620px; display: grid; grid-template-columns: 238px minmax(0, 1fr); background: #FBF9F6; border: 1px solid #DED7CC; border-radius: 16px; overflow: hidden; box-shadow: 0 40px 80px -52px rgba(18,28,38,.55);">
+
+  <aside style="display: flex; flex-direction: column; background: linear-gradient(180deg, #101C26 0%, #0B1017 100%); color: #DFE3E7; padding: 24px 0 20px; min-height: 940px;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 0 20px 24px;">
+      <svg width="62" height="32" viewBox="0 0 62 32" fill="none" aria-hidden="true">
+        <circle cx="31" cy="28" r="11.5" fill="#C9A45C"></circle>
+        <path d="M5 30a26 26 0 0 1 52 0" stroke="#C9A45C" stroke-width="1.3"></path>
+        <path d="M12 30a19 19 0 0 1 38 0" stroke="#C9A45C" stroke-width="1.1" opacity=".68"></path>
+        <path d="M19 30a12 12 0 0 1 24 0" stroke="#C9A45C" stroke-width="1" opacity=".45"></path>
+      </svg>
+      <div style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.22rem; letter-spacing: .34em; text-indent: .34em; color: #F3EBDA;">KHEPRI</div>
+      <div style="font-family: ui-monospace, Consolas, monospace; font-size: .54rem; letter-spacing: .2em; text-transform: uppercase; color: #93A0A9; text-align: center; line-height: 1.9;">Insights for<br>a brighter tomorrow</div>
+    </div>
+
+    <nav style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+      <span onClick="{{ goHome }}" style="position: relative; display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #D9DEE2;" style-hover="background: rgba(255,255,255,.06);">
+        <sc-if value="{{ atHome }}"><span style="position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, rgba(201,164,92,.26), rgba(201,164,92,.02)); box-shadow: inset 3px 0 0 #C9A45C;"></span></sc-if>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.6" style="position: relative;"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h14V10"></path></svg>
+        <span style="position: relative;">Home</span>
+      </span>
+      <span onClick="{{ goUpload }}" style="position: relative; display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #D9DEE2;" style-hover="background: rgba(255,255,255,.06);">
+        <sc-if value="{{ atFlow }}"><span style="position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, rgba(201,164,92,.26), rgba(201,164,92,.02)); box-shadow: inset 3px 0 0 #C9A45C;"></span></sc-if>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.6" style="position: relative;"><path d="M12 5v14M5 12h14"></path></svg>
+        <span style="position: relative;">New Analysis</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>My Files
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 20V11M12 20V4M19 20v-6"></path></svg>Reports
+      </span>
+      <span onClick="{{ goInsights }}" style="position: relative; display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #D9DEE2;" style-hover="background: rgba(255,255,255,.06);">
+        <sc-if value="{{ atInsights }}"><span style="position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, rgba(201,164,92,.26), rgba(201,164,92,.02)); box-shadow: inset 3px 0 0 #C9A45C;"></span></sc-if>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.6" style="position: relative;"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.6H9c0-.6-.1-1.2-.6-1.6A6 6 0 0 1 12 3z"></path></svg>
+        <span style="position: relative;">Insights</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"></path></svg>Data Sources
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg>Team
+      </span>
+      <span style="display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer; font-size: .93rem; color: #A9B2B9;" style-hover="background: rgba(255,255,255,.06); color: #DFE3E7;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"></circle><path d="M4.6 8.6l2-3.5 3.8.6L12 2l1.6 3.7 3.8-.6 2 3.5-2.3 3.4 2.3 3.4-2 3.5-3.8-.6L12 22l-1.6-3.7-3.8.6-2-3.5 2.3-3.4z"></path></svg>Settings
+      </span>
+    </nav>
+
+    <div style="margin: auto 16px 0; padding: 18px 16px 16px; border: 1px solid rgba(201,164,92,.26); border-radius: 12px;">
+      <p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: .98rem; line-height: 1.45; color: #EBE4D6;">Turning today's data into a brighter tomorrow.</p>
+      <p dir="rtl" lang="ar" style="margin: 10px 0 0; font-size: .82rem; line-height: 1.85; color: #A9B2B9;">من البيانات اليوم إلى غدٍ أكثر إشراقاً</p>
+      <svg viewBox="0 0 170 62" width="100%" height="56" fill="none" aria-hidden="true" style="margin-top: 12px; display: block;">
+        <circle cx="85" cy="40" r="22" stroke="#C9A45C" stroke-width=".7" opacity=".4"></circle>
+        <path d="M85 20 L114 58 H56 Z" stroke="#C9A45C" stroke-width=".9" opacity=".7"></path>
+        <path d="M0 58h170" stroke="#C9A45C" stroke-width=".8" opacity=".3"></path>
+      </svg>
+    </div>
+  </aside>
+
+  <div style="display: flex; flex-direction: column; min-width: 0;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #EBE5DC;">
+      <label style="flex: 1; min-width: 180px; max-width: 520px; display: flex; align-items: center; gap: 11px; min-height: 42px; padding: 0 16px; border: 1px solid #E6E0D6; border-radius: 999px; background: #FAF8F5;" style-focus="border-color: #C9A45C;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#98A0A8" stroke-width="1.8"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path></svg>
+        <input placeholder="Search files, reports, insights..." style="flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: .9rem; color: #16212B;">
+      </label>
+      <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 9px; font-size: .86rem; color: #4A5560;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.4"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"></path></svg>
+        <span role="button" aria-pressed="{{ isEn }}" onClick="{{ setEn }}" style="cursor: pointer; padding: 3px 8px; border-radius: 6px; font-weight: {{ enWeight }}; background: {{ enBg }};">EN</span>
+        <span style="color: #D6D0C6;">|</span>
+        <span role="button" aria-pressed="{{ isAr }}" onClick="{{ setAr }}" dir="rtl" lang="ar" style="cursor: pointer; padding: 3px 8px; border-radius: 6px; font-weight: {{ arWeight }}; background: {{ arBg }};">عربي</span>
+      </span>
+      <span style="position: relative; display: inline-flex; cursor: pointer;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.4"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"></path><path d="M10.4 21a2 2 0 0 0 3.2 0"></path></svg>
+        <span style="position: absolute; top: -2px; inset-inline-end: -2px; width: 8px; height: 8px; border-radius: 50%; background: #D9922E; border: 2px solid #fff;"></span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 11px; cursor: pointer;">
+        <span style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(145deg, #D8CBB6, #A2907A);"></span>
+        <span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600; font-size: .9rem;">Sarah Ahmed</span><span style="font-size: .76rem; color: #8A929B;">Global Strategy</span></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6"><path d="M6 9l6 6 6-6"></path></svg>
+      </span>
+    </header>
+
+    <sc-if value="{{ showProtoNav }}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 24px; background: #F4EEE4; border-bottom: 1px solid #E8E1D6; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; color: #8A8172;">
+      <span style="margin-inline-end: 4px;">Prototype nav</span>
+      <span onClick="{{ goHome }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">01 Home</span>
+      <span onClick="{{ goUpload }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">02 Upload</span>
+      <span onClick="{{ goReview }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">03 Review &amp; Map</span>
+      <span onClick="{{ goProgress }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">04 In Progress</span>
+      <span onClick="{{ goInsights }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">05 Insights</span>
+      <span onClick="{{ goReport }}" style="cursor: pointer; padding: 5px 11px; border: 1px solid #D9D0C2; border-radius: 999px; background: #FFFDF9; letter-spacing: .14em;">06 Report</span>
+      <span style="margin-inline-start: auto; color: #A79C8A;">{{ screenLabel }}</span>
+    </div>
+    </sc-if>
+
+    <main style="flex: 1; min-width: 0; background: #FBF9F6;">
+
+      <sc-if value="{{ atHome }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="01 Home">
+        <div style="position: relative; min-height: 238px; display: grid; grid-template-columns: minmax(0, 1fr) 210px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 46%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.94) 34%, rgba(252,243,228,.45) 56%, rgba(20,30,40,0) 74%);"></div>
+          <div style="position: relative; padding: 28px 34px 30px;">
+            <span style="font-family: ui-monospace, Consolas, monospace; font-size: .66rem; letter-spacing: .3em; text-transform: uppercase; color: #9A7B34;">Good morning, Sarah</span>
+            <h1 style="margin: 8px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.5rem; line-height: 1.1; color: #12202C; text-wrap: pretty;">Deeper insights<br>for a brighter tomorrow.</h1>
+            <p style="margin: 10px 0 0; max-width: 46ch; font-size: .95rem; line-height: 1.6; color: #4C5762;">Analyze, understand, and act on your data — with the power of AI and the clarity of Khepri.</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px;">
+              <span onClick="{{ goUpload }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 22px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .94rem; cursor: pointer; box-shadow: 0 10px 22px -12px rgba(140,104,30,.9);" style-hover="filter: brightness(1.05);">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 17v3h16v-3"></path></svg>Start a New Analysis
+              </span>
+              <span style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: rgba(255,255,255,.85); color: #24313D; font-size: .94rem; cursor: pointer;" style-hover="border-color: #C9A45C;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B7580" stroke-width="1.5"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.5l6 3.5-6 3.5z"></path></svg>See How It Works
+              </span>
+            </div>
+          </div>
+          <div style="position: relative; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 12px; padding: 0 26px; text-align: end; font-family: ui-monospace, Consolas, monospace; font-size: .62rem; letter-spacing: .26em; line-height: 2.4; text-transform: uppercase; color: #F0DFBC; text-shadow: 0 1px 8px rgba(10,16,22,.6);">
+            Different<br>perspectives<br>a brighter<br>tomorrow
+            <span style="width: 46px; height: 1px; background: #C9A45C;"></span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; padding: 18px 24px 0;">
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #F6EBD6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Total Analyses</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">42</b><span style="font-size: .78rem; color: #2E7D57;">▲ 12%</span></span>
+              <span style="font-size: .72rem; color: #98A0A8;">vs. last month</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #F6EBD6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5M9 13h6M9 17h4"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Reports Generated</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">28</b><span style="font-size: .78rem; color: #2E7D57;">▲ 18%</span></span>
+              <span style="font-size: .72rem; color: #98A0A8;">vs. last month</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #EDF1F6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#4A6178" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Team Members</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">6</b><span style="font-size: .78rem; color: #98A0A8;">— no change</span></span>
+              <span style="font-size: .72rem; color: #98A0A8;">2 pending invites</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <span style="display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: #F6EBD6;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: .82rem; color: #6B7580;">Connected Sources</span>
+              <span style="display: flex; align-items: baseline; gap: 10px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.62rem; font-weight: 600;">9</b><span style="font-size: .78rem; color: #2E7D57;">▲ 29%</span></span>
+              <span style="font-size: .72rem; color: #B8873B;">1 needs reauthorization</span>
+            </span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) minmax(0, .95fr); gap: 14px; padding: 14px 24px 0; align-items: start;">
+          <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 18px 20px 14px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+              <span style="display: flex; flex-direction: column;"><b style="font-size: 1.02rem;">Analysis Activity</b><span style="font-size: .8rem; color: #8A929B;">Analyses run over time</span></span>
+              <span style="margin-inline-start: auto; display: flex; gap: 2px; padding: 3px; background: #F4EFE7; border-radius: 8px; font-size: .76rem;"><sc-for list="{{ ranges }}" as="r" hint-placeholder-count="4"><span role="button" aria-pressed="{{ r.sel }}" onClick="{{ r.pick }}" style="padding: 5px 10px; border-radius: 6px; background: {{ r.bg }}; color: {{ r.ink }}; font-weight: {{ r.weight }}; cursor: pointer;">{{ r.label }}</span></sc-for>
+              </span>
+            </div>
+            <svg viewBox="0 0 640 220" width="100%" height="212" fill="none" style="margin-top: 12px; display: block;" aria-label="Analyses per day">
+              <g stroke="#EFE9E0" stroke-width="1"><path d="M40 20h590M40 65h590M40 110h590M40 155h590M40 200h590"></path></g>
+              <g fill="#98A0A8" font-size="11" font-family="ui-monospace, monospace"><text x="8" y="24">40</text><text x="8" y="69">30</text><text x="8" y="114">20</text><text x="8" y="159">10</text><text x="14" y="204">0</text></g>
+              <path d="{{ areaPath }}" fill="#F3E4C9" opacity=".7"></path>
+              <path d="{{ linePath }}" stroke="#C09146" stroke-width="2"></path>
+              <path d="{{ dotsPath }}" fill="#C09146"></path>
+              <g fill="#98A0A8" font-size="11" font-family="ui-monospace, monospace"><text x="28" y="216">{{ xl0 }}</text><text x="160" y="216">{{ xl1 }}</text><text x="300" y="216">{{ xl2 }}</text><text x="440" y="216">{{ xl3 }}</text><text x="570" y="216">{{ xl4 }}</text></g>
+            </svg>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; padding-top: 12px; border-top: 1px solid #F0EAE1;">
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Success rate</span><b style="font-size: 1.1rem;">98%</b></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Avg. processing</span><b style="font-size: 1.1rem;">1.8 min</b></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Data analyzed</span><b style="font-size: 1.1rem;">12.4 GB</b></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: .74rem; color: #8A929B;">Active users</span><b style="font-size: 1.1rem;">6</b></span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1.02rem;">Recent Analyses</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+                <span onClick="{{ goInsights }}" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C; background: #FDFAF4;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #E6F1E9; color: #27724F; font-size: .62rem; font-weight: 700;">XLS</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Q3 Financial Performance</span><span style="font-size: .74rem; color: #98A0A8;">Oct 30 · 2 hours ago</span></span>
+                  <span style="margin-inline-start: auto; padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .72rem; font-weight: 600;">Completed</span>
+                </span>
+                <span onClick="{{ goInsights }}" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C; background: #FDFAF4;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #FBE9E7; color: #B0392F; font-size: .62rem; font-weight: 700;">PDF</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Market Expansion Analysis</span><span style="font-size: .74rem; color: #98A0A8;">Oct 29 · 1 day ago</span></span>
+                  <span style="margin-inline-start: auto; padding: 3px 10px; border-radius: 999px; background: #E7F2EB; color: #27724F; font-size: .72rem; font-weight: 600;">Completed</span>
+                </span>
+                <span onClick="{{ goProgress }}" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #E8D6B0; border-radius: 10px; background: #FDF7EA; cursor: pointer;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #EEF2F8; color: #33506D; font-size: .62rem; font-weight: 700;">DOC</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Operations Review 2024</span><span style="font-size: .74rem; color: #98A0A8;">Validating data quality…</span></span>
+                  <span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #F6E9CE; color: #7A5A17; font-size: .72rem; font-weight: 600;"><span style="width: 10px; height: 10px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite;"></span>Running</span>
+                </span>
+                <span onClick="{{ goUpload }}" title="Re-upload the file" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #F2DAD6; border-radius: 10px; background: #FEF7F6; cursor: pointer;">
+                  <span style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #E6F1E9; color: #27724F; font-size: .62rem; font-weight: 700;">XLS</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: .88rem; font-weight: 600;">Regional Sales Data</span><span style="font-size: .74rem; color: #B0392F;">Failed — 2 columns could not be parsed</span></span>
+                  <span style="margin-inline-start: auto; padding: 3px 10px; border-radius: 999px; background: #FBE9E7; color: #B0392F; font-size: .72rem; font-weight: 600;">Error</span>
+                </span>
+              </div>
+            </div>
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1.02rem;">Recently Generated Reports</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px;">
+                <span onClick="{{ goReport }}" style="display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-bottom: 1px solid #F3EEE6; cursor: pointer; font-size: .87rem;">Executive Summary Q3<span style="margin-inline-start: auto; font-size: .74rem; color: #98A0A8;">PDF · 4.2 MB</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg></span>
+                <span onClick="{{ goReport }}" style="display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-bottom: 1px solid #F3EEE6; cursor: pointer; font-size: .87rem;">Market Expansion Analysis<span style="margin-inline-start: auto; font-size: .74rem; color: #98A0A8;">PDF · 6.8 MB</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg></span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 9px 4px; font-size: .87rem; color: #A9AFB6;">Customer Insights Report<span style="margin-inline-start: auto; font-size: .74rem;">Preparing…</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C7CCD1" stroke-width="1.6"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <b style="font-size: 1.02rem;">Quick Actions</b>
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+                <span onClick="{{ goUpload }}" style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #E3CE9F; border-radius: 10px; background: linear-gradient(90deg, #FAEFD8, #FDF8EE); cursor: pointer;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8C6B22" stroke-width="1.8"><path d="M12 5v14M5 12h14"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">New Analysis</b><span style="font-size: .74rem; color: #7A6C52;">Upload files or connect data</span></span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8C6B22" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.6"><path d="M5 20V11M12 20V4M19 20v-6"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">Browse Reports</b><span style="font-size: .74rem; color: #8A929B;">Explore generated reports</span></span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+                <span style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #EFE9E0; border-radius: 10px; cursor: pointer;" style-hover="border-color: #C9A45C;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">Connect Data Source</b><span style="font-size: .74rem; color: #8A929B;">Link to your data systems</span></span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+                <span title="Requires workspace admin" style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #F0ECE5; border-radius: 10px; background: #FAF8F5; color: #B2B7BC; cursor: not-allowed;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C2C7CC" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg>
+                  <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">Invite Team Members</b><span style="font-size: .74rem;">Admin permission required</span></span>
+                </span>
+              </div>
+            </div>
+            <div style="background: #fff; border: 1px solid #EBE5DC; border-radius: 12px; padding: 16px 18px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1.02rem;">Team Activity</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+                <span style="display: flex; gap: 11px; align-items: flex-start;"><span style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(145deg, #CBBBA2, #8D7C64); flex: none;"></span><span style="display: flex; flex-direction: column; font-size: .84rem;"><span><b>Omar Khaled</b> uploaded new data</span><span style="font-size: .73rem; color: #98A0A8;">2 hours ago</span></span></span>
+                <span style="display: flex; gap: 11px; align-items: flex-start;"><span style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(145deg, #C7C0B2, #7E8A93); flex: none;"></span><span style="display: flex; flex-direction: column; font-size: .84rem;"><span><b>Lina Hassan</b> generated a report</span><span style="font-size: .73rem; color: #98A0A8;">4 hours ago</span></span></span>
+                <span style="display: flex; gap: 11px; align-items: flex-start;"><span style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(145deg, #D2C3AC, #96826A); flex: none;"></span><span style="display: flex; flex-direction: column; font-size: .84rem;"><span><b>Ahmed Mostafa</b> commented</span><span style="font-size: .8rem; color: #55616C;">“Key trends look promising.”</span><span style="font-size: .73rem; color: #98A0A8;">1 day ago</span></span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin: 18px 24px 24px; padding: 16px 20px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <span style="display: flex; gap: 12px; align-items: flex-start;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4" style="flex: none;"><path d="M12 3l7 3v6c0 4.3-3 7.7-7 9-4-1.3-7-4.7-7-9V6z"></path></svg><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .86rem;">Enterprise-Grade Security</b><span style="font-size: .78rem; color: #6B7580; line-height: 1.5;">Protected with industry-leading security and compliance standards.</span></span></span>
+          <span style="display: flex; gap: 12px; align-items: flex-start;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4" style="flex: none;"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .86rem;">Trusted by Leading Organizations</b><span style="font-size: .78rem; color: #6B7580; line-height: 1.5;">Powering decisions across finance, strategy, and operations.</span></span></span>
+          <span style="display: flex; gap: 12px; align-items: flex-start;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4" style="flex: none;"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"></path></svg><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .86rem;">Global Impact</b><span style="font-size: .78rem; color: #6B7580; line-height: 1.5;">Khepri helps organizations turn information into lasting impact.</span></span></span>
+          <span style="display: flex; flex-direction: column; justify-content: center; align-items: flex-end; font-family: ui-monospace, Consolas, monospace; font-size: .6rem; letter-spacing: .24em; line-height: 2.2; text-transform: uppercase; color: #A8935F; text-align: end;">People<br>Ideas<br>Data<br>A brighter tomorrow</span>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atUpload }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="02 Upload" style="padding: 22px 24px 26px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+          <div>
+            <span style="font-family: ui-monospace, Consolas, monospace; font-size: .66rem; letter-spacing: .3em; text-transform: uppercase; color: #9A7B34;">New analysis</span>
+            <h1 style="margin: 6px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.1rem; line-height: 1.12;">Upload your data</h1>
+            <p style="margin: 8px 0 0; max-width: 62ch; font-size: .93rem; line-height: 1.6; color: #55616C;">Bring your business files, connect your data sources, and let Khepri turn complex data into clear insights and executive-ready reports.</p>
+
+            <div onClick="{{ addFile }}" onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" role="button" tabIndex="0" aria-label="Add files" style="cursor: pointer; outline: {{ dropOutline }}; margin-top: 16px; display: grid; place-items: center; gap: 4px; padding: 30px 24px; border: 1.5px dashed #D3C7B0; border-radius: 14px; background: linear-gradient(180deg, #FFFDF9, #FBF7EF); text-align: center;" style-hover="border-color: #C9A45C; background: #FDF8EC;">
+              <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.3"><path d="M7 17a4 4 0 0 1 .6-7.96A5.5 5.5 0 0 1 18 9.5a3.75 3.75 0 0 1 .3 7.5"></path><path d="M12 19v-8M9 13l3-3 3 3"></path></svg>
+              <b style="font-size: 1.06rem; margin-top: 6px;">Drag and drop your files here</b>
+              <span style="font-size: .87rem; color: #6B7580;">or <span style="color: #8C6B22; text-decoration: underline;">click to browse</span> from your device</span>
+              <span style="font-size: .76rem; color: #98A0A8;">XLSX, CSV, PDF, DOCX · up to 250 MB per file</span>
+              <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 14px;">
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #E6F1E9; color: #27724F; font-size: .56rem; font-weight: 700;">XLS</span>Excel</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #FBE9E7; color: #B0392F; font-size: .56rem; font-weight: 700;">PDF</span>PDF</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #EEF2F8; color: #33506D; font-size: .56rem; font-weight: 700;">DOC</span>Word</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #fff; font-size: .84rem;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #F1EEE8; color: #5B6570; font-size: .56rem; font-weight: 700;">CSV</span>CSV</span>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; font-family: ui-monospace, Consolas, monospace; font-size: .62rem; letter-spacing: .24em; text-transform: uppercase; color: #A79C8A;"><span style="flex: 1; height: 1px; background: #EBE5DC;"></span>Or connect a data source<span style="flex: 1; height: 1px; background: #EBE5DC;"></span></div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #3E8E5A;"></span>Google Drive</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #3E6FA8;"></span>OneDrive</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #2C8F87;"></span>SharePoint</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #F0ECE5; border-radius: 10px; background: #FAF8F5; color: #B2B7BC; cursor: not-allowed;"><span style="width: 18px; height: 18px; border-radius: 4px; background: #DCDFE3;"></span>Dropbox · not connected</span>
+              <span style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #EBE5DC; border-radius: 10px; background: #fff; font-size: .86rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg>Database</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 14px;">
+              <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .9rem;">Analysis Objective</b>
+                <div style="position: relative; margin-top: 10px;">
+                  <span onClick="{{ toggleObj }}" role="button" aria-expanded="{{ objOpen }}" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border: 1px solid {{ objBorder }}; border-radius: 8px; background: #FDFBF8; font-size: .86rem; color: {{ objInk }}; cursor: pointer;">{{ objLabel }}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A929B" stroke-width="1.6" style="margin-inline-start: auto;"><path d="M6 9l6 6 6-6"></path></svg></span>
+                  <sc-if value="{{ objOpen }}"><div role="listbox" style="position: absolute; z-index: 5; top: calc(100% + 4px); inset-inline: 0; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: #fff; border: 1px solid #DED7CC; border-radius: 9px;"><sc-for list="{{ objectives }}" as="o" hint-placeholder-count="4"><span role="option" aria-selected="{{ o.sel }}" onClick="{{ o.pick }}" style="display: flex; align-items: center; min-height: 38px; padding: 0 10px; border-radius: 7px; font-size: .85rem; cursor: pointer; background: {{ o.bg }}; font-weight: {{ o.weight }};" style-hover="background: #F7F3EC;">{{ o.label }}</span></sc-for></div></sc-if>
+                </div>
+                <sc-if value="{{ objMissing }}"><span style="display: block; margin-top: 8px; font-size: .74rem; color: #B0392F;">Required before you can continue.</span></sc-if>
+                <sc-if value="{{ objChosen }}"><span style="display: block; margin-top: 8px; font-size: .74rem; color: #27724F;">✓ Objective set</span></sc-if>
+              </div>
+              <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .9rem;">Dataset Context <span style="font-weight: 400; color: #98A0A8;">(optional)</span></b>
+                <textarea rows="2" maxLength="500" value="{{ context }}" onChange="{{ onContext }}" placeholder="Tell us about your data, business context, or specific questions…" style="width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: #FDFBF8; font: inherit; font-size: .85rem; resize: vertical;"></textarea>
+                <span style="display: block; margin-top: 6px; font-size: .72rem; color: #98A0A8; text-align: end;">{{ contextCount }} / 500</span>
+              </div>
+              <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .9rem;">Tags <span style="font-weight: 400; color: #98A0A8;">(optional)</span></b>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;">
+                  <sc-for list="{{ tags }}" as="t" hint-placeholder-count="2"><span onClick="{{ t.remove }}" role="button" aria-label="Remove tag" style="padding: 5px 11px; border-radius: 999px; background: #F4EEE4; font-size: .78rem; cursor: pointer;" style-hover="background: #EDE3D2;">{{ t.label }} ×</span></sc-for>
+                  <sc-if value="{{ addingTag }}"><input autoFocus placeholder="Tag, then Enter" onKeyDown="{{ onTagKey }}" onBlur="{{ stopTag }}" style="width: 120px; padding: 5px 11px; border-radius: 999px; border: 1px solid #C9A45C; background: #FDFBF8; font: inherit; font-size: .78rem; outline: none;"></sc-if>
+                  <sc-if value="{{ notAddingTag }}"><span onClick="{{ startTag }}" role="button" style="padding: 5px 11px; border-radius: 999px; border: 1px dashed #D9D0C2; font-size: .78rem; color: #8A929B; cursor: pointer;">+ Add tag</span></sc-if>
+                </div>
+                <span style="display: block; margin-top: 10px; font-size: .74rem; color: #98A0A8;">Tags help you find analyses later.</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="position: relative; min-height: 270px; border-radius: 14px; overflow: hidden; background: #0E1A24;">
+              <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;">
+              <div style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,16,22,.72) 0%, rgba(10,16,22,.25) 45%, rgba(10,16,22,.88) 100%);"></div>
+              <div style="position: relative; display: flex; flex-direction: column; height: 100%; min-height: 270px; padding: 20px 22px;">
+                <span style="font-family: ui-monospace, Consolas, monospace; font-size: .6rem; letter-spacing: .26em; line-height: 2.2; text-transform: uppercase; color: #E6D3AC;">Different<br>perspectives<br>a brighter tomorrow</span>
+                <span style="width: 40px; height: 1px; background: #C9A45C; margin: 10px 0 auto;"></span>
+                <h2 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 1.62rem; line-height: 1.2; color: #FBF6EC;">From data<br>to what's next.</h2>
+                <p style="margin: 8px 0 0; font-size: .85rem; line-height: 1.6; color: #D3D9DE;">Upload your data and let Khepri uncover the insights that move your business forward.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid #E3CE9F; border-radius: 12px; background: linear-gradient(90deg, #FAEFD8, #FDF9F0);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C6B22" stroke-width="1.5" style="flex: none;"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.6H9c0-.6-.1-1.2-.6-1.6A6 6 0 0 1 12 3z"></path></svg>
+              <span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-size: .88rem;">Need help getting started?</b><span style="font-size: .8rem; line-height: 1.55; color: #6E6249;">Learn how to prepare your data, choose the right analysis type, and get the best results.</span><a href="#" style="font-size: .8rem; margin-top: 2px;">View data preparation guide →</a></span>
+            </div>
+            <div style="padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: .95rem;">Upload Queue</b><span style="margin-inline-start: auto; font-size: .76rem; color: #98A0A8;">{{ queueSummary }}</span></div>
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+                <sc-for list="{{ queue }}" as="f" hint-placeholder-count="3"><span style="display: flex; flex-direction: column; gap: 6px;">
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: .84rem; color: {{ f.ink }};"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext;">{{ f.name }}</span><span style="margin-inline-start: auto; flex: none; font-size: .76rem; color: {{ f.noteInk }};">{{ f.note }}</span></span>
+                  <span role="progressbar" aria-valuenow="{{ f.pct }}" aria-valuemin="0" aria-valuemax="100" style="height: 5px; border-radius: 999px; background: {{ f.track }}; overflow: hidden;"><span style="display: block; width: {{ f.width }}; height: 100%; background: {{ f.bar }};"></span></span>
+                  <sc-if value="{{ f.failed }}"><span style="display: flex; gap: 12px;"><span onClick="{{ f.retry }}" role="button" style="font-size: .78rem; color: #8C6B22; cursor: pointer;">Retry</span><span onClick="{{ f.remove }}" role="button" style="font-size: .78rem; color: #6B7580; cursor: pointer;">Remove</span></span></sc-if>
+                </span></sc-for>
+                <sc-if value="{{ queueEmpty }}"><span style="font-size: .82rem; color: #6B7580;">No files yet. Drop files above or click the upload area.</span></sc-if>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 13px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.4"><path d="M12 3l7 3v6c0 4.3-3 7.7-7 9-4-1.3-7-4.7-7-9V6z"></path></svg>
+          <span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Your data is secure</b><span style="font-size: .78rem; color: #6B7580;">All files are encrypted in transit and at rest. We never use your data to train models.</span></span>
+          <span style="margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: 18px; font-size: .78rem; color: #55616C;"><span>SOC 2 Compliant</span><span>ISO 27001 Certified</span><span>GDPR Ready</span></span>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 4px;">
+          <span style="font-size: .8rem; color: #6B7580;">{{ uploadHint }}</span>
+          <span onClick="{{ saveDraft }}" role="button" style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: #fff; font-size: .9rem; cursor: pointer;" style-hover="border-color: #C9A45C;">{{ draftLabel }}</span>
+          <sc-if value="{{ canContinue }}"><span onClick="{{ goReview }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 24px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .92rem; cursor: pointer;" style-hover="filter: brightness(1.05);">Continue to Review<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span></sc-if><sc-if value="{{ cannotContinue }}"><span title="{{ uploadHint }}" aria-disabled="true" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 24px; border-radius: 10px; background: #FAF8F5; border: 1px solid #F0ECE5; color: #B2B7BC; font-weight: 600; font-size: .92rem; cursor: not-allowed;">Continue to Review<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B2B7BC" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span></sc-if>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atReview }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="03 Review and Map" style="padding: 0 0 26px;">
+        <div style="position: relative; min-height: 170px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 70% 40%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.95) 38%, rgba(252,243,228,.4) 60%, rgba(20,30,40,0) 80%);"></div>
+          <div style="position: relative; padding: 20px 24px 22px;">
+            <span style="display: flex; align-items: center; gap: 8px; font-size: .8rem; color: #7A828A;">My Files<span>›</span>Q3 Financial Performance<span>›</span><b style="color: #16212B;">Review &amp; Map</b></span>
+            <h1 style="margin: 8px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2rem; line-height: 1.12;">Review and map your data</h1>
+            <p style="margin: 6px 0 0; max-width: 64ch; font-size: .9rem; line-height: 1.6; color: #55616C;">We've analyzed your file and suggested a schema. Review the results, adjust mappings, and fix any issues before continuing.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 24px 0; padding: 14px 20px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #B98C39; color: #fff; font-size: .8rem; font-weight: 700;">✓</span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Upload</b><span style="font-size: .74rem; color: #98A0A8;">Completed</span></span></span>
+          <span style="flex: 1; min-width: 40px; height: 1px; background: #E3CE9F;"></span>
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #B98C39; color: #fff; font-size: .8rem; font-weight: 700; box-shadow: 0 0 0 4px rgba(201,164,92,.22);">2</span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Review &amp; Map</b><span style="font-size: .74rem; color: #98A0A8;">Map fields and fix issues</span></span></span>
+          <span style="flex: 1; min-width: 40px; height: 1px; background: #EBE5DC;"></span>
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #EFE9E0; color: #8A929B; font-size: .8rem; font-weight: 700;">3</span><span style="display: flex; flex-direction: column; color: #8A929B;"><b style="font-size: .86rem;">Confirm</b><span style="font-size: .74rem;">Validate and confirm</span></span></span>
+          <span style="flex: 1; min-width: 40px; height: 1px; background: #EBE5DC;"></span>
+          <span style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px;"><span style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #EFE9E0; color: #8A929B; font-size: .8rem; font-weight: 700;">4</span><span style="display: flex; flex-direction: column; color: #8A929B;"><b style="font-size: .86rem;">Analyze</b><span style="font-size: .74rem;">Run analysis</span></span></span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 14px 24px 0;">
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <b style="font-size: 1rem;">File Details</b>
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #E6F1E9; color: #27724F; font-size: .68rem; font-weight: 700;">XLS</span><span style="display: flex; flex-direction: column;"><b style="font-size: .9rem;">Q3 Financial Performance.xlsx</b><span style="font-size: .76rem; color: #98A0A8;">12 MB · uploaded 2 hours ago</span></span></div>
+            <div style="display: flex; flex-direction: column; margin-top: 12px; font-size: .84rem;">
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">Sheets detected<b style="margin-inline-start: auto;">3</b></span>
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">Rows<b style="margin-inline-start: auto;">1,248</b></span>
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">Columns<b style="margin-inline-start: auto;">24</b></span>
+              <span style="display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #F3EEE6;">File type<b style="margin-inline-start: auto;">Microsoft Excel (.xlsx)</b></span>
+            </div>
+          </div>
+
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Data Quality Check</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View details →</a></div>
+            <div style="display: flex; align-items: center; gap: 18px; margin-top: 12px;">
+              <svg width="112" height="112" viewBox="0 0 120 120" fill="none" style="flex: none;">
+                <circle cx="60" cy="60" r="48" stroke="#EFE9E0" stroke-width="13"></circle>
+                <circle cx="60" cy="60" r="48" stroke="#46875F" stroke-width="13" stroke-linecap="round" stroke-dasharray="277 301" transform="rotate(-90 60 60)"></circle>
+                <text x="60" y="56" text-anchor="middle" font-size="24" font-weight="600" fill="#16212B" font-family="Georgia, serif">92%</text>
+                <text x="60" y="74" text-anchor="middle" font-size="10" fill="#8A929B" font-family="monospace">QUALITY</text>
+              </svg>
+              <div style="display: flex; flex-direction: column; gap: 9px; font-size: .85rem; min-width: 0;">
+                <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #46875F;"></span>18 columns valid</span>
+                <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #D9922E;"></span>4 columns with warnings</span>
+                <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C0433A;"></span>2 columns with errors</span>
+                <span style="display: flex; align-items: center; gap: 9px; color: #6B7580;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C7CCD1;"></span>1,248 rows ready</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Transformation Suggestions</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+              <sc-for list="{{ suggestions }}" as="g" hint-placeholder-count="4"><span style="display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #EFE9E0; border-radius: 9px; background: {{ g.bg }};"><span style="display: flex; flex-direction: column; color: {{ g.ink }};"><b style="font-size: .84rem;">{{ g.title }}</b><span style="font-size: .74rem; color: {{ g.subInk }};">{{ g.sub }}</span></span><sc-if value="{{ g.pending }}"><span onClick="{{ g.toggle }}" role="button" style="margin-inline-start: auto; padding: 6px 13px; border-radius: 7px; background: #F4EBD8; color: #7A5A17; font-size: .78rem; font-weight: 600; cursor: pointer;" style-hover="background: #EEDFC2;">Apply</span></sc-if><sc-if value="{{ g.applied }}"><span onClick="{{ g.toggle }}" role="button" title="Undo" style="margin-inline-start: auto; padding: 6px 13px; border-radius: 7px; background: #EFEAE2; color: #6B7580; font-size: .78rem; font-weight: 600; cursor: pointer;">Applied ✓</span></sc-if></span></sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin: 14px 24px 0; padding: 16px 18px 12px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+            <span style="display: flex; flex-direction: column;"><b style="font-size: 1rem;">Field Mapping</b><span style="font-size: .8rem; color: #8A929B;">Map your data columns to Khepri's data model.</span></span>
+            <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 0 14px; border: 1px solid #E6E0D6; border-radius: 8px; background: #FDFBF8; font-size: .84rem; color: #98A0A8;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#98A0A8" stroke-width="1.8"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path></svg>Search columns…</span>
+            <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid #DCD3C4; border-radius: 8px; background: #fff; font-size: .84rem; font-weight: 600; cursor: pointer;" style-hover="border-color: #C9A45C;" onClick="{{ autoMap }}" role="button">Auto-Map</span>
+            <span onClick="{{ resetMaps }}" role="button" style="font-size: .84rem; color: #8C6B22; cursor: pointer;">Reset mappings</span>
+          </div>
+          <div style="overflow-x: auto; margin-top: 12px;">
+            <table style="width: 100%; min-width: 900px; border-collapse: collapse; font-size: .84rem;">
+              <thead><tr style="background: #F7F3EC; text-align: start;">
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Source Column</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Sample Data</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Type</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Map To</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Confidence</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Status</th>
+                <th style="text-align: start; font-weight: 600; padding: 10px 12px; color: #55616C; border-bottom: 1px solid #EBE5DC;">Notes</th>
+              </tr></thead>
+              <tbody>
+                <tr style="background: {{ r0.bg }};"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600; color: {{ r0.ink }};">{{ r0.src }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r0.sample }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r0.type }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span onClick="{{ r0.cycle }}" role="button" title="{{ r0.hint }}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid {{ r0.selBorder }}; border-radius: 7px; background: {{ r0.selBg }}; color: {{ r0.selInk }}; cursor: {{ r0.cursor }};">{{ r0.target }} ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span role="progressbar" aria-valuenow="{{ r0.conf }}" aria-valuemin="0" aria-valuemax="100" style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: {{ r0.confW }}; height: 100%; background: {{ r0.meter }};"></span></span>{{ r0.confLabel }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: {{ r0.badgeBg }}; color: {{ r0.badgeInk }}; font-size: .74rem; font-weight: 600;">{{ r0.status }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">{{ r0.note }}</td></tr>
+                <tr style="background: {{ r1.bg }};"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600; color: {{ r1.ink }};">{{ r1.src }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r1.sample }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r1.type }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span onClick="{{ r1.cycle }}" role="button" title="{{ r1.hint }}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid {{ r1.selBorder }}; border-radius: 7px; background: {{ r1.selBg }}; color: {{ r1.selInk }}; cursor: {{ r1.cursor }};">{{ r1.target }} ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span role="progressbar" aria-valuenow="{{ r1.conf }}" aria-valuemin="0" aria-valuemax="100" style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: {{ r1.confW }}; height: 100%; background: {{ r1.meter }};"></span></span>{{ r1.confLabel }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: {{ r1.badgeBg }}; color: {{ r1.badgeInk }}; font-size: .74rem; font-weight: 600;">{{ r1.status }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">{{ r1.note }}</td></tr>
+                <tr style="background: {{ r2.bg }};"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600; color: {{ r2.ink }};">{{ r2.src }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r2.sample }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r2.type }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span onClick="{{ r2.cycle }}" role="button" title="{{ r2.hint }}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid {{ r2.selBorder }}; border-radius: 7px; background: {{ r2.selBg }}; color: {{ r2.selInk }}; cursor: {{ r2.cursor }};">{{ r2.target }} ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span role="progressbar" aria-valuenow="{{ r2.conf }}" aria-valuemin="0" aria-valuemax="100" style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: {{ r2.confW }}; height: 100%; background: {{ r2.meter }};"></span></span>{{ r2.confLabel }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: {{ r2.badgeBg }}; color: {{ r2.badgeInk }}; font-size: .74rem; font-weight: 600;">{{ r2.status }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">{{ r2.note }}</td></tr>
+                <tr style="background: {{ r3.bg }};"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600; color: {{ r3.ink }};">{{ r3.src }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r3.sample }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r3.type }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span onClick="{{ r3.cycle }}" role="button" title="{{ r3.hint }}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid {{ r3.selBorder }}; border-radius: 7px; background: {{ r3.selBg }}; color: {{ r3.selInk }}; cursor: {{ r3.cursor }};">{{ r3.target }} ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span role="progressbar" aria-valuenow="{{ r3.conf }}" aria-valuemin="0" aria-valuemax="100" style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: {{ r3.confW }}; height: 100%; background: {{ r3.meter }};"></span></span>{{ r3.confLabel }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: {{ r3.badgeBg }}; color: {{ r3.badgeInk }}; font-size: .74rem; font-weight: 600;">{{ r3.status }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">{{ r3.note }}</td></tr>
+                <tr style="background: {{ r4.bg }};"><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; font-weight: 600; color: {{ r4.ink }};">{{ r4.src }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r4.sample }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #6B7580;">{{ r4.type }}</td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span onClick="{{ r4.cycle }}" role="button" title="{{ r4.hint }}" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid {{ r4.selBorder }}; border-radius: 7px; background: {{ r4.selBg }}; color: {{ r4.selInk }}; cursor: {{ r4.cursor }};">{{ r4.target }} ▾</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="display: inline-flex; align-items: center; gap: 8px;"><span role="progressbar" aria-valuenow="{{ r4.conf }}" aria-valuemin="0" aria-valuemax="100" style="width: 74px; height: 6px; border-radius: 999px; background: #EFE9E0; overflow: hidden;"><span style="display: block; width: {{ r4.confW }}; height: 100%; background: {{ r4.meter }};"></span></span>{{ r4.confLabel }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6;"><span style="padding: 3px 10px; border-radius: 999px; background: {{ r4.badgeBg }}; color: {{ r4.badgeInk }}; font-size: .74rem; font-weight: 600;">{{ r4.status }}</span></td><td style="padding: 10px 12px; border-bottom: 1px solid #F3EEE6; color: #8A929B;">{{ r4.note }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 10px; font-size: .8rem; color: #8A929B;">Showing 5 of 24 columns<span style="margin-inline-start: auto; display: flex; align-items: center; gap: 6px;"><span style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; color: #C7CCD1; cursor: not-allowed;">‹</span><span style="padding: 5px 11px; border-radius: 6px; background: #E8D6B0; color: #4A3712; font-weight: 600;">1</span><span style="padding: 5px 11px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">2</span><span style="padding: 5px 11px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">3</span><span>…</span><span style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">›</span></span></div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 14px 24px 0;">
+          <span onClick="{{ goUpload }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: #fff; font-size: .9rem; cursor: pointer;">← Back to Upload</span>
+          <span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1px solid #DCD3C4; background: #fff; font-size: .9rem; cursor: pointer;">Save as Template</span>
+          <span onClick="{{ goProgress }}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 24px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .92rem; cursor: pointer;" style-hover="filter: brightness(1.05);">Continue to Analysis<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atProgress }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="04 Analysis in Progress" style="padding: 0 0 26px;">
+        <div style="position: relative; min-height: 186px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 66% 44%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.94) 36%, rgba(252,243,228,.42) 58%, rgba(20,30,40,0) 78%);"></div>
+          <div style="position: relative; padding: 18px 24px 22px;">
+            <span onClick="{{ goReview }}" style="display: inline-flex; align-items: center; gap: 8px; font-size: .84rem; color: #55616C; cursor: pointer;">← Back to Review</span>
+            <span style="display: block; margin-top: 10px; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .3em; text-transform: uppercase; color: #9A7B34;">Analysis in progress</span>
+            <h1 style="margin: 6px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2rem; line-height: 1.12;">Q3 Financial Performance</h1>
+            <p style="margin: 6px 0 0; max-width: 60ch; font-size: .9rem; line-height: 1.6; color: #55616C;">Khepri is analyzing your data and generating insights. You can leave this page — we'll notify you when it's complete.</p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 18px; margin: 14px 24px 0; padding: 16px 20px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+          <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px;">
+            <sc-for list="{{ steps }}" as="s" hint-placeholder-count="5"><sc-if value="{{ s.hasLine }}"><span style="flex: 1; min-width: 30px; height: 1px; background: {{ s.line }}; margin-top: 16px;"></span></sc-if><span style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; min-width: 120px; text-align: center; color: {{ s.wrapInk }};"><sc-if value="{{ s.done }}"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #B98C39; color: #fff; font-weight: 700;">✓</span></sc-if><sc-if value="{{ s.current }}"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #FDF6E6; border: 2px solid #C9A45C; color: #7A5A17; font-weight: 700; box-shadow: 0 0 0 5px rgba(201,164,92,.18); box-sizing: border-box;">{{ s.n }}</span></sc-if><sc-if value="{{ s.pending }}"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #EFE9E0; color: #8A929B; font-weight: 700;">{{ s.n }}</span></sc-if><b style="font-size: .85rem; color: {{ s.labelInk }};">{{ s.label }}</b><span style="font-size: .73rem; color: #98A0A8;">{{ s.sub }}</span></span></sc-for>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding-inline-start: 18px; border-inline-start: 1px solid #F0EAE1;">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#B98C39" stroke-width="1.4"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+            <span style="display: flex; flex-direction: column;"><span style="font-size: .76rem; color: #8A929B;">{{ etaTitle }}</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.32rem;">{{ etaValue }}</b><span style="font-size: .73rem; color: #98A0A8;">{{ elapsedLabel }}</span><span aria-live="polite" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">{{ liveMsg }}</span></span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 14px 24px 0; align-items: start;">
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Analysis Tasks</b><span style="margin-inline-start: auto; font-size: .8rem; color: #8A929B;">{{ tasksDone }} of 6 completed</span></div>
+            <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 12px;">
+              <sc-for list="{{ tasks }}" as="t" hint-placeholder-count="6"><sc-if value="{{ t.done }}"><span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #46875F; color: #fff; font-size: .72rem; flex: none;">✓</span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">{{ t.label }}</b><span style="font-size: .74rem; color: #98A0A8;">{{ t.sub }}</span></span></span></sc-if><sc-if value="{{ t.running }}"><span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px; border-radius: 9px; background: #FDF7EA; border: 1px solid #F0E1C2;"><span style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite; flex: none; box-sizing: border-box;"></span><span style="display: flex; flex-direction: column; min-width: 0; flex: 1;"><b style="font-size: .87rem;">{{ t.label }}</b><span style="font-size: .74rem; color: #7A6C52;">{{ t.sub }}</span><span role="progressbar" aria-busy="true" aria-valuemin="0" aria-valuemax="100" style="height: 4px; margin-top: 8px; border-radius: 999px; background: #EFE3CC; overflow: hidden;"><span style="display: block; width: 34%; height: 100%; background: linear-gradient(90deg, #D5AE63, #B98C39); animation: khBar 1.6s ease-in-out infinite;"></span></span></span></span></sc-if><sc-if value="{{ t.pending }}"><span style="display: flex; gap: 12px; align-items: flex-start; padding: 10px; color: #8A929B;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #EFE9E0; flex: none;"></span><span style="display: flex; flex-direction: column;"><b style="font-size: .87rem;">{{ t.label }}</b><span style="font-size: .74rem;">Pending</span></span></span></sc-if></sc-for>
+            </div>
+          </div>
+
+          <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">AI Insights (live)</b><sc-if value="{{ running }}"><span style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; color: #7A5A17;"><span style="width: 11px; height: 11px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite;"></span>Generating…</span></sc-if><sc-if value="{{ complete }}"><span style="margin-inline-start: auto; font-size: .78rem; font-weight: 600; color: #27724F;">✓ Ready</span></sc-if></div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #EFE9E0; border-radius: 10px;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F6EBD6; flex: none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Identifying revenue trends…</b><span style="font-size: .78rem; line-height: 1.5; color: #6B7580;">Analyzing quarter-over-quarter performance across regions and products.</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #EFE9E0; border-radius: 10px;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F6EBD6; flex: none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M4 17l5-6 4 3 6-8"></path><path d="M19 6h-4M19 6v4"></path></svg></span><span style="display: flex; flex-direction: column;"><b style="font-size: .86rem;">Detecting key drivers…</b><span style="font-size: .78rem; line-height: 1.5; color: #6B7580;">Finding the factors that contributed to performance changes.</span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #F0EAE1; border-radius: 10px; opacity: .6;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F2EEE7; flex: none;"></span><span style="display: flex; flex-direction: column; gap: 6px; flex: 1;"><span style="width: 62%; height: 9px; border-radius: 4px; background: #EDE7DE; animation: khPulse 1.5s ease-in-out infinite;"></span><span style="width: 100%; height: 8px; border-radius: 4px; background: #F2EDE5; animation: khPulse 1.5s ease-in-out infinite;"></span><span style="width: 78%; height: 8px; border-radius: 4px; background: #F2EDE5; animation: khPulse 1.5s ease-in-out infinite;"></span></span></span>
+              <span style="display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid #F0EAE1; border-radius: 10px; opacity: .6;"><span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #F2EEE7; flex: none;"></span><span style="display: flex; flex-direction: column; gap: 6px; flex: 1;"><span style="width: 48%; height: 9px; border-radius: 4px; background: #EDE7DE; animation: khPulse 1.5s ease-in-out infinite;"></span><span style="width: 92%; height: 8px; border-radius: 4px; background: #F2EDE5; animation: khPulse 1.5s ease-in-out infinite;"></span></span></span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Data Summary</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View details →</a></div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px;">
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">3</b><span style="font-size: .76rem; color: #8A929B;">Files uploaded</span></span>
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">24</b><span style="font-size: .76rem; color: #8A929B;">Sheets detected</span></span>
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">1,248</b><span style="font-size: .76rem; color: #8A929B;">Total rows</span></span>
+                <span style="display: flex; flex-direction: column;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem;">12</b><span style="font-size: .76rem; color: #8A929B;">Columns</span></span>
+              </div>
+            </div>
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Recent Activity</b><a href="#" style="margin-inline-start: auto; font-size: .82rem;">View all →</a></div>
+              <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px; font-size: .84rem;">
+                <span style="display: flex; gap: 11px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C; margin-top: 6px; flex: none;"></span><span style="display: flex; flex-direction: column;"><span><b>Data validation started</b></span><span style="font-size: .75rem; color: #98A0A8;">10:16 AM</span></span></span>
+                <span style="display: flex; gap: 11px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C; margin-top: 6px; flex: none;"></span><span style="display: flex; flex-direction: column;"><span><b>File parsing completed</b> — 24 sheets, 1,248 rows</span><span style="font-size: .75rem; color: #98A0A8;">10:15 AM</span></span></span>
+                <span style="display: flex; gap: 11px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C9A45C; margin-top: 6px; flex: none;"></span><span style="display: flex; flex-direction: column;"><span><b>Files uploaded successfully</b> — 3 files (12 MB)</span><span style="font-size: .75rem; color: #98A0A8;">10:14 AM</span></span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <sc-if value="{{ running }}"><div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 14px 24px 0; padding: 14px 18px; border: 1px solid #CFDCE8; border-radius: 12px; background: #F3F7FB;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3C6089" stroke-width="1.6"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 7.6v.2"></path></svg>
+          <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem;">You can safely leave this page</b><span style="font-size: .8rem; color: #4E5F70;">Your analysis continues in the background. We'll notify you when it's complete.</span></span>
+          <span onClick="{{ goInsights }}" style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 18px; border-radius: 9px; border: 1px solid #C3D2E0; background: #fff; font-size: .86rem; font-weight: 600; cursor: pointer;">Preview results</span>
+        </div></sc-if>
+        <sc-if value="{{ complete }}"><div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 14px 24px 0; padding: 14px 18px; border: 1px solid #D5E5DA; border-radius: 12px; background: #E9F3EC;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#27724F" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M8 12.4l2.6 2.6L16 9.6"></path></svg>
+          <span style="display: flex; flex-direction: column;"><b style="font-size: .88rem; color: #235E42;">Analysis complete</b><span style="font-size: .8rem; color: #2E6B4C;">All six tasks finished. Your insights and executive report are ready.</span></span>
+          <span onClick="{{ goInsights }}" role="button" style="margin-inline-start: auto; display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 22px; border-radius: 10px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .9rem; cursor: pointer; box-shadow: 0 10px 22px -12px rgba(140,104,30,.9);" style-hover="filter: brightness(1.05);">View insights<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+        </div></sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atInsightsScreen }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="05 Insights" style="padding: 0 0 26px;">
+        <div style="position: relative; min-height: 210px; border-bottom: 1px solid #EBE5DC; overflow: hidden; background: #F6EDDF;">
+          <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 64% 46%;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #FFFDFA 0%, rgba(255,251,244,.94) 34%, rgba(252,243,228,.42) 56%, rgba(20,30,40,0) 76%);"></div>
+          <div style="position: relative; display: flex; flex-wrap: wrap; gap: 16px; padding: 18px 24px 20px;">
+            <div style="flex: 1; min-width: 320px;">
+              <span style="display: flex; align-items: center; gap: 8px; font-size: .8rem; color: #7A828A;">Insights<span>›</span><b style="color: #16212B;">Q3 Financial Performance</b></span>
+              <span style="display: block; margin-top: 10px; font-family: ui-monospace, Consolas, monospace; font-size: .64rem; letter-spacing: .3em; text-transform: uppercase; color: #2E7D57;">Analysis complete</span>
+              <h1 style="margin: 6px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 500; font-size: 2.1rem; line-height: 1.12;">Q3 Financial Performance</h1>
+              <p style="margin: 6px 0 0; max-width: 58ch; font-size: .92rem; line-height: 1.6; color: #55616C;">Strong revenue growth and improving profitability driven by market expansion and operational efficiency.</p>
+              <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; font-size: .8rem; color: #55616C;">
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: rgba(255,255,255,.9);"><span style="display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: #E6F1E9; color: #27724F; font-size: .54rem; font-weight: 700;">XLS</span>Q3 Financial Performance.xlsx</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: rgba(255,255,255,.9);">Completed Oct 12 · 4 min 32 sec</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E6E0D6; border-radius: 8px; background: rgba(255,255,255,.9);">1,248 rows analyzed</span>
+                <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid #E3CE9F; border-radius: 8px; background: #FDF8EC;">Finance, Q3, Revenue</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 10px;">
+              <span style="display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 16px; border-radius: 9px; border: 1px solid #DCD3C4; background: rgba(255,255,255,.92); font-size: .86rem; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4A5560" stroke-width="1.6"><circle cx="18" cy="5" r="2.6"></circle><circle cx="6" cy="12" r="2.6"></circle><circle cx="18" cy="19" r="2.6"></circle><path d="M8.4 10.8l7.2-4.2M8.4 13.2l7.2 4.2"></path></svg>Share</span>
+              <span onClick="{{ goReport }}" style="display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 18px; border-radius: 9px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .86rem; cursor: pointer;" style-hover="filter: brightness(1.05);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1B1405" stroke-width="1.8"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg>Open Report</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; margin: 14px 24px 0; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; gap: 22px; padding: 0 4px; border-bottom: 1px solid #EBE5DC;">
+              <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4"><span role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.pick }}" style="padding: 10px 2px 11px; border-bottom: 2px solid {{ t.line }}; margin-bottom: -1px; color: {{ t.ink }}; font-weight: {{ t.weight }}; font-size: .92rem; cursor: pointer;" style-hover="color: #16212B;">{{ t.label }}</span></sc-for>
+              <span style="margin-inline-start: auto; align-self: center; font-size: .78rem; color: #98A0A8;">Updated 2 hours ago</span>
+            </div>
+
+            <sc-if value="{{ showKpis }}"><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #F6EBD6;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Total Revenue</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">$482M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 18% vs. Q2</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #F6EBD6;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Operating Profit</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">$142M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 22% vs. Q2</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #F6EBD6; font-size: 1.05rem; color: #A8823A;">%</span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Operating Margin</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">29.5%</b><span style="font-size: .74rem; color: #2E7D57;">▲ 2.3 pp vs. Q2</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><span style="display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #EDF1F6;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#4A6178" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .8rem; color: #6B7580;">Units Sold</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem;">12.4K</b><span style="font-size: .74rem; color: #2E7D57;">▲ 16% vs. Q2</span></span></div>
+            </div>
+
+            </sc-if>
+            <sc-if value="{{ showCharts }}"><div style="display: flex; flex-direction: column; gap: 14px;"><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px;">
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .98rem;">Revenue Trend</b><span style="font-size: .78rem; color: #8A929B;">Quarterly revenue (USD millions)</span></span><a href="#" style="margin-inline-start: auto; font-size: .8rem;">Details →</a></div>
+                <svg viewBox="0 0 420 210" width="100%" height="200" fill="none" style="margin-top: 10px; display: block;" aria-label="Quarterly revenue">
+                  <g stroke="#EFE9E0"><path d="M40 20h370M40 65h370M40 110h370M40 155h370M40 185h370"></path></g>
+                  <g fill="#98A0A8" font-size="10" font-family="ui-monospace, monospace"><text x="8" y="24">600</text><text x="8" y="69">400</text><text x="8" y="114">200</text><text x="14" y="189">0</text></g>
+                  <rect x="80" y="113" width="70" height="72" fill="#CBD4DC" rx="3"></rect>
+                  <rect x="190" y="93" width="70" height="92" fill="#CBD4DC" rx="3"></rect>
+                  <rect x="300" y="77" width="70" height="108" fill="#C9A45C" rx="3"></rect>
+                  <g fill="#16212B" font-size="12" font-weight="600" font-family="Georgia, serif"><text x="103" y="106">320</text><text x="213" y="86">408</text><text x="323" y="70">482</text></g>
+                  <g fill="#98A0A8" font-size="10" font-family="ui-monospace, monospace"><text x="95" y="203">Q1 2024</text><text x="205" y="203">Q2 2024</text><text x="315" y="203">Q3 2024</text></g>
+                </svg>
+              </div>
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .98rem;">Revenue by Region</b><span style="font-size: .78rem; color: #8A929B;">Q3 2024 breakdown</span></span><a href="#" style="margin-inline-start: auto; font-size: .8rem;">Details →</a></div>
+                <div style="display: flex; align-items: center; gap: 16px; margin-top: 10px; flex-wrap: wrap;">
+                  <svg width="150" height="150" viewBox="0 0 120 120" fill="none" style="flex: none;">
+                    <circle cx="60" cy="60" r="44" stroke="#33506D" stroke-width="18" stroke-dasharray="105 172" transform="rotate(-90 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#5E7E9E" stroke-width="18" stroke-dasharray="72 205" transform="rotate(46 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#C9A45C" stroke-width="18" stroke-dasharray="50 227" transform="rotate(140 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#8FB4D4" stroke-width="18" stroke-dasharray="33 244" transform="rotate(205 60 60)"></circle>
+                    <circle cx="60" cy="60" r="44" stroke="#E0D3BA" stroke-width="18" stroke-dasharray="17 260" transform="rotate(248 60 60)"></circle>
+                    <text x="60" y="57" text-anchor="middle" font-size="17" font-weight="600" fill="#16212B" font-family="Georgia, serif">$482M</text>
+                    <text x="60" y="72" text-anchor="middle" font-size="8" fill="#8A929B" font-family="monospace">TOTAL</text>
+                  </svg>
+                  <div style="display: flex; flex-direction: column; gap: 8px; font-size: .84rem; flex: 1; min-width: 150px;">
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #33506D;"></span>North America<b style="margin-inline-start: auto;">38%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #5E7E9E;"></span>Europe<b style="margin-inline-start: auto;">26%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #C9A45C;"></span>Middle East<b style="margin-inline-start: auto;">18%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #8FB4D4;"></span>Asia Pacific<b style="margin-inline-start: auto;">12%</b></span>
+                    <span style="display: flex; align-items: center; gap: 9px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #E0D3BA;"></span>Latin America<b style="margin-inline-start: auto;">6%</b></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px;">
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;"><span style="display: flex; flex-direction: column;"><b style="font-size: .98rem;">Top Products by Revenue</b><span style="font-size: .78rem; color: #8A929B;">Q3 2024 (USD millions)</span></span></div>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px; font-size: .84rem;">
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Solar Max</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #D5AE63, #B98C39);"></span></span><b>182</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Eco Home</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 54%; height: 100%; background: linear-gradient(90deg, #DCBC7E, #C49A4C);"></span></span><b>98</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Power Unit</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 42%; height: 100%; background: linear-gradient(90deg, #E2C793, #CBA75E);"></span></span><b>76</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Smart Grid</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 35%; height: 100%; background: linear-gradient(90deg, #E7D0A5, #D2B273);"></span></span><b>64</b></span>
+                  <span style="display: flex; align-items: center; gap: 12px;"><span style="width: 92px;">Other</span><span style="flex: 1; height: 10px; border-radius: 999px; background: #F1ECE4; overflow: hidden;"><span style="display: block; width: 34%; height: 100%; background: #E0D3BA;"></span></span><b>62</b></span>
+                </div>
+              </div>
+              <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+                <b style="font-size: .98rem;">Segment Detail</b>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 28px 16px; margin-top: 12px; border: 1px dashed #DED7CC; border-radius: 10px; text-align: center;">
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#C9A45C" stroke-width="1.2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                  <b style="font-size: .9rem;">No segment dimension selected</b>
+                  <span style="font-size: .8rem; color: #8A929B; max-width: 38ch; line-height: 1.55;">Choose a dimension such as customer tier or channel to break this analysis down further.</span>
+                  <span style="margin-top: 4px; display: inline-flex; align-items: center; min-height: 38px; padding: 0 16px; border-radius: 8px; border: 1px solid #DCD3C4; background: #fff; font-size: .84rem; font-weight: 600; cursor: pointer;">Add a dimension</span>
+                </div>
+              </div>
+            </div></div></sc-if>
+            <sc-if value="{{ showFindings }}"><div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><b style="font-size: .98rem;">Key Findings</b><div style="display: flex; flex-direction: column; margin-top: 8px;"><sc-for list="{{ findings }}" as="f" hint-placeholder-count="4"><span style="display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid #F3EEE6; font-size: .87rem;"><span style="min-width: 0;">{{ f.text }}</span><span style="margin-inline-start: auto; flex: none; padding: 3px 10px; border-radius: 999px; background: {{ f.bg }}; color: {{ f.ink }}; font-size: .72rem; font-weight: 600;">{{ f.badge }}</span></span></sc-for></div></div></sc-if>
+            <sc-if value="{{ showRecs }}"><div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;"><b style="font-size: .98rem;">Recommendations</b><div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;"><sc-for list="{{ recs }}" as="r" hint-placeholder-count="3"><span style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid #EFE9E0; border-radius: 10px;"><span style="display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .76rem; font-weight: 700; flex: none;">{{ r.n }}</span><span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .88rem;">{{ r.title }}</b><span style="font-size: .8rem; line-height: 1.55; color: #55616C;">{{ r.body }}</span></span></span></sc-for></div></div></sc-if>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;"><b style="font-size: 1rem;">Executive Summary</b><span onClick="{{ goReport }}" style="margin-inline-start: auto; font-size: .82rem; color: #8C6B22; cursor: pointer;">View full report →</span></div>
+              <p style="margin: 12px 0 0; font-size: .87rem; line-height: 1.65; color: #44505B;">Q3 2024 delivered strong financial results, with 18% revenue growth year-over-year, driven by continued market expansion, higher demand in core markets, and improved operational efficiency. Profitability also increased, with operating margin reaching 29.5%.</p>
+              <p style="margin: 10px 0 0; font-size: .87rem; line-height: 1.65; color: #44505B;">The business is well-positioned for an accelerated Q4, with positive momentum across all key regions.</p>
+              <div style="margin-top: 14px; padding: 14px 16px; border-radius: 10px; background: #FAF3E6; border: 1px solid #F0E1C2;">
+                <p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-style: italic; font-size: .92rem; line-height: 1.6; color: #4B4025;">“Our disciplined execution and focus on strategic growth continue to drive strong results and position us for a brighter tomorrow.”</p>
+                <span style="display: block; margin-top: 8px; font-size: .78rem; color: #7A6C52;">— CEO, Khepri</span>
+              </div>
+            </div>
+            <div style="padding: 16px 18px; background: #fff; border: 1px solid #EBE5DC; border-radius: 12px;">
+              <b style="font-size: 1rem;">Key Drivers</b>
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px; font-size: .86rem;">
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">1</span>Market expansion in North America (+28% revenue)</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">2</span>Strong performance in the Solar Max product line</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">3</span>Improved operational efficiency (−2.3 pp cost ratio)</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">4</span>Growing demand in sustainable energy solutions</span>
+                <span style="display: flex; gap: 11px;"><span style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #F4EBD8; color: #7A5A17; font-size: .74rem; font-weight: 700; flex: none;">5</span>Successful channel partner activation in EMEA</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid #F0DCB4; border-radius: 12px; background: #FDF7EA;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A7327" stroke-width="1.6" style="flex: none;"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.2"></path></svg>
+              <span style="display: flex; flex-direction: column; gap: 3px;"><b style="font-size: .87rem;">2 columns were excluded</b><span style="font-size: .8rem; line-height: 1.55; color: #6E6249;">“Notes” and one date column contained mixed content and were left out of this analysis.</span><span onClick="{{ goReview }}" role="button" style="font-size: .8rem; color: #8C6B22; cursor: pointer;">Review mapping</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ atReport }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="06 Executive Report" style="background: #ECE7DF; padding: 0 0 30px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #EBE5DC; position: sticky; top: 0; z-index: 2;">
+          <span onClick="{{ goInsights }}" style="display: inline-flex; align-items: center; gap: 8px; font-size: .86rem; cursor: pointer;">← Back to insights</span>
+          <span style="display: flex; flex-direction: column; margin-inline-start: 10px;"><b style="font-size: .92rem;">Executive Report — Q3 2024</b><span style="font-size: .74rem; color: #98A0A8;">Generated Oct 12, 2024 · 14 pages</span></span>
+          <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 8px; font-size: .8rem; color: #6B7580;"><span onClick="{{ zoomOut }}" role="button" aria-label="Zoom out" style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">−</span><span dir="ltr" style="min-width: 40px; text-align: center;">{{ zoomLabel }}</span><span onClick="{{ zoomIn }}" role="button" aria-label="Zoom in" style="padding: 5px 10px; border: 1px solid #E6E0D6; border-radius: 6px; background: #fff; cursor: pointer;">+</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 15px; border-radius: 9px; border: 1px solid #DCD3C4; background: #fff; font-size: .85rem; cursor: pointer;">Share</span>
+          <span onClick="{{ exportPdf }}" role="button" style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 15px; border-radius: 9px; border: 1px solid #DCD3C4; background: #fff; font-size: .85rem; cursor: pointer;" style-hover="border-color: #C9A45C;"><sc-if value="{{ exporting }}"><span style="width: 12px; height: 12px; border-radius: 50%; border: 2px solid #C9A45C; border-top-color: transparent; animation: khSpin 900ms linear infinite; box-sizing: border-box;"></span></sc-if>{{ exportLabel }}</span>
+          <sc-if value="{{ notSent }}"><span onClick="{{ send }}" role="button" style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 17px; border-radius: 9px; background: linear-gradient(180deg, #D5AE63, #B98C39); color: #1B1405; font-weight: 600; font-size: .85rem; cursor: pointer;" style-hover="filter: brightness(1.05);">Send to stakeholders</span></sc-if><sc-if value="{{ sent }}"><span title="Already sent to stakeholders" aria-disabled="true" style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 17px; border-radius: 9px; background: #FAF8F5; border: 1px solid #F0ECE5; color: #6B7580; font-weight: 600; font-size: .85rem; cursor: not-allowed;">Sent ✓</span></sc-if>
+        </div>
+
+        <sc-if value="{{ banner }}"><div role="status" style="display: flex; align-items: center; gap: 12px; padding: 11px 24px; background: #E9F3EC; border-bottom: 1px solid #D5E5DA;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#27724F" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M8 12.4l2.6 2.6L16 9.6"></path></svg>
+          <span style="font-size: .85rem; color: #235E42;"><b>{{ bannerTitle }}</b> {{ bannerMsg }}</span>
+          <span onClick="{{ dismiss }}" role="button" style="margin-inline-start: auto; font-size: .8rem; color: #2E6B4C; cursor: pointer;">Dismiss</span>
+        </div></sc-if>
+
+        <div style="display: grid; grid-template-columns: 186px minmax(0, 1fr); gap: 20px; padding: 20px 24px 0; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 8px; position: sticky; top: 80px;">
+            <span style="font-family: ui-monospace, Consolas, monospace; font-size: .62rem; letter-spacing: .22em; text-transform: uppercase; color: #8A8172;">Pages</span>
+            <sc-for list="{{ pages }}" as="p" hint-placeholder-count="5"><span onClick="{{ p.pick }}" role="button" aria-current="{{ p.sel }}" style="padding: 9px 11px; border-radius: 8px; background: #fff; border: 1px solid {{ p.border }}; font-size: .83rem; font-weight: {{ p.weight }}; color: {{ p.ink }}; cursor: pointer;" style-hover="border-color: #C9A45C;">{{ p.label }}</span></sc-for>
+            <span style="padding: 9px 11px; border-radius: 8px; border: 1px dashed #DED7CC; font-size: .83rem; color: #A9AFB6;">6–14 · Appendix</span>
+          </div>
+
+          <div style="zoom: {{ zoom }}; max-width: 940px; width: 100%; background: #FCFAF6; border: 1px solid #DED7CC; box-shadow: 0 30px 60px -44px rgba(18,28,38,.6);">
+            <div id="rp-1" style="display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 420px;">
+              <div style="display: flex; flex-direction: column; padding: 34px 26px;">
+                <svg width="66" height="34" viewBox="0 0 62 32" fill="none" aria-hidden="true">
+                  <circle cx="31" cy="28" r="11.5" fill="#C9A45C"></circle>
+                  <path d="M5 30a26 26 0 0 1 52 0" stroke="#B0873C" stroke-width="1.3"></path>
+                  <path d="M12 30a19 19 0 0 1 38 0" stroke="#B0873C" stroke-width="1.1" opacity=".68"></path>
+                  <path d="M19 30a12 12 0 0 1 24 0" stroke="#B0873C" stroke-width="1" opacity=".45"></path>
+                </svg>
+                <div style="margin-top: 14px; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.5rem; letter-spacing: .3em; text-indent: .3em; color: #16212B;">KHEPRI</div>
+                <div style="margin-top: 8px; font-family: ui-monospace, Consolas, monospace; font-size: .57rem; letter-spacing: .2em; text-transform: uppercase; color: #6B7580; line-height: 2;">Insights for<br>a brighter tomorrow</div>
+                <span style="width: 40px; height: 1px; background: #C9A45C; margin: 24px 0;"></span>
+                <span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .24em; line-height: 2.4; text-transform: uppercase; color: #8A8172;">People<br>Ideas<br>Data<br>A brighter tomorrow</span>
+                <span style="width: 40px; height: 1px; background: #C9A45C; margin: 24px 0;"></span>
+                <span dir="rtl" lang="ar" style="font-size: .82rem; line-height: 2; color: #55616C;">رؤى أعمق من أجل غدٍ أكثر إشراقاً</span>
+              </div>
+              <div style="position: relative; overflow: hidden; background: #E9DFCC;">
+                <img src="src/assets/khepri-hero.png" alt="Khepri monument at sunrise" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 46%;">
+                <div style="position: absolute; inset: 0; background: linear-gradient(90deg, rgba(252,250,246,.85) 0%, rgba(252,250,246,0) 22%);"></div>
+                <span style="position: absolute; top: 26px; inset-inline-end: 26px; font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .24em; line-height: 2.2; text-transform: uppercase; color: #F4E4C0; text-align: end; text-shadow: 0 1px 10px rgba(10,16,22,.7);">Knowledge<br>illuminates<br>possibilities</span>
+              </div>
+            </div>
+
+            <div id="rp-2" style="padding: 34px 40px 30px; display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 34px;">
+              <div>
+                <span style="font-family: ui-monospace, Consolas, monospace; font-size: .68rem; letter-spacing: .34em; text-transform: uppercase; color: #9A7B34;">Q3 2024</span>
+                <h1 style="margin: 10px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 3rem; line-height: 1.05; color: #101C26;">Executive Report</h1>
+                <p style="margin: 10px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 1.32rem; line-height: 1.3; color: #2B3A47;">Stronger insights. A brighter tomorrow.</p>
+                <p style="margin: 14px 0 0; max-width: 56ch; font-size: .95rem; line-height: 1.7; color: #4C5762;">A comprehensive review of performance, key drivers, and opportunities across the business. Powered by data, guided by deeper perspectives, and built for what's next.</p>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 16px; padding-inline-start: 26px; border-inline-start: 1px solid #E4DED4;">
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .2em; text-transform: uppercase; color: #9A7B34;">Prepared for</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Khepri Analytics</b><span style="font-size: .82rem; color: #6B7580; line-height: 1.55;">Turning today's data into a brighter tomorrow.</span></span>
+                <span style="height: 1px; background: #E4DED4;"></span>
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .2em; text-transform: uppercase; color: #9A7B34;">Report period</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Q3 2024</b><span style="font-size: .82rem; color: #6B7580;">Jul 1 – Sep 30, 2024</span></span>
+                <span style="height: 1px; background: #E4DED4;"></span>
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .2em; text-transform: uppercase; color: #9A7B34;">Prepared on</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem;">Oct 12, 2024</b></span>
+              </div>
+            </div>
+
+            <div id="rp-3" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; padding: 0 40px;">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #F6EBD6;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.7"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Total Revenue</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">$482M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 18% vs. Q3 2023</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #F6EBD6;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Operating Profit</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">$142M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 22% vs. Q3 2023</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #F6EBD6; color: #A8823A;">%</span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Operating Margin</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">29.5%</b><span style="font-size: .74rem; color: #2E7D57;">▲ 210 bps</span></span></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #E8E2D8; border-radius: 10px;"><span style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #EDF1F6;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A6178" stroke-width="1.6"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c0-3.3 3.1-5.2 7-5.2S19 16.7 19 20"></path></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: .78rem; color: #6B7580;">Customers</span><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.42rem;">1.2M</b><span style="font-size: .74rem; color: #2E7D57;">▲ 16% vs. Q3 2023</span></span></div>
+            </div>
+
+            <div id="rp-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 26px; margin: 26px 40px; padding: 24px 0; border-top: 1px solid #E4DED4; border-bottom: 1px solid #E4DED4;">
+              <span style="display: flex; gap: 14px; align-items: flex-start;"><span style="display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #F6EBD6; flex: none;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.5"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.6H9c0-.6-.1-1.2-.6-1.6A6 6 0 0 1 12 3z"></path></svg></span><span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.06rem;">Deeper Insights</b><span style="font-size: .85rem; line-height: 1.6; color: #55616C;">Uncover what matters with trusted, intelligent analysis across your data.</span></span></span>
+              <span style="display: flex; gap: 14px; align-items: flex-start;"><span style="display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #F6EBD6; flex: none;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.6"><path d="M5 20v-6M12 20V7M19 20v-9"></path></svg></span><span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.06rem;">Bigger Opportunities</b><span style="font-size: .85rem; line-height: 1.6; color: #55616C;">Identify emerging trends and areas for accelerated growth.</span></span></span>
+              <span style="display: flex; gap: 14px; align-items: flex-start;"><span style="display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #F6EBD6; flex: none;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#A8823A" stroke-width="1.5"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3.2"></circle></svg></span><span style="display: flex; flex-direction: column; gap: 4px;"><b style="font-family: 'Source Serif 4', Georgia, serif; font-size: 1.06rem;">A Brighter Tomorrow</b><span style="font-size: .85rem; line-height: 1.6; color: #55616C;">Turn insight into action and build a more resilient, smarter future.</span></span></span>
+            </div>
+
+            <div id="rp-5" style="padding: 0 40px 30px;">
+              <p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-style: italic; font-size: 1.06rem; line-height: 1.6; color: #2B3A47;">“Our disciplined execution and focus on long-term value creation continue to drive strong results and position us for a brighter tomorrow.”</p>
+              <span style="display: block; margin-top: 8px; font-size: .82rem; color: #7A828A;">— CEO, Khepri</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 16px; padding: 16px 40px; background: #101C26; color: #E4E8EB;">
+              <span style="font-family: 'Source Serif 4', Georgia, serif; font-size: .95rem; letter-spacing: .3em;">KHEPRI</span>
+              <span style="width: 1px; height: 18px; background: rgba(201,164,92,.5);"></span>
+              <span style="font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .22em; text-transform: uppercase; color: #C2C9CE;">Insights for a brighter tomorrow</span>
+              <span style="margin-inline-start: auto; font-family: ui-monospace, Consolas, monospace; font-size: .58rem; letter-spacing: .18em; color: #8E9BA4;">Page {{ page }} / 14</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1680,&quot;height&quot;:1080},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;upload&quot;,&quot;review&quot;,&quot;progress&quot;,&quot;insights&quot;,&quot;report&quot;],&quot;default&quot;:&quot;home&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;language&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;English (LTR)&quot;,&quot;Arabic (RTL)&quot;],&quot;default&quot;:&quot;English (LTR)&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;showProtoNav&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: null, dir: null, range: '30D',
+    objective: null, objOpen: false, context: '', tags: ['Finance', 'Q3'], addingTag: false, draft: false, dragging: false,
+    queue: [
+      { id: 1, name: 'Q3 Financial Performance.xlsx', size: 4.1, pct: 100, st: 'done' },
+      { id: 2, name: 'Market Analysis.pdf', size: 2.7, pct: 64, st: 'up' },
+      { id: 3, name: 'Regional Sales Data.xlsx', size: 5.2, pct: 28, st: 'err' }
+    ],
+    nextId: 4, applied: [false, false, false, true], maps: [0, 0, 0, 0, 0],
+    done: 2, elapsed: 138, tick: 0,
+    tab: 'Overview', page: 1, zoom: 100, banner: true, sent: false, exporting: false, exported: false
+  };
+  componentDidMount() {
+    this.qt = setInterval(() => this.tickQueue(), 450);
+    if ((this.props.startScreen || 'home') === 'progress') this.startRun();
+  }
+  componentWillUnmount() { clearInterval(this.qt); clearInterval(this.rt); clearTimeout(this.et); }
+  tickQueue() {
+    if (!this.state.queue.some(f => f.st === 'up')) return;
+    this.setState(s => ({ queue: s.queue.map(f => f.st !== 'up' ? f : (f.pct + 9 >= 100 ? { ...f, pct: 100, st: 'done' } : { ...f, pct: f.pct + 9 })) }));
+  }
+  startRun() {
+    clearInterval(this.rt);
+    this.setState({ done: 2, elapsed: 138, tick: 0 });
+    this.rt = setInterval(() => this.setState(s => {
+      if (s.done >= 6) { clearInterval(this.rt); return null; }
+      const tick = s.tick + 1;
+      return { tick, elapsed: s.elapsed + 7, done: tick % 2 === 0 ? s.done + 1 : s.done };
+    }), 1000);
+  }
+  go(s) {
+    return () => {
+      this.setState({ screen: s, objOpen: false });
+      if (s === 'progress') this.startRun();
+      try { window.scrollTo(0, 0); } catch (e) {}
+    };
+  }
+  addFiles(list) {
+    this.setState(s => {
+      let id = s.nextId;
+      const add = list.map(f => ({ id: id++, name: f.name, size: f.size, pct: 0, st: 'up' }));
+      return { queue: s.queue.concat(add), nextId: id, dragging: false };
+    });
+  }
+  renderVals() {
+    const S = this.state;
+    const s = S.screen || this.props.startScreen || 'home';
+    const labels = { home: '01 · Home', upload: '02 · New Analysis', review: '03 · Review & Map', progress: '04 · Analysis in Progress', insights: '05 · Insights', report: '06 · Executive Report' };
+    const dir = S.dir || (this.props.language === 'Arabic (RTL)' ? 'rtl' : 'ltr');
+
+    // Home chart
+    const SERIES = {
+      '7D': { v: [22, 26, 24, 31, 29, 34, 36], l: ['Oct 24', 'Oct 25', 'Oct 27', 'Oct 28', 'Oct 30'] },
+      '30D': { v: [2.7, 5.3, 9.3, 7.1, 13.3, 10.7, 17.8, 16, 22.2, 19.6, 25.8, 24, 27.6], l: ['Oct 1', 'Oct 10', 'Oct 18', 'Oct 24', 'Oct 30'] },
+      '3M': { v: [8, 12, 11, 15, 18, 16, 21, 24, 22, 27, 30, 33], l: ['Aug 1', 'Aug 22', 'Sep 12', 'Oct 3', 'Oct 30'] },
+      '12M': { v: [4, 6, 5, 9, 11, 10, 14, 17, 19, 22, 26, 30], l: ['Nov', 'Feb', 'May', 'Aug', 'Oct'] }
+    };
+    const ser = SERIES[S.range];
+    const pts = ser.v.map((v, i) => [Math.round(40 + i * 590 / (ser.v.length - 1)), Math.round(200 - v * 4.5)]);
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join(' ');
+    const dots = pts.filter((p, i) => i % 2 === 1).map(p => 'M' + (p[0] - 3.2) + ' ' + p[1] + ' a3.2 3.2 0 1 0 6.4 0 a3.2 3.2 0 1 0 -6.4 0').join(' ');
+    const ranges = ['7D', '30D', '3M', '12M'].map(r => ({ label: r, sel: r === S.range, bg: r === S.range ? '#E8D6B0' : 'transparent', ink: r === S.range ? '#4A3712' : '#6B7580', weight: r === S.range ? 600 : 400, pick: () => this.setState({ range: r }) }));
+
+    // Upload
+    const OBJ = ['Financial performance review', 'Market & growth analysis', 'Operational efficiency', 'Customer insights'];
+    const queue = S.queue.map(f => {
+      const base = { name: f.name, pct: f.pct, width: f.pct + '%', failed: f.st === 'err', retry: () => this.setState(st => ({ queue: st.queue.map(q => q.id === f.id ? { ...q, st: 'up', pct: 0 } : q) })), remove: () => this.setState(st => ({ queue: st.queue.filter(q => q.id !== f.id) })) };
+      if (f.st === 'done') return { ...base, ink: '#16212B', note: '✓ Uploaded', noteInk: '#27724F', track: '#EFE9E0', bar: '#46875F' };
+      if (f.st === 'up') return { ...base, ink: '#16212B', note: f.pct + '% · 1.7 MB/s', noteInk: '#6B7580', track: '#EFE9E0', bar: 'linear-gradient(90deg, #D5AE63, #B98C39)' };
+      return { ...base, ink: '#B0392F', note: 'Failed · file exceeds 250 MB', noteInk: '#B0392F', track: '#F7E2DF', bar: '#C0433A' };
+    });
+    const doneFiles = S.queue.filter(f => f.st === 'done').length;
+    const uploading = S.queue.some(f => f.st === 'up');
+    const mb = S.queue.reduce((a, f) => a + f.size, 0);
+    const canContinue = !!S.objective && doneFiles > 0 && !uploading;
+    const uploadHint = !S.objective ? 'Select an objective to continue.' : uploading ? 'Waiting for uploads to finish…' : doneFiles === 0 ? 'Add at least one file to continue.' : doneFiles + (doneFiles === 1 ? ' file' : ' files') + ' ready · ' + S.objective;
+    const SAMPLES = [['Customer Survey 2024.csv', 1.8], ['Operations Budget.docx', 0.9], ['Supplier Contracts.pdf', 3.4]];
+
+    // Review
+    const SUG = [
+      ['Standardize date formats', '3 columns with inconsistent formats', 'Applied · 3 columns converted to ISO dates'],
+      ['Clean text values', 'Remove extra spaces, standardize casing', 'Applied · 412 values cleaned'],
+      ['Convert to numeric', '2 columns stored as text', 'Applied · 2 columns converted'],
+      ['Handle missing values', '124 values missing', 'Applied · 124 values filled (median)']
+    ];
+    const suggestions = SUG.map((g, i) => { const a = S.applied[i]; return { title: g[0], sub: a ? g[2] : g[1], pending: !a, applied: a, bg: a ? '#FAF8F5' : '#fff', ink: a ? '#6B7580' : '#16212B', subInk: a ? '#6B7580' : '#98A0A8', toggle: () => this.setState(st => ({ applied: st.applied.map((x, j) => j === i ? !x : x) })) }; });
+    const ROWS = [
+      { src: 'Date', sample: '2024-07-01', type: 'Date', note: 'Standard format', opts: [['Transaction Date', 'mapped', 98]] },
+      { src: 'Region', sample: 'North America', type: 'Text', note: '—', opts: [['Region', 'mapped', 96]] },
+      { src: 'Revenue', sample: '540,230', type: 'Number', note: 'Detected as currency', opts: [['Revenue (USD)', 'mapped', 97]] },
+      { src: 'Sales Rep', sample: 'John Smith', type: 'Text', note: 'Multiple formats detected', opts: [['Sales Representative', 'review', 72], ['Sales Representative', 'mapped', 100], ['Account Owner', 'mapped', 100]] },
+      { src: 'Notes', sample: 'Urgent order', type: 'Text', note: 'Contains mixed content', opts: [['Select field', 'unmapped', 38], ['Order Notes', 'mapped', 100], ['Exclude column', 'excluded', 0]] }
+    ];
+    const ST = {
+      mapped: { status: 'Mapped', bg: 'transparent', badgeBg: '#E7F2EB', badgeInk: '#27724F', meter: '#46875F', selBorder: '#E6E0D6', selBg: '#FDFBF8', selInk: '#16212B' },
+      review: { status: 'Needs Review', bg: '#FDF9F0', badgeBg: '#FAEEDA', badgeInk: '#7A5A17', meter: '#D9922E', selBorder: '#E3CE9F', selBg: '#FFFCF5', selInk: '#16212B' },
+      unmapped: { status: 'Unmapped', bg: '#FEF8F7', badgeBg: '#FBE9E7', badgeInk: '#B0392F', meter: '#C0433A', selBorder: '#EBC7C2', selBg: '#FFFBFA', selInk: '#6B7580' },
+      excluded: { status: 'Excluded', bg: 'transparent', badgeBg: '#F1ECE4', badgeInk: '#6B7580', meter: '#CBD4DC', selBorder: '#E6E0D6', selBg: '#FAF8F5', selInk: '#6B7580' }
+    };
+    const rv = {};
+    ROWS.forEach((r, i) => {
+      const k = S.maps[i] % r.opts.length, o = r.opts[k], st = ST[o[1]], multi = r.opts.length > 1;
+      rv['r' + i] = { ...st, src: r.src, sample: r.sample, type: r.type, target: o[0], conf: o[2], confW: o[2] + '%', confLabel: o[1] === 'excluded' ? '—' : o[2] + '%',
+        ink: o[1] === 'excluded' ? '#6B7580' : '#16212B',
+        note: k === 0 ? r.note : (o[1] === 'excluded' ? 'Excluded from analysis' : 'Confirmed manually'),
+        cursor: multi ? 'pointer' : 'default', hint: multi ? 'Click to change mapping' : 'Mapped automatically',
+        cycle: () => { if (multi) this.setState(x => ({ maps: x.maps.map((m, j) => j === i ? m + 1 : m) })); } };
+    });
+
+    // Progress
+    const d = S.done, complete = d >= 6;
+    const TASKS = [['Reading files and extracting data', 'Reading files…'], ['Parsing sheets and data structures', 'Parsing…'], ['Validating data quality', 'Checking for inconsistencies, missing values…'], ['Enriching data with metadata', 'Adding column metadata and units…'], ['Running AI analysis', 'Detecting trends and key drivers…'], ['Generating insights and visualizations', 'Building charts and summary…']];
+    const tasks = TASKS.map((t, i) => ({ label: t[0], done: i < d, running: i === d, pending: i > d, sub: i < d ? 'Completed · 10:' + (14 + i) + ' AM' : t[1] }));
+    const stepDone = [true, true, d >= 3, d >= 5, d >= 6];
+    const cur = stepDone.indexOf(false);
+    const SL = ['1. Upload', '2. Parse', '3. Validate', '4. Analyze', '5. Report'];
+    const SD = ['3 files · 12 MB', 'Extracted 24 sheets', 'Quality score 92%', 'Insights generated', 'Report ready'];
+    const SC = ['', '', 'Checking data quality…', 'Running AI analysis…', 'Building report…'];
+    const steps = SL.map((l, i) => ({ n: i + 1, label: l, done: stepDone[i], current: i === cur, pending: !stepDone[i] && i !== cur, sub: stepDone[i] ? SD[i] : i === cur ? SC[i] : 'Pending', hasLine: i > 0, line: stepDone[i] ? '#E3CE9F' : '#EBE5DC', wrapInk: !stepDone[i] && i !== cur ? '#8A929B' : 'inherit', labelInk: i === cur ? '#7A5A17' : 'inherit' }));
+    const mmss = t => Math.floor(t / 60) + 'm ' + String(t % 60).padStart(2, '0') + 's';
+
+    // Insights
+    const tabs = ['Overview', 'Findings', 'Charts', 'Recommendations'].map(t => ({ label: t, sel: t === S.tab, line: t === S.tab ? '#B98C39' : 'transparent', ink: t === S.tab ? '#16212B' : '#6B7580', weight: t === S.tab ? 600 : 400, pick: () => this.setState({ tab: t }) }));
+    const ok = { bg: '#E7F2EB', ink: '#27724F' }, warn = { bg: '#FAEEDA', ink: '#7A5A17' }, info = { bg: '#F3F7FB', ink: '#3C6089' };
+    const findings = [
+      { text: 'Revenue grew 18% vs. Q2 to $482M', badge: 'Positive', ...ok },
+      { text: 'Operating margin reached 29.5% (+2.3 pp)', badge: 'Positive', ...ok },
+      { text: 'North America contributes 38% of revenue', badge: 'Concentration', ...info },
+      { text: '2 columns were excluded from this analysis', badge: 'Needs Review', ...warn }
+    ];
+    const recs = [
+      { n: 1, title: 'Scale North America go-to-market', body: 'The region drove the largest share of growth; extend the Q3 expansion programme into Q4.' },
+      { n: 2, title: 'Prioritise Solar Max supply', body: 'The product line leads revenue by a wide margin. Secure capacity ahead of Q4 demand.' },
+      { n: 3, title: 'Extend EMEA channel partners', body: 'Partner activation performed well in EMEA and is a candidate for other regions.' }
+    ];
+
+    // Report
+    const PAGES = ['1 · Cover', '2 · Summary', '3 · Performance', '4 · Regions', '5 · Recommendations'];
+    const pages = PAGES.map((l, i) => ({ label: l, sel: S.page === i + 1, border: S.page === i + 1 ? '#C9A45C' : '#E4DED4', weight: S.page === i + 1 ? 600 : 400, ink: S.page === i + 1 ? '#16212B' : '#55616C', pick: () => {
+      this.setState({ page: i + 1 });
+      const el = document.getElementById('rp-' + (i + 1));
+      if (el) { try { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 150, behavior: 'smooth' }); } catch (e) {} }
+    } }));
+
+    return {
+      dir, showProtoNav: this.props.showProtoNav !== false, screenLabel: labels[s],
+      isEn: dir === 'ltr', isAr: dir === 'rtl',
+      enWeight: dir === 'ltr' ? 600 : 400, enBg: dir === 'ltr' ? '#F4EEE4' : 'transparent',
+      arWeight: dir === 'rtl' ? 600 : 400, arBg: dir === 'rtl' ? '#F4EEE4' : 'transparent',
+      atHome: s === 'home', atFlow: s === 'upload' || s === 'review', atInsights: s === 'insights' || s === 'report',
+      atUpload: s === 'upload', atReview: s === 'review', atProgress: s === 'progress', atInsightsScreen: s === 'insights', atReport: s === 'report',
+      goHome: this.go('home'), goUpload: this.go('upload'), goReview: this.go('review'),
+      goProgress: this.go('progress'), goInsights: this.go('insights'), goReport: this.go('report'),
+      setEn: () => this.setState({ dir: 'ltr' }), setAr: () => this.setState({ dir: 'rtl' }),
+
+      ranges, linePath: line, areaPath: 'M40 200 L' + line.slice(1) + ' L630 200 Z', dotsPath: dots,
+      xl0: ser.l[0], xl1: ser.l[1], xl2: ser.l[2], xl3: ser.l[3], xl4: ser.l[4],
+
+      addFile: () => { const n = S.nextId % 3; this.addFiles([{ name: SAMPLES[n][0], size: SAMPLES[n][1] }]); },
+      onDragOver: e => { e.preventDefault(); if (!S.dragging) this.setState({ dragging: true }); },
+      onDragLeave: () => this.setState({ dragging: false }),
+      onDrop: e => { e.preventDefault(); e.stopPropagation(); const fl = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fl.length) this.addFiles(fl.map(f => ({ name: f.name, size: Math.max(0.1, Math.round(f.size / 1e5) / 10) }))); else this.setState({ dragging: false }); },
+      dropOutline: S.dragging ? '2px solid #C9A45C' : 'none',
+      objOpen: S.objOpen, toggleObj: () => this.setState(x => ({ objOpen: !x.objOpen })),
+      objLabel: S.objective || 'Select an objective', objInk: S.objective ? '#16212B' : '#8A929B', objBorder: S.objOpen ? '#C9A45C' : '#E6E0D6',
+      objectives: OBJ.map(o => ({ label: o, sel: o === S.objective, bg: o === S.objective ? '#F6EBD6' : 'transparent', weight: o === S.objective ? 600 : 400, pick: () => this.setState({ objective: o, objOpen: false }) })),
+      objMissing: !S.objective, objChosen: !!S.objective,
+      context: S.context, contextCount: S.context.length, onContext: e => this.setState({ context: e.target.value.slice(0, 500) }),
+      tags: S.tags.map(t => ({ label: t, remove: () => this.setState(x => ({ tags: x.tags.filter(y => y !== t) })) })),
+      addingTag: S.addingTag, notAddingTag: !S.addingTag,
+      startTag: () => this.setState({ addingTag: true }), stopTag: () => this.setState({ addingTag: false }),
+      onTagKey: e => {
+        if (e.key === 'Escape') this.setState({ addingTag: false });
+        if (e.key === 'Enter') { const v = e.target.value.trim(); this.setState(x => ({ tags: v && !x.tags.includes(v) ? x.tags.concat(v) : x.tags, addingTag: false })); }
+      },
+      queue, queueEmpty: S.queue.length === 0,
+      queueSummary: S.queue.length + (S.queue.length === 1 ? ' file · ' : ' files · ') + Math.round(mb * 10) / 10 + ' MB',
+      canContinue, cannotContinue: !canContinue, uploadHint,
+      draftLabel: S.draft ? 'Draft saved ✓' : 'Save as draft', saveDraft: () => this.setState({ draft: true }),
+
+      suggestions, ...rv,
+      autoMap: () => this.setState({ maps: [0, 0, 0, 1, 2] }), resetMaps: () => this.setState({ maps: [0, 0, 0, 0, 0] }),
+
+      steps, tasks, tasksDone: Math.min(d, 6), running: !complete, complete,
+      etaTitle: complete ? 'Completed in' : 'Estimated completion',
+      etaValue: complete ? mmss(S.elapsed) : '~ ' + Math.max(1, Math.round((6 - d) * 0.75)) + ' min',
+      elapsedLabel: complete ? 'All tasks finished' : 'Elapsed ' + mmss(S.elapsed),
+      liveMsg: complete ? 'Analysis complete' : 'In progress: ' + TASKS[d][0],
+
+      tabs, showKpis: S.tab === 'Overview' || S.tab === 'Findings', showCharts: S.tab === 'Overview' || S.tab === 'Charts',
+      showFindings: S.tab === 'Findings', showRecs: S.tab === 'Recommendations', findings, recs,
+
+      pages, page: S.page, zoom: S.zoom / 100, zoomLabel: S.zoom + '%',
+      zoomIn: () => this.setState(x => ({ zoom: Math.min(130, x.zoom + 10) })), zoomOut: () => this.setState(x => ({ zoom: Math.max(70, x.zoom - 10) })),
+      exporting: S.exporting, exportLabel: S.exporting ? 'Exporting…' : S.exported ? 'PDF ready ✓' : 'Export PDF',
+      exportPdf: () => { if (S.exporting) return; this.setState({ exporting: true }); clearTimeout(this.et); this.et = setTimeout(() => this.setState({ exporting: false, exported: true }), 1400); },
+      sent: S.sent, notSent: !S.sent, send: () => this.setState({ sent: true, banner: true }),
+      banner: S.banner, dismiss: () => this.setState({ banner: false }),
+      bannerTitle: S.sent ? 'Report sent.' : 'Report generated successfully.',
+      bannerMsg: S.sent ? 'Shared with 4 stakeholders in Global Strategy.' : 'All 1,248 rows were included; 2 columns were excluded during mapping.'
+    };
+  }
+}
+</script>
+</body>
+</html>
