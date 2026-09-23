@@ -55,6 +55,7 @@ You have been provided with:
 * `design-files/Khepri Product UI.dc.html` — visual source of truth.
 * `design-files/Khepri Handoff.dc.html` — implementation rules, tokens, components, responsive behavior, states, RTL behavior, per-screen inventory.
 * `design-files/Khepri Design Language.dc.html` — palette, type and motif rationale.
+* `design-files/Khepri Clickable Prototype.dc.html` + `INTERACTIONS.md` — how each control behaves (enabled/disabled rules, state changes, tabs, stepper progression). Wire a behavior only where the product already supports it; never port the prototype's timers or sample data.
 * `references/01-home.png` … `06-report.png`, `icons.png`, `motifs.png` — approved renders.
 * `assets/khepri-hero.png` — the approved hero artwork (1400×900).
 * `README.md` — the implementation contract.
