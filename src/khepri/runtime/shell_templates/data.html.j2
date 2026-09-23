@@ -12,8 +12,12 @@
   `shell_workspace.py`, where the match is tested.
 #}
 <section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.data_title }}</h1>
-  <p class="lede">{{ copy.data_intro }}</p>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ copy.data_title }}</h1>
+      <p class="lede">{{ copy.data_intro }}</p>
+    </div>
+  </div>
   {% if rows %}
   <ul class="data-list">
     {% for row in rows %}

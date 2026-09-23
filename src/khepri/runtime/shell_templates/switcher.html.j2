@@ -11,8 +11,12 @@
   disclosure about rows the list withheld.
 #}
 <section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.switcher_title }}</h1>
-  <p class="lede">{{ copy.switcher_intro }}</p>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ copy.switcher_title }}</h1>
+      <p class="lede">{{ copy.switcher_intro }}</p>
+    </div>
+  </div>
   <ul class="organization-list">
     {% for organization in organizations %}
     <li class="organization-item">
@@ -54,7 +58,7 @@
           an `aria-label` would need a separator and a word order invented here, in a template
           that also renders Arabic.
         #}
-        <button type="submit"
+        <button class="button--primary button--small" type="submit"
                 aria-labelledby="new-analysis-{{ loop.index }} organization-name-{{ loop.index }}">
           <span id="new-analysis-{{ loop.index }}">{{ copy.new_analysis }}</span>
         </button>

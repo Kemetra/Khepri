@@ -5,8 +5,12 @@
   cannot re-group or re-total without editing markup the screen's tests guard.
 #}
 <section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ decision.title }}</h1>
-  <p class="lede">{{ decision.lede }}</p>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ decision.title }}</h1>
+      <p class="lede">{{ decision.lede }}</p>
+    </div>
+  </div>
 
   {# FR-164: the governed message, never the bare cause code. #}
   {#

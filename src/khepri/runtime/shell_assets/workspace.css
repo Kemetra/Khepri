@@ -1,42 +1,76 @@
-/* The workspace surfaces' component rules (`W1-05`, `RCA-005`): Overview and Data.
+/* The workspace surfaces' composition (`W1-05`, `W1-06`, `D1`; rebuilt under `RCA-010` §Scope).
  *
- * **Why a third sheet, and why here.** `shell.css` and `shell-components.css` ship from
- * `khepri.rra.journey.assets` (`R8-01`, `R8-07`, under `RCA-002`), and `RCA-005` names
- * `src/khepri/rra/journey/` as not in its scope. A slice under `RCA-005` may not write into that
- * tree, so its rules live in the runtime package the shell itself lives in, and are served by the
- * shell's own asset route from here. This sheet consumes the tokens `shell.css` declares and
- * introduces no colour, no `@import`, no `url()` and no font of its own -- the same discipline the
- * component sheet holds itself to.
+ * **Why a third sheet, and why here.** `RCA-005` names `src/khepri/rra/journey/` as not in its
+ * scope, so the surface rules live in the runtime package the shell lives in and are served by the
+ * shell's own asset route (`test_w105_overview_and_data.py`). `shell-components.css` holds the
+ * frame and the primitives -- cards, buttons, links, controls, the empty state -- and this sheet
+ * composes the surfaces from them: the overview's modules, the data and analysis spines, the
+ * analysis passport, comparison, and the decision workspace.
  *
- * **Logical properties only**, so the Arabic layout mirrors without a second rule. **States read as
- * words in `--muted`**, never as colour alone (`FR-122`). Regions are separated by a hairline and a
- * small uppercase label rather than by cards -- design language §7 -- because with one surface
- * colour a card inside a card is two hairlines and no information.
+ * **Tokens only.** No hex, `rgb()` or `hsl()` value of its own, no `@import`, no `url()`. **Logical
+ * properties only**, so the Arabic layout mirrors without a second rule. **A state is a word first**:
+ * every chip and badge carries its state as text, and paint only frames it (§16.5, `FR-122`).
+ *
+ * **One card level.** A card is the white `document-card` or overview `module`; anything inside one
+ * is an inner row on the ivory or sand surface with a 10px radius, never a second card (§E.2).
  */
 
+/* ---- Row primitives: the vocabulary every spine is built from ------------------------------- */
+
+.row-label {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* A state chip. The word is the state; the pill only frames it. */
+.row-state {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--space-3);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-arabic);
+}
+
+.row-format {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.shell-main time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A sub-region's heading inside a card. Set as a heading, not as an uppercase monospace label:
+ * letter-spacing and case transforms have no Arabic meaning and break the script's joins. */
+.region-label {
+  margin-block: var(--space-5) var(--space-3);
+  color: var(--ink);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+/* Shared list reset for every spine. */
 .data-list,
 .data-uses,
 .attention-list,
 .processing-list,
-/* `W1-09`'s two regions take the processing list's shape rather than a near-duplicate rule of
-   their own: same list reset, same row metrics, same 44px target. */
 .pinned-list,
-.recent-list {
-  list-style: none;
+.recent-list,
+.spine-list {
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
-/* §E.4's density floor, which the pack states as a measurement rather than a feel: the Arabic
- * overview panel "carries well past 12 distinct governed figures or rows above the fold".
- *
- * A row is therefore as tight as the 44px target allows and no tighter -- `--row-min` is
- * `--touch-min` by construction in `shell.css`, so the floor and the density are the same number
- * and cannot drift apart. The gap inside a row is the `tight` tier (label to value) and the rows
- * are separated by a hairline rather than by space, which is what lets twelve fit.
- *
- * The literal `44px` here was the floor restated; it now reads the token, so `FR-056` moves these
- * rows if it ever moves. */
+/* A dated row: its state at the start, its moment at the end, a hairline between rows. */
 .data-use,
 .attention-item,
 .pinned-item,
@@ -45,207 +79,330 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--density-tight);
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
   min-height: var(--row-min);
-  padding-block: var(--space-2, 0.5rem);
+  padding-block: var(--space-2);
   border-block-end: 1px solid var(--line-subtle);
 }
 
-/* The last row in a region is followed by the next region's own hairline, so its rule is the
- * second of two 1px lines a few pixels apart. Removing it is why the regions read as regions. */
 .data-uses > .data-use:last-child,
 .attention-list > .attention-item:last-child,
 .pinned-list > .pinned-item:last-child,
 .recent-list > .recent-item:last-child,
 .processing-list > .processing-item:last-child,
-.spine-list > .spine-item:last-child {
+.spine-list > .spine-item:last-child,
+.data-list > .data-item:last-child {
   border-block-end: 0;
 }
 
-/* The region label is this shell's eyebrow: a small uppercase mono run over a hairline, which is
- * how a surface with one background colour separates regions without nesting a card (§E.2).
- *
- * `--density-region` replaces the literal `--space-4` start margin so the gap between regions is
- * the named tier rather than a step that happens to be right. §E.3 asks for three tiers, not
- * seven; `.region-label`, `.data-use` and `.latest-work` now read `region`, `row` and `tight`
- * respectively, which is the whole ramp this surface uses.
- *
- * The tracking rises to the approved pack's eyebrow rhythm. §16.0's "editorial typography with
- * strong hierarchy" is carried here by tracking and weight, because the palette has one surface
- * colour and a label cannot be separated by tint. */
-.region-label {
-  margin-block: var(--density-region) var(--density-tight);
-  padding-block-start: var(--space-3, 0.75rem);
-  border-block-start: 1px solid var(--line);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.data-use time,
+.pinned-item time,
+.recent-item time,
+.processing-item time,
+.attention-item time {
   color: var(--muted);
-}
-
-/* The first region on a surface follows the lede, which already carries the region gap below it.
- * Without this the two stack and open a gap twice the tier -- the "oversized hero whitespace on
- * analytical screens" §15 item 13 forbids by name. */
-.shell-main > .document-card > .region-label:first-of-type {
-  margin-block-start: 0;
-}
-
-.latest-work,
-.latest-data,
-.data-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3, 0.75rem);
-  margin: 0;
-}
-
-.data-item {
-  padding-block: var(--space-3, 0.75rem);
-  border-block-end: 1px solid var(--line-subtle);
-}
-
-.data-item .region-label {
-  border-block-start: 0;
-  margin-block-start: var(--space-2, 0.5rem);
-  padding-block-start: 0;
-}
-
-/* A state reads as a word in `--muted`, never as colour alone (`FR-122`), and that is also the
- * master specification §13 rule the pack's strongest panel demonstrates: a refusal "reads as a
- * governed result, not a crash". The approved board paints its status rows in green, amber and red
- * pills; those are the pack's non-binding half twice over -- new colour, and colour carrying
- * meaning on its own. The word is what carries the state here.
- *
- * `--text-sm` and the tabular figures are the binding half: §E.4's density, and a column of times
- * that does not align is a column a reader cannot scan. `tabular-nums` affects only the numerals'
- * advance width, so it changes no value and no direction. */
-.row-label,
-.row-state,
-.row-format {
-  color: var(--muted);
-}
-
-/* `.row-format` is absent here and keeps the size on its own rule below, beside the mono family it
- * also needs -- two declarations of one property on one selector is the near-duplicate this
- * stylesheet's own header warns about. */
-.row-label,
-.row-state {
   font-size: var(--text-sm);
 }
 
-.row-label {
+/* ---- The hero band's partner: the first card rises into the artwork ------------------------- */
+
+/* The band bleeds to the frame's edges (`shell-components.css`); the card after it overlaps its
+ * lower 72px, so artwork and page read as one composition rather than a picture above a form. */
+.hero-band + .document-card,
+.hero-band + .workspace-page {
+  position: relative;
+  margin-block-start: calc(-1 * (var(--space-8) + var(--space-2)));
+}
+
+/* ---- 01 Overview (`overview.html.j2`) ------------------------------------------------------- */
+
+/* The raised header is the overview's first card (`document-card` supplies the surface); this adds
+ * the wider inline padding and the full border its `page-head` role would otherwise replace with a
+ * bottom hairline. The labelled `section.workspace-page` around it is unpainted. */
+.page-head--raised {
+  margin-block-end: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* The one display-size heading in the workspace (handoff §9 display-l). */
+.shell-main .page-head--raised h1 {
+  max-inline-size: none;
+  font-size: var(--text-hero);
+}
+
+/* Handoff §13, the home body: three columns at desktop, a responsive collapse below. */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 75rem) {
+  .module-grid {
+    grid-template-columns: 1.45fr 1fr 0.95fr;
+  }
+}
+
+.module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.module--wide {
+  grid-column: 1 / -1;
+}
+
+.module__title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-base);
   font-weight: 600;
+  line-height: var(--leading-tight);
 }
 
-/* Every `<time>` on these surfaces is already `dir="ltr"` in the templates, because a timestamp is
- * a Latin-Indic run that must not reorder inside Arabic prose. This aligns them as a column. */
-.shell-main time {
-  font-variant-numeric: tabular-nums;
+/* The latest work and data rows: the state chips, then the moment itself as the module's answer,
+ * set at the summary-statement size on its own line. */
+.latest-work,
+.latest-data {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
 }
 
-.row-format {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-sm, 0.875rem);
+.latest-work time,
+.latest-data time {
+  flex-basis: 100%;
+  color: var(--ink);
+  font-size: var(--text-metric);
+  font-weight: 600;
+  line-height: var(--leading-tight);
 }
 
-/* Blueprint §7.1's attention rule: a 4px muted rule and italic wording, neutral because the state
- * proves neither the actor nor the cause. */
+/* Items needing attention lead the page as one tinted callout: warning paint over rows that each
+ * state the failure in words. Not the error family, and no thick side bar. */
+.module--attention {
+  margin-block-end: var(--space-4);
+  border-color: var(--warning-border);
+  background: var(--warning-fill);
+}
+
 .attention-item {
-  padding-inline-start: var(--space-3, 0.75rem);
-  border-inline-start: 4px solid var(--muted);
-  border-block-end: 0;
-  font-style: italic;
+  border-block-end-color: var(--warning-border);
+  color: var(--accent-dark);
+  font-weight: 500;
+}
+
+.attention-item time {
+  color: var(--accent-dark);
 }
 
 .retention-notice {
-  margin-block-start: var(--space-4, 1rem);
-  padding-block-start: var(--space-3, 0.75rem);
+  margin-block: var(--space-5) 0;
+  padding-block-start: var(--space-4);
   border-block-start: 1px solid var(--line);
   color: var(--muted);
+  font-size: var(--text-sm);
 }
 
-/* The Analyses spine (`FR-117`). A row is two lines: what happened and when, then what it used and
- * what it offers. A tombstone keeps the same shape with a muted rule at its inline start and its
- * note in italics -- the same treatment as an attention item, because both state something the
- * reader cannot act on here. */
-.spine-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+/* ---- Data (`data.html.j2`) ------------------------------------------------------------------- */
 
-.spine-item {
-  padding-block: var(--space-3, 0.75rem);
+.data-item {
+  padding-block: var(--space-4);
   border-block-end: 1px solid var(--line-subtle);
 }
 
-.spine-summary,
-.spine-detail {
+.data-item:first-child {
+  padding-block-start: 0;
+}
+
+.data-summary {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3, 0.75rem);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+.data-summary time {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.data-item .region-label {
+  margin-block: var(--space-3) var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* Where a submission was used: an inset panel on the ivory surface, one row per analysis. */
+.data-item .data-uses {
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-row);
+  background: var(--paper);
+}
+
+/* ---- Analyses (`analyses.html.j2`) ----------------------------------------------------------- */
+
+.spine-item {
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.spine-item:first-child {
+  padding-block-start: 0;
+}
+
+.spine-summary,
+.spine-detail,
+.spine-trust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
   margin: 0;
 }
 
 .spine-detail {
-  margin-block-start: var(--space-1, 0.25rem);
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-sm);
 }
 
+/* The trust line is a sentence ("Answered: Overview, Period comparison, ..."), not a state word,
+ * so it reads as prose rather than being forced into a pill. */
+.spine-trust .row-state {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* The analysis's moment is the row's title and its link. */
+.shell-main .spine-open {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.spine-open time {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.shell-main .spine-open:hover time {
+  text-decoration-line: underline;
+  text-decoration-color: var(--gold-500);
+}
+
+/* A deleted analysis stays in the spine as a tombstone: dashed, on the ivory surface, stated in
+ * words. */
 .spine-item--tombstone {
-  padding-inline-start: var(--space-3, 0.75rem);
-  border-inline-start: 4px solid var(--muted);
+  margin-block: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-row);
+  background: var(--paper);
 }
 
 .tombstone-note {
-  margin: var(--space-2, 0.5rem) 0 0;
-  font-style: italic;
+  margin: 0;
   color: var(--muted);
+  font-size: var(--text-sm);
 }
 
-/* The spine's reference to a data entry is a link into the Data surface, so it takes the shell's
- * 44px target rule like every other anchor in `.shell-main`, and reads as two words and a time. */
-.data-reference {
-  display: inline-flex;
+/* A reference to a submission: the moment carries the underline, its label does not, so the link
+ * reads as one underlined value rather than two. */
+.shell-main .data-reference {
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2, 0.5rem);
+  gap: var(--space-2);
+  text-decoration: none;
 }
 
-/* `W1-06`: the spine's link to detail, the Passport, the quality groups, the artifact handoffs and
-   the audit disclosure. Interactive targets keep the 44px minimum (`RCA-002` FR-055). */
-.spine-open {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2, 0.5rem);
-  min-height: 44px;
-  padding-block: var(--space-1, 0.25rem);
+.data-reference time {
+  text-decoration-line: underline;
+  text-decoration-color: var(--gold-border);
+  text-underline-offset: 0.25em;
 }
 
-.spine-trust {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
-  margin-block: var(--space-1, 0.25rem) 0;
+.shell-main .data-reference:hover time {
+  text-decoration-color: var(--accent-dark);
 }
+
+/* The comparison picker: a sand panel below the spine, its two selectors side by side. */
+.compare-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3) var(--space-4);
+  align-items: end;
+  margin-block-start: var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-row);
+  background: var(--surface-raised);
+}
+
+.compare-picker > .region-label,
+.compare-picker > .lede {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.shell-main .compare-picker > p {
+  margin: 0;
+}
+
+.compare-picker > button {
+  justify-self: start;
+}
+
+/* ---- 05 Analysis detail (`analysis.html.j2`) ---------------------------------------------- */
 
 .analysis-state {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+/* The passport is the page's main column; quality and the report actions sit beside it in an
+ * ivory rail (handoff §13: `1fr` plus a side rail, dropping below at narrower widths). */
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.detail-side {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-row);
+  background: var(--paper);
+}
+
+.detail-grid .region-label:first-child {
+  margin-block-start: 0;
 }
 
 .passport,
 .quality,
 .audit-list {
   display: grid;
-  grid-template-columns: minmax(10rem, max-content) 1fr;
-  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  grid-template-columns: minmax(9rem, max-content) 1fr;
+  gap: 0 var(--space-4);
   margin: 0;
 }
 
@@ -256,9 +413,24 @@
 }
 
 .passport dt,
+.passport dd,
+.quality dt,
+.quality dd {
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.passport > div:last-child > *,
+.quality > div:last-child > * {
+  border-block-end: 0;
+}
+
+.passport dt,
 .quality dt,
 .audit-list dt {
   color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .passport dd,
@@ -268,71 +440,80 @@
   overflow-wrap: anywhere;
 }
 
+/* A value pinned `dir="ltr"` (dates, counts, identifiers) inside an Arabic page would otherwise
+ * align to its own start, the page's far edge. `end` resolves against the value's LTR direction,
+ * which is the Arabic page's reading start, and the rule only applies under `rtl`. */
+[dir="rtl"] .passport dd[dir="ltr"],
+[dir="rtl"] .quality dd[dir="ltr"] {
+  text-align: end;
+}
+
 .passport-versions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-sm, 0.875rem);
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.passport-versions > span {
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
 }
 
 .artifact-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.artifact-action button {
-  min-height: 44px;
-  min-width: 44px;
-  padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
+.artifact-action form {
+  margin: 0;
 }
 
 .audit-detail {
-  margin-block-start: var(--space-4, 1rem);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs, 0.75rem);
+  margin-block-start: var(--space-5);
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--line-subtle);
 }
 
 .audit-detail > summary {
-  min-height: 44px;
   display: flex;
   align-items: center;
+  min-height: var(--touch-min);
+  color: var(--accent-dark);
+  font-weight: 600;
   cursor: pointer;
-  font-family: var(--font-sans, inherit);
-  font-size: var(--text-sm, 0.875rem);
 }
 
-@media (max-width: 40rem) {
-  .passport,
-  .quality,
-  .audit-list {
-    grid-template-columns: 1fr;
-  }
+.audit-list {
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
 }
 
-/* `W1-08`: the Methodology Change Notice. A note, not an alert (§10): hairline border, muted ink,
-   the difference stated as text. */
+/* The methodology change notice: a gold-tinted note, never error paint. */
 .change-notice {
-  margin-block: var(--space-4, 1rem);
-  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-2, 0.375rem);
+  margin-block: 0 var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-row);
+  background: var(--accent-surface);
 }
 
 .change-notice > .region-label:first-child {
   margin-block-start: 0;
-  padding-block-start: 0;
-  border-block-start: 0;
 }
 
 .change-list {
   display: grid;
-  grid-template-columns: minmax(10rem, max-content) 1fr;
-  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  grid-template-columns: minmax(9rem, max-content) 1fr;
+  gap: var(--space-2) var(--space-4);
   margin: 0;
 }
 
@@ -342,14 +523,16 @@
 
 .change-list dt {
   color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .change-list dd,
 .change-availability {
   margin: 0;
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-sm, 0.875rem);
   overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 
 .change-availability {
@@ -361,18 +544,14 @@
 .change-availability li {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
+  gap: var(--space-2);
 }
 
-/* The one place this sheet pins a physical direction, and deliberately. The transition's
- * separator is a hard-coded `→`; under RTL the row would otherwise place the earlier value on the
- * right of it and read as later → earlier (review on `#377`). Only the order of the three parts is
- * pinned -- the availability words inside stay in the page's language, and the version rows carry
- * their own `dir="ltr"` because their identifiers are ASCII. */
+/* An LTR run of version identifiers inside Arabic prose, reviewed and landed on `#377`. */
 .change-transition {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
+  gap: var(--space-2);
   direction: ltr;
 }
 
@@ -381,58 +560,299 @@
 }
 
 .change-caution {
-  margin-block: var(--space-3, 0.75rem) var(--space-2, 0.5rem);
+  margin-block: var(--space-3) var(--space-1);
 }
 
-.change-previous {
-  display: inline-flex;
+/* ---- Compare (`compare.html.j2`) ------------------------------------------------------------ */
+
+/* Subject and baseline as two labelled tiles: position and label distinguish them, not hue. */
+.compare-operands {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  list-style: none;
+}
+
+.compare-operands > li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-row);
+  background: var(--paper);
+}
+
+.compare-operands > li > .row-label:first-child {
+  color: var(--ink);
+  font-size: var(--text-base);
+}
+
+.compare-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* ---- Governed states: refusal, unavailable, empty (`FR-202`) ------------------------------
+ *
+ * Four distinguishable screen states, distinguished by structure and wording: a refusal is a
+ * solid sand note in the answer's position, unavailable a dashed note, empty a plain line. None
+ * carries error paint, and none shares a class with an error (`test_r808`). */
+.decision-refusal,
+.decision-unsupported,
+.compare-refusal {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-row);
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.decision-unavailable {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-row);
+  background: var(--paper);
+  color: var(--muted);
+}
+
+.decision-empty {
+  margin: 0 0 var(--space-4);
+  color: var(--muted);
+}
+
+/* ---- Decisions (`decision.html.j2` and its partials) ------------------------------------- */
+
+.decision-sources {
+  margin-block-end: var(--space-4);
+}
+
+.decision-sources-hint {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* The period is a source selector (`FR-166`): completed runs as a row of selectable pills. */
+.decision-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-source {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  min-height: 44px;
+  gap: 0 var(--space-2);
+  padding-inline: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
 }
 
-@media (max-width: 40rem) {
-  .change-list {
-    grid-template-columns: 1fr;
-  }
+.decision-source[data-selected="true"] {
+  border-color: var(--gold-border);
+  background: var(--accent-surface);
 }
 
-/* --- D1-05: the evidence drawer -------------------------------------------
- *
- * Decision-surface rules only, which is the whole of what `RCA-008` §Scope
- * claims in this sheet. Nothing here is a chart, a navigation pattern or a
- * visual-regression baseline -- those stay `U1-03`, `U1-05`, `U1-06` and
- * `U1-07`'s and need their own authority.
- *
- * Logical properties throughout, so the drawer mirrors under RTL without a
- * second rule. `FR-171` makes Arabic and English equal surfaces, not one and
- * its translation.
- *
- * The drawer is a `<details>` inside the card it qualifies (`FR-161`): it opens
- * in place and is never a page, so there is nothing here that positions it
- * outside its row. */
+.shell-main .decision-source a {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
 
+.decision-source-completed {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.decision-no-sources {
+  margin: 0;
+  color: var(--muted);
+}
+
+.decision-filter-form fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-3) var(--space-4);
+  align-items: end;
+}
+
+.decision-filter-form button {
+  justify-self: start;
+}
+
+.decision-filter-label {
+  display: block;
+  margin-block-end: var(--space-1);
+}
+
+.decision-caveats {
+  margin: 0 0 var(--space-4);
+  padding-block: var(--space-3);
+  padding-inline: var(--space-6) var(--space-4);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-row);
+  background: var(--warning-fill);
+}
+
+/* The executive figures: a grid of tiles, each figure paired with its trust state in the same
+ * tile at every width (`FR-198`, `test_r810`). */
+.decision-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-row);
+  background: var(--paper);
+}
+
+.decision-card .decision-label {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.decision-value {
+  color: var(--ink);
+  font-size: var(--text-figure);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+}
+
+/* The trust state is a word in a badge. Paint follows the governed status, and the two states
+ * without a status triplet also differ in border style, so none rests on colour alone. */
+.decision-status {
+  display: inline-flex;
+  padding-inline: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.decision-card[data-status="verified"] .decision-status {
+  border-color: var(--success-border);
+  background: var(--success-fill);
+  color: var(--success-ink);
+}
+
+.decision-card[data-status="caveated"] .decision-status {
+  border-color: var(--warning-border);
+  background: var(--warning-fill);
+  color: var(--accent-dark);
+}
+
+.decision-card[data-status="refused"] .decision-status {
+  border-style: dashed;
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+.decision-card[data-status="unavailable"] .decision-status {
+  border-style: dotted;
+}
+
+.decision-population,
+.decision-availability,
+.decision-reason {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.decision-section-filters {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.decision-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.decision-rows > .decision-row:last-child {
+  border-block-end: 0;
+}
+
+.decision-row .decision-label {
+  flex: 1 1 12rem;
+  font-weight: 600;
+}
+
+.decision-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Evidence and definition: a native disclosure, reached from the figure it qualifies. */
 .decision-drawer {
-  margin-block-start: var(--space-2, 0.5rem);
-  padding-inline-start: var(--space-3, 0.75rem);
-  border-inline-start: 2px solid var(--line-subtle);
+  align-self: stretch;
+  flex-basis: 100%;
+  margin-block-start: var(--space-1);
+  border-block-start: 1px solid var(--line-subtle);
+  font-size: var(--text-sm);
 }
 
-/* The disclosure control is the evidence action `FR-162` requires, so it is a
- * real target rather than a caption. */
 .decision-drawer-summary {
-  min-height: 44px;
   display: flex;
   align-items: center;
+  min-height: var(--touch-min);
+  color: var(--accent-dark);
+  font-weight: 600;
   cursor: pointer;
+}
+
+.decision-drawer > p,
+.decision-evidence {
+  margin-block: 0 var(--space-2);
+}
+
+.decision-evidence {
+  padding: 0;
+  list-style: none;
 }
 
 .decision-definition,
 .decision-inputs {
-  margin-block: var(--space-1, 0.25rem);
+  margin-block: var(--space-1);
 }
 
-/* Governed contract versions and citation identifiers are ASCII, so they keep
- * LTR order inside an RTL page for the reason `.change-transition` above does. */
+/* An LTR run inside Arabic prose, reviewed and landed on `#377`. */
 .decision-formula,
 .decision-citation {
   direction: ltr;
@@ -442,40 +862,47 @@
 .decision-entry {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
   align-items: center;
-  min-height: 44px;
+  gap: var(--space-2);
+  min-height: var(--touch-min);
 }
 
-/* An absence is a *statement*, not a failure, and is styled as one: the muted
- * treatment the other stated findings carry. Every view's `required_evidence` is
- * `()` at v1, so an absence arrives as data on an admitted projection -- painting
- * it as an error would say in CSS what `FR-141` forbids the read model from
- * saying in code.
- *
- * An earlier form of this comment contrasted the muted treatment with "the
- * refusal's", which asserted a refusal treatment THAT DOES NOT EXIST. No shell
- * sheet carries a rule for `.decision-refusal`, `.decision-empty`,
- * `.decision-unavailable` or `.compare-refusal` at all -- a refusal is unpainted
- * body text, and that absence is how `FR-202`'s "never carries error paint"
- * holds. A described-but-unattached treatment reads to the next author as shipped
- * behaviour, which is the defect this correction removes.
- *
- * The absence is deliberate and is guarded forward by
- * `test_no_shell_state_rule_carries_error_paint`
- * (`tests/test_r808_shell_state_grammar.py`), which fails if the `--danger` family
- * reaches any rule other than `.invitation-warning`. */
 .decision-absence,
 .decision-evidence-absent,
-.decision-evidence-unavailable {
-  color: var(--muted);
-}
-
+.decision-evidence-unavailable,
 .decision-caveat-count {
   color: var(--muted);
 }
 
+@media (max-width: 60rem) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 40rem) {
+  .page-head--raised {
+    padding: var(--space-4);
+  }
+
+  .shell-main .page-head--raised h1 {
+    font-size: var(--title-size);
+  }
+
+  .passport,
+  .quality,
+  .audit-list,
+  .change-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked, a label and its value are one row: the hairline goes under the value only. */
+  .passport dt,
+  .quality dt {
+    padding-block-end: 0;
+    border-block-end: 0;
+  }
+
   .decision-entry {
     flex-direction: column;
     align-items: flex-start;

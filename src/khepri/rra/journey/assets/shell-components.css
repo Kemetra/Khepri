@@ -1,38 +1,32 @@
-/* The shell's component layer (`R8-07`).
+/* The shell's component layer (`R8-07`, rebuilt under `RCA-010` §Scope).
  *
- * `shell.css` ships tokens and, by `test_r801_shell_tokens.py`, must declare no rules. This is
- * where the rules live. It consumes those tokens and introduces no colour of its own, so the
- * palette stays declared in exactly one place.
+ * `shell.css` ships tokens and, by `test_r801_shell_tokens.py`, declares no rules. This is where
+ * the frame and the shared primitives live: the application frame and navigation rail, the canvas,
+ * cards, the page header, buttons, links, form controls, lists, the empty state, focus, and the hero
+ * band. Surface composition -- the overview's modules, the analysis passport, decision cards --
+ * lives in `workspace.css`, which `test_w105_overview_and_data.py` requires.
  *
- * **Logical properties only.** `journey.css` and `report.css` are held to this and so is the token
- * file; an RTL layout that mirrors correctly cannot be built from `left`/`right`/`margin-left`.
+ * **This is a replacement, not a layer.** The workspace presentation reset rebuilt this sheet from
+ * the approved product-UI handoff (`docs/ui/design_handoff_khepri_product_ui/`, §8-§15) rather than
+ * patching the previous look; no rule from the earlier blue-accent shell survives underneath.
  *
- * **No external reference.** No `@import`, no font host, no CDN, no runtime download. The UI
- * guardrails forbid external fonts, analytics, CDNs, and runtime assets, and the design handoff
- * proposed two of them. The only `url()` here is `RCA-011` `FR-209`'s: a same-origin address on
- * the shell's own asset route, serving bytes this repository already ships and digests.
+ * Standing constraints, each held by a test:
  *
- * **44px is a requirement, not a preference.** `RCA-002` `FR-056` requires every interactive
- * target to meet the size the existing journey tests enforce, in both languages at every
- * supported viewport. `R8-07` found every shell target rendering at 17px, because the tokens
- * shipped without a component layer to apply them.
+ * - **Tokens only.** No colour literal: every value is a `shell.css` custom property, so the
+ *   palette is declared in exactly one place.
+ * - **Logical properties only** (`FR-199`, `test_r810`). No `left`/`right`, no `text-align: left`.
+ * - **No motion** (`FR-203`, `test_r808`). The handoff's 140ms transitions and three keyframes are
+ *   not shipped: hover and selection states change instantly.
+ * - **No artwork** (`FR-206`, `test_r807`). No painted image layer, no gradient, no pseudo-element
+ *   drawing. The handoff's rail and button gradients are rendered as the solid step they resolve
+ *   to, and its icons and motifs are absent until an icon family passes the audited-asset process.
+ * - **44px targets** (`RCA-002` `FR-056`), on the element a pointer lands on.
+ * - **No external reference.** The only `url()` is the shell's own typeface address.
  */
 
-/* `RCA-011` `FR-207`/`FR-208`: the shell's own typeface, from the shell's own address.
- *
- * These rules previously lived only in `journey.css`, pointing at `/beta/assets/`. That address is
- * the journey's, `add_journey_routes` is not mounted in the deployed image, and naming it here
- * would breach `FR-201` as well as 404. `#490` moved the *asset* into the shell's ownership
- * instead: `shell_api.py`'s allowlist now serves these two files from `/app/assets/`, so the
- * address below is the shell's own and resolves in the shipped image.
- *
- * Same two subsets, same bytes, same digests -- `rendering/fonts.py` verifies them against the
- * repository's SHA-256 manifest and `FR-209` adds no new font. The `unicode-range` values are the
- * ones Google Fonts declares for these exact subsets, kept identical to `fonts.py`'s constants so
- * a browser is never asked for glyphs a file does not carry.
- *
- * `font-display: swap` so text paints in the fallback immediately rather than blocking on the
- * face -- `FR-210`'s chain stays load-bearing, not decorative. */
+/* `RCA-011` `FR-207`/`FR-208`: the shell's own typeface, from the shell's own address. Same two
+ * subsets, same bytes and digests as `rendering/fonts.py` verifies; `font-display: swap` keeps the
+ * fallback chain load-bearing. */
 @font-face {
   font-family: "Noto Sans Arabic";
   src: url("/app/assets/NotoSansArabic-Regular-arabic.woff2") format("woff2");
@@ -47,405 +41,94 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* `FR-204` typography: the shell's own typeface token, applied. `shell.css:158` declares
- * `--font-body` and, before this rule, nothing consumed it -- so every shell and legal page
- * rendered in the browser's default serif. Slice 10b measured it as `"Times New Roman"`.
- *
- * `FR-210`: the token keeps its full declaration. The face above becomes available; the fallback
- * chain does not become unnecessary, and a surface that cannot load the face still renders in a
- * sans family rather than a serif default. */
+/* ---- The page ------------------------------------------------------------------------------ */
+
+/* The browser surfaces a page never draws still carry the design: selection, form accents and
+ * scrollbars take the palette instead of the platform's blue. */
+html {
+  accent-color: var(--gold-600);
+  scrollbar-color: var(--line) transparent;
+}
+
+::selection {
+  background: var(--accent-surface);
+  color: var(--ink);
+}
+
 body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--ink);
   font-family: var(--font-body);
-}
-
-/* `RCA-010` §Scope, realizing the approved reference pack's binding half.
- *
- * The pack is binding for composition, hierarchy, typography, density and rhythm (master
- * specification §16.1) and NON-binding for its rail hue, its icons, its photography and every
- * figure it draws. Everything below is the first list. Nothing below introduces a colour: the
- * palette stays declared in `shell.css` alone, and the pack's own note is why -- "the rail is
- * binding as composition; its hue awaits token work. This is not authorization for a dark theme."
- *
- * Hierarchy is therefore carried by weight, measure, rule and space rather than by paint. That is
- * not a workaround for the missing palette: §16.0 asks for "editorial typography with strong
- * hierarchy and generous measure" and §15 forbids "weak hierarchy" and "gray-on-gray low contrast"
- * in the same list, so the shape layer is where the direction actually lives.
- */
-
-.shell-identity {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3, 0.75rem);
-  padding-block: var(--space-3, 0.75rem);
-  padding-inline: var(--space-4, 1rem);
-  border-block-end: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.shell-identity .brand {
-  font-weight: 600;
-  color: var(--ink);
-  letter-spacing: 0.04em;
-}
-
-.shell-main {
-  padding-block: var(--space-4, 1rem);
-  padding-inline: var(--space-4, 1rem);
-  color: var(--ink);
-}
-
-/* §E.1's canonical order, made visible: the frame, then a context header, then the surface's
- * regions. The pack's binding note calls this "the relationship between global frame, context
- * header, KPI row, supporting analysis, and evidence". A surface here has no KPI row -- `M3-U5`
- * forbids a figure on Overview by name -- so the order this shell can carry is frame, title,
- * orientation, regions, and the rule below is what separates the second from the third.
- *
- * `--measure-heading` and `--measure-lede` cap the two runs that would otherwise set to the full
- * column width. §16.0 asks for "generous measure"; a heading running 120ch is not generous, it is
- * unread. */
-/* The scale's top tier, not the one below it, and measured rather than chosen: before this rule no
- * shell sheet set an `h1` size at all, so every page title rendered at the browser's `2em` -- 32px.
- * The tier below would have made the page title *smaller* than it shipped, which is the "weak
- * hierarchy" §15 item 8 names, and no gate measures the tier -- `test_r807`'s scan only asks that a
- * size resolve from a token, and every tier does. Measured at 34.4px after, 32px before.
- *
- * `--title-size` rather than the tier's own name: `shell.css` records why the alias exists. */
-.shell-main h1 {
-  max-inline-size: var(--measure-heading);
-  margin-block: 0 var(--density-tight);
-  font-size: var(--title-size);
-  font-weight: 600;
-  line-height: var(--leading-tight);
-  /* §16.0's editorial character: a display heading breaks on sense rather than on fit. Degrades to
-   * normal wrapping where unsupported, so nothing depends on it. */
-  text-wrap: pretty;
-}
-
-.shell-main h1 + .lede {
-  max-inline-size: var(--measure-lede);
-  margin-block: 0 var(--density-region);
-  font-size: var(--text-lede);
+  font-size: var(--text-body);
   line-height: var(--leading-normal);
 }
 
-/* Arabic prose sets looser than Latin at the same size (§9: equal surfaces, not one and its
- * translation). One rule, one token, both directions -- not a second layout.
- *
- * **Prose, and deliberately not the page title.** `.shell-main h1` sets `--leading-tight`
- * explicitly and therefore keeps it in both languages: a heading capped at 24ch is one or two
- * lines, where loose leading reads as a gap rather than as rhythm. Measured: the lede rises to
- * 33.4px and a row to 28.8px in Arabic while the title holds at 32.2px in both. */
-[lang="ar"] .shell-main,
-[lang="ar"] .shell-main .lede {
-  line-height: var(--leading-arabic);
-}
+/* ---- The application frame: handoff §10 --------------------------------------------------- */
 
-/* §E.2 and §15 item 2: **cards do not nest.** The pack's own artifact note flags "bordered rows
- * inside bounded regions" as a generation defect rather than a pattern to copy, so a bounded
- * region inside `.document-card` is separated by rule and space, never by a second border. This
- * rule is the guard: it strips the border and padding from a card that lands inside another, so
- * nesting degrades to a plain region instead of drawing two frames. */
-.document-card .document-card {
-  margin-block-end: 0;
-  padding: 0;
-  border: 0;
-}
-
-/* The skip link is visible only while focused, and is the first focusable element in the body so
- * a keyboard reader reaches it before the identity row. Sized to the same minimum as every other
- * target: a skip link too small to hit is one that only exists for the test. */
-.skip-link {
-  position: absolute;
-  inset-inline-start: -9999px;
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding-inline: var(--space-3, 0.75rem);
-  background: var(--surface);
-  color: var(--accent);
-}
-
-.skip-link:focus {
-  inset-inline-start: var(--space-3, 0.75rem);
-  z-index: 1;
-}
-
-/*
- * A real card: bordered, padded, and stacked several to a page -- `team.html.j2`
- * renders two. That is why `margin-block-end` is here and why this side keeps
- * the name. The journey's page body once shared it while setting `border: 0;
- * padding: 0`, so the same class meant a card in one half of the product and the
- * absence of one in the other; it is `.journey-document` now.
- */
-.document-card {
-  max-inline-size: 60rem;
-  margin-block-end: var(--space-4, 1rem);
-  padding: var(--space-4, 1rem);
+/* The page is the sand ground; the frame sits on it, one bordered, rounded object carrying the
+ * rail and the canvas. The frame is the one element with a shadow (handoff §8 "Elevation"). */
+.app-frame {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  max-inline-size: var(--frame-width);
+  min-block-size: calc(100vh - 2 * var(--space-5));
+  margin: var(--space-5) auto;
+  overflow: hidden;
   border: 1px solid var(--line);
-  background: var(--surface);
-  /* `FR-200`: text scales to 200% without loss of content or function. The padding here and on
-   * `.shell-main` is in `rem`, so it doubles with the text and the card's content box narrows
-   * -- at 390px a 244px box has to hold a 345px word. `break-word` lets a word that cannot fit
-   * break rather than push the page wider, and inherits to the headings and prose inside.
-   *
-   * `break-word` rather than `anywhere`: both clear all three surfaces, and this one leaves
-   * intrinsic sizing alone. It changes nothing at 100% -- verified across all ten surfaces in
-   * both languages -- because it only acts on a word that would otherwise overflow. */
-  overflow-wrap: break-word;
+  border-radius: var(--radius-frame);
+  background: var(--paper);
+  box-shadow: var(--shadow-frame);
 }
 
-.lede {
-  color: var(--muted);
-}
-
-/* Every list on a shell surface: organizations, members, invitations. One rule rather than three
- * near-identical ones, because they differ in content and not in shape. */
-.organization-list,
-.member-list,
-.invitation-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.organization-item,
-.member-item,
-.invitation-item {
+/* The navigation rail: the one region that carries the navy (§16.5, "a dark rail, not a dark
+ * theme"). Brand, organization, navigation, then the language control at its foot. */
+.app-rail {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3, 0.75rem);
-  min-height: 44px;
-  padding-block: var(--space-2, 0.5rem);
-  border-block-end: 1px solid var(--line-subtle);
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-4);
+  background: var(--navy-900);
+  color: var(--nav-label);
 }
 
-/* `FR-056`. Applied to the element itself rather than to a wrapper: the measurement is of the
- * thing a finger lands on, and a padded parent around a 17px anchor still leaves a 17px anchor. */
-.shell-main a,
-.shell-main button,
-.organization-item a,
-.member-item a,
-.invitation-item button {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--accent);
+.app-rail :focus-visible {
+  outline-color: var(--gold-400);
 }
 
-.shell-main button,
-.invitation-item button {
-  min-height: 44px;
-  padding-inline: var(--space-4, 1rem);
-  border: 1px solid var(--accent);
-  background: var(--accent-surface);
-  color: var(--accent-dark);
-  cursor: pointer;
-}
-
-/* `FR-200`: text scales to 200% without loss of function. An email address is a single token with
- * no space to break at, so `.document-card`'s `overflow-wrap: break-word` cannot help it and the
- * address pushed the `team` page wider in both languages once the real typeface made it 34px
- * wider (304px -> 338px in a 308px box). `anywhere` is needed rather than `break-word` precisely
- * because there is no break opportunity to find; it is scoped to this one element so no prose
- * elsewhere breaks mid-word. */
-.member-identity {
-  overflow-wrap: anywhere;
-}
-
-/* A disabled member is shown and marked rather than hidden, so the list agrees with the
- * organization's actual membership. The state reads as text, not as colour alone. */
-.member-item--disabled .member-identity {
-  color: var(--muted);
-}
-
-.member-state {
-  padding-inline: var(--space-2, 0.5rem);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  font-size: var(--text-sm);
-}
-
-.member-role,
-.invitation-role {
-  color: var(--muted);
-  font-size: var(--text-sm);
-}
-
-/* An empty region states its emptiness and stays in the reading order. §15 item 21 forbids a
- * "visually de-emphasized refusal state", and the same reasoning covers an absence: this is the
- * surface answering, not the surface failing. So it takes the muted ink every stated fact takes
- * and nothing else -- no dashed box, no icon, no centred illustration. The approved pack draws an
- * empty state with an outline icon; §7.1 makes every icon in it non-binding, and there is no
- * approved family to draw one from. */
-.empty-state {
-  margin-block: 0;
-  color: var(--muted);
-}
-
-/*
- * The responsive posture `RCA-010` authorizes with `U1-05`. Two postures, not three: this shell is
- * a single column of regions at every width, so the thing that actually changes is the page gutter
- * and the frame row's wrapping -- both already handled by `flex-wrap` above.
- *
- * The gutter is what a breakpoint is genuinely needed for. `--space-4` on a 390px viewport spends
- * 8% of the width on margin; the tighter tier keeps the density floor (§E.4) reachable on a phone,
- * where it is hardest to reach and most often abandoned. §15 item 19 names "desktop-only layout" as
- * an anti-pattern.
- *
- * `40rem` matches the breakpoint `workspace.css` already uses for its two-column lists, so the
- * shell has one breakpoint rather than a second one a few pixels away.
- */
-@media (max-width: 40rem) {
-  .shell-main,
-  .shell-identity {
-    padding-inline: var(--space-3, 0.75rem);
-  }
-
-  .document-card {
-    padding: var(--space-3, 0.75rem);
-  }
-}
-
-/*
- * **No motion, and therefore no `prefers-reduced-motion` block.** The design handoff asks for three
- * keyframes and a 140ms transition, and a reduced-motion query to freeze them. None of that lands
- * here, for a reason `test_the_shell_stylesheets_declare_no_motion` states better than the handoff
- * does: over zero motion declarations a reduced-motion block "would be dead CSS gating nothing --
- * the defined-but-never-attached defect".
- *
- * The shell declares no animation and no transition in any of its three sheets. That is a stronger
- * accessibility position than honoring reduced motion, not a weaker one, and it is asserted rather
- * than left to care. A slice that ships the first transition adds the query with it.
- */
-
-/* The one-time invitation token. Monospace and wrapped, because it is copied by hand and a token
- * that overflows its container is a token that cannot be. */
-.invitation-token code {
-  display: block;
-  overflow-wrap: anywhere;
-  padding: var(--space-3, 0.75rem);
-  border: 1px solid var(--line);
-  background: var(--surface-raised);
-}
-
-.invitation-warning {
-  color: var(--danger);
-}
-
-/*
- * The text and role controls on the invite form. The stylesheet styled `button` and left inputs at
- * their browser default, which put the only two typed controls in the shell below the 44px target
- * `FR-056` holds every other control to -- and at the platform's own font size, which on iOS Safari
- * means a focused input force-zooms the page.
- *
- * `font: inherit` is the fix for both: it takes the 16px body size, so there is nothing to zoom to,
- * and it stops the controls rendering in the platform UI face beside prose set in the shell's own.
- * `inline-size: 100%` with `max-inline-size` lets a long address use the column it has without
- * stretching the field across a wide viewport, and `--measure-*` is not the right token here
- * because this is a control width, not a reading measure.
- *
- * The border is `--muted`, not `--line`. A control's edge is what tells a sighted reader where the
- * field is, so WCAG 1.4.11 asks 3:1 of it, and the hairline token reaches 1.43:1 on this surface --
- * right for a decorative rule between paragraphs, not for the boundary of something you type into.
- * `--muted` measures 6.23:1 and is the palette's own neutral; the palette has no step between the
- * two, and `shell.css` is explicit that it gains steps rather than colours. Held to 1px so the
- * stronger value reads as a defined edge rather than a heavy box.
- */
-.shell-main input,
-.shell-main select {
-  min-height: 44px;
-  inline-size: 100%;
-  max-inline-size: 24rem;
-  padding-inline: var(--space-3, 0.75rem);
-  border: 1px solid var(--muted);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-}
-
-/* The label sits above its control rather than beside it: Arabic and English name these fields at
- * different lengths, and a side-by-side pair would set the column width from the longer language. */
-.shell-main label {
-  display: block;
-  margin-block-end: var(--space-1, 0.25rem);
-  color: var(--muted);
-}
-
-/*
- * The persistent frame. One row: identity at the inline start, the language control at the inline
- * end, and whatever destinations the surface actually has between them. `flex-wrap` rather than a
- * media query, because the row has at most four items and wrapping at 320px is the correct
- * behaviour for all of them -- a breakpoint would encode a guess about which one should go first.
- */
-.shell-identity {
+.app-rail a {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3, 0.75rem);
+  min-height: var(--touch-min);
+  color: inherit;
+  text-decoration: none;
 }
 
-/* Pushes the language control to the inline end whatever sits before it, so the row reads the same
- * on a surface with two items as on one with four -- and mirrors in RTL without a second rule. */
-.frame-language {
-  margin-inline-start: auto;
+/* The wordmark: real text, letterspaced, in the brand gold. A picture of a name is not a name. */
+.app-rail .brand {
+  padding-inline: var(--space-3);
+  color: var(--gold-400);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wordmark);
 }
 
-/*
- * `U1-05`, the navigation presentation `RCA-010` authorizes by name: "one navigation per surface, a
- * single `aria-current`, a responsive navigation posture, visible applied filters, and filter
- * accessibility -- over destinations that already exist".
- *
- * **Over destinations that already exist** is the operative clause and the reason this is styling
- * and not markup. `shell_frame.organization_frame()` decides the destinations in Python, and
- * `FR-049` forbids rendering an entry for a surface with no implementation. The approved pack's
- * board draws a rail of eight or nine destinations; most are surfaces this product does not serve,
- * and a nav item is the one thing a stylesheet must never add.
- *
- * The current destination is marked by weight and a rule on its inline start, never by colour
- * alone -- §11's non-colour differentiation, which is why a state on any shell surface reads as a
- * rule or a word and not as a tint. `aria-current="page"` is the template's; this paints what it
- * already says.
- */
-.frame-surfaces {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--density-tight);
-}
-
-.frame-surfaces a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--row-min);
-  padding-inline: var(--space-3, 0.75rem);
-  color: var(--accent);
-}
-
-/* The rule sits on the inline start, so it mirrors in RTL with no second declaration. Transparent
- * rather than absent on the inactive rows: a border that appears on selection shifts every sibling
- * by 2px, and a navigation that moves when you choose in it reads as a fault. */
-.frame-surfaces a {
-  border-inline-start: 2px solid transparent;
-}
-
-.frame-surfaces a[aria-current="page"] {
-  border-inline-start-color: var(--accent);
+/* The organization is context, set apart from the destinations beneath it by a hairline. */
+.frame-organization,
+.frame-organization-fallback {
+  padding-inline: var(--space-3);
+  border: 1px solid var(--navy-950);
+  border-radius: var(--radius-row);
+  background: var(--navy-950);
+  color: var(--surface);
   font-weight: 600;
 }
 
-.shell-identity a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--accent);
+.app-rail .frame-organization:hover,
+.app-rail .frame-organization-fallback:hover {
+  border-color: var(--nav-label);
 }
 
-/*
- * The organization name. `max-inline-size` in `ch` rather than `px` so the cap follows the text
- * rather than the viewport, and the truncation is visual only: the full name stays in the DOM and
- * therefore in the accessible name the `aria-labelledby` pair composes.
- */
 .frame-organization > span:first-child {
   display: inline-block;
   overflow: hidden;
@@ -455,16 +138,419 @@ body {
   vertical-align: bottom;
 }
 
-/*
- * Available to the shell for the first time. `journey.css` has carried this since the upload form's
- * file input; the frame needs it for the organization control's purpose text, and the shell does not
- * load that stylesheet. Clipped rather than `display: none` so the text reaches a screen reader:
- * a display-hidden element is removed from the accessibility tree, and the organization control's
- * accessible name is composed from this span. `clip-path` rather than the `clip` the journey copy
- * still uses -- `clip` is deprecated in CSS Masking, and `inset(50%)` is its replacement. The
- * journey's own copy is `RRA`'s file and `RCA-002` excludes changing it, so the two read
- * differently on purpose until a slice with that authority brings the older one forward.
- */
+.frame-surfaces {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* A destination: 46px, a 10px radius, and a start-edge bar that is transparent until the entry is
+ * current. The bar is `border-inline-start`, so it mirrors in right-to-left with no second rule.
+ *
+ * **Accepted detector false positive.** Impeccable's `side-tab` rule flags the 3px bar as a card
+ * accent. It is not on a card: it is the current-page marker on a navigation link, specified by the
+ * approved handoff (`docs/ui/design_handoff_khepri_product_ui/README.md` §10, "Active = gold ...
+ * bar"). Recorded here rather than as a whole-file detector suppression, so the rule still fires on
+ * any other side border this sheet gains. */
+.frame-surfaces a {
+  min-height: var(--control-height);
+  padding-inline: var(--space-3);
+  border-inline-start: 3px solid transparent;
+  border-radius: var(--radius-row);
+  font-weight: 500;
+}
+
+.frame-surfaces a:hover {
+  background: color-mix(in srgb, var(--surface) 6%, transparent);
+  color: var(--surface);
+}
+
+.frame-surfaces a[aria-current="page"] {
+  border-inline-start-color: var(--gold-500);
+  background: color-mix(in srgb, var(--gold-500) 16%, transparent);
+  color: var(--gold-400);
+  font-weight: 600;
+}
+
+/* The language control closes the rail. `margin-block-start: auto` pins it to the foot however
+ * many destinations the organization is offered. */
+.app-rail .frame-language {
+  align-self: flex-start;
+  margin-block-start: auto;
+  padding-inline: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--nav-label) 45%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--surface);
+}
+
+.app-rail .frame-language:hover {
+  border-color: var(--gold-400);
+  color: var(--gold-400);
+}
+
+/* ---- The canvas ---------------------------------------------------------------------------- */
+
+/* `--canvas-pad` is read by the hero band so it can bleed to the frame's edges exactly. */
+.shell-main {
+  --canvas-pad: var(--space-5);
+
+  min-inline-size: 0;
+  padding: var(--canvas-pad);
+  color: var(--ink);
+}
+
+.shell-main:focus {
+  outline: none;
+}
+
+/* The legal pages share these sheets and have no rail: a centred reading column on the ground. */
+.shell-identity + .shell-main {
+  max-inline-size: var(--shell-width);
+  margin-inline: auto;
+}
+
+/* ---- Cards and the page header ------------------------------------------------------------- */
+
+/* One card language: white on the ivory canvas, a 1px warm border, a 12px radius, flat. Cards do
+ * not nest (§E.2); a region inside a card is an inner row or a divided section, never a card. */
+.document-card {
+  margin-block-end: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  /* `FR-200`: text scales to 200% without loss. A word that cannot fit breaks rather than pushing
+   * the page wider. */
+  overflow-wrap: break-word;
+}
+
+.document-card > h2 {
+  margin-block: 0 var(--space-3);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.shell-main h1 {
+  max-inline-size: var(--measure-heading);
+  margin-block: 0 var(--space-2);
+  color: var(--ink);
+  font-size: var(--title-size);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
+  text-wrap: pretty;
+}
+
+.lede {
+  max-inline-size: var(--measure-prose);
+  margin-block: 0;
+  color: var(--muted);
+  font-size: var(--text-lede);
+}
+
+.shell-main h1 + .lede {
+  margin-block-end: var(--space-5);
+}
+
+/* The context header of every surface: title and lede on the start side, the surface's actions on
+ * the end side, one hairline beneath. */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-5);
+  margin-block-end: var(--space-5);
+  padding-block-end: var(--space-5);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.page-head__text {
+  flex: 1 1 26rem;
+  min-inline-size: 0;
+}
+
+.page-head .lede,
+.shell-main .page-head h1 + .lede {
+  margin-block-end: 0;
+}
+
+.page-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.page-head__actions form {
+  margin: 0;
+}
+
+/* ---- Links and buttons: handoff §11 --------------------------------------------------------- */
+
+.shell-main a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  color: var(--accent-dark);
+  text-decoration-line: underline;
+  text-decoration-color: var(--gold-border);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+}
+
+.shell-main a:hover {
+  text-decoration-color: var(--accent-dark);
+}
+
+/* Secondary is the default: white, a warm border that warms to gold on hover. */
+.shell-main button,
+.shell-main .button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-row);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.shell-main button:hover,
+.shell-main .button-link:hover {
+  border-color: var(--gold-500);
+}
+
+/* The one primary action a surface offers. The handoff's gold gradient, rendered as its middle
+ * step: `--ink` on `--gold-500` reads 6.9:1. */
+.shell-main .button--primary {
+  border-color: var(--gold-600);
+  background: var(--gold-500);
+  color: var(--ink);
+}
+
+.shell-main .button--primary:hover {
+  background: var(--gold-400);
+}
+
+.shell-main .button--small {
+  min-height: var(--touch-min);
+  padding-inline: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* ---- Form controls ------------------------------------------------------------------------- */
+
+/* The label sits above its control: Arabic and English name these fields at very different
+ * lengths, and a label beside its control would push it a different distance in each. */
+.shell-main label {
+  display: block;
+  margin-block-end: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.shell-main input,
+.shell-main select {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  inline-size: 100%;
+  max-inline-size: 24rem;
+  padding-inline: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  /* A control inside its `<label>` inherits the label's caption weight and size through
+   * `font: inherit`; the value a reader types is body text. */
+  font-size: var(--text-body);
+  font-weight: 400;
+}
+
+.shell-main input:focus,
+.shell-main select:focus {
+  border-color: var(--gold-500);
+}
+
+.shell-main fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.shell-main legend {
+  margin-block-end: var(--space-2);
+  padding: 0;
+  font-weight: 600;
+}
+
+.shell-main form > p {
+  margin-block: 0 var(--space-4);
+}
+
+/* A form's fields side by side where the width allows, the action aligned to their baseline. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-3) var(--space-4);
+  align-items: end;
+}
+
+.shell-main .form-grid > p {
+  margin: 0;
+}
+
+.form-grid > button {
+  justify-self: start;
+}
+
+/* A card's own heading and its introduction, one rhythm step above the content. */
+.document-card > h2 + .lede {
+  margin-block-end: var(--space-4);
+}
+
+/* The one next step a surface without an organization offers. */
+.next-step {
+  margin-block: var(--space-4) 0;
+  font-weight: 500;
+}
+
+/* ---- Lists: organizations, members, invitations ------------------------------------------ */
+
+.organization-list,
+.member-list,
+.invitation-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.organization-item,
+.member-item,
+.invitation-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-min);
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.organization-item:last-child,
+.member-item:last-child,
+.invitation-item:last-child {
+  border-block-end: 0;
+}
+
+.organization-item > a {
+  flex: 1 1 14rem;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.organization-item form,
+.invitation-item form {
+  margin: 0;
+  margin-inline-start: auto;
+}
+
+.member-identity,
+.invitation-identity {
+  flex: 1 1 14rem;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+
+.member-item--disabled .member-identity {
+  color: var(--muted);
+}
+
+.member-role,
+.invitation-role {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* A disabled member is shown and marked, not hidden: the word states it, the chip frames it. */
+.member-state {
+  padding-inline: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* ---- The empty state: handoff §12 ------------------------------------------------------------ */
+
+/* A dashed container and one explanatory line. No illustration, and the copy is the governed
+ * empty rule's own words. */
+.empty-state {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-row);
+  background: var(--paper);
+  color: var(--muted);
+}
+
+/* ---- The one-time invitation token ------------------------------------------------------- */
+
+.invitation-token code {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-row);
+  background: var(--surface-raised);
+  font-family: var(--font-mono);
+}
+
+/* The one destructive warning the shell carries, and the one rule the `--danger` family reaches
+ * (`test_r808_shell_state_grammar.py::_DANGER_EXEMPT`). */
+.invitation-warning {
+  color: var(--danger);
+}
+
+/* ---- Focus, the skip link, and the hidden label -------------------------------------------- */
+
+/* Gold ink, 2px, offset: visible on every surface a focus can land on. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* One skip-link mechanism (`test_r807`), off-screen until focused, and first in the document. */
+.skip-link {
+  position: absolute;
+  inset-inline-start: -9999px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-row);
+  background: var(--navy-900);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  inset-inline-start: var(--space-3);
+  inset-block-start: var(--space-3);
+  z-index: 1;
+}
+
 .visually-hidden {
   position: absolute;
   inline-size: 1px;
@@ -474,47 +560,57 @@ body {
   white-space: nowrap;
 }
 
-/* Matches the journey's ring exactly. `journey.css` ships `outline-offset: 3px`, and a ring that
- * shifted between the journey and the shell wrapping it would read as a defect. */
-:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
+/* ---- The legal pages' header and footer ---------------------------------------------------- */
+
+.shell-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-block-end: 1px solid var(--line);
+  background: var(--navy-900);
+  color: var(--nav-label);
 }
 
-/* ---- The hero band: `RCA-012` `FR-212`, placed by `U1` slice 11 --------------------------------
+.shell-identity .brand {
+  color: var(--gold-400);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wordmark);
+}
+
+.shell-identity nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.shell-identity a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  color: var(--surface);
+}
+
+.shell-identity .frame-language {
+  margin-inline-start: auto;
+}
+
+/* ---- The hero band: `RCA-012` `FR-212`, handoff §6 -----------------------------------------
  *
- * The approved artwork, served from the shell's own audited address (`#514`) and placed here for
- * the first time. Master specification §7.2 and the handoff both allow exactly one treatment:
- * **crop only**. No filter, no recolour, no rotation, and no CSS or SVG recreation of the
- * monument, sun, water or sky under any circumstance -- `FR-206` and §7.2 name that prohibition
- * outright.
+ * The approved artwork, cropped and never redrawn: `object-fit` and `object-position` only, no
+ * filter, recolour, rotation or mirroring. The ground is painted behind the image so the surface is
+ * legible before it decodes.
  *
- * **The ground is painted behind the image, not under a transparent band.** The handoff requires
- * it: "The ground color must stay behind the image so headlines are legible before it decodes."
- * A band with no ground flashes whatever sits beneath it while the image is in flight.
- *
- * **The artwork is never mirrored.** The composition is symmetrical and the handoff is explicit
- * that it is not flipped; `object-position` moves to the mirrored focal point so the monument
- * stays on the copy-free side. A `scaleX(-1)` here would be redrawing the supplied asset.
- *
- * **No scrim ships yet, deliberately.** The handoff pairs the band with a gradient scrim because
- * its composition puts the headline *over* the artwork. This slice does not: the heading and lede
- * stay in the document card below, which is what keeps the surface complete when the image fails
- * to load (`FR-218`). A scrim with no copy over it would be decoration, and `test_r807`'s
- * no-artwork scan rightly refuses a painted background the surface does not need. Moving the
- * headline onto the band is a composition change governed by the `03-workspace-overview.png`
- * reference, and it belongs to the slice that makes it -- with the scrim it then requires.
- *
- * Values are the handoff §09 row for 01 Home: 238px band, `62% 46%` (`38% 46%` mirrored). They
- * are composition evidence, not product fact (§16.3, `FR-205`).
- */
+ * **Integrated, not pasted above the page.** The band bleeds to the frame's top and side edges --
+ * the negative margins are exactly the canvas padding -- and the first card after it rises into its
+ * lower edge (`workspace.css`). The heading and lede stay on that card rather than on the image, so
+ * no scrim is needed and none ships (`test_u1_slice11_hero_placement.py`). */
 .hero-band {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
   block-size: 238px;
-  margin-block-end: var(--density-region);
+  margin-block: calc(-1 * var(--canvas-pad)) 0;
+  margin-inline: calc(-1 * var(--canvas-pad));
   overflow: hidden;
   background-color: var(--hero-ground);
 }
@@ -528,22 +624,12 @@ body {
   object-position: 62% 46%;
 }
 
-
 /* Right-to-left: the focal point mirrors; the artwork itself does not. */
 [dir="rtl"] .hero-band__image {
   object-position: 38% 46%;
 }
 
-/* 05 Insights, the second `/app` surface `RCA-012` names (`analysis.html.j2`).
- *
- * The same band, with the handoff §09 row for 05 Insights in place of 01 Home's: a 210px band and
- * the `64% 46%` focal point. The handoff states the mirrored value for Home only (`38% 46%`); its
- * rule is that the focal point mirrors, so this row's is `36% 46%`. Nothing else differs, and no
- * scrim ships here for the reason given above -- the heading, lede and decision link stay in the
- * document card below the band, so no copy sits over the artwork.
- *
- * The right-to-left rule carries the modifier as well, so it outranks the base right-to-left rule
- * on specificity rather than on source order alone. */
+/* 05 Insights (`analysis.html.j2`): the handoff's own row, a 210px band and its focal point. */
 .hero-band--insights {
   block-size: 210px;
 }
@@ -556,3 +642,69 @@ body {
   object-position: 36% 46%;
 }
 
+/* ---- Arabic ----------------------------------------------------------------------------------- */
+
+/* Arabic prose sets looser than Latin at the same size, and display tracking is Latin-only:
+ * letter-spacing breaks the joins Arabic letterforms depend on. */
+[lang="ar"] .shell-main {
+  line-height: var(--leading-arabic);
+}
+
+[lang="ar"] .shell-main h1,
+[lang="ar"] .shell-main h2 {
+  letter-spacing: 0;
+}
+
+[lang="ar"] .shell-main h1 {
+  font-weight: 600;
+}
+
+/* ---- Narrow viewports ------------------------------------------------------------------------
+ *
+ * The approved reference set has no narrow or mobile composition, and the handoff's tablet
+ * icon-only rail and mobile drawer both need assets or script the shell does not have (no icon
+ * family; `test_r810` holds the shell at zero script). So the narrow posture is deliberately
+ * conservative rather than a new composition: the rail becomes a top bar in document order, and the
+ * frame goes edge to edge. */
+@media (max-width: 60rem) {
+  .app-frame {
+    grid-template-columns: minmax(0, 1fr);
+    min-block-size: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .app-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .frame-surfaces {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .app-rail .frame-language {
+    align-self: center;
+    margin-block-start: 0;
+  }
+}
+
+@media (max-width: 40rem) {
+  .shell-main {
+    --canvas-pad: var(--space-4);
+  }
+
+  .document-card {
+    padding: var(--space-4);
+  }
+
+  .shell-identity {
+    padding-inline: var(--space-4);
+  }
+}
