@@ -239,15 +239,16 @@ class TestTheGroundColourIsBehindTheArtwork:
         assert band is not None, "no .hero-band rule ships"
         assert "var(--hero-ground)" in band.group(0)
 
-    def test_no_scrim_ships_while_no_copy_sits_over_the_artwork(self) -> None:
-        """A scrim is a legibility overlay for text *on* the image, and this slice puts none
-        there: the heading and lede stay in the document card below, which is what keeps the
-        surface complete when the image fails to load.
+    def test_the_scrim_ships_because_copy_sits_over_the_artwork(self) -> None:
+        """A scrim is a legibility overlay for text *on* the image. This test originally asserted
+        its absence, so that the slice moving the headline onto the band would have to come back
+        here and state that it adds both. `U1` slice 12 is that slice: the heading and lede now sit
+        on the band (`test_u1_slice12_hero_convergence.py`), so the handoff's ivory wash ships.
 
-        So a gradient here would be decoration, and `test_r807_shell_quality.py`'s no-artwork scan
-        correctly refuses a painted background the surface does not need. Asserted rather than
-        merely omitted, so the slice that *does* move the headline onto the band has to come back
-        here and state that it is adding both the copy and the scrim the handoff pairs with it.
+        The wash is a gradient from the band's own ground to `transparent` and nothing else -- no
+        `url()`, no colour of its own -- so it is a legibility overlay, not a drawing (`FR-206`).
+        The copy stays in the DOM outside `<picture>`, which is what keeps the surface complete
+        when the image fails to load (`FR-218`, `TestTheSurfaceSurvivesTheArtworkBeingAbsent`).
         """
         from importlib.resources import files
 
@@ -256,9 +257,17 @@ class TestTheGroundColourIsBehindTheArtwork:
             .joinpath("assets", "shell-components.css")
             .read_text(encoding="utf-8")
         )
+        scrims = [
+            match.group(0)
+            for match in re.finditer(r"[^{}]*\.hero-band__scrim[^{]*\{[^}]*\}", components)
+        ]
 
-        assert "hero-band__scrim" not in components
-        assert "background-image" not in components
+        assert scrims, "no .hero-band__scrim rule ships, but copy sits on the band"
+        painted = [rule for rule in scrims if "background-image" in rule]
+        assert painted, "a scrim rule exists but none paints the wash"
+        for rule in painted:
+            assert "var(--hero-ground)" in rule and "transparent" in rule, rule
+            assert "url(" not in rule, rule
 
 
 class TestTheArtworkIsCroppedAndNeverRedrawn:

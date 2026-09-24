@@ -276,7 +276,7 @@ class TestTheShippedOriginServesTheArtwork:
 
                 resolved = page.evaluate(
                     """() => [
-                        getComputedStyle(document.querySelector('.hero-band')).height,
+                        getComputedStyle(document.querySelector('.hero-band')).minHeight,
                         getComputedStyle(
                             document.querySelector('.hero-band__image')
                         ).objectPosition,
