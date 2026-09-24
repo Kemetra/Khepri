@@ -38,7 +38,7 @@ def test_a_grouped_selector_naming_the_wash_is_not_admitted() -> None:
 
 
 def test_a_wash_that_draws_an_image_is_refused() -> None:
-    sheet = '.hero-band__scrim { background-image: url("/app/assets/x.png"); }\n'
+    sheet = '.hero-band__scrim { background-image: url("/app/assets/drawn"); }\n'
 
     with pytest.raises(AssertionError, match="paints something else"):
         forbidden_asset_constructs(sheet)
