@@ -42,6 +42,44 @@ _SUPPLIED = {
     # §16.5, "Ivory and sand — surfaces": `hero-ground #F6EDDF`. `RCA-012` `FR-212`'s hero band
     # paints it behind the artwork so the headline is legible before the image decodes.
     "#f6eddf",
+    # The workspace presentation reset (`RCA-010` §Scope) takes the rest of the §16.5 palette the
+    # shell consumes. One entry per value, each beside the row that supplies it; §16.5 values the
+    # shell does not consume (the error triplet, `ink-disabled`, `gold-eyebrow`, `gold-link`) are
+    # deliberately not listed, so declaring one still fails until it is.
+    #
+    # §16.5 "Navy — chrome and ink": `navy-900`, `navy-950`, `ink`, `ink-muted`, `nav-label`.
+    # `ink-secondary` and `ink-tertiary` are not consumed: both fall under 4.5:1 on the ivory
+    # canvas, so secondary text uses `ink-muted` throughout.
+    "#101c26",
+    "#0b1017",
+    "#16212b",
+    "#55616c",
+    "#a9b2b9",
+    # §16.5 "Gold — brand and primary": `gold-400`, `gold-500`, `gold-600`, `gold-ink`,
+    # `gold-tint`, `gold-border`. `gold-link` is not consumed: it falls under 4.5:1 on the sand
+    # surface, so every link uses `gold-ink`.
+    "#d5ae63",
+    "#c9a45c",
+    "#b98c39",
+    "#7a5a17",
+    "#f6ebd6",
+    "#e3ce9f",
+    # §16.5 "Ivory and sand — surfaces": `surface-card`, `surface-canvas`, `surface-page`,
+    # `surface-sand`, `border-card`, `border-inner`, `border-strong`.
+    "#ffffff",
+    "#fbf9f6",
+    "#e9e3da",
+    "#f4eee4",
+    "#ebe5dc",
+    "#efe9e0",
+    "#ded7cc",
+    # §16.5 status triplets: success ink/fill/border, warning fill/border (the warning ink is
+    # `gold-ink` above).
+    "#27724f",
+    "#e7f2eb",
+    "#d5e5da",
+    "#faeeda",
+    "#f0e1c2",
 }
 
 #: `R8-01` §2's census of values `journey.css` uses below its `:root` block. The count is the

@@ -15,8 +15,12 @@
   minimal (§7.3): no state, no trust, no link.
 #}
 <section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.analyses_title }}</h1>
-  <p class="lede">{{ copy.analyses_intro }}</p>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ copy.analyses_title }}</h1>
+      <p class="lede">{{ copy.analyses_intro }}</p>
+    </div>
+  </div>
   {% if rows %}
   <ul class="spine-list">
     {% for row in rows %}
@@ -85,7 +89,7 @@
   <p class="empty-state">{{ copy.analyses_empty }}</p>
   {% endif %}
   {% if offers_compare %}
-  <form method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/compare">
+  <form class="compare-picker" method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/compare">
     <h2 class="region-label">{{ copy.compare_title }}</h2>
     <p class="lede">{{ copy.compare_pick_intro }}</p>
     <p>
@@ -104,7 +108,7 @@
         {% endfor %}
       </select>
     </p>
-    <button type="submit">{{ copy.compare_submit }}</button>
+    <button class="button--primary" type="submit">{{ copy.compare_submit }}</button>
   </form>
   {% endif %}
 </section>

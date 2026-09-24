@@ -677,27 +677,19 @@ def test_the_shell_component_layer_draws_no_artwork() -> None:
     """`RCA-010` `FR-206`: the master specification §7 asset policy, unrelaxed.
 
     The shell has no admitted programmatic-drawing exception -- unlike the `RRA`
-    side, where a data-driven chart is the one expected drawing -- so this scan needs
-    no carve-out. Scoping it to the stylesheet also keeps it clear of the two
-    `aria-hidden` change separators in `analysis.html.j2`, which are template content
-    and `FR-194`-compliant.
+    side, where a data-driven chart is the one expected drawing. Its one painted
+    background is the hero's legibility wash, which is not a drawing:
+    `tests/shell_asset_scan.py` admits exactly that rule, by whole selector, and holds
+    it to a ground-to-transparent gradient. Scoping the scan to the stylesheet also
+    keeps it clear of the two `aria-hidden` change separators in `analysis.html.j2`,
+    which are template content and `FR-194`-compliant.
     """
+    from tests.shell_asset_scan import forbidden_asset_constructs, without_the_wash
+
     css = _shell_component_css()
 
-    # At-rule names, property names, function names and URL schemes are all
-    # case-insensitive in CSS, so `@IMPORT` and `URL(HTTPS://...)` evaded the
-    # substring checks entirely. Fold once and check the folded text.
-    folded = css.lower()
-    forbidden = {
-        "@import": "@import" in folded,
-        "external url()": bool(re.search(r"url\(\s*['\"]?https?://", folded)),
-        "background-image": "background-image" in folded,
-        "content artwork": bool(
-            re.search(r"content\s*:\s*['\"][^'\"]*[^\x00-\x7F]", css)
-        ),
-        "non-ascii glyph": bool(re.search(r"[←-➿\U0001f300-\U0001faff]", css)),
-    }
-    found = sorted(name for name, present in forbidden.items() if present)
+    assert without_the_wash(css)[1], "the wash this scan admits is gone; remove the carve-out"
+    found = forbidden_asset_constructs(css)
     assert found == [], f"forbidden asset constructs in shell-components.css: {found}"
 
 

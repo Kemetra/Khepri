@@ -10,8 +10,12 @@
   it is simply the state.
 #}
 <section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.no_membership_title }}</h1>
-  <p class="lede">{{ copy.no_membership_intro }}</p>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ copy.no_membership_title }}</h1>
+      <p class="lede">{{ copy.no_membership_intro }}</p>
+    </div>
+  </div>
   <p class="next-step">{{ copy.no_membership_action }}</p>
 </section>
 {% endblock %}

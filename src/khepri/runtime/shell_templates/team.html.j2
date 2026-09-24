@@ -12,8 +12,12 @@
   distinguishes them.
 #}
 <section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.team_title }}</h1>
-  <p class="lede">{{ copy.team_intro }}</p>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ copy.team_title }}</h1>
+      <p class="lede">{{ copy.team_intro }}</p>
+    </div>
+  </div>
   {% if members %}
   <ul class="member-list">
     {% for member in members %}
@@ -52,18 +56,21 @@
   <h2 id="invite-title">{{ copy.invite_title }}</h2>
   <p class="lede">{{ copy.invite_intro }}</p>
   <form method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/team/invitations">
-    <p>
-      <label for="invite-email">{{ copy.invite_email_label }}</label>
-      <input id="invite-email" name="email" type="email" dir="ltr" autocomplete="email" required>
-    </p>
-    <p>
-      <label for="invite-role">{{ copy.invite_role_label }}</label>
-      <select id="invite-role" name="role">
-        <option value="member" selected>{{ copy.role_member }}</option>
-        <option value="owner">{{ copy.role_owner }}</option>
-      </select>
-    </p>
-    <button type="submit">{{ copy.invite_submit }}</button>
+    {# A layout wrapper inside the form, because `test_r805b` reads the form's opening tag exactly. #}
+    <div class="form-grid">
+      <p>
+        <label for="invite-email">{{ copy.invite_email_label }}</label>
+        <input id="invite-email" name="email" type="email" dir="ltr" autocomplete="email" required>
+      </p>
+      <p>
+        <label for="invite-role">{{ copy.invite_role_label }}</label>
+        <select id="invite-role" name="role">
+          <option value="member" selected>{{ copy.role_member }}</option>
+          <option value="owner">{{ copy.role_owner }}</option>
+        </select>
+      </p>
+      <button class="button--primary" type="submit">{{ copy.invite_submit }}</button>
+    </div>
   </form>
 </section>
 {% endif %}
@@ -86,7 +93,7 @@
       {% if is_owner %}
       <form method="post"
             action="{{ prefix }}/{{ language }}/{{ organization_id }}/team/invitations/{{ invitation.invitation_id }}/revoke">
-        <button type="submit">{{ copy.invitation_revoke }}</button>
+        <button class="button--small" type="submit">{{ copy.invitation_revoke }}</button>
       </form>
       {% endif %}
     </li>
