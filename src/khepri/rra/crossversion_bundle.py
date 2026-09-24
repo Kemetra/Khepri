@@ -22,7 +22,7 @@ from khepri.rra.bundle import (
     CitedFigure,
     StatedCaveat,
 )
-from khepri.rra.facts import FactPackage
+from khepri.rra.facts import FactPackage, RefusedResult
 from khepri.rra.narrative import REQUIRED_LANGUAGES
 from khepri.rra.profiling import canonical_json
 
@@ -306,6 +306,13 @@ class CrossVersionBundle:
     @property
     def bundle_version(self) -> str:
         return CROSSVERSION_BUNDLE_VERSION
+
+    @property
+    def refusals(self) -> tuple[RefusedResult, ...]:
+        """None: `RRA-006` gives a refused pair no bundle, and an admitted pair's
+        refused cells travel on its caveats. Outside `as_document()`, so
+        `rra006.crossversion.bundle.v1` is unchanged."""
+        return ()
 
     @property
     def section_ids(self) -> tuple[str, ...]:
