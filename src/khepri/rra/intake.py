@@ -346,16 +346,22 @@ def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
             if any("vbaproject" in name.casefold() for name in names):
                 raise IntakeRejected("Upload content is invalid or unsupported.")
 
-            content_types = _read_xml_part(archive, _CONTENT_TYPES_PATH)
+            remaining_bytes = max_expanded_bytes
+
+            def read_part(path: str) -> bytes:
+                nonlocal remaining_bytes
+                part = _read_xml_part(archive, path, max_bytes=remaining_bytes)
+                remaining_bytes -= len(part)
+                return part
+
+            content_types = read_part(_CONTENT_TYPES_PATH)
             if b"macroenabled" in content_types.lower() or _declares_macros(content_types):
                 raise IntakeRejected("Upload content is invalid or unsupported.")
-            workbook = ElementTree.fromstring(_read_xml_part(archive, _WORKBOOK_PATH))
-            relationships = ElementTree.fromstring(
-                _read_xml_part(archive, _WORKBOOK_RELS_PATH)
-            )
+            workbook = ElementTree.fromstring(read_part(_WORKBOOK_PATH))
+            relationships = ElementTree.fromstring(read_part(_WORKBOOK_RELS_PATH))
             worksheet_paths = _worksheet_paths(workbook, relationships)
             populated = sum(
-                _worksheet_is_populated(_read_xml_part(archive, path))
+                _worksheet_is_populated(read_part(path))
                 for path in worksheet_paths
             )
             if populated != 1:
@@ -376,8 +382,11 @@ def _unsafe_archive_entry(entry: zipfile.ZipInfo) -> bool:
     )
 
 
-def _read_xml_part(archive: zipfile.ZipFile, path: str) -> bytes:
-    content = archive.read(path)
+def _read_xml_part(archive: zipfile.ZipFile, path: str, *, max_bytes: int) -> bytes:
+    with archive.open(path) as part:
+        content = part.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise IntakeRejected("Upload content is invalid or unsupported.")
     if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
         raise IntakeRejected("Upload content is invalid or unsupported.")
     if _declares_document_type(content):

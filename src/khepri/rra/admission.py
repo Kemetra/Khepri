@@ -142,7 +142,12 @@ class AdmittedEvents:
     #: exactly one proof was declared. A field rather than an exception for
     #: `monetary_refused`'s reason: the sentence names the results it refuses,
     #: and raising would take the ones it does not.
-    repeated_event_key: bool = False
+    repeated_event_key_kinds: frozenset[str] = frozenset()
+
+    @property
+    def repeated_event_key(self) -> bool:
+        """Whether any admitted event key was missing or repeated."""
+        return bool(self.repeated_event_key_kinds)
 
     @property
     def revenue_total(self) -> Decimal | None:
@@ -264,7 +269,9 @@ def admit_events(
         monetary_refused=monetary_refused,
         excluded_count=excluded,
         kept_positions=tuple(kept),
-        repeated_event_key=_repeated_event_key(reading, contract, frozenset(kept)),
+        repeated_event_key_kinds=_repeated_event_key_kinds(
+            reading, contract, frozenset(kept), kinds
+        ),
     )
 
 
@@ -464,11 +471,12 @@ def _transaction_id_column(
     ]
 
 
-def _repeated_event_key(
+def _repeated_event_key_kinds(
     reading: _Reading,
     contract: SourceContract,
     kept: frozenset[int],
-) -> bool:
+    kinds: list[str],
+) -> frozenset[str]:
     """Whether a declared event key repeats across the rows admission kept.
 
     `RRA-003`: "A repeated event key, whether identical or conflicting, refuses
@@ -488,7 +496,7 @@ def _repeated_event_key(
     """
     components = contract.identity.event_key_columns
     if not components:
-        return False
+        return frozenset()
     # Read through `_column`, which refuses a column the file does not carry.
     # Skipping the absent ones and answering `False` instead would report "no
     # repeats" for a contract whose declared identity was never checked at all:
@@ -499,7 +507,15 @@ def _repeated_event_key(
     columns = [
         _column(reading.frame, reading.labels, component) for component in components
     ]
-    seen: set[tuple[str, ...]] = set()
+    return _collision_kinds(columns, kinds, kept)
+
+
+def _collision_kinds(
+    columns: list[list[str | None]], kinds: list[str], kept: frozenset[int]
+) -> frozenset[str]:
+    """Event kinds touched by absent or colliding declared identity values."""
+    seen: dict[tuple[str | None, ...], str] = {}
+    repeated: set[str] = set()
     for index in sorted(kept):
         key = tuple(column[index] for column in columns)
         # A blank component is no key at all, and it reports here as a repeat
@@ -510,11 +526,13 @@ def _repeated_event_key(
         # contract whose proof it never satisfied. `RRA-003` requires the key
         # to be "unique within the package"; absent is not unique.
         if any(component is None for component in key):
-            return True
+            repeated.add(kinds[index])
+            continue
         if key in seen:
-            return True
-        seen.add(key)  # type: ignore[arg-type]
-    return False
+            repeated.update((seen[key], kinds[index]))
+        else:
+            seen[key] = kinds[index]
+    return frozenset(repeated)
 
 
 def _transaction_key_column(

@@ -655,13 +655,13 @@ class SqlAccountStore:
         Verified before this method existed, and irreversible when it happened: §2b's purge is
         deliberately non-recoverable.
 
-        Re-reading and re-checking the condition inside the writing transaction closes it. The
+        Locking and re-checking the row inside the writing transaction closes it. The
         predicate is the selection rule restated — disabled, before the horizon, not already
         purged — so a row that stopped qualifying is skipped rather than clobbered, and the
         returned count is work actually done.
         """
         with self._factory.begin() as database:
-            row = database.get(AccountRow, account_id)
+            row = database.scalars(account_for_update(account_id)).one_or_none()
             if row is None or not _account_from_row(row).is_purgeable_at(horizon):
                 return False
             # `R4-01` §8.2's advisory lock over the identity, taken before the cascade below and

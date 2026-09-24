@@ -60,8 +60,10 @@ class _RefusingInvitationStore:
         return False
 
 
-def _owner_shell() -> tuple[TestClient, _RefusingInvitationStore]:
-    store = _RefusingInvitationStore()
+def _owner_shell(
+    store: _RefusingInvitationStore | None = None,
+) -> tuple[TestClient, _RefusingInvitationStore]:
+    store = store or _RefusingInvitationStore()
     app = FastAPI()
     add_shell_routes(
         app,
@@ -75,6 +77,19 @@ def _owner_shell() -> tuple[TestClient, _RefusingInvitationStore]:
     client = TestClient(app, raise_server_exceptions=False)
     client.cookies.set(SESSION_COOKIE, "a-session-token")
     return client, store
+
+
+def test_an_unexpected_revoke_fault_is_not_disguised_as_an_authorization_denial() -> None:
+    class FaultingStore(_RefusingInvitationStore):
+        def delete_open_invitation(
+            self, organization_id: str, invitation_id: str, *, now: object
+        ) -> bool:
+            raise RuntimeError("storage fault")
+
+    client, _ = _owner_shell(FaultingStore())
+    response = client.post(f"{SHELL_PREFIX}/en/org-acme/team/invitations/inv-1/revoke")
+
+    assert response.status_code == 500
 
 
 class TestIssuingARefusedInvitation:

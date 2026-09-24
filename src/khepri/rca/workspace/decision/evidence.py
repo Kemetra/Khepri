@@ -18,14 +18,10 @@ projection, so `FR-159` is satisfied either way; the records are simply the part
 that states a metric. The rows are still read, for the figure identifiers each
 citation appears against.
 
-**Provenance comes from the record and not from the column of that name.**
-`RRA-014`'s `_FIELD_READERS` gives `figure` and `evidence` readers and gives
-`provenance` and `absence` none, so both project as `None` -- "a field no member
-of `RenderableBundle` states, an absence and not a blank". That is `RRA-014`'s
-projection and `RCA-008` §Exclusions bars changing it, so this module reads the
-half that is stated and `test_d105_evidence_drawer` asserts the two columns stay
-absences: the day they gain readers, that assertion fails and this module is
-looked at rather than left double-sourcing one figure.
+**Provenance comes from the evidence record.** `RRA-014` now projects the
+`provenance` and `absence` columns when the source states them. The drawer reads
+the rows for figure-to-citation links and the evidence records for their metric,
+inputs, and provenance; it does not reconstruct those facts from display text.
 
 **An evidence absence is data, never a refusal.** `D1-01` §4 established that
 every published view's `required_evidence` is `()` at v1 and that this is not an

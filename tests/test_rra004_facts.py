@@ -1882,7 +1882,7 @@ def test_a_keyed_contract_is_not_judged_by_the_row_signature() -> None:
     assert result.value(METRIC_UNITS) == "10"
 
 
-def _oracle_package(content: bytes) -> FactPackage:
+def _oracle_package(content: bytes, *, contract=None) -> FactPackage:
     """A package under the oracle contract, for signature cases needing dimensions."""
     from tests.rra003_contract_fixtures import oracle_contract
 
@@ -1891,7 +1891,7 @@ def _oracle_package(content: bytes) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    contract = oracle_contract()
+    contract = contract or oracle_contract()
     mapping = build_mapping(profile, contract=contract)
     return build_fact_package(
         AdmittedInput(
@@ -2085,24 +2085,38 @@ def test_a_missing_key_component_refuses_only_what_needs_the_key() -> None:
     )
 
 
-def test_a_repeated_event_key_refuses_the_additive_results() -> None:
-    """`RRA-003`: a repeated event key "refuses every additive or
-    distinct-transaction result that could include it".
+def test_a_missing_return_key_component_does_not_refuse_sale_only_facts() -> None:
+    """A return outside the posted-sale population cannot invalidate its transaction count."""
+    from tests.rra003_contract_fixtures import oracle_contract
 
-    Detection alone is not the rule. A keyed contract whose key repeats has no
-    proven identity for those rows, and the doubled totals published anyway
-    until the flag reached `_totals`.
+    contract = oracle_contract(
+        transaction_key_components=("invoice_no", "store", "date")
+    )
+    sales = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+    )
+    with_return_gap = (
+        sales + b"2026-03-06,return,posted,-30.00,-1,INV-9,,P1,C1,0.00,0.00\n"
+    )
+    with_sale_gap = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+    )
 
-    Two rows sharing `line_id` `L1`, the declared event key: either two events
-    wrongly given one key, or one event exported twice. The extract does not say
-    which, which is the same ambiguity the row-signature test answers for the
-    other identity proof.
+    result = _oracle_package(with_return_gap, contract=contract)
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "150.00"
 
-    The invoice numbers differ (`INV-1`, `INV-2`) deliberately -- the collision
-    is on the key alone, and the rows are not identical in every column, so this
-    is the conflicting-key case rather than a repeated row signature. Do not
-    "fix" the differing invoices: that would remove the repeat under test.
-    """
+    refused = _oracle_package(with_sale_gap, contract=contract)
+    assert refused.fact(METRIC_TRANSACTIONS) is None
+    assert refused.fact(METRIC_AVERAGE_ORDER_VALUE) is None
+
+
+def _repeated_key_package() -> FactPackage:
+    """Two distinct sale rows sharing their declared event key."""
     from khepri.rra.source_contract import (
         BasisDeclaration,
         ContractAttribution,
@@ -2160,11 +2174,68 @@ def test_a_repeated_event_key_refuses_the_additive_results() -> None:
         )
     )
 
-    for metric in (METRIC_REVENUE, METRIC_UNITS, METRIC_TRANSACTIONS):
+    return result
+
+
+def test_a_repeated_event_key_refuses_the_additive_results() -> None:
+    """`RRA-003` refuses every result that could include a repeated sale key."""
+    result = _repeated_key_package()
+    for metric in (
+        METRIC_REVENUE,
+        METRIC_UNITS,
+        METRIC_TRANSACTIONS,
+        "revenue_by_period",
+        "units_by_period",
+    ):
         assert result.fact(metric) is None, f"{metric} published over a repeated key"
         refused = result.refusal(metric)
         assert refused is not None
         assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_a_return_only_event_key_collision_leaves_sale_only_facts_standing() -> None:
+    """A duplicate return can refuse revenue without changing the proved sale count."""
+    from khepri.rra.source_contract import ContractAttribution, build_source_contract
+    from tests.rra003_contract_fixtures import oracle_contract
+
+    base = oracle_contract()
+    contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_keyed_returns", evidence="Test fixture: keyed sale and return rows."
+        ),
+        events=base.events,
+        identity=replace(
+            base.identity,
+            event_key_columns=("line_id",),
+            unique_line_grain_attested=False,
+        ),
+        basis=base.basis,
+    )
+    header = _SIGNATURE_HEADER.rstrip(b"\n") + b",line_id\n"
+    sales = (
+        header
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00,L1\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00,L2\n"
+    )
+    repeated_returns = (
+        sales
+        + b"2026-03-06,return,posted,-20.00,-1,INV-9,S1,P1,C1,0.00,0.00,L3\n"
+        + b"2026-03-07,return,posted,-10.00,-1,INV-8,S1,P1,C1,0.00,0.00,L3\n"
+    )
+    repeated_sales = (
+        header
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00,L1\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00,L1\n"
+    )
+
+    result = _oracle_package(repeated_returns, contract=contract)
+    assert result.fact(METRIC_REVENUE) is None
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "150.00"
+
+    refused = _oracle_package(repeated_sales, contract=contract)
+    assert refused.fact(METRIC_TRANSACTIONS) is None
+    assert refused.fact(METRIC_AVERAGE_ORDER_VALUE) is None
 
 
 def test_gross_margin_refuses_a_negative_matched_revenue() -> None:

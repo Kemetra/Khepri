@@ -142,6 +142,19 @@ def test_xlsx_expansion_limit_is_checked_before_xml_parsing() -> None:
         upload.finish()
 
 
+def test_xml_part_read_is_bounded_by_actual_inflated_bytes() -> None:
+    """A part read must stop at the byte budget even if archive metadata understates it."""
+    from khepri.rra.intake import _read_xml_part
+
+    class LyingArchive:
+        def open(self, path: str) -> io.BytesIO:
+            assert path == "xl/worksheets/sheet1.xml"
+            return io.BytesIO(b"<worksheet>" + b"x" * 2_000 + b"</worksheet>")
+
+    with pytest.raises(IntakeRejected):
+        _read_xml_part(LyingArchive(), "xl/worksheets/sheet1.xml", max_bytes=1_000)
+
+
 def _xlsx(
     sheets: dict[str, list[str]],
     *,

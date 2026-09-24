@@ -33,7 +33,7 @@
     from a refusal, and says so in its own words.
   #}
   {% if view.empty %}
-  <p class="decision-empty" role="note">{{ decision.no_rows }}</p>
+  <p class="decision-empty" role="note">{{ view.empty }}</p>
   {% endif %}
 
   {#
