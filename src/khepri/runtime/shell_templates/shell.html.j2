@@ -78,8 +78,20 @@
        href="{{ prefix }}/{{ language }}">{{ copy.frame_organization_label }}</a>
     {% endif %}
     <nav class="frame-surfaces" aria-label="{{ copy.frame_surfaces_label }}">
+      {#
+        RCA-010 FR-194: exactly one entry is current. A detail surface marks its parent
+        destination (owner decision on #564, 2026-09-24; handoff §10 "Insights + Report
+        -> Insights"): a tail below a destination is that destination, and a decision
+        surface, which the handoff files under Insights, is Analyses. The query string is
+        not part of the address a destination names.
+      #}
+      {% set current_path = surface_path.split("?")[0] %}
       {% for label, tail in destinations %}
-      <a href="{{ prefix }}/{{ language }}{{ tail }}"{% if tail == surface_path %} aria-current="page"{% endif %}>{{ copy[label] }}</a>
+      {% set root = tail.rsplit("/", 1)[0] %}
+      {% set current = tail == current_path
+           or current_path.startswith(tail ~ "/")
+           or (tail == root ~ "/analyses" and current_path.startswith(root ~ "/decisions/")) %}
+      <a href="{{ prefix }}/{{ language }}{{ tail }}"{% if current %} aria-current="page"{% endif %}>{{ copy[label] }}</a>
       {% endfor %}
     </nav>
     {% endif %}
