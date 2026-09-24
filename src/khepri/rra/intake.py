@@ -370,6 +370,12 @@ def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
         raise IntakeRejected("Upload content is invalid or unsupported.") from error
 
 
+#: The only member methods a workbook is read under. `read(max_bytes + 1)` bounds the output, not
+#: the decompressor: BZIP2 and LZMA can allocate far beyond the budget before returning a byte
+#: (CWE-400), and Excel writes neither, so any other method is refused before a member is opened.
+_PERMITTED_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
+
+
 def _unsafe_archive_entry(entry: zipfile.ZipInfo) -> bool:
     path = entry.filename.replace("\\", "/")
     normalized = posixpath.normpath(path)
@@ -379,6 +385,7 @@ def _unsafe_archive_entry(entry: zipfile.ZipInfo) -> bool:
         or normalized == ".."
         or normalized.startswith("../")
         or entry.file_size < 0
+        or entry.compress_type not in _PERMITTED_COMPRESSION
     )
 
 

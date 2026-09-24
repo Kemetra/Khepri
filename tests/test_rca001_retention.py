@@ -323,6 +323,43 @@ def test_a_re_enabled_account_is_not_purged_by_an_in_flight_sweep(
     assert survivor.is_enabled
 
 
+def test_a_purge_that_lands_first_is_not_undone_by_a_stale_re_enable(
+    factory: sessionmaker,
+) -> None:
+    """The other ordering: `enable_account` reads, the purge commits, then the stale write lands.
+
+    `purge_if_still_eligible` closes "the sweeper clobbers a re-enable". It cannot close this
+    one, because the purge runs first and correctly: the damage would be done by the re-enable's
+    write-back of the email it read before the purge -- restoring an identity §2b made
+    non-recoverable. So a write onto a purged row is refused, and the service reports failure.
+    Driven through `enable_account` with the purge hooked into its read, so a deleted guard
+    fails here rather than in a test that calls `save_account` directly.
+    """
+    horizon = _months_before(NOW + timedelta(days=800), RETENTION_MONTHS)
+
+    class PurgedAfterRead(SqlAccountStore):
+        def get_account(self, account_id):  # type: ignore[no-untyped-def]
+            snapshot = super().get_account(account_id)
+            assert self.purge_if_still_eligible(account_id, horizon)
+            return snapshot
+
+    accounts = SqlAccountStore(factory)
+    account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    LifecycleService(accounts, SqlOrganizationStore(factory)).disable_account(
+        account.account_id, now=NOW
+    )
+
+    racing = LifecycleService(PurgedAfterRead(factory), SqlOrganizationStore(factory))
+    with pytest.raises(AccountOperationFailed):
+        racing.enable_account(account.account_id)
+
+    with factory() as database:
+        row = database.get(AccountRow, account.account_id)
+        assert row is not None
+        assert row.email is None, "the purged identity stays purged"
+        assert row.disabled_at is not None
+
+
 @pytest.mark.parametrize(
     ("disabled_on", "expected_horizon_source"),
     [

@@ -441,10 +441,11 @@
   text-align: end;
 }
 
-/* A customer-controlled value keeps `dir="auto"` (`FR-199`); a Latin one then resolves LTR and would
- * sit at the Arabic page's far edge, so it takes the same reading-edge alignment. */
+/* A customer-controlled value keeps `dir="auto"` (`FR-199`), so its own direction may resolve
+ * either way. `match-parent` aligns it to the Arabic page's reading edge whichever it resolves to;
+ * `end` would follow the value's own direction and put an Arabic value at the far edge. */
 [dir="rtl"] .passport dd[dir="auto"] {
-  text-align: end;
+  text-align: match-parent;
 }
 
 /* In the side rail the quality list is one column: a label above its value. A two-column grid in a

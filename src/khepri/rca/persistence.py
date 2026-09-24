@@ -778,22 +778,35 @@ def _apply_account(database, account: Account) -> bool:
     verifier cannot be written -- which is what makes `KHEPRI-DEC-015`'s "immediate,
     non-recoverable" destruction hold at the boundary rather than only in the domain type.
 
-    Returns False when the row does not exist, so a caller cannot mistake a no-op for a
-    successful write.
+    Returns False when the row does not exist **or is purged**, so a caller cannot mistake a
+    no-op for a successful write. A purged row is terminal (`KHEPRI-DEC-015` §2b): a caller that
+    read before the purge committed would otherwise write its stale email back and restore the
+    identity. The refusal is the write's own predicate -- one conditional `UPDATE`, atomic without
+    taking a lock, which account writes deliberately do not (`test_rca001_lock_scope.py`). The
+    purge writes its tombstone directly and never comes through here.
     """
     assert_sealed(account)
+    written = database.execute(
+        update(AccountRow)
+        .where(AccountRow.account_id == account.account_id, AccountRow.email.is_not(None))
+        .values(**_account_columns(account))
+        .execution_options(synchronize_session="fetch")
+    )
+    return written.rowcount == 1
+
+
+def _account_columns(account: Account) -> dict[str, object]:
+    """The row values an account's state writes. Every verifier column moves together."""
     verifier = account.verifier
-    row = database.get(AccountRow, account.account_id)
-    if row is None:
-        return False
-    row.email = _canonical_or_none(account.email)
-    row.credential_salt = None if verifier is None else verifier.salt
-    row.credential_digest = None if verifier is None else verifier.digest
-    row.kdf_n = None if verifier is None else verifier.kdf.n
-    row.kdf_r = None if verifier is None else verifier.kdf.r
-    row.kdf_p = None if verifier is None else verifier.kdf.p
-    row.disabled_at = account.disabled_at
-    return True
+    return {
+        "email": _canonical_or_none(account.email),
+        "credential_salt": None if verifier is None else verifier.salt,
+        "credential_digest": None if verifier is None else verifier.digest,
+        "kdf_n": None if verifier is None else verifier.kdf.n,
+        "kdf_r": None if verifier is None else verifier.kdf.r,
+        "kdf_p": None if verifier is None else verifier.kdf.p,
+        "disabled_at": account.disabled_at,
+    }
 
 
 def _effective_owner_conditions() -> tuple:
