@@ -48,13 +48,15 @@ class RenderableBundle(Protocol):
     sections: tuple[PresentationSection, ...]
     narrative: NarrativeDraft | None
     evidence: tuple[CitedEvidence, ...]
-    #: `RRA-006` (`#531`): the source's per-result refusals, verbatim, so a refused
-    #: metric's reason survives projection (`RRA-014` `FR-140`) without a reader
-    #: reaching past the bundle to the package.
-    refusals: tuple[RefusedResult, ...]
-
     @property
     def bundle_version(self) -> str: ...
+
+    @property
+    def refusals(self) -> tuple[RefusedResult, ...]:
+        """`RRA-006` (`#531`): the source's per-result refusals, verbatim, so a
+        refused metric's reason survives projection (`RRA-014` `FR-140`) without a
+        reader reaching past the bundle to the package."""
+        ...
 
     @property
     def section_ids(self) -> tuple[str, ...]: ...
