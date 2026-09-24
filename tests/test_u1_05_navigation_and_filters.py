@@ -162,9 +162,10 @@ def test_the_navigation_names_exactly_the_frames_roster() -> None:
     assert unnamed == [], f"a destination-shaped template is in no navigation: {unnamed}"
 
 
-#: Detail surfaces and the destination the owner's `#564` decision (2026-09-24) makes
-#: their current parent: "keep exactly one active navigation entry and treat Insights
-#: as the current parent destination". Insights is the handoff's name for Analyses.
+#: Detail surfaces and the destination the owner's `#564` decision (2026-09-24, recorded
+#: on the issue in substance) makes their current parent: detail routes keep exactly one
+#: active entry, with Insights as the current parent. Insights is the handoff's name for
+#: Analyses.
 _DETAIL_PARENTS = {"analysis": "analyses", "decision": "analyses", "compare": "analyses"}
 
 

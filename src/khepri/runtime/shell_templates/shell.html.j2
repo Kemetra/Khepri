@@ -82,10 +82,12 @@
         RCA-010 FR-194: exactly one entry is current. A detail surface marks its parent
         destination (owner decision on #564, 2026-09-24; handoff §10 "Insights + Report
         -> Insights"): a tail below a destination is that destination, and a decision
-        surface, which the handoff files under Insights, is Analyses. The query string is
-        not part of the address a destination names.
+        surface, which the handoff files under Insights, is Analyses.
+        The "/analyses" and "/decisions/" segments restate shell_frame.py's destination and
+        the decision route, which RCA-010 §Scope cannot edit; a frame-supplied parent tail
+        would remove them and is an RCA-005/RCA-008 change.
       #}
-      {% set current_path = surface_path.split("?")[0] %}
+      {% set current_path = surface_path %}
       {% for label, tail in destinations %}
       {% set root = tail.rsplit("/", 1)[0] %}
       {% set current = tail == current_path

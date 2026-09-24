@@ -2,8 +2,8 @@
 
 **Authority:** `RCA-010` §Scope ("shell presentation markup and ARIA state") and `RCA-010 FR-194`
 ("`aria-current="page"` on exactly one entry"). The owner decided the reading on `#564`
-(2026-09-24): "For detail routes, keep exactly one active navigation entry and treat **Insights** as
-the current parent destination." The handoff maps Insights onto `analyses`, with `analysis.html.j2`
+(2026-09-24, recorded on the issue in substance): detail routes keep exactly one active navigation
+entry, and Insights is the current parent destination. The handoff maps Insights onto `analyses`, with `analysis.html.j2`
 and `decision.html.j2` under it (`IMPLEMENTATION_PROMPT.md:116-119`; `INTERACTIONS.md:23`,
 "Insights + Report → *Insights*"). No route, destination, copy, CSS or runtime change.
 
@@ -16,9 +16,19 @@ pinned `<= 1` on the reading the owner has now reversed.
 
 ## Change
 
-- In the nav loop, an entry is current when its tail equals the surface path with the query
-  stripped, or is a prefix of it followed by `/`. A decision surface additionally counts as
-  Analyses. The destinations stay `shell_frame.py`'s, which this scope cannot edit.
+- In the nav loop, an entry is current when its tail equals the surface path, or is a prefix of it
+  followed by `/`. A decision surface (its query string is ignored by the prefix match)
+  additionally counts as Analyses. The destinations stay `shell_frame.py`'s, which this scope
+  cannot edit. The template therefore restates the `/analyses` and `/decisions/` segments. A
+  frame-supplied parent tail would remove that duplication, and it is an RCA-005/RCA-008 change.
+
+## Open readings for the owner (not decided here)
+
+- **Compare counts as a detail route under Insights.** Its path is `/analyses/compare/…`, but the
+  handoff table does not list it.
+- **A deployment offering decisions or comparisons without Analyses** (`offers_decisions` /
+  `offers_comparisons` without `offers_analyses`) marks zero entries current. The shipped image
+  (`wiring.py`) wires them together, so the image is unaffected. No fallback entry is inferred.
 - The test becomes `test_exactly_one_entry_is_the_current_page_on_every_navigating_surface`. It
   asserts `== 1` on every navigating surface in both languages, and asserts which destination is
   current: the surface itself, or `analyses` for the three detail surfaces.
