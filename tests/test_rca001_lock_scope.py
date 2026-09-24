@@ -195,6 +195,11 @@ _MAY_LOCK = frozenset(
         # one row both operations certainly touch.
         "account_for_update",
         "redeem_into_membership",
+        # `KHEPRI-DEC-015` retention: the account row must stay disabled from the
+        # eligibility read through the irreversible tombstone. The sweep reaches
+        # this lock through `purge_if_still_eligible`.
+        "purge_if_still_eligible",
+        "sweep",
         "_apply_membership_change",
         "revoke_membership",
         "demote_membership",
@@ -641,7 +646,6 @@ def test_reads_and_account_writes_issue_no_locking_statement() -> None:
     for method in (
         "add_account",
         "save_account",
-        "purge_if_still_eligible",
         "accounts_disabled_before",
         "get_account",
         "get_account_by_email",
@@ -652,3 +656,8 @@ def test_reads_and_account_writes_issue_no_locking_statement() -> None:
         "count_owners",
     ):
         assert method not in reaching, f"{method} acquired a row lock it has no guard for"
+
+
+def test_purge_locks_the_account_while_rechecking_eligibility() -> None:
+    """A concurrent enable must wait until the purge decision commits."""
+    assert "purge_if_still_eligible" in _methods_reaching_a_lock(*_rca_modules())

@@ -1066,15 +1066,11 @@ def _build(
     # population, so any repeated kind reaches them. Transactions, AOV and ASP
     # read posted sales only.
     #
-    # A repeated *event key* is not scoped that way. The signature test groups by
-    # kind because it compares values, and a duplicated return leaves the
-    # sale-only populations whole. A key is the row's identity: a repeat means
-    # the package cannot say how many events it holds, so `RRA-003`'s "every
-    # additive or distinct-transaction result that could include it" reaches all
-    # of them -- a row whose identity is unproven could be in any population.
-    repeated_key = admitted_events.repeated_event_key
-    repeated_rows = bool(repeated_kinds) or repeated_key
-    repeated_sales = EVENT_SALE in repeated_kinds or repeated_key
+    # A repeated key reaches only populations containing one of its event kinds.
+    # A return-only collision cannot enter a posted-sale transaction count.
+    repeated_key_kinds = admitted_events.repeated_event_key_kinds
+    repeated_rows = bool(repeated_kinds or repeated_key_kinds)
+    repeated_sales = EVENT_SALE in repeated_kinds or EVENT_SALE in repeated_key_kinds
     totals = _totals(
         measures,
         admitted_events,
@@ -2359,8 +2355,19 @@ def _measures(
         gapped_semantics=frozenset(gapped),
         transaction_identifiers_complete=(
             transaction_column is None
-            or all(value is not None for value in transactions)
+            or _sale_identifiers_complete(transactions, kinds)
         ),
+    )
+
+
+def _sale_identifiers_complete(
+    transactions: list[str | None], kinds: list[str]
+) -> bool:
+    """Only posted sales need the key used by transaction-denominated facts."""
+    return all(
+        value is not None
+        for value, kind in zip(transactions, kinds, strict=True)
+        if kind == EVENT_SALE
     )
 
 

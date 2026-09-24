@@ -302,38 +302,8 @@ def test_the_two_empty_rules_render_as_two_sentences_on_the_breakdown_sections()
         assert no_rows not in basket, f"basket states the other rule's sentence in {language}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "The cards path discards the governed empty rule at the view-model boundary. "
-        "`_DecisionView.empty` is a `bool` (`shell_decisions.py:494`, "
-        "`empty=reading.empty_rule is not None`) and `_decision_cards.html.j2:26` renders "
-        "the fixed chrome sentence `decision.no_rows`. "
-        "`ExecutiveOverviewView.empty_rule` is `EMPTY_STATED_ABSENCE` (`seam.py:86`, applied "
-        "at `card.py:255`), so the surface states NEITHER governed sentence -- not the "
-        "wrong one of the two, but a third, non-governed sentence. `FR-163` is violated "
-        "there. Every fix needs `shell_decisions.py`, a `src/khepri/runtime/*.py` module "
-        "explicitly outside `RCA-010` §Scope, and a second sentence in `shell_copy.py` is "
-        "barred twice (chrome labels only; this slice adds no governed word). "
-        "OWNER: an `RCA-008` slice -- `RCA-008` owns both `FR-163` and the module."
-    ),
-)
 def test_the_cards_path_states_its_governed_empty_rule() -> None:
-    """`FR-163` on the **cards** path, asserted as it SHOULD be, not as it is.
-
-    **A strict xfail, deliberately, and not a pin on today's output.** A test pinned to
-    the pre-fix behaviour dies as scaffolding: the successor slice that fixes the defect
-    reads its failure as a regression rather than as the signal it is. So this asserts
-    the correct behaviour and marks it expected-to-fail.
-
-    `strict=True` is the load-bearing part. Today it fails and is reported `xfailed`.
-    When the `RCA-008` slice lands the fix it passes, and `strict=True` turns that XPASS
-    into a **failure**, telling the successor to delete the marker rather than leaving a
-    dead test behind. That hooks the surviving seam instead of the defect.
-
-    Deliberately does **not** also assert that today's wrong sentence is present -- that
-    assertion would be the scaffolding this shape exists to avoid.
-    """
+    """`FR-163` renders the admitted cards path's own governed empty sentence."""
     outcomes = _admitted_surface()
     outcomes[seam.EXECUTIVE_OVERVIEW.view_id] = ports.ViewOutcome(
         kind=ports.KIND_ADMITTED,

@@ -232,7 +232,7 @@ def add_invitation_routes(
                 actor_account_id=context.account_id,
                 now=clock(),
             )
-        except Exception:  # noqa: BLE001 -- one refusal for every cause, per `FR-025`
+        except SHELL_REFUSALS:
             return unavailable(environment, language=rendered)
         # The same instant the revoke was written at, so the surface rendered
         # straight after it cannot answer an expiry question on a later clock.

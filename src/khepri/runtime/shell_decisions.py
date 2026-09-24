@@ -366,7 +366,7 @@ class _DecisionView:
     caveats: tuple[str, ...] = field(default_factory=tuple)
     refusal: str | None = None
     unavailable: bool = False
-    empty: bool = False
+    empty: str | None = None
 
 
 def _named(card: Any, language: str) -> _CardView:
@@ -499,13 +499,14 @@ def _refusal_text(reading: CardsReading, language: str) -> str | None:
 
 def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
     """The reading as one page in one language. Labels and words, no figures."""
+    empty = EMPTY_WORDING[language][reading.empty_rule] if reading.empty_rule is not None else None
     return _DecisionView(
         cards=tuple(_named(card, language) for card in reading.cards),
         filters=applied_filters(reading.effective),
         caveats=_caveat_prose(reading, language),
         refusal=_refusal_text(reading, language),
         unavailable=reading.status == "unavailable",
-        empty=reading.empty_rule is not None,
+        empty=empty,
     )
 
 

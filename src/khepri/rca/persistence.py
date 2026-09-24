@@ -655,13 +655,13 @@ class SqlAccountStore:
         Verified before this method existed, and irreversible when it happened: §2b's purge is
         deliberately non-recoverable.
 
-        Re-reading and re-checking the condition inside the writing transaction closes it. The
+        Locking and re-checking the row inside the writing transaction closes it. The
         predicate is the selection rule restated — disabled, before the horizon, not already
         purged — so a row that stopped qualifying is skipped rather than clobbered, and the
         returned count is work actually done.
         """
         with self._factory.begin() as database:
-            row = database.get(AccountRow, account_id)
+            row = database.scalars(account_for_update(account_id)).one_or_none()
             if row is None or not _account_from_row(row).is_purgeable_at(horizon):
                 return False
             # `R4-01` §8.2's advisory lock over the identity, taken before the cascade below and
@@ -778,22 +778,35 @@ def _apply_account(database, account: Account) -> bool:
     verifier cannot be written -- which is what makes `KHEPRI-DEC-015`'s "immediate,
     non-recoverable" destruction hold at the boundary rather than only in the domain type.
 
-    Returns False when the row does not exist, so a caller cannot mistake a no-op for a
-    successful write.
+    Returns False when the row does not exist **or is purged**, so a caller cannot mistake a
+    no-op for a successful write. A purged row is terminal (`KHEPRI-DEC-015` §2b): a caller that
+    read before the purge committed would otherwise write its stale email back and restore the
+    identity. The refusal is the write's own predicate -- one conditional `UPDATE`, atomic without
+    taking a lock, which account writes deliberately do not (`test_rca001_lock_scope.py`). The
+    purge writes its tombstone directly and never comes through here.
     """
     assert_sealed(account)
+    written = database.execute(
+        update(AccountRow)
+        .where(AccountRow.account_id == account.account_id, AccountRow.email.is_not(None))
+        .values(**_account_columns(account))
+        .execution_options(synchronize_session="fetch")
+    )
+    return written.rowcount == 1
+
+
+def _account_columns(account: Account) -> dict[str, object]:
+    """The row values an account's state writes. Every verifier column moves together."""
     verifier = account.verifier
-    row = database.get(AccountRow, account.account_id)
-    if row is None:
-        return False
-    row.email = _canonical_or_none(account.email)
-    row.credential_salt = None if verifier is None else verifier.salt
-    row.credential_digest = None if verifier is None else verifier.digest
-    row.kdf_n = None if verifier is None else verifier.kdf.n
-    row.kdf_r = None if verifier is None else verifier.kdf.r
-    row.kdf_p = None if verifier is None else verifier.kdf.p
-    row.disabled_at = account.disabled_at
-    return True
+    return {
+        "email": _canonical_or_none(account.email),
+        "credential_salt": None if verifier is None else verifier.salt,
+        "credential_digest": None if verifier is None else verifier.digest,
+        "kdf_n": None if verifier is None else verifier.kdf.n,
+        "kdf_r": None if verifier is None else verifier.kdf.r,
+        "kdf_p": None if verifier is None else verifier.kdf.p,
+        "disabled_at": account.disabled_at,
+    }
 
 
 def _effective_owner_conditions() -> tuple:

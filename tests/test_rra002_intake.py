@@ -142,6 +142,19 @@ def test_xlsx_expansion_limit_is_checked_before_xml_parsing() -> None:
         upload.finish()
 
 
+def test_xml_part_read_is_bounded_by_actual_inflated_bytes() -> None:
+    """A part read must stop at the byte budget even if archive metadata understates it."""
+    from khepri.rra.intake import _read_xml_part
+
+    class LyingArchive:
+        def open(self, path: str) -> io.BytesIO:
+            assert path == "xl/worksheets/sheet1.xml"
+            return io.BytesIO(b"<worksheet>" + b"x" * 2_000 + b"</worksheet>")
+
+    with pytest.raises(IntakeRejected):
+        _read_xml_part(LyingArchive(), "xl/worksheets/sheet1.xml", max_bytes=1_000)
+
+
 def _xlsx(
     sheets: dict[str, list[str]],
     *,
@@ -310,3 +323,44 @@ def test_a_macro_content_type_in_a_utf16_content_types_part_is_rejected() -> Non
 
     with pytest.raises(IntakeRejected):
         upload.finish()
+
+
+def _recompressed(content: bytes, method: int) -> bytes:
+    """The same workbook with every part stored under one compression method."""
+    source = zipfile.ZipFile(io.BytesIO(content))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=method) as archive:
+        for name in source.namelist():
+            archive.writestr(name, source.read(name))
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        pytest.param(zipfile.ZIP_BZIP2, id="bzip2"),
+        pytest.param(zipfile.ZIP_LZMA, id="lzma"),
+    ],
+)
+def test_a_workbook_member_outside_stored_or_deflated_is_rejected(method: int) -> None:
+    """CWE-400: `read(max_bytes + 1)` clips the output, not the decompressor's allocation.
+
+    For BZIP2 and LZMA the decompressor can allocate far more than the budget before a single
+    byte comes back, so a member under either method is refused before it is opened. Excel writes
+    STORED and DEFLATED only; the accepted control below is DEFLATED.
+    """
+    content = _recompressed(_xlsx({"Sales": ["revenue"]}), method)
+    upload = UploadAccumulator(declared_size=len(content))
+    upload.append(content)
+
+    with pytest.raises(IntakeRejected):
+        upload.finish()
+
+
+def test_a_stored_workbook_is_still_accepted() -> None:
+    """The control: refusing exotic methods must not refuse an uncompressed workbook."""
+    content = _recompressed(_xlsx({"Sales": ["revenue"]}), zipfile.ZIP_STORED)
+    upload = UploadAccumulator(declared_size=len(content))
+    upload.append(content)
+
+    assert upload.finish().media_type == XLSX_MEDIA_TYPE

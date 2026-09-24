@@ -441,6 +441,13 @@
   text-align: end;
 }
 
+/* A customer-controlled value keeps `dir="auto"` (`FR-199`), so its own direction may resolve
+ * either way. `match-parent` aligns it to the Arabic page's reading edge whichever it resolves to;
+ * `end` would follow the value's own direction and put an Arabic value at the far edge. */
+[dir="rtl"] .passport dd[dir="auto"] {
+  text-align: match-parent;
+}
+
 /* In the side rail the quality list is one column: a label above its value. A two-column grid in a
  * third of the width left the value a few characters wide and split words mid-letter. Quality
  * values are prose lists, so they break at words; identifiers elsewhere still break anywhere. */

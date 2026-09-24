@@ -9,6 +9,8 @@
   Nothing here computes. Every value, population and status arrived selected in
   the read model, and every label and refusal message is the governed catalog's.
 #}
+{% include "_decision_cards.html.j2" %}
+
 {#
   FR-166: the controls, modelled as what they actually are. The period is a
   source selector -- a completed run, addressed as a path segment -- and only
@@ -82,8 +84,6 @@
   </form>
   {% endif %}
 </section>
-
-{% include "_decision_cards.html.j2" %}
 
 {#
   S-3, S-4, S-5a and S-5b. Four sections and not three: FR-165 makes Basket and
