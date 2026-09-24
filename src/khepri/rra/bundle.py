@@ -928,6 +928,14 @@ class ReportBundle:
     #: would rename every report for no change in what was published. Defaulted so
     #: a bundle built by hand still constructs.
     evidence: tuple[CitedEvidence, ...] = ()
+    #: `RRA-006` (`#531`): the package's `RRA-004` per-result refusals, verbatim and in
+    #: package order. `_scoped` carries only results a family refused inside its own
+    #: section, so without this member a refused gross margin reached no reader. A
+    #: member rather than a caveat: as caveats they would print on every surface and
+    #: enter `definitions.summarize`'s count, which is not what was authorized. Not in
+    #: `as_document()`, for `evidence`'s reason -- the identity already digests
+    #: everything the package is derived from -- so `BUNDLE_VERSION` does not move.
+    refusals: tuple[RefusedResult, ...] = ()
     #: `RRA-006`: the report bundle's own document version. Not a constructor
     #: argument: `BundleIdentity.as_document()` always serializes `BUNDLE_VERSION`, so
     #: a caller-supplied value here would give one bundle two versions -- one in its
@@ -1042,6 +1050,7 @@ class ReportBundle:
             sections=sections,
             narrative=narrative,
             evidence=_evidence(package, figures),
+            refusals=package.refusals,
         )
 
 

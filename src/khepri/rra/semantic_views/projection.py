@@ -30,15 +30,15 @@ is none" from "this projection dropped the key".
 `absence`, `dimension`, and -- for the two views whose row is not a figure --
 `availability`, `reason`, `subject`, `baseline` and `delta` all have readers.
 Availability is read only from what the bundle states: a carried figure, a
-`<result>:<reason>` caveat, or a refused section. The `RRA-004` headline
-refusals live on `FactPackage.refusals`, which `ReportBundle.of` does not carry,
-so this module says nothing about those metrics rather than reaching past the
-bundle for them.
+carried `RefusedResult` (the `RRA-004` headline refusals, on
+`RenderableBundle.refusals` since `#531`), a `<result>:<reason>` caveat, or a
+refused section. Nothing is read past the bundle.
 
 **Two things this module cannot state, recorded rather than improvised.**
 
 `RenderableBundle` -- the shape `FR-136` admits -- exposes `identity`, `figures`,
-`caveats`, `narrative_state`, `sections`, `narrative` and `evidence`, and no
+`caveats`, `narrative_state`, `sections`, `narrative`, `evidence` and
+`refusals`, and no
 population qualifier. Population codes live on `FactPackage` and `Fact`, which no
 governed member of the bundle surfaces. Several published views nonetheless name
 `population` in their `output_field_order`. That field therefore projects as an
@@ -46,7 +46,9 @@ absence, which is the honest answer and the one `FR-140` prescribes: the source
 states no population here, so the projection says so rather than inventing one
 or silently dropping the column. `ViewProjection.population_qualifiers` is empty
 for the same reason. Widening `RenderableBundle`, or reaching past it to the
-package, is an `RRA-006`/`RRA-014` question and not a slice's to decide.
+package, is an `RRA-006`/`RRA-014` question and not a slice's to decide: the
+owner's `#531` decision widened it by `refusals` alone, recorded in `RRA-006`
+§Requirements, and population was not part of it.
 """
 
 from __future__ import annotations
@@ -163,7 +165,14 @@ class ViewOutcome:
 #: a source is called a bundle at all: a `bundle_version` alone is not a bundle,
 #: and classifying on it let an incomplete object past validation and into
 #: `AttributeError` -- a crash where `Constitution V` requires a refusal.
-_REQUIRED_MEMBERS = ("identity", "figures", "caveats", "evidence", "bundle_version")
+_REQUIRED_MEMBERS = (
+    "identity",
+    "figures",
+    "caveats",
+    "evidence",
+    "refusals",
+    "bundle_version",
+)
 
 
 def _shape_of(source: object) -> str:
@@ -566,6 +575,11 @@ def _result_refusals(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
     )
 
 
+def _headline_refusals(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
+    """`(metric, reason)` for each per-result refusal the bundle carries (`#531`)."""
+    return tuple((refusal.metric, refusal.reason) for refusal in bundle.refusals)
+
+
 def _section_refusals(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
     """`(metric, reason)` for every metric of a refused section.
 
@@ -615,12 +629,15 @@ def _availability_statements(
 ) -> tuple[_Statement, ...]:
     """One statement per metric the bundle states anything about, in source order.
 
-    Figures first, then result refusals, then refused sections -- the order the
-    bundle carries them in. A metric the bundle states nothing about gets no row:
-    the `RRA-004` headline refusals live on `FactPackage.refusals` and never reach
-    the bundle, and `#531` forbids reaching past it to find them.
+    Figures first, then result refusals -- the headline ones the bundle carries,
+    then those scoped to a family section -- then refused sections, the order the
+    bundle carries them in. A metric the bundle states nothing about gets no row.
     """
-    refusals = (*_result_refusals(bundle), *_section_refusals(bundle))
+    refusals = (
+        *_headline_refusals(bundle),
+        *_result_refusals(bundle),
+        *_section_refusals(bundle),
+    )
     allowed = frozenset(request.metrics or definition.metric_allowlist)
     metrics = dict.fromkeys(
         (*(figure.metric for figure in figures), *(metric for metric, _why in refusals))

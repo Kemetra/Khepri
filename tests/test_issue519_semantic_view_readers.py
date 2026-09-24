@@ -434,6 +434,7 @@ def test_an_absent_comparison_cell_projects_as_an_absence() -> None:
         caveats=real.caveats,
         evidence=real.evidence,
         sections=real.sections,
+        refusals=real.refusals,
         bundle_version=real.bundle_version,
     )
     rows = _rows(_COMPARISON, source)
@@ -486,6 +487,7 @@ def test_two_facts_sharing_a_metric_keep_two_comparison_rows() -> None:
         caveats=real.caveats,
         evidence=real.evidence,
         sections=real.sections,
+        refusals=real.refusals,
         bundle_version=real.bundle_version,
     )
     rows = _rows(_COMPARISON, source)

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from khepri.rra.bundle import ChartSpec, CitedEvidence, CitedFigure, StatedCaveat
+    from khepri.rra.facts import RefusedResult
     from khepri.rra.narrative import NarrativeDraft
 
 __all__ = ["BundleIdentityDocument", "PresentationSection", "RenderableBundle"]
@@ -47,6 +48,10 @@ class RenderableBundle(Protocol):
     sections: tuple[PresentationSection, ...]
     narrative: NarrativeDraft | None
     evidence: tuple[CitedEvidence, ...]
+    #: `RRA-006` (`#531`): the source's per-result refusals, verbatim, so a refused
+    #: metric's reason survives projection (`RRA-014` `FR-140`) without a reader
+    #: reaching past the bundle to the package.
+    refusals: tuple[RefusedResult, ...]
 
     @property
     def bundle_version(self) -> str: ...
