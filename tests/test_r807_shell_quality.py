@@ -673,75 +673,24 @@ def test_the_shell_and_journey_type_scales_stay_separate() -> None:
     assert "--text-" not in journey, "journey.css names a shell type token"
 
 
-#: The one rule admitted to paint a `background-image`: the hero's legibility wash (`U1` slice 12,
-#: handoff §6), a gradient from the band's own ground to `transparent`. Matched as whole rules so
-#: the carve-out cannot widen to a neighbouring selector.
-_SCRIM_RULE = re.compile(r"(?:\[dir=\"rtl\"\]\s*)?\.hero-band__scrim\s*\{[^}]*\}")
-
-#: What that wash may contain, and nothing else: a `linear-gradient` over the band's ground token
-#: and `transparent`, at the band's own stops. No `url()`, no colour literal, no second layer.
-_SCRIM_VALUE = re.compile(
-    r"background-image:\s*linear-gradient\(\s*\d+deg,\s*var\(--hero-ground\)\s+var\(--hero-solid\),"
-    r"\s*transparent\s+var\(--hero-fade\)\s*\);"
-)
-
-
-def _forbidden_asset_constructs(css: str) -> list[str]:
-    """The §7 asset constructs present in a component sheet, after removing the admitted wash."""
-    painting = [rule for rule in _SCRIM_RULE.findall(css) if "background" in rule.lower()]
-    for rule in painting:
-        assert _SCRIM_VALUE.search(rule), f"the hero wash paints something else: {rule}"
-    remainder = _SCRIM_RULE.sub("", css)
-
-    # At-rule names, property names, function names and URL schemes are all
-    # case-insensitive in CSS, so `@IMPORT` and `URL(HTTPS://...)` evaded the
-    # substring checks entirely. Fold once and check the folded text.
-    folded = remainder.lower()
-    forbidden = {
-        "@import": "@import" in folded,
-        "external url()": bool(re.search(r"url\(\s*['\"]?https?://", folded)),
-        "background-image": "background-image" in folded,
-        "content artwork": bool(
-            re.search(r"content\s*:\s*['\"][^'\"]*[^\x00-\x7F]", remainder)
-        ),
-        "non-ascii glyph": bool(re.search(r"[←-➿\U0001f300-\U0001faff]", remainder)),
-    }
-    return sorted(name for name, present in forbidden.items() if present)
-
-
 def test_the_shell_component_layer_draws_no_artwork() -> None:
     """`RCA-010` `FR-206`: the master specification §7 asset policy, unrelaxed.
 
     The shell has no admitted programmatic-drawing exception -- unlike the `RRA`
     side, where a data-driven chart is the one expected drawing. Its one painted
-    background is the hero's legibility wash, which is not a drawing: `_SCRIM_RULE`
-    admits exactly that rule and `_SCRIM_VALUE` holds it to a ground-to-transparent
-    gradient. Scoping the scan to the stylesheet also keeps it clear of the two
-    `aria-hidden` change separators in `analysis.html.j2`, which are template content
-    and `FR-194`-compliant.
+    background is the hero's legibility wash, which is not a drawing:
+    `tests/shell_asset_scan.py` admits exactly that rule, by whole selector, and holds
+    it to a ground-to-transparent gradient. Scoping the scan to the stylesheet also
+    keeps it clear of the two `aria-hidden` change separators in `analysis.html.j2`,
+    which are template content and `FR-194`-compliant.
     """
+    from tests.shell_asset_scan import forbidden_asset_constructs, without_the_wash
+
     css = _shell_component_css()
 
-    assert _SCRIM_RULE.search(css), "the wash this scan admits is gone; remove the carve-out"
-    found = _forbidden_asset_constructs(css)
+    assert without_the_wash(css)[1], "the wash this scan admits is gone; remove the carve-out"
+    found = forbidden_asset_constructs(css)
     assert found == [], f"forbidden asset constructs in shell-components.css: {found}"
-
-
-def test_the_wash_carve_out_admits_nothing_else() -> None:
-    """The positive control: the carve-out is one rule, not a blanket `background-image` pass.
-
-    A second painted background on any other selector still fails, and so does the wash itself
-    if it grows a `url()`.
-    """
-    css = _shell_component_css()
-    elsewhere = css + '\n.hero-band { background-image: linear-gradient(90deg, red, blue); }\n'
-    assert "background-image" in _forbidden_asset_constructs(elsewhere)
-
-    drawn = _SCRIM_RULE.sub(
-        '.hero-band__scrim { background-image: url("/app/assets/x.png"); }', css, count=1
-    )
-    with pytest.raises(AssertionError, match="paints something else"):
-        _forbidden_asset_constructs(drawn)
 
 
 def _linked_shell_css() -> str:

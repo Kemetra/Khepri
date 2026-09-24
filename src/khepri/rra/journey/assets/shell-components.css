@@ -577,6 +577,11 @@ body {
   color: var(--nav-label);
 }
 
+/* On navy, the global `--focus` ring falls below the 3:1 non-text floor; the rail's gold holds it. */
+.shell-identity :focus-visible {
+  outline-color: var(--gold-400);
+}
+
 .shell-identity .brand {
   color: var(--gold-400);
   font-weight: 600;

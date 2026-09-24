@@ -91,7 +91,7 @@
 .pinned-list > .pinned-item:last-child,
 .recent-list > .recent-item:last-child,
 .processing-list > .processing-item:last-child,
-.spine-list > .spine-item:last-child,
+.spine-list > .spine-item:not(.spine-item--tombstone):last-child,
 .data-list > .data-item:last-child {
   border-block-end: 0;
 }
@@ -255,7 +255,8 @@
   border-block-end: 1px solid var(--line-subtle);
 }
 
-.spine-item:first-child {
+/* The edge resets trim a plain row's rule and inset; a tombstone keeps its own dashed box. */
+.spine-item:not(.spine-item--tombstone):first-child {
   padding-block-start: 0;
 }
 
