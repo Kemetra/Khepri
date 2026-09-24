@@ -115,7 +115,10 @@ def test_the_refusal_reference_is_recorded_as_unreachable_not_covered() -> None:
 #: eight drifted rather than only that something moved -- the property a pixel digest cannot have.
 _PROBE = """
 (() => {
-  const card = document.querySelector('.document-card');
+  // The first card-like surface. The overview's page head moved onto the hero band (`U1` slice
+  // 12), so its first card is now a module; measuring only `.document-card` would have drifted
+  // silently to whichever document card came next, or to none.
+  const card = document.querySelector('.document-card, .module');
   const cardStyle = card ? getComputedStyle(card) : null;
   return {
     hierarchy: {
@@ -124,7 +127,7 @@ _PROBE = """
       landmarks: document.querySelectorAll('nav, main, header').length,
     },
     density: {
-      cards: document.querySelectorAll('.document-card').length,
+      cards: document.querySelectorAll('.document-card, .module').length,
       actions: document.querySelectorAll('a, button').length,
     },
     spacing_rhythm: cardStyle ? {

@@ -1,134 +1,114 @@
 /*
- * Commercial shell design tokens (`R8-01`).
+ * Commercial shell design tokens (`R8-01`, realized under `RCA-010` §Scope).
  *
- * **Design output, not yet wired.** No template links this file in `R8-01`; `R8-02` is what does.
- * It is real CSS rather than a table in a design note so the later slices consume the tokens instead
- * of reinterpreting them, which is how `.82rem`, `.83rem`, and `.84rem` came to coexist in
- * `journey.css`.
+ * Tokens only. This file declares one `:root` block and no rule, and
+ * `test_r801_shell_tokens.py::test_the_token_file_declares_tokens_and_no_rules` holds it there; the
+ * rules that consume these names live in `shell-components.css` and `workspace.css`.
  *
- * ## Every color here already ships
+ * ## The palette is the approved product-UI palette
  *
- * Not one new hue. Sixteen values come from `journey.css:15-30` unchanged; ten more are the hex
- * literals that stylesheet uses *below* its `:root` block, promoted to names. Exactly two values are
- * new — `--ready-border` and `--ready-surface` — and both are `--ready`'s own hue at the saturation
- * and lightness steps the shipped danger family uses, so the palette gains a step, never a colour.
- * See the note beside them.
+ * Master specification §16.5 records the owner's supplied handoff token set as "the approved
+ * palette ... **binding for color values**, taken as custom properties on `:root` in
+ * `src/khepri/rra/journey/assets/shell.css` under `RCA-010` §Scope" -- this file, by name. §16.1
+ * struck the earlier "a dark palette (an unmade product decision)" clause in the same change, so
+ * the navy, gold and ivory values below are a decision taken rather than one awaited.
  *
- * A shell that looked different from the journey it wraps would fail the roadmap's guardrail asking
- * the four-step journey be reused as a workflow rather than replaced. `R8-01` §3 records the count
- * and the reasoning.
+ * **A dark rail, not a dark theme.** §16.5: "one frame region carrying the navy, analytical regions
+ * staying on the ivory and sand surfaces." The navy tokens are consumed by the navigation rail and
+ * nowhere else; `color-scheme` stays `light`, and a Light/Dark/System control remains unmade.
  *
- * `docs/ui/design_handoff_khepri/` is NOT the source. Its palette is dark against a shipped light
- * one, and its asset plan names Google Fonts and a unpkg CDN, both forbidden by the roadmap's UI
- * guardrails and unreachable under `journey/security.py`'s `default-src 'none'` CSP. The design spec
- * (`2026-08-13-client-journey-ui-design.md:15-16`) marks it non-authoritative visual reference.
+ * Every hex value introduced here is admitted by name, with the §16.5 row that supplies it, in
+ * `test_r801_shell_tokens.py::_SUPPLIED`. A value outside that list still fails the palette check.
  *
- * ## What is deliberately absent
+ * ## Role names are kept, their values move
  *
- * No dark palette, no second typeface, no icon set, no elevation ramp, no component tokens. Each
- * omission has a reason in `R8-01` §3.2 — briefly: `color-scheme: light` is shipped and a second
- * palette is an unmade product decision; a new face or icon set must first pass the licence-plus-
- * audited-digest process at `2026-08-13-client-journey-ui-design.md:214-217`; `--shadow: none` ships
- * and a shadow ramp with no user is an empty widget one layer down; and nine surfaces do not exist
- * yet, so component tokens now would encode guesses.
+ * Colour tokens are named by ROLE (`--paper`, `--ink`, `--accent`) and the shell's rules and the
+ * legal pages read those names. So the roles stay and point at the approved values: `--accent` is
+ * now the gold-ink link colour rather than the old blue, `--line` the ivory border rather than the
+ * cool grey. Nothing that reads a role needs to learn a new name, and nothing keeps the old look
+ * alive underneath the new one.
  *
- * Color tokens are named by ROLE (`--paper`, `--ink`) rather than by value, so a later slice can add
- * a dark palette without renaming anything.
+ * ## What is deliberately still absent
  *
- * ## The approved reference pack adds shape, not colour (`RCA-010`)
- *
- * `docs/product/ui-visual-references/` merged as the approved visual direction and master
- * specification §16.1 makes it binding for "composition, hierarchy, typography, density, spacing,
- * and rhythm". `RCA-010` §Scope authorizes realizing that direction on this file, bounded by "it
- * stays tokens-only, and the test asserting it declares no rules stays passing".
- *
- * **What the pack does not carry into this file is its palette**, and that is recorded in the pack
- * itself rather than inferred: its board shows a dark navigation rail, and its own per-panel note
- * marks "the exact navy of the rail" NON-binding — "the rail is binding as composition; its hue
- * awaits token work. **This is not authorization for a dark theme.**" §16.1 says the same from the
- * other side: the override "does not reach ... a dark palette (an unmade product decision)".
- *
- * So the density and rhythm tokens below are the pack's binding half, and the navy, gold and ivory
- * values a reader may expect beside them are deliberately absent. A dark palette is an owner
- * decision that has not been taken; `test_r801_shell_tokens.py` is what holds this file to that
- * until it is.
+ * No icon family and no motif: master specification §7.1 and `RCA-010` `FR-206` admit neither until
+ * one passes the licence-plus-audited-digest process, and the handoff's inline-SVG icon set and sun
+ * disc are exactly the implementer-authored drawing `FR-206` forbids. No second typeface: handoff §9
+ * substitutes the display serif with the vendored Noto Sans Arabic at the specified scale. No
+ * motion tokens: `test_r808_shell_state_grammar.py` holds the shell sheets at zero motion.
  */
 
 :root {
   color-scheme: light;
 
-  /* ---- Ink and surface: journey.css:17-21, unchanged ---------------------------------------- */
-  --paper: #fbfcfd;
-  --surface: #fbfcfd;
-  --ink: #202326;
-  --muted: #55606d;
-  --line: #cfd6de;
+  /* ---- Approved palette: navy, chrome only (§16.5 "Navy — chrome and ink") ------------------- */
+  --navy-900: #101C26;
+  --navy-950: #0B1017;
+  --nav-label: #A9B2B9;
 
-  /* A lighter rule than `--line`, from journey.css:44 (`#e4e8ed`) and one sibling (`#e3e7eb`).
-   * Two near-identical literals for one role; this is the role. */
-  --line-subtle: #e4e8ed;
+  /* ---- Approved palette: gold, brand and the one primary action (§16.5 "Gold") --------------- */
+  --gold-400: #D5AE63;
+  --gold-500: #C9A45C;
+  --gold-600: #B98C39;
+  --gold-border: #E3CE9F;
 
-  /* A raised surface, from journey.css:62 (`#fafbfd`). One hex digit from `--surface`, which is what
-   * an eyeballed value looks like beside a chosen one — kept distinct because the drop zone does read
-   * as raised, and collapsing it is R8-02's call once a card component exists. */
-  --surface-raised: #fafbfd;
+  /* ---- Approved palette: ivory and sand surfaces (§16.5 "Ivory and sand") --------------------- */
+  --surface-page: #E9E3DA;
+  --border-card: #EBE5DC;
 
-  /* ---- Hero ground: the one supplied palette value this slice takes -------------------------- */
-  /* Master specification §16.5 records the owner's supplied handoff token set as the approved
-   * palette, "binding for color values, taken as custom properties on `:root` in
-   * `src/khepri/rra/journey/assets/shell.css` under `RCA-010` §Scope" — this file, by name. This
-   * is its `hero-ground` from the "Ivory and sand — surfaces" row.
-   *
-   * **Why this one and not the rest of §16.5.** It is the value the hero band's own markup
-   * consumes: the handoff requires a solid ground *behind* the artwork so the headline is legible
-   * before the image decodes, and a transparent band would flash whatever sits underneath. The
-   * navy, gold and remaining ivory steps are a larger change than placing one image needs, and
-   * `FR-201`'s cross-family prohibition plus the dark-rail composition question make importing
-   * them a slice of their own. Taken here: one token, one consumer.
-   *
-   * It is a *supplied* value, not a derivation of a shipped ink, which is why
-   * `test_r801_shell_tokens.py` records it as §16.5-supplied rather than in `_DERIVED`. */
+  /* The hero band paints this behind the artwork, so the page is legible before the image decodes
+   * (`RCA-012` `FR-212`, handoff §6). */
   --hero-ground: #F6EDDF;
 
-  /* ---- Accent: journey.css:22-23 plus its tint ---------------------------------------------- */
-  --accent: #1e5b96;
-  --accent-dark: #174a7c;
-  /* journey.css:63, the drag-active fill. The only accent-tinted surface that ships. */
-  --accent-surface: #f0f5fa;
+  /* ---- Roles, pointed at the approved values ------------------------------------------------ */
+  /* `--paper` is the canvas the content column sits on; `--surface` is a card on it. */
+  --paper: #FBF9F6;
+  --surface: #FFFFFF;
+  --surface-raised: #F4EEE4;
+  --ink: #16212B;
+  --muted: #55616C;
+  --line: #DED7CC;
+  --line-subtle: #EFE9E0;
 
-  /* ---- Status, each ink with the companions its state needs -------------------------------- */
-  /* `--danger` shipped alone, so journey.css:73's error box invented its own border, surface, and
-   * ink. Those three are named here rather than left inline: a second error surface in the shell
-   * would otherwise invent a fourth set. */
+  /* Gold ink for every link and focus ring. The handoff's `gold-link #8C6B22` reads 4.95:1 on white
+   * but 4.3:1 on the sand surface, under the 4.5 floor; `gold-ink #7A5A17` clears both (6.4:1 and
+   * 5.5:1), so one value serves every surface a link can sit on and `gold-link` is not taken.
+   * Handoff §15: text uses `gold-ink` or `gold-link`, never `gold-400`/`gold-500`. `--accent` keeps
+   * its role name for any consumer that reads it and resolves to the same ink. */
+  --accent: #7A5A17;
+  --accent-dark: #7A5A17;
+  --accent-surface: #F6EBD6;
+  --focus: #7A5A17;
+
+  /* ---- Status triplets (§16.5) -------------------------------------------------------------- */
+  /* Paint over a badge that already states the state in words (§16.5: "a status triplet is paint
+   * over a badge, label, or shape that already states the state in words"). */
+  --success-ink: #27724F;
+  --success-fill: #E7F2EB;
+  --success-border: #D5E5DA;
+  --warning-fill: #FAEEDA;
+  --warning-border: #F0E1C2;
+
+  /* The one destructive warning (`invitation-warning`), unchanged from journey.css. Governed
+   * refusals never read this family: `test_r808` admits it in exactly one rule. */
   --danger: #9a2d26;
   --danger-border: #d9a49f;
   --danger-surface: #faece9;
   --danger-ink: #6d201b;
 
-  /* `--ready` gets the same pair by symmetry. Nothing ships using them, and that is the point: a
-   * success surface that has to be invented later is how a palette drifts. Not a widget — two values
-   * a later slice reads instead of choosing.
-   *
-   * **These two are the only values here not already in `journey.css`, and they are derived rather
-   * than picked.** `--ready`'s hue (151) held constant, at the saturation and lightness steps the
-   * shipped danger family already uses: `--danger-border` is S43/L74 and `--danger-surface` is
-   * S62/L95, so these are the same steps in green. A first draft eyeballed `#a9cbb8`/`#eef5f1`,
-   * which drifted the hue to 146 and matched neither step — close enough to look intentional and
-   * not derived from anything. The test in `R8-01` §7 is what caught it. */
+  /* `--ready` and its two companions, derived at the danger family's saturation and lightness
+   * steps (`R8-01` §3). Kept so the derivation test still has its lineage to prove. */
   --ready: #1d6b45;
   --ready-border: #a0d9be;
   --ready-surface: #eafaf3;
 
-  /* journey.css:74, the progress track. Warm, unlike every other rule, and genuinely its own value
-   * rather than a near-miss of `--line`. */
   --track: #e3ded1;
 
-  --focus: #1f5fa8;
+  /* ---- Elevation: the handoff's system has exactly three shadows, and the shell uses one ------ */
+  /* The app frame. Offset and soft blur, derived from `--navy-900` at the handoff's opacity. */
+  --shadow-frame: 0 40px 80px -52px rgb(16 28 38 / 0.55);
+  --shadow: none;
 
-  /* ---- Spacing: a 4px ramp the shipped values already cluster around ------------------------ */
-  /* journey.css uses .3/.35/.4/.45/.6/.65/.7/.75/1/1.5/2/2.8/4rem. That is close to a 4px ramp with
-   * three pairs of near-duplicates; the scale names what was nearly there. R8-02 replaces literals
-   * with these; R8-01 does not touch journey.css. */
+  /* ---- Spacing: a 4px ramp ------------------------------------------------------------------ */
   --space-1: 0.25rem; /* 4px */
   --space-2: 0.5rem; /* 8px */
   --space-3: 0.75rem; /* 12px */
@@ -138,105 +118,61 @@
   --space-7: 3rem; /* 48px */
   --space-8: 4rem; /* 64px */
 
-  /* ---- Type: the near-duplicate runs collapsed --------------------------------------------- */
-  /* `.68/.7rem` -> `--text-xs`. `.82/.83/.84/.86rem` -> `--text-sm`. `1.15/1.16rem` -> one of
-   * `--text-base` or `--text-lede`. Four rules do not need four sizes one hundredth apart. */
-  --text-xs: 0.7rem;
-  --text-sm: 0.82rem;
-  --text-base: 1rem;
-
-  /* `--text-md` and `--text-lg` are **new values, not promoted ones**, and the distinction is
-   * load-bearing for `R8-02`. Every tier above and below is a font size the shipped stylesheet
-   * already sets. These two are not: in `journey.css`, `1.15rem` occurs only as the `h1` margin
-   * (`:53`) and `1.4rem` only as `.stages` padding-inline-start (`:87`). Numerically convenient
-   * neighbours of the type scale, but spacing measurements -- so calling them promoted would
-   * tell `R8-02` that a shipped rule already uses them at these sizes, and none does. They fill
-   * the gap between `--text-base` and `--text-xl`, which the shell's headings need and the
-   * journey never had. Found in review on `#219`. */
-  --text-md: 1.15rem;
-  --text-lg: 1.4rem;
-  --text-xl: 1.75rem;
-  --text-2xl: 2.15rem;
-
-  /* Fluid where the shipped stylesheet is fluid, fixed where it is fixed. Both pairs are
-   * journey.css:53 and :55 verbatim. */
-  --text-display: clamp(1.9rem, 3vw, 2.25rem);
-  --text-lede: clamp(1rem, 2vw, 1.16rem);
-
-  --leading-tight: 1.15;
-  --leading-normal: 1.5;
-
-  /* Arabic prose sets looser than Latin at the same size: the script's ascenders and descenders
-   * carry more of its identity, and the master specification §9 holds the two languages to equal
-   * quality rather than to identical metrics. A token rather than a literal in a `[lang="ar"]`
-   * rule so the value is declared once, beside the leading it varies from. */
-  --leading-arabic: 1.8;
-
-  /* ---- Radius: `--radius` retained as an alias so no existing rule changes meaning ---------- */
-  --radius-sm: 3px;
-  --radius-md: 6px;
-  --radius-pill: 999px;
-  --radius: var(--radius-sm);
-
-  /* ---- Measure and layout ------------------------------------------------------------------ */
-  /* journey.css:50 uses 1068px; a sibling rule uses 1050px. One shell width, not two. */
-  --shell-width: 1068px;
-  /* Prose measures already in use: h1 at 24ch, .lede at 62ch. */
-  --measure-heading: 24ch;
-  --measure-prose: 62ch;
-  /* The verified accessibility floor: test_rra_journey_browser.py measures every button, language
-   * link, and nav item at >= 44px in both languages and both viewports. A token so a new surface
-   * reads the number instead of rediscovering it. */
-  --touch-min: 44px;
-
-  /* ---- Density and rhythm: the approved reference pack's binding half ----------------------- */
-  /* `docs/product/ui-visual-references/` is binding for "composition, hierarchy, typography,
-   * density, spacing, and rhythm" (master specification §16.1) and explicitly NOT binding for the
-   * rail's hue, its icons, its photography, or any figure it draws. These five tokens are that
-   * binding half, and every one is a measurement rather than a colour — which is why they can land
-   * here while the pack's navy and gold cannot. §16.1: the override "does not reach ... a dark
-   * palette (an unmade product decision)", and the pack's own note repeats it: "the rail is binding
-   * as composition; its hue awaits token work. This is not authorization for a dark theme."
-   *
-   * **Three tiers, not seven** (§E.3, and §15 item 11 forbids "random spacing outside the 4px
-   * ramp"). The design handoff proposes a thirteen-step ramp — 4·6·8·10·12·14·18·22·24·26·30·34·40
-   * — which is neither a 4px ramp nor three tiers. The rhythm it is reaching for is a compact
-   * enterprise one, and that is expressible in the ramp already declared above: these name which
-   * existing steps carry which tier, so a surface reads the tier instead of picking a step.
-   *
-   * `--row-min` is `--touch-min` by construction rather than by coincidence: `RCA-002` `FR-056`
-   * sets the floor and a data row is the densest place it is tested. Declared as a reference, so
-   * raising the floor once moves the rows with it. */
-  --density-tight: var(--space-2); /* within a row: label to value */
-  --density-row: var(--space-3); /* between rows in a region */
-  --density-region: var(--space-5); /* between regions on a surface */
+  /* Three rhythm tiers (§E.3), named over the ramp so a surface reads a tier, not a step. */
+  --density-tight: var(--space-2);
+  --density-row: var(--space-3);
+  --density-region: var(--space-5);
   --row-min: var(--touch-min);
 
-  /* The canonical order's reading measures (§E.1). `--measure-prose` above is the body measure;
-   * this is the narrower one a lede and a hero paragraph take, so a single line of orientation does
-   * not run the full column width. The handoff asks for 46-62ch on hero copy and this is that
-   * range's lower bound, expressed against the measure already declared. */
-  --measure-lede: 46ch;
+  /* ---- Type scale (handoff §9, rendered in the vendored face) -------------------------------- */
+  --text-xs: 0.7rem; /* caption */
+  --text-sm: 0.82rem; /* body-s: rows, chips, metadata */
+  --text-body: 0.94rem; /* body */
+  --text-base: 1rem; /* card-title */
+  --text-md: 1.15rem;
+  --text-lg: 1.4rem;
+  --text-metric: 1.3rem; /* metric-s: a summary statement's value */
+  --text-figure: 1.55rem; /* metric-l: a governed figure */
+  --text-xl: 1.75rem;
+  --text-2xl: 2.1rem; /* page-title */
+  --text-hero: 2.5rem; /* display-l: the overview's one display heading */
+  --text-display: clamp(1.9rem, 3vw, 2.25rem);
+  --text-lede: clamp(1rem, 2vw, 1.08rem);
 
-  /* The page title's tier, named by ROLE the way the colour tokens are.
-   *
-   * It resolves `--text-2xl` and adds no size. The alias exists because a *consumer* of
-   * `--text-2xl` cannot be written: `test_r807`'s raw-size scan reads
-   * `font-size: var(--text-2xl)` as a raw literal, since the digit in the token's own name is
-   * indistinguishable from a digit in a value once the guard has stripped weights and
-   * line-heights. `--text-xl` and every other tier pass; this one tier cannot be consumed under
-   * its own name. Verified by running the guard's regex over both.
-   *
-   * So this is a name the scan can read, not a new value and not a second scale. The top tier
-   * had no consumer before now, which is why the collision had not surfaced. */
+  /* A name `test_r807`'s raw-size scan can read: the digit inside `--text-2xl` is indistinguishable
+   * from a digit in a value once the guard strips weights, so the top tier is consumed by role. */
   --title-size: var(--text-2xl);
 
-  --shadow: none;
+  --leading-tight: 1.12;
+  --leading-normal: 1.6;
+  --leading-arabic: 1.8;
+  --tracking-display: -0.02em;
+  --tracking-wordmark: 0.28em;
+
+  /* ---- Radius (handoff §8: frame 16, card 12, inner row 10, control 8) ----------------------- */
+  --radius-sm: 3px;
+  --radius-md: 8px;
+  --radius-row: 10px;
+  --radius-card: 12px;
+  --radius-frame: 16px;
+  --radius-pill: 999px;
+  --radius: var(--radius-md);
+
+  /* ---- Measure and frame -------------------------------------------------------------------- */
+  --shell-width: 1068px;
+  --frame-width: 1620px;
+  --rail-width: 238px;
+  --measure-heading: 24ch;
+  --measure-prose: 62ch;
+  --measure-lede: 46ch;
+  /* The verified floor, and the handoff's 46px for buttons and navigation items. */
+  --touch-min: 44px;
+  --control-height: 46px;
 
   /* ---- Typeface: local, digest-verified, both scripts --------------------------------------- */
-  /* The `@font-face` rules live in journey.css, which owns the asset paths. Noto Sans Arabic covers
-   * Arabic and Latin through two `unicode-range` subsets, ships as package data under
-   * `rendering/typefaces/`, and is verified against a SHA-256 manifest by `rendering/fonts.py`. No
-   * `@import`, no font host. */
+  /* The `@font-face` rules live in shell-components.css and name `/app/assets/` (`RCA-011`). */
   --font-body: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  /* Code, digests and version identifiers only -- never a costume for labels. A system stack: no
+   * face is fetched for it. */
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
 }

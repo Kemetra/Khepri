@@ -10,139 +10,164 @@
   rows arrive shaped from `shell_workspace.py`; this template decides nothing about them, and the
   scan in `test_no_shell_template_computes` holds it to that.
 
-  The attention region is rendered only when non-empty. An always-present "no issues" panel is
-  decoration, not reassurance (§7.1).
+  **Composition (`RCA-010` §Scope, handoff §4 screen 01).** The same regions the read model has
+  always carried, recomposed rather than extended: a raised page header holding the title, the lede
+  and the one dominant action; the attention callout when there is something to attend to; then a
+  module grid -- latest work, anything still processing, data, pinned, and recent. The handoff's KPI
+  strip is absent because `read_overview` carries no figure for it (handoff §4: "omit it and
+  report -- do not invent it").
+
+  Modules are `div`s with an `h2`, not labelled `section`s: they are regions of one surface, and a
+  landmark per module would add five navigation stops the surface did not have.
 #}
-{#
-  `RCA-012` `FR-212`: the approved hero artwork, from the shell's own audited address.
+<section class="workspace-page" aria-labelledby="page-title">
+  {#
+    `RCA-012` `FR-212` and `U1` slice 12: the approved hero artwork, with the page head on it.
 
-  Decorative and outside the labelled region deliberately. It states no figure, no population, no
-  refusal and no state (`FR-218`), and the heading and lede stay in the document card below, so a
-  reader whose image never loads keeps a complete, legible surface. The `alt` comes from the copy
-  module rather than this file: a literal here would render correctly in English and ship the
-  English string to Arabic readers.
+    The handoff's own composition (§6, §10): the title, lede and the one action sit on the band
+    over an ivory wash, inside its solid stop, with the artwork showing on the trailing side. The
+    band is inside the labelled region so `aria-labelledby` resolves within it. The artwork states
+    no figure, population, refusal or state (`FR-218`), and the copy lives outside `<picture>`, so a
+    reader whose image never loads keeps a complete, legible surface on the band's ground colour.
+    The `alt` comes from the copy module; the wash is `aria-hidden` presentation.
 
-  `eager` and `fetchpriority="high"` because it is above the fold. The WebP source is listed first
-  so a browser that supports it takes the smaller file; the JPEG is the `<img>` fallback, which is
-  also what the alt text and the loading hints attach to.
-#}
-<div class="hero-band">
-  <picture>
-    <source srcset="{{ assets }}/khepri-hero.webp" type="image/webp">
-    <img class="hero-band__image"
-         src="{{ assets }}/khepri-hero.jpg"
-         alt="{{ copy.overview_hero_alt }}"
-         loading="eager"
-         fetchpriority="high">
-  </picture>
-</div>
-
-<section class="document-card" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.overview_title }}</h1>
-  <p class="lede">{{ copy.overview_intro }}</p>
-
-  <h2 class="region-label">{{ copy.latest_work_title }}</h2>
-  {% if view.latest_work %}
-  <p class="latest-work">
-    <span class="row-state">{{ copy[view.latest_work.state_key] }}</span>
-    <time datetime="{{ view.latest_work.started.at }}" dir="ltr">{{ view.latest_work.started.text }}</time>
-  </p>
-  {% else %}
-  <p class="empty-state">{{ copy.overview_no_work }}</p>
-  {% endif %}
+    `eager` and `fetchpriority="high"` because it is above the fold. The WebP source is listed first
+    so a browser that supports it takes the smaller file; the JPEG is the `<img>` fallback.
+  #}
+  <div class="hero-band">
+    <picture>
+      <source srcset="{{ assets }}/khepri-hero.webp" type="image/webp">
+      <img class="hero-band__image"
+           src="{{ assets }}/khepri-hero.jpg"
+           alt="{{ copy.overview_hero_alt }}"
+           loading="eager"
+           fetchpriority="high">
+    </picture>
+    <div class="hero-band__scrim" aria-hidden="true"></div>
+  <div class="page-head page-head--hero page-head--display">
+    <div class="page-head__text">
+      <h1 id="page-title">{{ copy.overview_title }}</h1>
+      <p class="lede">{{ copy.overview_intro }}</p>
+    </div>
+    {#
+      The one dominant action (§7.1), posting to `R8-06`'s route exactly as the chooser's active
+      row does. Offered only when a bridge is wired: a form whose every submission the shell
+      refuses reads as a fault, not as a capability nobody installed.
+    #}
+    {% if bridge_available %}
+    <form class="page-head__actions" method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses">
+      <button class="button--primary" type="submit">{{ copy.new_analysis }}</button>
+    </form>
+    {% endif %}
+  </div>
+  </div>
 
   {#
-    Everything still running, so a run that started before a newer one finished is not lost
-    behind "latest work" (§7.1: is anything processing?). Rendered only when non-empty.
+    Rendered only when non-empty, and first: an always-present "no issues" panel is decoration,
+    not reassurance (§7.1), and a failure the reader must act on outranks orientation.
   #}
-  {% if view.processing %}
-  <h2 class="region-label">{{ copy.processing_title }}</h2>
-  <ul class="processing-list">
-    {% for item in view.processing %}
-    <li class="processing-item">
-      <span class="row-state">{{ copy[item.state_key] }}</span>
-      <time datetime="{{ item.started.at }}" dir="ltr">{{ item.started.text }}</time>
-    </li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  <h2 class="region-label">{{ copy.data_title }}</h2>
-  {% if view.latest_data %}
-  <p class="latest-data">
-    <span class="row-state">{{ copy[view.latest_data.admission_key] }}</span>
-    <span class="row-state">{{ copy[view.latest_data.readiness_key] }}</span>
-    <time datetime="{{ view.latest_data.submitted.at }}" dir="ltr">{{ view.latest_data.submitted.text }}</time>
-  </p>
-  {% else %}
-  <p class="empty-state">{{ copy.overview_no_data }}</p>
-  {% endif %}
-
   {% if view.attention %}
-  <h2 class="region-label">{{ copy.attention_title }}</h2>
-  <ul class="attention-list">
-    {% for item in view.attention %}
-    <li class="attention-item">
-      <span>{{ copy.attention_run_failed }}</span>
-      <time datetime="{{ item.started.at }}" dir="ltr">{{ item.started.text }}</time>
-    </li>
-    {% endfor %}
-  </ul>
+  <div class="module module--attention">
+    <h2 class="module__title">{{ copy.attention_title }}</h2>
+    <ul class="attention-list">
+      {% for item in view.attention %}
+      <li class="attention-item">
+        <span>{{ copy.attention_run_failed }}</span>
+        <time datetime="{{ item.started.at }}" dir="ltr">{{ item.started.text }}</time>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
   {% endif %}
 
-  {#
-    `W1-09` (`FR-128`/`FR-129`), under active `KHEPRI-DEC-034`.
+  <div class="module-grid">
+    <div class="module">
+      <h2 class="module__title">{{ copy.latest_work_title }}</h2>
+      {% if view.latest_work %}
+      <p class="latest-work">
+        <span class="row-state">{{ copy[view.latest_work.state_key] }}</span>
+        <time datetime="{{ view.latest_work.started.at }}" dir="ltr">{{ view.latest_work.started.text }}</time>
+      </p>
+      {% else %}
+      <p class="empty-state">{{ copy.overview_no_work }}</p>
+      {% endif %}
+    </div>
 
-    Both regions render whether or not they hold rows, unlike attention: an empty "Pinned" tells a
-    reader the capability exists and how to use it, where an empty "no issues" panel would be
-    reassurance nobody asked for (§7.1).
+    {#
+      Everything still running, so a run that started before a newer one finished is not lost
+      behind "latest work" (§7.1: is anything processing?). Rendered only when non-empty.
+    #}
+    {% if view.processing %}
+    <div class="module">
+      <h2 class="module__title">{{ copy.processing_title }}</h2>
+      <ul class="processing-list">
+        {% for item in view.processing %}
+        <li class="processing-item">
+          <span class="row-state">{{ copy[item.state_key] }}</span>
+          <time datetime="{{ item.started.at }}" dir="ltr">{{ item.started.text }}</time>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
 
-    **No count anywhere.** `KHEPRI-DEC-034` §2 refuses counting and ranking, and
-    `test_overview_carries_no_figure` already asserts the rendered text holds no digit outside a
-    `<time>` -- so "3 pinned" would fail a test that predates this slice. Order is carried by the
-    list, never numbered.
+    <div class="module">
+      <h2 class="module__title">{{ copy.data_title }}</h2>
+      {% if view.latest_data %}
+      <p class="latest-data">
+        <span class="row-state">{{ copy[view.latest_data.admission_key] }}</span>
+        <span class="row-state">{{ copy[view.latest_data.readiness_key] }}</span>
+        <time datetime="{{ view.latest_data.submitted.at }}" dir="ltr">{{ view.latest_data.submitted.text }}</time>
+      </p>
+      {% else %}
+      <p class="empty-state">{{ copy.overview_no_data }}</p>
+      {% endif %}
+    </div>
 
-    Neither region says anything about expiry: §5's caution, and the retention notice below is the
-    one place this surface speaks about retention at all.
-  #}
-  <h2 class="region-label">{{ copy.pinned_title }}</h2>
-  {% if view.pinned %}
-  <ul class="pinned-list">
-    {% for item in view.pinned %}
-    <li class="pinned-item">
-      <span class="row-state">{{ copy[item.kind_key] }}</span>
-      <time datetime="{{ item.at.at }}" dir="ltr">{{ item.at.text }}</time>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="empty-state">{{ copy.pinned_empty }}</p>
-  {% endif %}
+    {#
+      `W1-09` (`FR-128`/`FR-129`), under active `KHEPRI-DEC-034`.
 
-  <h2 class="region-label">{{ copy.recent_title }}</h2>
-  {% if view.recent %}
-  <ul class="recent-list">
-    {% for item in view.recent %}
-    <li class="recent-item">
-      <span class="row-state">{{ copy[item.kind_key] }}</span>
-      <time datetime="{{ item.at.at }}" dir="ltr">{{ item.at.text }}</time>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="empty-state">{{ copy.recent_empty }}</p>
-  {% endif %}
+      Both regions render whether or not they hold rows, unlike attention: an empty "Pinned" tells a
+      reader the capability exists and how to use it, where an empty "no issues" panel would be
+      reassurance nobody asked for (§7.1).
 
-  {#
-    The one dominant action (§7.1), posting to `R8-06`'s route exactly as the chooser's active row
-    does. Offered only when a bridge is wired: a form whose every submission the shell refuses
-    reads as a fault, not as a capability nobody installed.
-  #}
-  {% if bridge_available %}
-  <form method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses">
-    <button type="submit">{{ copy.new_analysis }}</button>
-  </form>
-  {% endif %}
+      **No count anywhere.** `KHEPRI-DEC-034` §2 refuses counting and ranking, and
+      `test_overview_carries_no_figure` asserts the rendered text holds no digit outside a
+      `<time>`. Order is carried by the list, never numbered. Neither region says anything about
+      expiry: the retention notice below is the one place this surface speaks about retention.
+    #}
+    <div class="module">
+      <h2 class="module__title">{{ copy.pinned_title }}</h2>
+      {% if view.pinned %}
+      <ul class="pinned-list">
+        {% for item in view.pinned %}
+        <li class="pinned-item">
+          <span class="row-state">{{ copy[item.kind_key] }}</span>
+          <time datetime="{{ item.at.at }}" dir="ltr">{{ item.at.text }}</time>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state">{{ copy.pinned_empty }}</p>
+      {% endif %}
+    </div>
+
+    <div class="module module--wide">
+      <h2 class="module__title">{{ copy.recent_title }}</h2>
+      {% if view.recent %}
+      <ul class="recent-list">
+        {% for item in view.recent %}
+        <li class="recent-item">
+          <span class="row-state">{{ copy[item.kind_key] }}</span>
+          <time datetime="{{ item.at.at }}" dir="ltr">{{ item.at.text }}</time>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state">{{ copy.recent_empty }}</p>
+      {% endif %}
+    </div>
+  </div>
 
   {#
     `KHEPRI-DEC-033` §5: until `W1-07` ships the sweep, no surface may say content expires

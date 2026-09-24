@@ -25,7 +25,14 @@
     rendering an entry for a surface with no implementation, so Overview and Data are in the tuple
     only when the shell holds a reader for them, and Analyses is not in it until its PR ships.
   #}
-  <header class="shell-identity">
+  {#
+    The application frame (handoff §10, `RCA-010` §Scope): the navigation rail and the canvas, one
+    bordered object on the sand ground. The rail is still the `<header>` landmark -- it carries the
+    brand, the organization and the one navigation -- so the landmark structure and the source
+    order the frame tests read are unchanged; only its presentation moved from a top row to a rail.
+  #}
+  <div class="app-frame">
+  <header class="app-rail">
     {#
       Named by both spans in source order, the way the organization control is, so the accessible
       name is "KHEPRI home page" and begins with the text a reader can see. An `aria-label` here
@@ -101,5 +108,6 @@
   <main id="main-content" class="shell-main" tabindex="-1">
     {% block content %}{% endblock %}
   </main>
+  </div>
 </body>
 </html>

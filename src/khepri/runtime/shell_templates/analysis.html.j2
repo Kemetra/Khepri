@@ -11,12 +11,13 @@
   No report-API address appears here: the handoff route builds it (`shell_artifact_handoff.py`),
   so artifacts are reached from this surface and from nowhere a template could copy them to.
 #}
+<section class="workspace-page" aria-labelledby="page-title">
 {#
-  `RCA-012` `FR-212`: the approved hero artwork on 05 Insights, the second `/app` surface that
-  specification names. The placement is `overview.html.j2`'s, for the same reasons: decorative
-  and outside the labelled region, the heading, lede and every governed region stay in the
-  document card below, and the `alt` comes from the copy module in the page's language
-  (`FR-218`). The modifier carries this surface's handoff row -- band height and focal point.
+  `RCA-012` `FR-212` and `U1` slice 12: the approved hero artwork on 05 Insights, with the page
+  head on it. The composition is `overview.html.j2`'s, for the same reasons: the title, lede, run
+  state and the one action sit on the band over the wash, outside `<picture>` (`FR-218`), and every
+  governed region stays in the document card after it. The modifier carries this surface's handoff
+  row -- band minimum height and focal point -- and its actions sit top-trailing (handoff §10).
 #}
 <div class="hero-band hero-band--insights">
   <picture>
@@ -27,9 +28,9 @@
          loading="eager"
          fetchpriority="high">
   </picture>
-</div>
-
-<section class="document-card" aria-labelledby="page-title">
+  <div class="hero-band__scrim" aria-hidden="true"></div>
+  <div class="page-head page-head--hero">
+  <div class="page-head__text">
   <h1 id="page-title">{{ copy.analysis_title }}</h1>
   <p class="lede">{{ copy.analysis_intro }}</p>
   <p class="analysis-state">
@@ -37,6 +38,7 @@
     <time datetime="{{ view.started.at }}" dir="ltr">{{ view.started.text }}</time>
     <span class="row-state">{{ copy[view.state_key] }}</span>
   </p>
+  </div>
 
   {#
     `D1-12` (`RCA-008` §Scope): the one way in to the decision surface, and the only one.
@@ -52,11 +54,15 @@
     `U1`'s (see `shell_copy.decisions_open`).
   #}
   {% if offers_decisions and view.source_id %}
-  <p class="analysis-decisions">
-    <a class="decisions-open"
+  <p class="analysis-decisions page-head__actions">
+    <a class="decisions-open button-link"
        href="{{ prefix }}/{{ language }}/{{ organization_id }}/decisions/{{ view.source_id }}">{{ copy.decisions_open }}</a>
   </p>
   {% endif %}
+  </div>
+</div>
+
+<div class="document-card">
 
   {#
     `RCA-005` FR-116, blueprint §7.4 (`W1-08`): where this run's governed versions differ from the
@@ -111,6 +117,13 @@
   </section>
   {% endif %}
 
+  {#
+    The passport is the main column; quality and the report actions sit beside it in a side rail
+    (handoff §13, screen 05: `1fr` plus a rail that drops below at narrower widths). Order in the
+    document is unchanged, so the reading and keyboard order matches the old single column.
+  #}
+  <div class="detail-grid">
+  <div class="detail-main">
   <h2 class="region-label">{{ copy.passport_title }}</h2>
   {% if view.passport %}
   <dl class="passport">
@@ -166,7 +179,9 @@
   {% else %}
   <p class="empty-state">{{ copy.passport_unavailable }}</p>
   {% endif %}
+  </div>
 
+  <div class="detail-side">
   {% if view.trust %}
   <h2 class="region-label">{{ view.quality_title }}</h2>
   <dl class="quality" aria-label="{{ view.quality_title }}">
@@ -194,6 +209,8 @@
   {% else %}
   <p class="empty-state">{{ copy[view.artifacts_key] }}</p>
   {% endif %}
+  </div>
+  </div>
 
   {#
     §10: machine identifiers and digests are contextual audit detail, reached from the analysis
@@ -215,5 +232,6 @@
       {% endfor %}
     </dl>
   </details>
+</div>
 </section>
 {% endblock %}
