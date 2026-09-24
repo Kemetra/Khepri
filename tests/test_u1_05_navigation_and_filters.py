@@ -162,32 +162,41 @@ def test_the_navigation_names_exactly_the_frames_roster() -> None:
     assert unnamed == [], f"a destination-shaped template is in no navigation: {unnamed}"
 
 
-def test_at_most_one_entry_claims_to_be_the_current_page() -> None:
-    """`FR-194` and §D.3 rule 3: a cardinality rule on nav ITEMS, not on surfaces.
+#: Detail surfaces and the destination the owner's `#564` decision (2026-09-24) makes
+#: their current parent: "keep exactly one active navigation entry and treat Insights
+#: as the current parent destination". Insights is the handoff's name for Analyses.
+_DETAIL_PARENTS = {"analysis": "analyses", "decision": "analyses", "compare": "analyses"}
 
-    "`aria-current="page"` on exactly one nav item" forbids two entries both claiming
-    to be current. It does not assert every surface is a destination -- and three are
-    not. `analysis`, `decision` and `compare` are detail surfaces reached THROUGH a
-    destination, and none appears in `shell_frame.py`'s roster, so marking one current
-    would tell a screen-reader user they are on Analyses when they are on one
-    analysis. A false "you are here" is worse than none.
 
-    So: never more than one, anywhere; and exactly one on each surface the roster
-    names. The `== 1` set is derived from `_FRAME_ROSTER` rather than listed, so it
-    stays tied to the independent source.
+def _current_tails(markup: str) -> list[str]:
+    """The destination tail of every navigation entry marked as the current page."""
+    return [
+        tail
+        for region in _navigation_regions(markup)
+        for tail in re.findall(r'href="[^"]*?/([a-z-]+)"[^>]*aria-current="page"', region)
+    ]
 
-    **An earlier form of this test asserted `== 1` everywhere and failed on three
-    surfaces.** The test was wrong, not the markup -- recorded because the failure
-    looked like a defect, and reading §D.3 against the tree is what settled it.
+
+def test_exactly_one_entry_is_the_current_page_on_every_navigating_surface() -> None:
+    """`RCA-010 FR-194`: `aria-current="page"` on exactly one entry, detail pages included.
+
+    **This replaces a reading the owner overruled.** An earlier form asserted `<= 1` and
+    let `analysis`, `decision` and `compare` mark nothing, on the argument that marking
+    a parent tells a reader they are on Analyses when they are on one analysis. The
+    owner's `#564` decision is the reverse: exactly one entry, and the detail routes'
+    parent is current (handoff §10, "Insights and Report both mark Insights active").
     """
+    assert set(_DETAIL_PARENTS) <= set(_NAVIGATING_SURFACES), "a detail surface is unmeasured"
     destinations = {destination for _label, destination in _FRAME_ROSTER}
-    assert destinations, "an empty roster would make the second claim vacuous"
+    assert destinations, "an empty roster would make the claim vacuous"
 
     for surface in _NAVIGATING_SURFACES:
-        count = _current_page_count(_html(surface, LANGUAGE_ENGLISH))
-        assert count <= 1, f"{surface} marks {count} entries as the current page"
-        if surface in destinations:
-            assert count == 1, f"{surface} is a destination and marks none current"
+        for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+            markup = _html(surface, language)
+            assert _current_page_count(markup) == 1, f"{surface}/{language}"
+            expected = _DETAIL_PARENTS.get(surface, surface)
+            assert expected in destinations, f"{expected} is not a destination"
+            assert _current_tails(markup) == [expected], f"{surface}/{language}"
 
 
 def test_every_navigation_landmark_says_what_it_is_for() -> None:
