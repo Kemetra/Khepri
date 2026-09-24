@@ -12,12 +12,9 @@ emitted `None` for `availability` and `versions`; that is how a card that could
 never read `verified` shipped with every test green. The bundles below are real
 `ReportBundle`/`CrossVersionBundle` values, and the rows are the projector's.
 
-**A limit recorded rather than hidden.** The `RRA-004` headline refusals --
-`gross_margin`, `gross_profit`, `cost` and the rest -- live on
-`FactPackage.refusals`, and `ReportBundle.of` never carries them onto the bundle.
-`#531` forbids reaching past the bundle for them, so `MetricAvailabilityView`
-states nothing about those metrics. The test asserting that is written to fail
-the day the bundle starts carrying them, so the change is looked at.
+The `RRA-004` headline refusals -- `gross_margin`, `gross_profit`, `cost` and
+the rest -- now travel on `ReportBundle.refusals` (`#531`); their tests are in
+`test_issue531_bundle_refusals`.
 """
 
 from __future__ import annotations
@@ -367,21 +364,6 @@ def test_a_result_stating_only_refusals_is_not_an_empty_result() -> None:
     assert outcome.projection is not None
     assert len(outcome.projection.rows) == 1
     assert outcome.projection.is_empty is False
-
-
-def test_headline_refusals_do_not_travel_on_the_bundle_so_no_row_states_them() -> None:
-    """The owner escalation `#531` asked this slice to check for, pinned.
-
-    `gross_margin` is refused on the package (`required_input_unavailable`: no
-    cost column) and `ReportBundle.of` carries no `package.refusals` anywhere.
-    The projection may not reach past the bundle, so it states nothing. When the
-    bundle starts carrying these refusals, this fails and the row gains a reason.
-    """
-    source = package()
-    assert source.refusal("gross_margin") is not None
-    rows = _by_metric(_rows(_AVAILABILITY, ReportBundle.of(source)))
-
-    assert "gross_margin" not in rows
 
 
 # --- ReportEvidenceView: provenance and absence ------------------------------
