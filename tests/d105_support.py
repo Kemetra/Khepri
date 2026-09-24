@@ -203,8 +203,8 @@ def overview(caveats: tuple[object, ...] = ()) -> ports.ViewOutcome:
             view_version=seam.EXECUTIVE_OVERVIEW.view_version,
             fields=OVERVIEW_FIELDS,
             rows=(
-                ("revenue", "700.00", "complete", ()),
-                ("gross_profit", "120.00", "complete", ()),
+                ("revenue", "700.00", None, ()),
+                ("gross_profit", "120.00", None, ()),
             ),
             caveats=caveats,
         ),

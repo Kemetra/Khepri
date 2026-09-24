@@ -62,7 +62,7 @@
       <span class="decision-label">{{ row.label }}</span>
       {% endif %}
       {% for name, value in row.cells %}
-      <span class="decision-cell" data-cell="{{ name }}">{{ value }}</span>
+      <span class="decision-cell" data-cell="{{ name }}"{% if name in ("store", "member") %} dir="auto"{% endif %}>{{ value }}</span>
       {% endfor %}
 
       {# FR-161: this figure's claim and its limits, on the surface carrying it. #}
@@ -74,6 +74,9 @@
         <p class="decision-formula">
           {{ decision.formula_label }}: {{ row.drawer.formula_version }}
         </p>
+        {% if row.versions %}
+        <p class="decision-versions">{{ decision.versions_label }}: {{ row.versions }}</p>
+        {% endif %}
         <p class="decision-unit">
           {{ decision.unit_label }}:
           {% if row.drawer.units %}{{ row.drawer.units | join(", ") }}
