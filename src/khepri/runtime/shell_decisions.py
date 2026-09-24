@@ -99,6 +99,7 @@ from khepri.rra.rendering.wording import (
     metric_business_name,
 )
 from khepri.runtime.shell_controls import (
+    CONTROL_COPY,
     controls_view,
     inbound_parameters,
     partition_print,
@@ -385,7 +386,7 @@ def _named(card: Any, language: str) -> _CardView:
         metric=card.metric,
         label=metric_business_name(card.metric, language),
         value=card.value,
-        population=card.population,
+        population=_population(card.population, language),
         status=card.status,
         status_label=copy[f"status_{card.status}"],
         availability=availability,
@@ -563,6 +564,17 @@ class DecisionFrame:
             raise ValueError("DecisionFrame.organization_id must name an organization")
 
 
+#: `#564` item 4: the cells a breakdown row prints as they stand -- the two
+#: customer-controlled names and the published figure. Everything else is a code:
+#: `metric` is named by the row's label and `versions` by its drawer, a
+#: `dimension` by the controls' own label and an absent `population` by "not
+#: stated". A population *code* has no customer wording, so it is withheld rather
+#: than printed (`FR-164`); no view projects one today (`RRA-014`'s `population`
+#: absence). An unknown field is withheld too, so a later view version cannot
+#: print a new code by default.
+_VERBATIM_CELLS = frozenset({"store", "member", "value"})
+
+
 @dataclass(frozen=True, slots=True)
 class _RowView:
     """One breakdown row as the template reads it.
@@ -582,6 +594,7 @@ class _RowView:
     cells: tuple[tuple[str, object], ...]
     label: str | None = None
     drawer: _DrawerView | None = None
+    versions: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -667,10 +680,35 @@ def _row(row: Any, language: str, evidence: EvidenceReading | None) -> _RowView:
     """One row, named by its own view's fields and carrying its own drawer."""
     metric = str(row.values.get("metric", ""))
     return _RowView(
-        cells=row.cells,
+        cells=_presented(row.cells, language),
         label=business_metric_name(metric, language),
         drawer=_drawer(metric, _action_for(evidence, metric), language),
+        versions=_stated_versions(row.values.get("versions")),
     )
+
+
+def _presented(
+    cells: tuple[tuple[str, object], ...], language: str
+) -> tuple[tuple[str, object], ...]:
+    """The cells a customer reads, in the view's own order (`#564` item 4)."""
+    shown = ((name, _cell_text(name, value, language)) for name, value in cells)
+    return tuple((name, text) for name, text in shown if text is not None)
+
+
+def _cell_text(name: str, value: object, language: str) -> object:
+    """One cell in the page language, or `None` when it must not print."""
+    if name in _VERBATIM_CELLS:
+        return value
+    if name == "dimension":
+        return CONTROL_COPY[language].get(str(value))
+    if name == "population":
+        return _population(value, language)
+    return None
+
+
+def _population(value: object, language: str) -> str | None:
+    """`FR-140`'s absence as the governed "not stated"; a code has no customer wording."""
+    return DECISION_COPY[language]["not_stated"] if value is None else None
 
 
 def _action_for(evidence: EvidenceReading | None, metric: str) -> EvidenceAction:
