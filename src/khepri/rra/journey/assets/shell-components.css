@@ -17,8 +17,9 @@
  * - **Logical properties only** (`FR-199`, `test_r810`). No `left`/`right`, no `text-align: left`.
  * - **No motion** (`FR-203`, `test_r808`). The handoff's 140ms transitions and three keyframes are
  *   not shipped: hover and selection states change instantly.
- * - **No artwork** (`FR-206`, `test_r807`). No painted image layer, no gradient, no pseudo-element
- *   drawing. The handoff's rail and button gradients are rendered as the solid step they resolve
+ * - **No artwork** (`FR-206`, `test_r807`). No painted image layer and no pseudo-element drawing.
+ *   The one gradient is the hero's legibility wash, ground to transparent, which `test_r807` admits
+ *   by name. The handoff's rail and button gradients are rendered as the solid step they resolve
  *   to, and its icons and motifs are absent until an icon family passes the audited-asset process.
  * - **44px targets** (`RCA-002` `FR-056`), on the element a pointer lands on.
  * - **No external reference.** The only `url()` is the shell's own typeface address.
@@ -71,7 +72,10 @@ body {
 .app-frame {
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
-  max-inline-size: var(--frame-width);
+  /* The sand ground shows on every side (handoff §10), not only above and below. `border-box` so
+   * the 1px border sits inside that measure rather than eating a pixel of the margin. */
+  box-sizing: border-box;
+  max-inline-size: min(var(--frame-width), calc(100% - 2 * var(--space-5)));
   min-block-size: calc(100vh - 2 * var(--space-5));
   margin: var(--space-5) auto;
   overflow: hidden;
@@ -602,23 +606,79 @@ body {
  * filter, recolour, rotation or mirroring. The ground is painted behind the image so the surface is
  * legible before it decodes.
  *
- * **Integrated, not pasted above the page.** The band bleeds to the frame's top and side edges --
- * the negative margins are exactly the canvas padding -- and the first card after it rises into its
- * lower edge (`workspace.css`). The heading and lede stay on that card rather than on the image, so
- * no scrim is needed and none ships (`test_u1_slice11_hero_placement.py`). */
+ * **The page head sits on the band** (`U1` slice 12, handoff §6 and §10). The band bleeds to the
+ * frame's top and side edges -- the negative margins are exactly the canvas padding -- and carries
+ * the title, lede and actions over an ivory wash that is solid to `--hero-solid` and transparent by
+ * `--hero-fade`. The text column is capped at `--hero-copy` of the band's content box, which keeps
+ * its inline-end edge inside the solid stop (`test_u1_slice12_hero_convergence.py` measures it).
+ *
+ * `min-block-size`, not `block-size`: the band grows with its copy, so 200% text and Arabic's
+ * looser leading are never clipped by `overflow: hidden` (`FR-200`). */
 .hero-band {
+  --hero-solid: 44%;
+  --hero-fade: 74%;
+  --hero-copy: 42%;
+  --hero-image-start: 34%;
+
   position: relative;
-  block-size: 238px;
-  margin-block: calc(-1 * var(--canvas-pad)) 0;
+  display: flex;
+  align-items: center;
+  min-block-size: 238px;
+  margin-block: calc(-1 * var(--canvas-pad)) var(--space-5);
   margin-inline: calc(-1 * var(--canvas-pad));
+  padding: var(--space-6) calc(var(--canvas-pad) + var(--space-3));
   overflow: hidden;
   background-color: var(--hero-ground);
 }
 
-.hero-band__image {
+/* The wash: a legibility overlay from the band's own ground to transparent, never a drawing
+ * (`FR-206`). Gradients take no logical direction, so right-to-left states its mirror. */
+.hero-band__scrim {
   position: absolute;
   inset: 0;
-  inline-size: 100%;
+  background-image: linear-gradient(
+    90deg,
+    var(--hero-ground) var(--hero-solid),
+    transparent var(--hero-fade)
+  );
+}
+
+[dir="rtl"] .hero-band__scrim {
+  background-image: linear-gradient(
+    270deg,
+    var(--hero-ground) var(--hero-solid),
+    transparent var(--hero-fade)
+  );
+}
+
+/* The page head on the band: no hairline, no margin of its own, above the image and the wash. */
+.page-head--hero {
+  position: relative;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.page-head--hero .page-head__text {
+  flex: 0 1 auto;
+  max-inline-size: var(--hero-copy);
+}
+
+/* 01 Home: the one action sits under the lede, inside the copy column (reference 01). */
+.hero-band:not(.hero-band--insights) .page-head--hero {
+  flex-direction: column;
+}
+
+/* The artwork occupies the band's trailing part, so its subject shows beside the copy rather than
+ * under the wash (reference 01). Only the box moves; the crop is still `object-fit` and
+ * `object-position` alone, and `inset-inline` mirrors it in right-to-left. */
+.hero-band__image {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: var(--hero-image-start) 0;
+  inline-size: calc(100% - var(--hero-image-start));
   block-size: 100%;
   object-fit: cover;
   object-position: 62% 46%;
@@ -629,9 +689,10 @@ body {
   object-position: 38% 46%;
 }
 
-/* 05 Insights (`analysis.html.j2`): the handoff's own row, a 210px band and its focal point. */
+/* 05 Insights (`analysis.html.j2`): the handoff's own row, a 210px band and its focal point, with
+ * its actions top-trailing over the artwork on their own opaque surface. */
 .hero-band--insights {
-  block-size: 210px;
+  min-block-size: 210px;
 }
 
 .hero-band--insights .hero-band__image {
@@ -640,6 +701,17 @@ body {
 
 [dir="rtl"] .hero-band--insights .hero-band__image {
   object-position: 36% 46%;
+}
+
+/* Tablet (handoff §13): a narrower band keeps the copy readable by widening the solid stop rather
+ * than shrinking the column, so the artwork gives up width before the text does. */
+@media (max-width: 75rem) {
+  .hero-band {
+    --hero-solid: 58%;
+    --hero-fade: 86%;
+    --hero-copy: 56%;
+    --hero-image-start: 46%;
+  }
 }
 
 /* ---- Arabic ----------------------------------------------------------------------------------- */
@@ -669,6 +741,7 @@ body {
 @media (max-width: 60rem) {
   .app-frame {
     grid-template-columns: minmax(0, 1fr);
+    max-inline-size: none;
     min-block-size: 100vh;
     margin: 0;
     border: 0;
@@ -706,5 +779,37 @@ body {
 
   .shell-identity {
     padding-inline: var(--space-4);
+  }
+
+  /* Handoff §13 mobile: the image becomes a 140px band above the copy, so no text sits on the
+   * artwork and the wash has nothing to make legible. */
+  .hero-band {
+    display: block;
+    min-block-size: 0;
+    padding: 0 var(--canvas-pad) var(--space-5);
+  }
+
+  .hero-band--insights {
+    min-block-size: 0;
+  }
+
+  .hero-band__image {
+    position: static;
+    display: block;
+    inline-size: calc(100% + 2 * var(--canvas-pad));
+    block-size: 140px;
+    margin-inline: calc(-1 * var(--canvas-pad));
+  }
+
+  .hero-band__scrim {
+    display: none;
+  }
+
+  .page-head--hero {
+    padding-block-start: var(--space-4);
+  }
+
+  .page-head--hero .page-head__text {
+    max-inline-size: none;
   }
 }

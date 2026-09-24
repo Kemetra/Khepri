@@ -20,35 +20,31 @@
   Modules are `div`s with an `h2`, not labelled `section`s: they are regions of one surface, and a
   landmark per module would add five navigation stops the surface did not have.
 #}
-{#
-  `RCA-012` `FR-212`: the approved hero artwork, from the shell's own audited address.
-
-  Decorative and outside the labelled region deliberately. It states no figure, no population, no
-  refusal and no state (`FR-218`), and the heading and lede stay on the raised card below, so a
-  reader whose image never loads keeps a complete, legible surface. The `alt` comes from the copy
-  module rather than this file.
-
-  `eager` and `fetchpriority="high"` because it is above the fold. The WebP source is listed first
-  so a browser that supports it takes the smaller file; the JPEG is the `<img>` fallback.
-#}
-<div class="hero-band">
-  <picture>
-    <source srcset="{{ assets }}/khepri-hero.webp" type="image/webp">
-    <img class="hero-band__image"
-         src="{{ assets }}/khepri-hero.jpg"
-         alt="{{ copy.overview_hero_alt }}"
-         loading="eager"
-         fetchpriority="high">
-  </picture>
-</div>
-
-{#
-  The labelled region is a plain section; the raised header is the surface's first card. That keeps
-  `test_r812`'s probe, which measures the first `.document-card`, reading a painted card rather than
-  an unpainted wrapper whose zero padding would pass its rhythm check vacuously.
-#}
 <section class="workspace-page" aria-labelledby="page-title">
-  <div class="document-card page-head page-head--raised">
+  {#
+    `RCA-012` `FR-212` and `U1` slice 12: the approved hero artwork, with the page head on it.
+
+    The handoff's own composition (§6, §10): the title, lede and the one action sit on the band
+    over an ivory wash, inside its solid stop, with the artwork showing on the trailing side. The
+    band is inside the labelled region so `aria-labelledby` resolves within it. The artwork states
+    no figure, population, refusal or state (`FR-218`), and the copy lives outside `<picture>`, so a
+    reader whose image never loads keeps a complete, legible surface on the band's ground colour.
+    The `alt` comes from the copy module; the wash is `aria-hidden` presentation.
+
+    `eager` and `fetchpriority="high"` because it is above the fold. The WebP source is listed first
+    so a browser that supports it takes the smaller file; the JPEG is the `<img>` fallback.
+  #}
+  <div class="hero-band">
+    <picture>
+      <source srcset="{{ assets }}/khepri-hero.webp" type="image/webp">
+      <img class="hero-band__image"
+           src="{{ assets }}/khepri-hero.jpg"
+           alt="{{ copy.overview_hero_alt }}"
+           loading="eager"
+           fetchpriority="high">
+    </picture>
+    <div class="hero-band__scrim" aria-hidden="true"></div>
+  <div class="page-head page-head--hero page-head--display">
     <div class="page-head__text">
       <h1 id="page-title">{{ copy.overview_title }}</h1>
       <p class="lede">{{ copy.overview_intro }}</p>
@@ -63,6 +59,7 @@
       <button class="button--primary" type="submit">{{ copy.new_analysis }}</button>
     </form>
     {% endif %}
+  </div>
   </div>
 
   {#

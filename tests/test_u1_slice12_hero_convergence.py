@@ -13,7 +13,7 @@ verification widths (1440, 1024, 390):
 - **At 390 the image is a 140px band above the copy**, not behind it (handoff §13).
 - **At 1024 the analysis side rail drops below the passport** (handoff §13, "rail drops below"),
   where it previously kept a two-column label grid in a third of the width and split words.
-- **At 1024 the overview's odd last module spans the row** rather than leaving an empty cell, and
+- **At 1024 no overview module sits alone beside an empty cell**, and
   **at 1440 the frame keeps a symmetric inline margin** on the sand ground (handoff §10).
 
 Every browser case runs the shipped routes on a loopback origin, so the stylesheets, the typeface

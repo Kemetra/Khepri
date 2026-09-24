@@ -105,36 +105,15 @@
   font-size: var(--text-sm);
 }
 
-/* ---- The hero band's partner: the first card rises into the artwork ------------------------- */
-
-/* The band bleeds to the frame's edges (`shell-components.css`); the card after it overlaps its
- * lower 72px, so artwork and page read as one composition rather than a picture above a form. */
-.hero-band + .document-card,
-.hero-band + .workspace-page {
-  position: relative;
-  margin-block-start: calc(-1 * (var(--space-8) + var(--space-2)));
-}
-
 /* ---- 01 Overview (`overview.html.j2`) ------------------------------------------------------- */
 
-/* The raised header is the overview's first card (`document-card` supplies the surface); this adds
- * the wider inline padding and the full border its `page-head` role would otherwise replace with a
- * bottom hairline. The labelled `section.workspace-page` around it is unpainted. */
-.page-head--raised {
-  margin-block-end: var(--space-4);
-  padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-}
-
-/* The one display-size heading in the workspace (handoff §9 display-l). */
-.shell-main .page-head--raised h1 {
+/* The one display-size heading in the workspace (handoff §9 display-l), on the hero band. */
+.shell-main .page-head--display h1 {
   max-inline-size: none;
   font-size: var(--text-hero);
 }
 
-/* Handoff §13, the home body: three columns at desktop, a responsive collapse below. */
+/* Handoff §13, the home body: three columns at desktop, two at tablet, one on a phone. */
 .module-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
@@ -145,6 +124,19 @@
 @media (min-width: 75rem) {
   .module-grid {
     grid-template-columns: 1.45fr 1fr 0.95fr;
+  }
+}
+
+/* At two columns, the module before the full-width `Recent` is alone in its row exactly when its
+ * position is odd -- three half-width modules rather than four -- so it takes the row instead of
+ * standing beside an empty cell. */
+@media (min-width: 40.0625rem) and (max-width: 74.9375rem) {
+  .module-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .module-grid > .module:nth-last-child(2):nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -446,6 +438,22 @@
 [dir="rtl"] .passport dd[dir="ltr"],
 [dir="rtl"] .quality dd[dir="ltr"] {
   text-align: end;
+}
+
+/* In the side rail the quality list is one column: a label above its value. A two-column grid in a
+ * third of the width left the value a few characters wide and split words mid-letter. Quality
+ * values are prose lists, so they break at words; identifiers elsewhere still break anywhere. */
+.detail-side .quality {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.detail-side .quality dt {
+  padding-block-end: 0;
+  border-block-end: 0;
+}
+
+.quality dd {
+  overflow-wrap: break-word;
 }
 
 .passport-versions {
@@ -874,18 +882,15 @@
   color: var(--muted);
 }
 
-@media (max-width: 60rem) {
+/* Handoff §13 Insights: the side rail drops below the passport at tablet widths. */
+@media (max-width: 75rem) {
   .detail-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 40rem) {
-  .page-head--raised {
-    padding: var(--space-4);
-  }
-
-  .shell-main .page-head--raised h1 {
+  .shell-main .page-head--display h1 {
     font-size: var(--title-size);
   }
 

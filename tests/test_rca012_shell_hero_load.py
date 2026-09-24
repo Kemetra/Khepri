@@ -237,8 +237,9 @@ class TestTheShippedOriginServesTheArtwork:
         `<picture>` element exists precisely so the browser picks, and pinning which one Chromium
         chooses would assert a browser's codec support rather than this slice's work.
 
-        It then reads the band's height and the image's focal point **as the browser computed
-        them**. The stylesheet tests read CSS text, and a modifier that loses the cascade -- equal
+        It then reads the band's minimum height -- the band grows with the copy it carries since
+        `U1` slice 12 -- and the image's focal point **as the browser computed them**. The
+        stylesheet tests read CSS text, and a modifier that loses the cascade -- equal
         specificity, wrong source order -- passes every one of them while the page renders the
         other surface's row. Only the computed value sees that.
         """

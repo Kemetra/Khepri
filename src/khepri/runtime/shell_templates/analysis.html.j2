@@ -11,12 +11,13 @@
   No report-API address appears here: the handoff route builds it (`shell_artifact_handoff.py`),
   so artifacts are reached from this surface and from nowhere a template could copy them to.
 #}
+<section class="workspace-page" aria-labelledby="page-title">
 {#
-  `RCA-012` `FR-212`: the approved hero artwork on 05 Insights, the second `/app` surface that
-  specification names. The placement is `overview.html.j2`'s, for the same reasons: decorative
-  and outside the labelled region, the heading, lede and every governed region stay in the
-  document card below, and the `alt` comes from the copy module in the page's language
-  (`FR-218`). The modifier carries this surface's handoff row -- band height and focal point.
+  `RCA-012` `FR-212` and `U1` slice 12: the approved hero artwork on 05 Insights, with the page
+  head on it. The composition is `overview.html.j2`'s, for the same reasons: the title, lede, run
+  state and the one action sit on the band over the wash, outside `<picture>` (`FR-218`), and every
+  governed region stays in the document card after it. The modifier carries this surface's handoff
+  row -- band minimum height and focal point -- and its actions sit top-trailing (handoff §10).
 #}
 <div class="hero-band hero-band--insights">
   <picture>
@@ -27,10 +28,8 @@
          loading="eager"
          fetchpriority="high">
   </picture>
-</div>
-
-<section class="document-card" aria-labelledby="page-title">
-  <div class="page-head">
+  <div class="hero-band__scrim" aria-hidden="true"></div>
+  <div class="page-head page-head--hero">
   <div class="page-head__text">
   <h1 id="page-title">{{ copy.analysis_title }}</h1>
   <p class="lede">{{ copy.analysis_intro }}</p>
@@ -61,6 +60,9 @@
   </p>
   {% endif %}
   </div>
+</div>
+
+<div class="document-card">
 
   {#
     `RCA-005` FR-116, blueprint §7.4 (`W1-08`): where this run's governed versions differ from the
@@ -230,5 +232,6 @@
       {% endfor %}
     </dl>
   </details>
+</div>
 </section>
 {% endblock %}
