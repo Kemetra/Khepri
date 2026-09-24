@@ -22,7 +22,9 @@ import re
 import pytest
 
 from khepri.rca.semantic_queries.queries import SemanticQueryActions
-from khepri.rca.workspace.decision.card import CardsRequest
+from khepri.rca.workspace.decision import card
+from khepri.rca.workspace.decision.breakdowns import BreakdownReading, BreakdownRow
+from khepri.rca.workspace.decision.card import CardsReading, CardsRequest, MetricCard
 from khepri.rca.workspace.decision.controls import ControlSelection
 from khepri.rra import facts
 from khepri.rra.bundle import ReportBundle
@@ -121,3 +123,63 @@ def test_a_customer_named_member_carries_dir_auto(language: str) -> None:
 
     assert tags, "no branch or member cell rendered, so this proves nothing"
     assert all('dir="auto"' in tag for tag in tags)
+
+
+# --- Fail closed: a cell with no governed word is never withheld (review on #564) ---
+
+
+def _row(**cells: object) -> BreakdownRow:
+    return BreakdownRow(cells=tuple(cells.items()))
+
+
+def _section_of(*rows: BreakdownRow, language: str = LANGUAGE_ENGLISH) -> object:
+    reading = BreakdownReading(view_id="BranchPerformanceView", status="admitted", rows=rows)
+    return shell_decisions._section("branches", reading, language, None)
+
+
+@pytest.mark.parametrize(
+    "cells",
+    [
+        {"store": "Cairo", "metric": "revenue_by_store", "value": 1, "population": "sales_posted"},
+        {"dimension": "channel", "member": "Web", "metric": "revenue_by_store", "value": 1},
+        {"store": "Cairo", "value": 1, "kind": "rows"},
+    ],
+    ids=["stated-population-code", "unmapped-dimension", "unknown-field"],
+)
+def test_an_unpresentable_cell_makes_its_section_unavailable_not_partial(
+    cells: dict[str, object],
+) -> None:
+    """`RRA-014 FR-140`/`FR-141`, `RCA-008 FR-165`: no suppression, no code, no partial row."""
+    section = _section_of(_row(**cells))
+
+    assert section.unavailable is True
+    assert section.rows == ()
+
+
+def test_a_card_stating_a_population_code_makes_the_cards_unavailable() -> None:
+    stated = MetricCard(
+        metric="revenue",
+        value="500.00",
+        population="sales_posted",
+        versions=(),
+        status=card.STATUS_VERIFIED,
+        availability=card.AVAILABILITY_AVAILABLE,
+    )
+    reading = CardsReading(status="admitted", cards=(stated,))
+    view = shell_decisions.decision_view(reading, language=LANGUAGE_ENGLISH)
+
+    assert view.unavailable is True
+    assert view.cards == ()
+
+
+@pytest.mark.parametrize("language", _LANGUAGES)
+def test_a_rows_versions_are_stated_in_its_drawer_as_governed_pairs(language: str) -> None:
+    versions = (("view", "sv1.basket.v1"), ("formula", "rra004.formula.v1"))
+    section = _section_of(
+        _row(metric="basket_attach_rate", value=1, population=None, versions=versions),
+        language=language,
+    )
+    (row,) = section.rows
+
+    assert row.versions == "view sv1.basket.v1, formula rra004.formula.v1"
+    assert all(name != "versions" for name, _value in row.cells)

@@ -337,7 +337,7 @@ class _StubDecisions:
         rows = (
             (("revenue", "available", None, ()),)
             if view == "MetricAvailabilityView"
-            else (("revenue", "700.00", "complete", ()),)
+            else (("revenue", "700.00", None, ()),)
         )
         fields = (
             ("metric", "availability", "reason", "versions")

@@ -501,8 +501,12 @@ def _refusal_text(reading: CardsReading, language: str) -> str | None:
 def decision_view(reading: CardsReading, *, language: str) -> _DecisionView:
     """The reading as one page in one language. Labels and words, no figures."""
     empty = EMPTY_WORDING[language][reading.empty_rule] if reading.empty_rule is not None else None
+    try:
+        cards = tuple(_named(card, language) for card in reading.cards)
+    except _Unpresentable:
+        return _DecisionView(unavailable=True)
     return _DecisionView(
-        cards=tuple(_named(card, language) for card in reading.cards),
+        cards=cards,
         filters=applied_filters(reading.effective),
         caveats=_caveat_prose(reading, language),
         refusal=_refusal_text(reading, language),
@@ -565,14 +569,23 @@ class DecisionFrame:
 
 
 #: `#564` item 4: the cells a breakdown row prints as they stand -- the two
-#: customer-controlled names and the published figure. Everything else is a code:
-#: `metric` is named by the row's label and `versions` by its drawer, a
-#: `dimension` by the controls' own label and an absent `population` by "not
-#: stated". A population *code* has no customer wording, so it is withheld rather
-#: than printed (`FR-164`); no view projects one today (`RRA-014`'s `population`
-#: absence). An unknown field is withheld too, so a later view version cannot
-#: print a new code by default.
+#: customer-controlled names and the published figure.
 _VERBATIM_CELLS = frozenset({"store", "member", "value"})
+#: Cells the row states elsewhere: `metric` in its label, `versions` in its drawer.
+_RESTATED_CELLS = frozenset({"metric", "versions"})
+#: Dimensions with a governed noun, the controls' own (`CONTROL_COPY`).
+_NAMED_DIMENSIONS = ("store", "product", "category")
+
+
+class _Unpresentable(Exception):
+    """A cell with no governed customer wording: a stated population code, an
+    unmapped dimension, or a field no view published when this was written.
+
+    Never withheld. `RRA-014` `FR-140` bars suppressing a qualifier and
+    `FR-164` bars printing a code, so the surface carrying it answers
+    `FR-165`'s content-free unavailable instead -- a widened view fails loudly
+    on the page rather than dropping what it states.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -664,10 +677,19 @@ def _section(
     """One breakdown as one section, or `None` when this page did not read it."""
     if reading is None:
         return None
+    try:
+        rows = tuple(_row(row, language, evidence) for row in reading.rows)
+    except _Unpresentable:
+        return _SectionView(
+            section=section,
+            heading=SECTION_COPY[language][section],
+            unavailable=True,
+            filters=applied_filters(reading.effective),
+        )
     return _SectionView(
         section=section,
         heading=SECTION_COPY[language][section],
-        rows=tuple(_row(row, language, evidence) for row in reading.rows),
+        rows=rows,
         caveats=_governed_caveats(reading.caveats, language),
         refusal=_wording_of(reading.refusal, language),
         empty=EMPTY_WORDING[language].get(reading.empty_rule or ""),
@@ -691,24 +713,30 @@ def _presented(
     cells: tuple[tuple[str, object], ...], language: str
 ) -> tuple[tuple[str, object], ...]:
     """The cells a customer reads, in the view's own order (`#564` item 4)."""
-    shown = ((name, _cell_text(name, value, language)) for name, value in cells)
-    return tuple((name, text) for name, text in shown if text is not None)
+    return tuple(
+        (name, _cell_text(name, value, language))
+        for name, value in cells
+        if name not in _RESTATED_CELLS
+    )
 
 
 def _cell_text(name: str, value: object, language: str) -> object:
-    """One cell in the page language, or `None` when it must not print."""
+    """One cell in the page language; `_Unpresentable` when no governed word exists."""
     if name in _VERBATIM_CELLS:
         return value
-    if name == "dimension":
-        return CONTROL_COPY[language].get(str(value))
+    if name == "dimension" and value in _NAMED_DIMENSIONS:
+        return CONTROL_COPY[language][str(value)]
     if name == "population":
         return _population(value, language)
-    return None
+    raise _Unpresentable(name)
 
 
-def _population(value: object, language: str) -> str | None:
-    """`FR-140`'s absence as the governed "not stated"; a code has no customer wording."""
-    return DECISION_COPY[language]["not_stated"] if value is None else None
+def _population(value: object, language: str) -> str:
+    """`FR-140`'s absence as the governed "not stated". A stated code has no
+    customer wording, so it is unpresentable rather than withheld."""
+    if value is None:
+        return DECISION_COPY[language]["not_stated"]
+    raise _Unpresentable("population")
 
 
 def _action_for(evidence: EvidenceReading | None, metric: str) -> EvidenceAction:

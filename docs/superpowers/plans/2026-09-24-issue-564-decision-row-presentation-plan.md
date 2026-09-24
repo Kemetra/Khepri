@@ -22,21 +22,32 @@ The stub (`revenue 700.00 complete ()`) hid all of this.
 
 ## Change (presentation only, existing words only)
 
-- `_row` presents cells through `_presented`. `store`, `member` and `value` print as they stand.
-  `dimension` prints the controls' own label (`CONTROL_COPY`: Store / Product / Category, both
-  languages). An absent `population` prints the governed `not_stated`. `metric` is withheld,
-  because the row's label already names it. `versions` moves into the drawer via
-  `_stated_versions`, as on the cards. A population code, or any unknown field, is withheld rather
-  than printed; no view projects a population code today.
+- `_row` presents cells through `_presented`:
+  - `store`, `member` and `value` print as they stand.
+  - `dimension` prints the controls' own label (`CONTROL_COPY`: Store, Product or Category, in
+    both languages).
+  - An absent `population` prints the governed `not_stated`.
+  - `metric` is not printed, because the row's label names it. `versions` moves into the drawer
+    via `_stated_versions`, as on the cards.
 - A card's population uses the same `_population`.
 - The `store` and `member` spans carry `dir="auto"`.
+- **Fail closed, never withhold (adversarial review, REVISE).** No governed word exists for a
+  stated population code, an unmapped dimension, or a field no view published when this was
+  written. A cell carrying one makes its section, or the cards, `FR-165`'s content-free
+  unavailable. The section keeps its applied filters. `RRA-014` `FR-140` bars suppressing a
+  qualifier and `FR-164` bars printing a code. No view projects a population code today, so a
+  later widening fails loudly instead of dropping what it states.
+- **Fixtures corrected, not weakened.** The render-level stubs (`d103`, `d104`, `d105`,
+  `d109_support`, `r807`, `r808`) stated invented population codes (`"complete"`, `"c"`, `"1"`)
+  that the projector cannot emit. They now state `None`, as the projector does. Read-layer tests
+  (`d102`, `d104`'s read assertions) still carry their codes, because the read path is unchanged.
 
 The read path is untouched: `BreakdownRow.cells` and `FR-167` are unchanged.
 
 ## Not exercised here
 
-The golden fixture renders Basket and Concentration empty, so the drawer's `versions` line
-has no row to render in this test.
+The golden fixture renders Basket and Concentration empty. The drawer's `versions` line is
+tested on a constructed Basket row instead.
 
 ## Open, not fixed here (filed separately)
 

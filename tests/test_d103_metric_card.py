@@ -104,7 +104,7 @@ def _one_card(
     *, availability: str | None = definitions.AVAILABLE, caveats: tuple[object, ...] = ()
 ) -> card.MetricCard:
     """One admitted revenue card, qualified as the arguments say."""
-    rows = (("revenue", "700.00", "complete", ()),)
+    rows = (("revenue", "700.00", None, ()),)
     outcomes = {seam.EXECUTIVE_OVERVIEW.view_id: _overview(rows, caveats=caveats)}
     if availability is not None:
         outcomes[seam.METRIC_AVAILABILITY.view_id] = _availability(
@@ -175,7 +175,7 @@ def test_the_card_module_derives_nothing() -> None:
 def test_an_unavailable_availability_read_still_renders_the_figures() -> None:
     """`FR-165` -- partial success: S-6 missing qualifies nothing, hides nothing."""
     outcomes = {
-        seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "700.00", "complete", ()),)),
+        seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "700.00", None, ()),)),
         seam.METRIC_AVAILABILITY.view_id: ports.ViewOutcome(kind=ports.KIND_UNAVAILABLE),
     }
     reading = card.read_cards(_actions(outcomes), _request())
@@ -196,7 +196,7 @@ def test_a_refusal_carrying_a_projection_is_still_a_refusal() -> None:
             view_id=seam.EXECUTIVE_OVERVIEW.view_id,
             view_version=seam.EXECUTIVE_OVERVIEW.view_version,
             fields=_OVERVIEW_FIELDS,
-            rows=(("revenue", "700.00", "complete", ()),),
+            rows=(("revenue", "700.00", None, ()),),
         ),
     )
     reading = card.read_cards(
@@ -220,7 +220,7 @@ def test_every_card_is_named_from_the_governed_catalog(language: str) -> None:
     """`FR-159`/`FR-171` -- the label is the catalog's, in the page language."""
     view = shell_decisions.decision_view(
         card.read_cards(
-            _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", "c", ()),))}),
+            _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", None, ()),))}),
             _request(),
         ),
         language=language,
@@ -261,7 +261,7 @@ def test_a_caveat_is_rendered_as_governed_prose(language: str) -> None:
         _actions(
             {
                 seam.EXECUTIVE_OVERVIEW.view_id: _overview(
-                    (("revenue", "7", "c", ()),), caveats=(caveat,)
+                    (("revenue", "7", None, ()),), caveats=(caveat,)
                 )
             }
         ),
@@ -284,7 +284,7 @@ def test_an_unknown_availability_does_not_crash_the_surface() -> None:
     card = SimpleNamespace(
         metric="revenue",
         value="1",
-        population="1",
+        population=None,
         versions="1",
         status="verified",
         availability="a-code-the-catalog-does-not-name",
@@ -306,7 +306,7 @@ def test_an_unknown_caveat_does_not_crash_the_surface() -> None:
         _actions(
             {
                 seam.EXECUTIVE_OVERVIEW.view_id: _overview(
-                    (("revenue", "7", "c", ()),), caveats=(caveat,)
+                    (("revenue", "7", None, ()),), caveats=(caveat,)
                 )
             }
         ),
@@ -333,7 +333,7 @@ def test_an_unknown_caveat_does_not_crash_the_surface() -> None:
 def test_both_languages_carry_the_same_cards_and_statuses() -> None:
     """`FR-171` -- a figure present in one language is present in the other."""
     reading = card.read_cards(
-        _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", "c", ()),))}),
+        _actions({seam.EXECUTIVE_OVERVIEW.view_id: _overview((("revenue", "7", None, ()),))}),
         _request(),
     )
     views = {lang: shell_decisions.decision_view(reading, language=lang) for lang in LANGUAGES}
@@ -352,7 +352,7 @@ def test_status_copy_is_in_the_page_language(language: str) -> None:
         _actions(
             {
                 seam.EXECUTIVE_OVERVIEW.view_id: _overview(
-                    (("revenue", "7", "c", ()),)
+                    (("revenue", "7", None, ()),)
                 ),
                 seam.METRIC_AVAILABILITY.view_id: _availability(
                     (("revenue", definitions.AVAILABLE, None, ()),)

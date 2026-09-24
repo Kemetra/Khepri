@@ -91,20 +91,20 @@ def admitted_script() -> dict[str, ports.ViewOutcome]:
         ),
         seam.REPORT_EVIDENCE.view_id: evidence_outcome(),
         seam.BRANCH_PERFORMANCE.view_id: breakdown(
-            seam.BRANCH_PERFORMANCE, BRANCH_FIELDS, (("s1", "revenue", "1", "complete"),)
+            seam.BRANCH_PERFORMANCE, BRANCH_FIELDS, (("s1", "revenue", "1", None),)
         ),
         seam.PRODUCT_CATEGORY.view_id: breakdown(
             seam.PRODUCT_CATEGORY,
             PRODUCT_FIELDS,
-            (("category", "c", "revenue", "1", "complete"),),
+            (("category", "c", "revenue", "1", None),),
         ),
         seam.BASKET.view_id: breakdown(
-            seam.BASKET, BASKET_FIELDS, (("revenue", "1", "complete", ()),)
+            seam.BASKET, BASKET_FIELDS, (("revenue", "1", None, ()),)
         ),
         seam.CONCENTRATION.view_id: breakdown(
             seam.CONCENTRATION,
             CONCENTRATION_FIELDS,
-            (("product", "revenue", "1", "complete"),),
+            (("product", "revenue", "1", None),),
         ),
     }
 

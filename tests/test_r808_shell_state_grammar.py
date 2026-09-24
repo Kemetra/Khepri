@@ -95,22 +95,22 @@ def _admitted_surface() -> dict[str, ports.ViewOutcome]:
         seam.BRANCH_PERFORMANCE.view_id: support.breakdown(
             seam.BRANCH_PERFORMANCE,
             support.BRANCH_FIELDS,
-            (("store-a", "revenue_by_store", "700.00", "complete"),),
+            (("store-a", "revenue_by_store", "700.00", None),),
         ),
         seam.PRODUCT_CATEGORY.view_id: support.breakdown(
             seam.PRODUCT_CATEGORY,
             support.PRODUCT_FIELDS,
-            (("category", "drinks", "revenue_by_category", "120.00", "complete"),),
+            (("category", "drinks", "revenue_by_category", "120.00", None),),
         ),
         seam.BASKET.view_id: support.breakdown(
             seam.BASKET,
             support.BASKET_FIELDS,
-            (("basket_attach_rate", "0.25", "complete", ()),),
+            (("basket_attach_rate", "0.25", None, ()),),
         ),
         seam.CONCENTRATION.view_id: support.breakdown(
             seam.CONCENTRATION,
             support.CONCENTRATION_FIELDS,
-            (("product", "concentration_top_decile_share", "0.60", "complete"),),
+            (("product", "concentration_top_decile_share", "0.60", None),),
         ),
     }
 

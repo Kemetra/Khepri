@@ -601,7 +601,7 @@ class _StubDecisions:
         if asked.view.view_id == seam.METRIC_AVAILABILITY.view_id:  # type: ignore[attr-defined]
             return _availability((("revenue", card.AVAILABILITY_AVAILABLE, None, ()),))
         return _projection(
-            seam.EXECUTIVE_OVERVIEW, _OVERVIEW_FIELDS, (("revenue", "700.00", "complete", ()),)
+            seam.EXECUTIVE_OVERVIEW, _OVERVIEW_FIELDS, (("revenue", "700.00", None, ()),)
         )
 
 
