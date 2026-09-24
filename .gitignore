@@ -12,7 +12,10 @@ __pycache__/
 # Machine-local agent configuration. The Spec Kit installer warns that agent
 # folders may hold credentials or auth tokens.
 .claude/settings.local.json
-.claude/skills/
+.claude/skills/*
+# Sole exception: the project-authored UI skill, which holds no credentials. Git cannot re-include
+# a file whose parent directory is excluded, hence `skills/*` above rather than `skills/`.
+!.claude/skills/khepri-ui/
 
 # GitHub Spec Kit scaffold, installed per-machine with `specify init --here`.
 # Deliberately untracked: its vendored PowerShell helpers carry cyclomatic
