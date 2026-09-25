@@ -435,6 +435,25 @@ def test_the_same_version_is_preferred_over_a_more_recent_run_on_other_data() ->
     assert "run-o" not in notice
 
 
+def test_of_two_earlier_runs_over_the_same_data_the_more_recent_is_the_predecessor() -> None:
+    """The Notice states what changed since the *previous* run, not since the first one: the
+    mutant that picks the earliest same-version run survived every other case here."""
+    records = _StubRecords(
+        versions=(_version("ver-a", "rra003.mapping.v2"),),
+        runs=(
+            _run("run-c", "ver-a", started_at=NOW, methodology=V3),
+            _run("run-b", "ver-a", started_at=NOW - timedelta(hours=2), methodology=V2),
+            _run("run-a", "ver-a", started_at=EARLIER, methodology=V2),
+        ),
+        bindings=_bindings("run-a", "run-b", "run-c"),
+    )
+
+    notice = _notice(_detail(records, _StubProvenance(), "run-c"))
+
+    assert f'href="{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b"' in notice
+    assert "run-a" not in notice
+
+
 def test_an_earlier_run_over_another_dataset_version_raises_no_notice() -> None:
     """`#379`: no relationship between dataset versions is governed, so a run over another version
     is not a predecessor, however much its methodology differs. With no earlier completed run over
