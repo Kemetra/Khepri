@@ -797,7 +797,8 @@ class SqlDeletionRepository:
         evidences = evidence_tuple(evidence)
         with self._factory.begin() as database:
             row = self._locked_job(database, job.deletion_id)
-            if row.state == "complete":
+            # A racing fail() moved the attempt: answer the job unchanged, before any write (#576).
+            if row.state == "complete" or row.attempt_count != job.attempt_count:
                 return _deletion_from_row(row)
             targets = deletion_targets(database, row.owner_id, row.session_id)
             validate_completed_evidence(evidences, targets)
@@ -831,7 +832,8 @@ class SqlDeletionRepository:
             raise ValueError("Failed deletion evidence is required.")
         with self._factory.begin() as database:
             row = self._locked_job(database, job.deletion_id)
-            if row.state == "complete":
+            # A racing fail() moved the attempt: answer the job unchanged, before any write (#576).
+            if row.state == "complete" or row.attempt_count != job.attempt_count:
                 return _deletion_from_row(row)
             add_evidence(database, row, evidences)
             row.state = "retryable"

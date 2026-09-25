@@ -244,11 +244,7 @@ class DeletionService:
             )
 
         if not targets:
-            return self._deletions.complete(
-                job=job,
-                evidence=(),
-                completed_at=now,
-            )
+            return self._complete(job=job, evidence=(), now=now)
 
         failed = False
         last_error: Exception | None = None
@@ -279,11 +275,24 @@ class DeletionService:
                 now=now,
                 error=last_error,
             )
-        return self._deletions.complete(
-            job=job,
-            evidence=tuple(evidence),
-            completed_at=now,
-        )
+        return self._complete(job=job, evidence=tuple(evidence), now=now)
+
+    def _complete(
+        self,
+        *,
+        job: DeletionJob,
+        evidence: tuple[DeletionEvidence, ...],
+        now: datetime,
+    ) -> DeletionJob:
+        """Complete the job, or answer the retry when a racing attempt overtook it (`#576`).
+
+        The repository returns an overtaken job unchanged rather than completing it. Returning that
+        job would tell the route the content is gone while the job is still `retryable`.
+        """
+        result = self._deletions.complete(job=job, evidence=evidence, completed_at=now)
+        if result.state == "complete":
+            return result
+        raise DeletionRetryRequired("Content deletion must be retried.")
 
     def _retry_or_complete(
         self,
