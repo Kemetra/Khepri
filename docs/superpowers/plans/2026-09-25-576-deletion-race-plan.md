@@ -21,7 +21,9 @@ no duplicate evidence is written and the job stays `retryable`. But a 500 is not
    a job whose `attempt_count` no longer matches the caller's snapshot has been overtaken. It is
    returned unchanged: no evidence, no derived-content delete, no attempt increment. A job already
    `complete` still wins first, so an attempt overtaken by a *successful* attempt still answers
-   complete. The check sits in one static helper, so neither method gains a branch.
+   complete. The check is inlined into the existing `state == "complete"` condition. A shared helper
+   would push `persistence.py` past CodeScene's 600-line module threshold, since the file sits at
+   exactly 600. Each method gains one `or` and no lines.
 2. **`DeletionService`.** Both `complete` calls go through one `_complete` helper, which raises
    `DeletionRetryRequired` when the repository did not complete the job. Without that raise, the
    route would answer 204 and clear the cookie on a job that is still `retryable`. That is a false
