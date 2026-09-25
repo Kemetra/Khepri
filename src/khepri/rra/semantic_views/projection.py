@@ -57,7 +57,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from khepri.rra import definitions, facts
-from khepri.rra.bundle import FAMILY_VERSIONS, CitedEvidence, CitedFigure, StatedCaveat
+from khepri.rra.bundle import (
+    FAMILY_VERSIONS,
+    KIND_VALUE,
+    CitedEvidence,
+    CitedFigure,
+    StatedCaveat,
+)
 from khepri.rra.crossversion_bundle import LABEL_BASELINE, LABEL_DIFFERENCE, LABEL_SUBJECT
 from khepri.rra.renderable import RenderableBundle
 from khepri.rra.semantic_views.compatibility import (
@@ -554,6 +560,31 @@ def _admitted_figures(
     )
 
 
+#: The published field that names a figure's measure. A view publishing it
+#: publishes `KIND_VALUE` figures only (`#569`); see `_as_published`.
+_VALUE_FIELD = "value"
+
+
+def _as_published(
+    figures: tuple[CitedFigure, ...], definition: SemanticViewDefinition
+) -> tuple[CitedFigure, ...]:
+    """The figures a view's `value` column may state: measures, never row counts.
+
+    A series bucket carries two figures under one metric -- its measure
+    (`KIND_VALUE`) and the rows it was computed from (`KIND_ROWS`). Publishing
+    both under `value` put `2` beside `335.75` as `revenue_by_store`: a count
+    substituted for the measure, which `FR-139` bars. `FR-138` admits selecting
+    the measure. No caveat, refusal or evidence record is a figure, so `FR-140`
+    loses nothing; the counts remain on the bundle and the `RRA-006` surfaces.
+
+    Gated on the published field, as `_rows` is, so a view whose row is not a
+    figure's value -- availability, evidence, comparison -- is untouched.
+    """
+    if _VALUE_FIELD not in definition.output_field_order:
+        return figures
+    return tuple(figure for figure in figures if figure.kind == KIND_VALUE)
+
+
 def _metric_of(result: str) -> str:
     """The metric a refused result names -- `revenue_delta_percent.year_over_year`'s
     is `revenue_delta_percent`, because a result is mode-qualified with a dot."""
@@ -721,7 +752,7 @@ def _projection(
     bundle: RenderableBundle,
 ) -> ViewProjection:
     """Select, order and propagate -- the whole of what this module does."""
-    figures = _admitted_figures(bundle, definition, request)
+    figures = _as_published(_admitted_figures(bundle, definition, request), definition)
     rows = _rows(request, _Source(bundle, definition), figures)
     return ViewProjection(
         view_id=definition.view_id,

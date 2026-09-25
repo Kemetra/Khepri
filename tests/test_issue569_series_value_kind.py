@@ -22,6 +22,7 @@ the fix: a restatement would pass every mutant of the predicate it restates.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -36,8 +37,10 @@ from khepri.rra.semantic_views import compatibility, projection, published, regi
 from khepri.runtime import shell_decisions
 from khepri.runtime.shell_api import shell_environment
 from tests.test_issue519_semantic_view_readers import (
+    _figure,
     _Isolation,
     _ProjectingPort,
+    _report,
     _Sources,
 )
 from tests.test_rra006_bundle import package
@@ -142,6 +145,20 @@ def test_a_view_publishing_no_value_column_keeps_its_rows() -> None:
     evidence = _projected(registry.define_view("ReportEvidenceView"), bundle)
     assert len(availability.rows) == 22
     assert len(evidence.rows) == 5
+
+
+def test_a_view_whose_row_is_a_figure_address_still_addresses_a_row_count() -> None:
+    """The gate itself, which the golden bundle cannot exercise.
+
+    `ReportEvidenceView` publishes `figure`, not `value`: its row addresses a
+    cell and states no measure, so a row-count cell is still one it addresses.
+    The golden bundle admits no row count into this view (its series are keyed
+    by a dimension the view does not admit), so a bundle is built with one.
+    """
+    measure = _figure("revenue", value="500.50")
+    count = replace(measure, figure_id="fig_revenue_rows", kind=KIND_ROWS, value=Decimal("3"))
+    projected = _projected(registry.define_view("ReportEvidenceView"), _report((measure, count)))
+    assert [row[0] for row in projected.rows] == [measure.figure_id, count.figure_id]
 
 
 def test_no_published_definition_changed_so_no_version_moved() -> None:
