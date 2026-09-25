@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -322,6 +325,36 @@ class TestStagingComposeContract:
         assert required is not None and "postgres/server.crt" in required.group(1).split()
         assert "COPY certs/postgres/server.crt" in dockerfile
         assert "COPY certs/postgres/server.key" in dockerfile
+
+    @pytest.mark.skipif(
+        not (shutil.which("sh") and shutil.which("openssl")), reason="needs sh and openssl"
+    )
+    def test_the_generated_postgres_leaf_verifies_against_the_ca_for_postgres(
+        self, tmp_path: Path
+    ) -> None:
+        """What the script *produces*, not what it says: a leaf self-signed with the right SAN
+        would pass every string check above and still be refused by `verify-full`. A legacy
+        self-signed `server.crt` is seeded so the reissue path is the one exercised."""
+        shutil.copy(REPOSITORY_ROOT / "ops" / "staging" / "generate-certs.sh", tmp_path)
+        certs = tmp_path / "certs"
+        certs.mkdir()
+        (certs / "server.crt").write_text("legacy self-signed leaf")
+        # Git Bash would otherwise rewrite `-subj "/CN=..."` into a Windows path.
+        environment = {**os.environ, "MSYS_NO_PATHCONV": "1"}
+
+        def run(*command: str) -> str:
+            done = subprocess.run(
+                command, cwd=tmp_path, env=environment, capture_output=True, text=True
+            )
+            assert done.returncode == 0, done.stderr
+            return done.stdout
+
+        assert "[OK] certificates generated" in run("sh", "generate-certs.sh")
+        leaf = "certs/postgres/server.crt"
+        assert run("openssl", "verify", "-CAfile", "certs/ca.crt", leaf).strip().endswith("OK")
+        san = run("openssl", "x509", "-in", leaf, "-noout", "-ext", "subjectAltName")
+        assert san.split(":", 1)[1].split() == ["DNS:postgres"], san
+        assert not (certs / "server.crt").exists(), "the legacy leaf would be mistaken for current"
 
     def test_web_and_worker_wait_for_migrations_and_the_bucket(self) -> None:
         """Either racing the schema or the bucket fails in a way that looks flaky."""
