@@ -5,11 +5,12 @@ the customer would recognise in their own export". `wording.caveat_prose` fills 
 `{field}` placeholders with the refused metric's business name, so `units_by_channel` refused for
 a gapped column reads "Units sold is in your file but some rows leave it empty".
 
-**Two reasons, not three.** `required_input_unavailable` carries the same `{column}` fill, but it
-is also a section reason, and `caveat_prose` routes every section reason to its section-context
-sentence ("This analysis -- not available"). Its result-context sentence is unreachable through
-`caveat_prose` today: a test of it fails because the metric is not named at all, so its `xfail`
-would pin a different defect from this one.
+**`required_input_unavailable` is pinned for the combined fix.** It is also a section reason, and
+`caveat_prose` routes every section reason to its section sentence ("This analysis -- not
+available"), so today the metric is not named at all (count 0). Fixing that routing alone would
+reach the result sentence and name the metric twice (count 2); only routing *and* the column give
+1. `incomplete_transaction_identifiers` and `family_version_pairing_unadmitted` share that routing
+defect; it is outside `#560` and recorded on the PR rather than pinned here.
 
 **Pinned as a strict `xfail`, not fixed here.** The joined `<result>:<reason>` code carries no
 refusing input, and a renderer that guessed one would be recomputing (`RRA-009` §Preservation).
@@ -34,6 +35,7 @@ from khepri.rra.rendering.wording import (
 
 RESULT = "units_by_channel"
 COLUMN_REASONS = (
+    "required_input_unavailable",
     "incomplete_column_coverage",
     "ambiguous_mapping",
 )

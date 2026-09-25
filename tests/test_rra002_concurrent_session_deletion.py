@@ -14,8 +14,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from khepri.rra.deletion import DeletionRetryRequired
 from khepri.rra.persistence import Base, SqlSessionStore, SqlUploadRepository
 from tests.rra002_deletion_race_support import (
+    WINDOW_AFTER_TARGETS,
     WINDOWS,
     ObjectStore,
     assert_one_deletion,
@@ -51,3 +53,39 @@ def test_a_request_overtaken_inside_the_window_answers_the_one_deletion(window: 
     results.append(delete(second, scope, NOW))
 
     assert_one_deletion(results, settled(factory, scope), "upl_alpha")
+
+
+class _FailingObjectStore(ObjectStore):
+    def delete(self, key: str) -> None:
+        raise RuntimeError("object store unavailable")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=ValueError,
+    reason="#560 item 6 residual: a stale attempt number after a racing fail() raises ValueError",
+)
+def test_a_request_overtaken_by_a_failed_attempt_is_not_a_server_error() -> None:
+    """A second request whose objects are gone, after the first recorded a failed attempt.
+
+    Both hold the pending job at attempt 0. The first request's object delete fails and `fail()`
+    moves the job to attempt 1; the second then completes with attempt-1 evidence, which
+    `_validate_attempt` refuses with `ValueError` -- a 500 from the route, which maps only
+    `SessionExpired` and `DeletionRetryRequired`. Fail-closed (no duplicate evidence, the job
+    stays `retryable`), but not an answer. Pinned, not fixed: the expected outcome is a later
+    slice's call.
+    """
+    factory = _factory()
+    scope = session_and_upload(SqlSessionStore(factory), SqlUploadRepository(factory))
+    failing = hooked_service(
+        factory, window=WINDOW_AFTER_TARGETS, hook=lambda: None, objects=_FailingObjectStore()
+    )
+
+    def overtaken() -> None:
+        with pytest.raises(DeletionRetryRequired):
+            delete(failing, scope, NOW)
+
+    second = hooked_service(
+        factory, window=WINDOW_AFTER_TARGETS, hook=overtaken, objects=ObjectStore()
+    )
+    delete(second, scope, NOW)

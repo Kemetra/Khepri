@@ -29,11 +29,17 @@ guessed the input would be recomputing (§Preservation). A fix needs three thing
 3. The owner names the part-4 column vocabulary. The journey's `semantic_*` labels are one
    candidate, but they are journey copy.
 
-**Second finding.** `required_input_unavailable` is also a section reason. `caveat_prose` routes
-every section reason to its section sentence ("This analysis — not available"), so the
-result-context sentence ("{metric} is not shown — the file does not contain {column}") cannot be
-reached through `caveat_prose`. The `{column}` defect is therefore latent for that reason. It is
-live for `incomplete_column_coverage` and `ambiguous_mapping`, and the `xfail` pins those two.
+**Second finding (live, outside `#560`).** Three codes are shared between section and result
+refusals: `required_input_unavailable`, `incomplete_transaction_identifiers`, and
+`family_version_pairing_unadmitted`. `caveat_prose` routes every section reason to its section
+sentence, so a refused *result* with a shared code renders the section text, and that text does not
+name the metric. For example, `units_by_channel:required_input_unavailable` reads "This analysis —
+not available", and `units_by_channel:incomplete_transaction_identifiers` reads "Basket size — not
+available". Either way RRA-009 part 1 fails, and the governed result-context sentences never reach a
+customer. This PR records the finding and does not fix it.
+
+The strict `xfail` pins all three column reasons. For `required_input_unavailable` it pins the
+combined fix: routing and column together are needed to reach exactly one mention of the metric.
 
 ### Item 5: why deferred
 
@@ -81,8 +87,10 @@ below stand in for a RED step.
 
 **Observed and not fixed.** In `after_targets`, suppose request B's object delete fails and B's
 `fail()` commits before A's `complete()`. A's attempt-1 evidence then no longer matches the job's
-attempt 2, so A raises `ValueError`, even though the content is gone. The outcome fails closed: no
-duplicate evidence is written and the job is retryable. It is recorded for a later slice.
+attempt 2, so A raises `ValueError`, even though the content is gone. The route maps only
+`SessionExpired` and `DeletionRetryRequired`, so the caller gets a 500. The outcome fails closed: no
+duplicate evidence is written and the job stays retryable. A strict `xfail` (`raises=ValueError`)
+pins it. The expected outcome is a later slice's call.
 
 ## Gates
 
