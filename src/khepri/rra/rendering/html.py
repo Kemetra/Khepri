@@ -66,7 +66,7 @@ from khepri.rra.rendering.wording import (
     SECTION_HEADINGS,
     business_metric_name,
     category_of,
-    caveat_prose,
+    caveat_proses,
     component_chrome,
     kind_qualifier,
     section_refusal_message,
@@ -609,10 +609,7 @@ def build_context(
         # whole dataset is qualified, and dropping it would leave `build_content`
         # claiming a caveat the page never showed.
         "caveats": [caveat for caveat in bundle.caveats if caveat.section is None],
-        "caveat_prose": {
-            caveat.code: caveat_prose(caveat.code, language)
-            for caveat in bundle.caveats
-        },
+        "caveat_prose": caveat_proses(bundle.caveats, language),
         "sections": _section_views(bundle, language, cells),
         "refused_state": SECTION_REFUSED,
         "cells": list(cells),

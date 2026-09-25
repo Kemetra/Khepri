@@ -149,7 +149,7 @@ from khepri.rra.rendering.wording import (
     REFUSAL_WORDING,
     SECTION_HEADINGS,
     category_of,
-    caveat_prose,
+    caveat_proses,
     section_refusal_message,
     stated_once,
     worded,
@@ -641,8 +641,9 @@ def _write_limitations(
     # One sentence once: two codes resolving to the same prose are one limitation to
     # a reader. `stated_once` is the page's rule too, applied here over the sheet's
     # one list rather than per section.
+    prose = caveat_proses(bundle.caveats, language)
     for code in stated_once(bundle.caveats, language):
-        row = _write_row(sheet, row + 1, (caveat_prose(code, language),))
+        row = _write_row(sheet, row + 1, (prose[code],))
 
 
 @dataclass(frozen=True, slots=True)

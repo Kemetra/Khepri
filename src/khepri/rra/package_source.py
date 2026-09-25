@@ -48,6 +48,7 @@ from khepri.rra.facts import (
     RefusedResult,
 )
 from khepri.rra.jobs import ReportJob
+from khepri.rra.mapping import SEMANTIC_RULES
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted
 from khepri.rra.sessions import SessionScope, assert_same_scope
 
@@ -355,8 +356,31 @@ def _bucket(entry: Mapping[str, Any]) -> Bucket:
     )
 
 
+#: The inputs a refusal may name. A stored input reaches customer prose as a label,
+#: so a value outside the governed semantics is a corrupt document, not a column.
+_GOVERNED_INPUTS = frozenset(rule.semantic for rule in SEMANTIC_RULES)
+
+
 def _refusal(entry: Mapping[str, Any]) -> RefusedResult:
-    return RefusedResult(metric=_text(entry, "metric"), reason=_text(entry, "reason"))
+    return RefusedResult(
+        metric=_text(entry, "metric"),
+        reason=_text(entry, "reason"),
+        input=_refusing_input(entry),
+    )
+
+
+def _refusing_input(entry: Mapping[str, Any]) -> str | None:
+    """The input a refusal names, or `None` for a document from before it did.
+
+    `.get` and not `_required`: `_required` refuses a *missing* key even when
+    optional, and every `rra004.package.v3` document is missing this one.
+    """
+    value = entry.get("input")
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in _GOVERNED_INPUTS:
+        raise PackageCorrupted("Stored fact package states an ungoverned refusal input.")
+    return value
 
 
 def _text(document: Mapping[str, Any], name: str) -> str:

@@ -67,6 +67,10 @@ ADMITTED_PACKAGE_PAIRS: frozenset[tuple[str, str, str]] = frozenset(
         # this commit and `V-concentration` empties it. That blackout is
         # the designed window, not a gap to close early.
         ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v2"),
+        # `#560` item 2's own row, and the only one it adds: `rra004.package.v4`
+        # records the input a refused result names. Mapping and formula are
+        # unmoved, so no family pair changes.
+        ("rra003.mapping.v3", "rra004.package.v4", "rra004.formula.v2"),
     }
 )
 

@@ -90,7 +90,9 @@ from khepri.rra.versions import (
 # v2 carries the five items APP-014 added to RRA-004: the retained concentration
 # curve, distinct transaction counts, per-bucket date counts, the recorded
 # comparison window, and the formula version as a field on every emitted fact.
-PACKAGE_VERSION = "rra004.package.v3"
+#
+# v4 (`#560` item 2) adds one optional field: the input a refused result names.
+PACKAGE_VERSION = "rra004.package.v4"
 FORMULA_VERSION = "rra004.formula.v2"
 
 # The governed comparison window, recorded rather than chosen by whichever module
@@ -177,6 +179,12 @@ REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
 #: missing is proof of which reading is true, and no column in the extract
 #: carries it.
 REASON_REPEATED_ROW_SIGNATURE = "repeated_row_signature"
+#: `RRA-003`: "A repeated event key, whether identical or conflicting, refuses every
+#: additive or distinct-transaction result that could include it." The same results
+#: refuse as for a repeated signature, and the cause is different: the extract has an
+#: identifying reference, and two lines share it or one leaves it blank. `RRA-003`
+#: proves identity in exactly one way, so the two codes never compete for one result.
+REASON_REPEATED_EVENT_KEY = "repeated_event_key"
 #: `RRA-004`:46 refuses a headline when "a required admitted column has gaps".
 #: Distinct from `REASON_INPUT_UNAVAILABLE`, whose customer wording says the file
 #: "does not contain" the column and asks for it to be included: here the column
@@ -343,9 +351,19 @@ class FactComparison:
 class RefusedResult:
     metric: str
     reason: str
+    #: `rra004.package.v4`: the governed semantic whose absence, gap or ambiguous
+    #: label refused this result, so its sentence names that column (`RRA-009`
+    #: §Refusals part 4). `None` where no column explains the cause, and for every
+    #: package written before the field existed.
+    input: str | None = None
 
     def as_document(self) -> dict[str, object]:
-        return {"metric": self.metric, "reason": self.reason}
+        # Absence serializes as absence: `package_source` re-digests a stored
+        # document, so a key a `v3` document never carried would refuse it.
+        document: dict[str, object] = {"metric": self.metric, "reason": self.reason}
+        if self.input is not None:
+            document["input"] = self.input
+        return document
 
 
 @dataclass(frozen=True, slots=True)
@@ -537,6 +555,46 @@ class _Causes:
     gapped: frozenset[str] = frozenset()
     repeated: bool = False
     identifiers_complete: bool = True
+    #: Which repeat `repeated` means. Chosen once per package by `_causes`.
+    repeated_reason: str = REASON_REPEATED_ROW_SIGNATURE
+
+
+@dataclass(frozen=True, slots=True)
+class _Cause:
+    """One result's stated reason, and the input column it names, if any."""
+
+    reason: str
+    input: str | None = None
+
+
+def _causes(
+    mapping: RetailMapping,
+    measures: _Measures,
+    repeated: bool,
+    repeated_key_kinds: frozenset[str],
+) -> _Causes:
+    """The causes every result of one package shares, before each narrows them.
+
+    `RRA-003` proves identity "in exactly one of these ways", and each proof has
+    its own falsification: a keyed contract by a repeated or blank key, an
+    attested one by a repeated canonical row signature. Neither test runs under
+    the other proof, so the kind of test that fired names the package's repeat.
+    """
+    return _Causes(
+        mapping=mapping,
+        repeated=repeated,
+        identifiers_complete=measures.transaction_identifiers_complete,
+        repeated_reason=(
+            REASON_REPEATED_EVENT_KEY if repeated_key_kinds else REASON_REPEATED_ROW_SIGNATURE
+        ),
+    )
+
+
+def _refused(metric: str, cause: str | _Cause) -> RefusedResult:
+    """A refusal from a bare reason code, or from a cause that names its input."""
+    if isinstance(cause, _Cause):
+        return RefusedResult(metric=metric, reason=cause.reason, input=cause.input)
+    return RefusedResult(metric=metric, reason=cause)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1092,10 +1150,10 @@ def _build(
         unit_kind: str,
         precision: int,
         inputs: tuple[str, ...],
-        reason: str = REASON_INPUT_UNAVAILABLE,
+        reason: str | _Cause = REASON_INPUT_UNAVAILABLE,
     ) -> None:
         if value is None:
-            refusals.append(RefusedResult(metric=metric, reason=reason))
+            refusals.append(_refused(metric, reason))
             return
         facts.append(
             _fact(
@@ -1116,11 +1174,7 @@ def _build(
     population_gaps = frozenset({SEMANTIC_REVENUE} if totals.returns_violated else ())
     column_gaps = measures.gapped_semantics | population_gaps
 
-    causes = _Causes(
-        mapping=mapping,
-        repeated=repeated_rows,
-        identifiers_complete=measures.transaction_identifiers_complete,
-    )
+    causes = _causes(mapping, measures, repeated_rows, repeated_key_kinds)
 
     # `gaps_from` defaults to the result's own inputs, and narrows only where a
     # gap in one of them does not refuse the result.
@@ -1129,7 +1183,7 @@ def _build(
         *,
         gaps_from: Iterable[str] | None = None,
         repeated: bool = repeated_rows,
-    ) -> str:
+    ) -> _Cause:
         gaps = column_gaps.intersection(inputs if gaps_from is None else gaps_from)
         return _reason_for(inputs, replace(causes, gapped=gaps, repeated=repeated))
 
@@ -1979,7 +2033,7 @@ def _matched(left: list, right: list) -> _Matched:
     )
 
 
-def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> str:
+def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> _Cause:
     """The one cause a refused result states, in the order `RRA-009` governs.
 
     "When more than one cause refuses the same result, state exactly one, chosen
@@ -1989,6 +2043,11 @@ def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> str:
     reason comes through here, because `#431` A-05 was three call sites each
     choosing their own and each getting one case wrong.
 
+    **The cause carries the column it names** (`#560` item 2): the first of the
+    result's own inputs with a gap, or the first unmapped one. A repeat names no
+    column, and neither does an incomplete identifier. `repeated_event_key` takes
+    the slot of the repeat it was split from (`#326` item 4).
+
     **Pairs `RRA-009` does not order keep their existing order.** Incomplete
     transaction identifiers came after a repeated sale signature before this
     resolver existed, and still do; zero and negative denominators,
@@ -1996,28 +2055,30 @@ def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> str:
     never reach here.
     """
     if causes.gapped:
-        return REASON_INCOMPLETE_COVERAGE
+        gapped = next((semantic for semantic in inputs if semantic in causes.gapped), None)
+        return _Cause(REASON_INCOMPLETE_COVERAGE, gapped)
     if causes.repeated:
-        return REASON_REPEATED_ROW_SIGNATURE
+        return _Cause(causes.repeated_reason)
     if SEMANTIC_TRANSACTION_ID in inputs and not causes.identifiers_complete:
-        return REASON_INCOMPLETE_IDENTIFIERS
+        return _Cause(REASON_INCOMPLETE_IDENTIFIERS)
     return _mapping_reason(causes.mapping, inputs)
 
 
-def _mapping_reason(mapping: RetailMapping, inputs: tuple[str, ...]) -> str:
-    """The first unmapped input's cause, or plain unavailability.
+def _mapping_reason(mapping: RetailMapping, inputs: tuple[str, ...]) -> _Cause:
+    """The first unmapped input's cause and that input, or plain unavailability.
 
     So a column named only `discount` still says its *label* is the problem
-    (`ambiguous_mapping`) rather than that the file lacks it.
+    (`ambiguous_mapping`) rather than that the file lacks it. Plain
+    unavailability with every input mapped names no column: something other than
+    the mapping refused the value, and naming a column would misattribute it.
     """
-    return next(
-        (
-            _unavailable_reason(mapping, semantic)
-            for semantic in inputs
-            if mapping.state_of(semantic) != STATE_MAPPED
-        ),
-        REASON_INPUT_UNAVAILABLE,
+    unmapped = next(
+        (semantic for semantic in inputs if mapping.state_of(semantic) != STATE_MAPPED),
+        None,
     )
+    if unmapped is None:
+        return _Cause(REASON_INPUT_UNAVAILABLE)
+    return _Cause(_unavailable_reason(mapping, unmapped), unmapped)
 
 
 def _unavailable_reason(mapping: RetailMapping, semantic: str) -> str:
@@ -2086,10 +2147,7 @@ def _derived_refusal(metric: str, entry: _Aggregated, *, surface: str) -> Refuse
     Stated once because the two call sites answer one question. Inlined at each,
     they were two conditionals that could drift apart on the same requirement.
     """
-    return RefusedResult(
-        metric=metric,
-        reason=_reason_for((surface, entry.measure), entry.causes),
-    )
+    return _refused(metric, _reason_for((surface, entry.measure), entry.causes))
 
 
 def _series(
@@ -2380,7 +2438,7 @@ def _add_ratio(
     unit_kind: str,
     precision: int,
     inputs: tuple[str, ...],
-    unavailable_reason: str = REASON_INPUT_UNAVAILABLE,
+    unavailable_reason: str | _Cause = REASON_INPUT_UNAVAILABLE,
 ) -> None:
     if numerator is None or denominator is None:
         add(

@@ -267,9 +267,10 @@ def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
     """
     if not _identified(package):
         reason = _identifier_reason(package)
+        source = _recorded_input(package, METRIC_TRANSACTIONS, reason)
         return (
-            RefusedResult(metric=METRIC_ITEMS_PER_TRANSACTION, reason=reason),
-            RefusedResult(metric=METRIC_ATTACH_RATE, reason=reason),
+            RefusedResult(metric=METRIC_ITEMS_PER_TRANSACTION, reason=reason, input=source),
+            RefusedResult(metric=METRIC_ATTACH_RATE, reason=reason, input=source),
         )
     refused: list[RefusedResult] = []
     if _items(package) is None:
@@ -277,6 +278,7 @@ def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
             RefusedResult(
                 metric=METRIC_ITEMS_PER_TRANSACTION,
                 reason=REASON_INPUT_UNAVAILABLE,
+                input=_recorded_input(package, METRIC_UNITS, REASON_INPUT_UNAVAILABLE),
             )
         )
     found = _dimensions(package)
@@ -376,6 +378,19 @@ def _counts(package: FactPackage) -> _Basket | None:
     if counted == 0:
         return None
     return _Basket(units=Decimal(units), transactions=counted)
+
+
+def _recorded_input(package: FactPackage, metric: str, reason: str) -> str | None:
+    """The input the package's own refusal of `metric` named, when it gave `reason`.
+
+    Read, not re-decided, for the reason `_identifier_reason` is (`#560` item 2).
+    Only a refusal stating the same reason lends its column: units refused for a
+    repeat, say, leave items per sale unavailable without any column to name.
+    """
+    refused = package.refusal(metric)
+    if refused is None or refused.reason != reason:
+        return None
+    return refused.input
 
 
 def _identifier_reason(package: FactPackage) -> str:
