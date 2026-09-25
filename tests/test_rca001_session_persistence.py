@@ -25,11 +25,13 @@ from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
 from khepri.rca.errors import AuthenticationFailed
+from khepri.rca.organizations import OrganizationService
 from khepri.rca.persistence import (
     AccountRow,
     ExternalIdentityRow,
     SessionRow,
     SqlAccountStore,
+    SqlOrganizationStore,
 )
 from khepri.rca.session_persistence import SqlSessionStore
 from khepri.rca.sessions import Session, hash_session_id
@@ -147,16 +149,22 @@ class TestTheSessionStore:
         assert not resolved.is_live_at(NOW + timedelta(minutes=6))
 
     def test_the_active_organization_is_persisted(self, factory: sessionmaker) -> None:
+        """The organization is a real one: `20260925_0032` (#432) refuses a phantom."""
         account_id = _account(factory)
+        organization_id = (
+            OrganizationService(SqlOrganizationStore(factory))
+            .create_organization("Acme", account_id, now=NOW)
+            .organization_id
+        )
         store = SqlSessionStore(factory)
         issued = Session.issue(account_id, now=NOW, lifetime=LIFETIME)
         store.add_session(issued.session)
 
-        assert store.point_session_at_organization(issued.session.session_id_hash, "org_acme")
+        assert store.point_session_at_organization(issued.session.session_id_hash, organization_id)
 
         resolved = store.get_session(issued.session.session_id_hash)
         assert resolved is not None
-        assert resolved.active_organization_id == "org_acme"
+        assert resolved.active_organization_id == organization_id
 
     def test_timestamps_come_back_timezone_aware(self, factory: sessionmaker) -> None:
         """SQLite drops tzinfo. A naive `expires_at` would compare wrongly against an aware `now`
@@ -425,7 +433,9 @@ class TestTheMigration:
         then `20260906_0028`, which admits the retention sweep's own action (`FR-125`). `W1-09`
         then added `20260906_0029`, the pin table (`FR-128`, under active `KHEPRI-DEC-034`), which
         was followed by `20260915_0030`, the DEC-033 correction that moves existing workspace
-        content off the beta timer. That correction is the head this pin now names.
+        content off the beta timer. #432 then added `20260925_0031`, the composite key binding a
+        fact package's profile to the package's scope, and `20260925_0032`, the foreign key on
+        `rca_sessions.active_organization_id`. That key is the head this pin now names.
         """
         import subprocess
 
@@ -434,7 +444,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260915_0030" in result.stdout
+        assert "20260925_0032" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:
