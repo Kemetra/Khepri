@@ -97,8 +97,9 @@ asserted source. The runtime never falls back to `require`.
 
 **Left alone, and named in the PR.**
 
-- `migrations/env.py` reads `KHEPRI_DATABASE_URL` raw and gates nothing. It is outside this
-  decision's reach.
+- `migrations/env.py` reads `KHEPRI_DATABASE_URL` raw and gates nothing. The owner's §4 wording
+  carves out no connection path, so this is **raised as an owner question** in the PR rather than
+  settled here: gate it in this PR or in a follow-up.
 - `src/khepri/infra/compute.py` is the frozen AWS reference. Its task definition supplies no CA, so
   it would now fail closed at boot. It is not the deployment path.
 - `docs/platform/proposed-governance/` still describes `sslmode=require`. Those files are proposals.
