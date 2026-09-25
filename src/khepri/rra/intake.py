@@ -453,15 +453,16 @@ def _inflated_size(stream: bytes, entry: zipfile.ZipInfo) -> int | None:
         return len(stream)
     inflater = zlib.decompressobj(-zlib.MAX_WBITS)
     produced = 0
-    while not inflater.eof:
+    while True:
         step = inflater.decompress(stream, _INFLATE_STEP_BYTES)
         produced += len(step)
         stream = inflater.unconsumed_tail
         if produced > entry.file_size:
             return None
+        if inflater.eof:
+            return produced  # a final call may yield nothing: the end marker alone
         if not step and not stream:
             return None  # the stream ran out before its end marker
-    return produced
 
 
 def _read_xml_part(archive: zipfile.ZipFile, path: str, *, max_bytes: int) -> bytes:

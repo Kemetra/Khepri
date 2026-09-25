@@ -97,6 +97,10 @@ def _unknown(service: InvitationService, client: TestClient) -> str:
     return "kiv1.inv_" + "A" * 24 + ".secret"
 
 
+def _malformed(service: InvitationService, client: TestClient) -> str:
+    return "not-a-token"
+
+
 def _expired(service: InvitationService, client: TestClient) -> str:
     return service.issue_invitation(expires_at=NOW)
 
@@ -118,6 +122,7 @@ def _wrong_secret(service: InvitationService, client: TestClient) -> str:
     "token_for",
     [
         pytest.param(_unknown, id="unknown_invitation"),
+        pytest.param(_malformed, id="malformed"),
         pytest.param(_expired, id="expired"),
         pytest.param(_redeemed, id="already_redeemed"),
         pytest.param(_wrong_secret, id="wrong_secret_control"),
@@ -126,8 +131,8 @@ def _wrong_secret(service: InvitationService, client: TestClient) -> str:
 def test_every_well_formed_refusal_pays_one_hash(token_for, monkeypatch) -> None:
     """`RRA-001`: a refusal must not reveal which check failed, and time is a channel.
 
-    A wrong secret pays one scrypt. An unknown, expired, or already redeemed invitation used to
-    short-circuit before it, so a caller holding a leaked identifier could tell those apart by
+    A wrong secret pays one scrypt. A malformed token, or an unknown, expired, or already redeemed
+    invitation, used to short-circuit before the hash, so a caller could tell those apart by
     latency. The seam counts derivations rather than timing them.
     """
     client, service, _ = client_service_store()

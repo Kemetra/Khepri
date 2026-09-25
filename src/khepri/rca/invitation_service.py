@@ -193,16 +193,12 @@ class InvitationService:
         race this one is not closable: disablement is a write and two writers can be made to
         contend, but expiry has no writer to serialize with.
         """
-        try:
-            invitation_id, secret = parse_token(token)
-        except ValueError as malformed:
-            raise InvitationOperationFailed(INVITATION_FAILURE) from malformed
+        invitation_id, secret = _parsed_or_unissued(token)
 
         # The destroy-on-touch read: an expired invitation's verifier is destroyed here, in the
         # transaction that reads it, before this method refuses.
         invitation = self._store.find_for_redemption(invitation_id, now=now)
-        matches = verify_secret(secret, _verifier_of(invitation))  # always one scrypt: FR-017
-        if invitation is None or not matches:
+        if not verify_secret(secret, _verifier_of(invitation)) or invitation is None:
             raise InvitationOperationFailed(INVITATION_FAILURE)
 
         # §6.1.1: the addressee is who may redeem, which is what makes a forwarded token useless.
@@ -246,6 +242,25 @@ class InvitationService:
             session_id_hash=actor.session.session_id_hash,
         ):
             raise InvitationOperationFailed(INVITATION_FAILURE)
+
+
+#: A well-formed identifier `issue` can never mint. `secrets.token_urlsafe(18)` is always 24
+#: characters, and this suffix is not, so the lookup it drives always misses.
+_UNISSUED_INVITATION_ID = "inv_never-issued"
+
+
+def _parsed_or_unissued(token: str) -> tuple[str, str]:
+    """The token's identifier and secret. A malformed token gets an identifier no row can hold.
+
+    `FR-017` names a malformed token among the causes that must be indistinguishable, timing
+    included. The R4-01 design note §5 therefore requires the malformed path to pay the ordinary
+    lookup and the ordinary hash rather than refuse early. `redeem` then refuses it on the same
+    line as every other miss (`#434` §7).
+    """
+    try:
+        return parse_token(token)
+    except ValueError:
+        return _UNISSUED_INVITATION_ID, token
 
 
 def _verifier_of(invitation: Invitation | None) -> Verifier | None:

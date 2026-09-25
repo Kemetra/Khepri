@@ -388,6 +388,16 @@ def _honest_with_shared_strings() -> bytes:
     return _with_member(_xlsx({"Sales": ["revenue"]}), _SHARED_STRINGS_PART, _SHARED_STRINGS)
 
 
+def _central_record(data: bytearray, path: str) -> int:
+    """The offset of `path`'s central directory record (its name follows 46 fixed bytes)."""
+    name = path.encode()
+    return next(
+        match.start()
+        for match in re.finditer(b"PK\x01\x02", data)
+        if data[match.start() + 46 : match.start() + 46 + len(name)] == name
+    )
+
+
 def _misrecorded(content: bytes, path: str, *, size: int, forge_crc: bool) -> bytes:
     """The workbook with `path`'s recorded size -- and optionally its CRC -- describing a prefix.
 
@@ -395,13 +405,8 @@ def _misrecorded(content: bytes, path: str, *, size: int, forge_crc: bool) -> by
     size at +24) are rewritten, so neither header tells the truth about the deflate stream.
     """
     data = bytearray(content)
-    name = path.encode()
     local = zipfile.ZipFile(io.BytesIO(content)).getinfo(path).header_offset
-    central = next(
-        match.start()
-        for match in re.finditer(b"PK\x01\x02", data)
-        if data[match.start() + 46 : match.start() + 46 + len(name)] == name
-    )
+    central = _central_record(data, path)
     prefix_crc = zlib.crc32(_SHARED_STRINGS[:size])
     for crc_at, size_at in ((local + 14, local + 22), (central + 16, central + 24)):
         struct.pack_into("<I", data, size_at, size)
@@ -421,6 +426,34 @@ def _finished(content: bytes, *, max_expanded_bytes: int = MAX_XLSX_EXPANDED_BYT
 def test_an_unparsed_member_with_a_true_recorded_size_is_accepted() -> None:
     """The control: inflating every member must not refuse an honest one intake never parses."""
     assert _finished(_honest_with_shared_strings()) == XLSX_MEDIA_TYPE
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(b"", id="empty"),
+        pytest.param(b"x" * (1024 * 1024), id="exactly_one_inflate_step"),
+        pytest.param(b"x" * (2 * 1024 * 1024 + 1), id="past_two_steps"),
+    ],
+)
+def test_an_honest_member_at_an_inflate_boundary_is_accepted(data: bytes) -> None:
+    """A stream can end in a call that produces nothing, and that is its end, not a truncation."""
+    content = _with_member(_xlsx({"Sales": ["revenue"]}), "docProps/custom.xml", data)
+
+    assert _finished(content) == XLSX_MEDIA_TYPE
+
+
+def test_a_member_whose_deflate_stream_is_cut_short_is_rejected() -> None:
+    """A recorded compressed size that cuts the stream leaves no end marker, so it is refused."""
+    honest = _honest_with_shared_strings()
+    info = zipfile.ZipFile(io.BytesIO(honest)).getinfo(_SHARED_STRINGS_PART)
+    data = bytearray(honest)
+    central = _central_record(data, _SHARED_STRINGS_PART)
+    for size_at in (info.header_offset + 18, central + 20):
+        struct.pack_into("<I", data, size_at, info.compress_size // 2)
+
+    with pytest.raises(IntakeRejected):
+        _finished(bytes(data))
 
 
 @pytest.mark.parametrize(

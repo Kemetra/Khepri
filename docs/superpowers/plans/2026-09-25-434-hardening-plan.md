@@ -65,7 +65,9 @@ test, so its mutation check replaces `account_for_update` with `database.get`.
 
 RRA `InvitationService.redeem` and RCA `InvitationService.redeem` each pay exactly one scrypt on
 every well-formed token. That covers an unknown identifier, a destroyed verifier, a redeemed
-invitation, and an expired one, using a fixed dummy salt at the invitation work factor. The RED
+invitation, and an expired one, using a fixed dummy salt at the invitation work factor. A
+malformed token is given a well-formed identifier that is never issued and takes the ordinary
+lookup and hash, as the R4-01 design note §5 requires. The RED
 tests count calls to the hash seam. RRA's test drives `POST /api/v1/beta/sessions/redeem`. RCA
 has no HTTP redemption route, so its test drives the service verb.
 

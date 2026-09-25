@@ -12,13 +12,14 @@ two-door rule in `records.py`.
 
 `FR-017` requires six distinct redemption failures -- malformed token, unknown identifier, wrong
 secret, expired, revoked, already redeemed -- to be indistinguishable by message *and by timing*.
-`parse_token` and `verify_secret` here raise and return ordinarily, because timing uniformity is a
-property of the path that sequences them and cannot be established by either one alone: the design
-note's section 6 requires a dummy lookup *and* a dummy scrypt on the malformed-token path, which is
-earlier than any call here. `R4-05` owns that path. A caller that treats these two functions as the
-whole of `FR-017` compliance will leak existence through timing, which the note names as the place a
-`R4` implementation is most likely to be accidentally non-compliant "because the fast path looks
-like an optimization".
+`parse_token` raises ordinarily. `verify_secret` pays one scrypt even for a `None` verifier
+(`#434` §7), but timing uniformity still belongs to the path that sequences them and cannot be
+established by either one alone. The design note requires a dummy lookup *and* a dummy scrypt on
+the malformed-token path, which comes before any call here. `R4-05` owns that path:
+`InvitationService.redeem` gives a malformed token an identifier that was never issued and takes
+the ordinary route. A caller that treats these two functions as the whole of `FR-017` compliance
+will leak existence through timing. The note names that as the place an `R4` implementation is
+most likely to be accidentally non-compliant, "because the fast path looks like an optimization".
 """
 
 from __future__ import annotations

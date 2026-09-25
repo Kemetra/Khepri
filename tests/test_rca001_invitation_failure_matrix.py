@@ -386,30 +386,39 @@ class TestEveryCauseCollapsesToOneRefusal:
     def test_the_message_is_the_uniform_one(self, factory: sessionmaker, cause: str) -> None:
         assert self._refusal_for(factory, cause) == INVITATION_FAILURE
 
-    @pytest.mark.parametrize("cause", [cause for cause in _CAUSES if cause != "malformed_token"])
-    def test_every_well_formed_cause_pays_one_hash(
+    @pytest.mark.parametrize("cause", _CAUSES)
+    def test_every_cause_pays_one_lookup_and_one_hash(
         self, factory: sessionmaker, cause: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`FR-017` by timing, not only by message (`#434` §7).
 
-        A wrong secret pays one scrypt. An unknown, revoked, or expired invitation used to refuse
-        before any hash -- the row is absent or its verifier destroyed -- so a caller holding a
-        leaked identifier could tell those apart by latency. The seam counts derivations rather
-        than timing them. A malformed token is excluded: its caller already knows it is malformed.
+        A wrong secret pays one lookup and one scrypt. An unknown, revoked, or expired invitation
+        used to refuse before any hash, because the row is absent or its verifier destroyed. A
+        malformed token refused before the lookup too. A caller could tell those apart by
+        latency. The R4-01 design note §5 requires one round trip and one KDF invocation whatever
+        the cause. The seams count both rather than timing them.
         """
         token, actor, moment = self._presented(factory, cause)
         derivations: list[bytes] = []
+        lookups: list[str] = []
         real_hash = invitations.hash_credential
+        store = SqlInvitationStore(factory)
+        real_lookup = store.find_for_redemption
 
         def counting(secret: str, salt: bytes, kdf: KdfParams) -> bytes:
             derivations.append(salt)
             return real_hash(secret, salt, kdf)
 
-        monkeypatch.setattr(invitations, "hash_credential", counting)
-        with pytest.raises(InvitationOperationFailed):
-            _service(factory).redeem(token, actor, now=moment)
+        def counted_lookup(invitation_id: str, *, now: datetime):  # type: ignore[no-untyped-def]
+            lookups.append(invitation_id)
+            return real_lookup(invitation_id, now=now)
 
-        assert len(derivations) == 1, f"{cause} must cost exactly one scrypt"
+        monkeypatch.setattr(invitations, "hash_credential", counting)
+        monkeypatch.setattr(store, "find_for_redemption", counted_lookup)
+        with pytest.raises(InvitationOperationFailed):
+            InvitationService(store).redeem(token, actor, now=moment)
+
+        assert (len(lookups), len(derivations)) == (1, 1), f"{cause}: one lookup, one scrypt"
 
     def test_no_cause_is_distinguishable_from_another(self, factory: sessionmaker) -> None:
         """The set assertion: six causes, one message.
