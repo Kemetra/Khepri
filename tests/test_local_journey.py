@@ -82,7 +82,11 @@ def stack() -> LocalStack:
 def client(stack: LocalStack) -> Iterator[TestClient]:
     # HTTPS because the session cookie is `secure`; a plain-http client would
     # never send it back and every later step would read as unauthenticated.
-    with TestClient(build_web_app(stack), base_url="https://local.test") as session:
+    # `Origin` as a browser sends it: a cookie-bearing mutation without either browser signal is
+    # refused (`require_same_origin`, `#434` §2).
+    with TestClient(
+        build_web_app(stack), base_url="https://local.test", headers={"Origin": "https://local.test"}
+    ) as session:
         yield session
 
 
@@ -199,7 +203,9 @@ class TestIsolationHolds:
             expires_at=stack.clock() + timedelta(days=7)
         )
         with TestClient(
-            build_web_app(stack), base_url="https://local.test"
+            build_web_app(stack),
+            base_url="https://local.test",
+            headers={"Origin": "https://local.test"},
         ) as intruder:
             intruder.post("/api/v1/beta/sessions/redeem", json={"token": second})
 

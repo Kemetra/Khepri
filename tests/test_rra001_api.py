@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -87,3 +88,66 @@ def test_consent_endpoint_records_version_for_redeemed_session() -> None:
     assert session is not None
     assert session.consent_version == "beta-privacy-v1"
     assert session.consented_at == NOW
+
+
+# --- #434 §7: every well-formed refusal pays the same one scrypt ----------------------------
+
+
+def _unknown(service: InvitationService, client: TestClient) -> str:
+    return "kiv1.inv_" + "A" * 24 + ".secret"
+
+
+def _malformed(service: InvitationService, client: TestClient) -> str:
+    return "not-a-token"
+
+
+def _expired(service: InvitationService, client: TestClient) -> str:
+    return service.issue_invitation(expires_at=NOW)
+
+
+def _redeemed(service: InvitationService, client: TestClient) -> str:
+    token = service.issue_invitation(expires_at=NOW + timedelta(hours=1))
+    assert client.post("/api/v1/beta/sessions/redeem", json={"token": token}).status_code == 201
+    return token
+
+
+def _wrong_secret(service: InvitationService, client: TestClient) -> str:
+    prefix, invitation_id, _secret = service.issue_invitation(
+        expires_at=NOW + timedelta(hours=1)
+    ).split(".")
+    return f"{prefix}.{invitation_id}.not-the-secret"
+
+
+@pytest.mark.parametrize(
+    "token_for",
+    [
+        pytest.param(_unknown, id="unknown_invitation"),
+        pytest.param(_malformed, id="malformed"),
+        pytest.param(_expired, id="expired"),
+        pytest.param(_redeemed, id="already_redeemed"),
+        pytest.param(_wrong_secret, id="wrong_secret_control"),
+    ],
+)
+def test_every_well_formed_refusal_pays_one_hash(token_for, monkeypatch) -> None:
+    """`RRA-001`: a refusal must not reveal which check failed, and time is a channel.
+
+    A wrong secret pays one scrypt. A malformed token, or an unknown, expired, or already redeemed
+    invitation, used to short-circuit before the hash, so a caller could tell those apart by
+    latency. The seam counts derivations rather than timing them.
+    """
+    client, service, _ = client_service_store()
+    token = token_for(service, client)
+    derivations: list[bytes] = []
+    real_digest = InvitationService._digest
+
+    def counting(secret: str, salt: bytes) -> bytes:
+        derivations.append(salt)
+        return real_digest(secret, salt)
+
+    monkeypatch.setattr(InvitationService, "_digest", staticmethod(counting))
+
+    response = client.post("/api/v1/beta/sessions/redeem", json={"token": token})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invitation is invalid or unavailable."}
+    assert len(derivations) == 1, "each refusal must cost exactly one scrypt"

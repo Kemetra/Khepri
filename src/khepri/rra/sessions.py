@@ -8,6 +8,12 @@ from datetime import datetime, timedelta
 from typing import Protocol
 
 _INVITATION_FAILURE = "Invitation is invalid or unavailable."
+#: Hashed against when no invitation exists, so that refusal pays the scrypt a real one does.
+#: The same length as an issued salt (`secrets.token_bytes(16)`).
+_DUMMY_SALT = b"\x00" * 16
+#: Well-formed but never minted. Issued identifiers carry `secrets.token_urlsafe(18)`, which is
+#: always 24 characters, and this suffix is not.
+_UNISSUED_INVITATION_ID = "inv_never-issued"
 
 
 class InvitationRejected(ValueError):
@@ -143,6 +149,34 @@ class InvitationService:
         candidate = self._digest(secret, invitation.secret_salt)
         return hmac.compare_digest(candidate, invitation.secret_digest)
 
+    def _parsed_or_unissued(self, token: str) -> tuple[str, str]:
+        """The token's parts. A malformed token gets an identifier no invitation can hold.
+
+        `RRA-001` names a malformed invitation among the refusals that must not reveal which check
+        failed. It therefore takes the ordinary lookup and hash rather than refusing early
+        (`#434` §7).
+        """
+        try:
+            return self.parse_token(token)
+        except InvitationRejected:
+            return _UNISSUED_INVITATION_ID, token
+
+    def _redeemable(
+        self, secret: str, invitation: Invitation | None, *, now: datetime
+    ) -> bool:
+        """Whether a well-formed token redeems, having paid one scrypt whatever the answer.
+
+        `RRA-001` requires a refusal not to reveal which check failed, and time is a channel
+        (`#434` §7). The secret is hashed first and always: against a fixed dummy salt when no
+        invitation exists, so an unknown, expired, or redeemed invitation costs what a wrong
+        secret costs.
+        """
+        if invitation is None:
+            self._digest(secret, _DUMMY_SALT)
+            return False
+        matches = self.verify_secret(secret, invitation)
+        return matches and invitation.redeemed_at is None and invitation.expires_at > now
+
     @staticmethod
     def _digest(secret: str, salt: bytes) -> bytes:
         return hashlib.scrypt(
@@ -155,14 +189,9 @@ class InvitationService:
         )
 
     def redeem(self, token: str, *, now: datetime) -> BetaSession:
-        invitation_id, secret = self.parse_token(token)
+        invitation_id, secret = self._parsed_or_unissued(token)
         invitation = self._store.get_invitation(invitation_id)
-        if (
-            invitation is None
-            or invitation.redeemed_at is not None
-            or invitation.expires_at <= now
-            or not self.verify_secret(secret, invitation)
-        ):
+        if not self._redeemable(secret, invitation, now=now):
             raise InvitationRejected(_INVITATION_FAILURE)
 
         session = BetaSession(
