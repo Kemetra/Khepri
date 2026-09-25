@@ -10,16 +10,21 @@ the interleaving the race needs, reproduced every run. What SQLite cannot show i
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from khepri.rra.deletion import DeletionRetryRequired
+from khepri.rra.api import create_app
+from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.persistence import Base, SqlSessionStore, SqlUploadRepository
+from khepri.rra.session_cookie import SESSION_COOKIE
+from khepri.rra.sessions import InvitationService, SessionScope
 from tests.rra002_deletion_race_support import (
     WINDOW_AFTER_TARGETS,
     WINDOWS,
     ObjectStore,
+    Settled,
     assert_one_deletion,
     delete,
     hooked_service,
@@ -60,20 +65,30 @@ class _FailingObjectStore(ObjectStore):
         raise RuntimeError("object store unavailable")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=ValueError,
-    reason="#560 item 6 residual: a stale attempt number after a racing fail() raises ValueError",
-)
-def test_a_request_overtaken_by_a_failed_attempt_is_not_a_server_error() -> None:
-    """A second request whose objects are gone, after the first recorded a failed attempt.
+def _route_client(
+    service: DeletionService, factory: sessionmaker, scope: SessionScope
+) -> TestClient:
+    app = create_app(
+        service=InvitationService(SqlSessionStore(factory)),
+        deletion_service=service,
+        clock=lambda: NOW,
+    )
+    client = TestClient(app, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE, scope.session_id)
+    return client
 
-    Both hold the pending job at attempt 0. The first request's object delete fails and `fail()`
-    moves the job to attempt 1; the second then completes with attempt-1 evidence, which
-    `_validate_attempt` refuses with `ValueError` -- a 500 from the route, which maps only
-    `SessionExpired` and `DeletionRetryRequired`. Fail-closed (no duplicate evidence, the job
-    stays `retryable`), but not an answer. Pinned, not fixed: the expected outcome is a later
-    slice's call.
+
+@pytest.mark.parametrize(
+    "outer_objects", [ObjectStore, _FailingObjectStore], ids=["outer_deletes", "outer_fails"]
+)
+def test_a_request_overtaken_by_a_failed_attempt_answers_retry(outer_objects: type) -> None:
+    """A request overtaken by a failed attempt answers the retry, not a 500 (`#576`; `RRA-002`).
+
+    Both requests hold the pending job at attempt 0. The inner request's object delete fails and
+    its `fail()` commits attempt 1. The outer request -- whether its own deletes succeed or fail --
+    then settles against a job its snapshot no longer describes. `RRA-002` §Requirements names
+    "immediate idempotent deletion" and "retry state": the route answers the governed 503 retry,
+    keeps the session cookie, and the store holds only the inner attempt's evidence.
     """
     factory = _factory()
     scope = session_and_upload(SqlSessionStore(factory), SqlUploadRepository(factory))
@@ -85,7 +100,17 @@ def test_a_request_overtaken_by_a_failed_attempt_is_not_a_server_error() -> None
         with pytest.raises(DeletionRetryRequired):
             delete(failing, scope, NOW)
 
-    second = hooked_service(
-        factory, window=WINDOW_AFTER_TARGETS, hook=overtaken, objects=ObjectStore()
+    outer = hooked_service(
+        factory, window=WINDOW_AFTER_TARGETS, hook=overtaken, objects=outer_objects()
     )
-    delete(second, scope, NOW)
+    response = _route_client(outer, factory, scope).delete("/api/v1/beta/content")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Content deletion is pending retry."}
+    assert "set-cookie" not in response.headers
+    assert settled(factory, scope) == Settled(
+        jobs=1,
+        attempt_count=1,
+        evidence=((1, "upl_alpha", "failed"),),
+        content_deleted=False,
+    )
