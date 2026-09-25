@@ -5,12 +5,11 @@ the customer would recognise in their own export". `wording.caveat_prose` fills 
 `{field}` placeholders with the refused metric's business name, so `units_by_channel` refused for
 a gapped column reads "Units sold is in your file but some rows leave it empty".
 
-**`required_input_unavailable` is pinned for the combined fix.** It is also a section reason, and
-`caveat_prose` routes every section reason to its section sentence ("This analysis -- not
-available"), so today the metric is not named at all (count 0). Fixing that routing alone would
-reach the result sentence and name the metric twice (count 2); only routing *and* the column give
-1. `incomplete_transaction_identifiers` and `family_version_pairing_unadmitted` share that routing
-defect; it is outside `#560` and recorded on the PR rather than pinned here.
+**`required_input_unavailable` still fails, for the other half.** It is also a section reason, and
+`caveat_prose` once sent it to the section sentence ("This analysis -- not available"), naming the
+metric zero times. `#575` fixed that routing, so it now reaches the result sentence and names the
+metric twice ("Units sold is not shown -- the file does not contain Units sold"). Only the column
+gives a count of 1.
 
 **Pinned as a strict `xfail`, not fixed here.** The joined `<result>:<reason>` code carries no
 refusing input, and a renderer that guessed one would be recomputing (`RRA-009` §Preservation).

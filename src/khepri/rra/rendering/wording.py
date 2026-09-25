@@ -1021,13 +1021,7 @@ def caveat_prose(code: str, language: str) -> str:
     if RESULT_CAVEAT_SEPARATOR not in code:
         return caveat_message(code, language)
     result, reason = code.rsplit(RESULT_CAVEAT_SEPARATOR, 1)
-    if reason in GOVERNED_SECTION_REASONS:
-        # The left half is a metric scope such as
-        # `revenue_delta_percent.year_over_year`, not a section id, so the
-        # section heading is not recoverable here. A scoped disclosure is
-        # already attached to the section a reader is looking at, which is what
-        # makes that acceptable -- but the placeholder must not survive, so it
-        # renders as the generic phrase rather than as a raw token.
+    if _takes_section_sentence(result, reason):
         return refusal_message(reason, context="section", language=language).format(
             section=_UNNAMED_SECTION[language],
         )
@@ -1037,6 +1031,27 @@ def caveat_prose(code: str, language: str) -> str:
         column=metric,
         field=metric,
     )
+
+
+def _takes_section_sentence(result: str, reason: str) -> bool:
+    """Whether a joined code falls back to its section's sentence (`#575`).
+
+    A reason governed at the result tier takes the result sentence, which names
+    the refused result -- `RRA-009` §Refusals part 1. Five reasons are governed
+    at both tiers, and checking the section tier first sent every one of them to
+    the section sentence, so a refused result read "Basket size -- not
+    available" and was never named.
+
+    The section sentence remains for a reason with no result sentence, such as
+    `prior_window_absent`, and for a left half that names a section rather than
+    a result, which has no result to name. Either way the left half's heading is
+    not recovered, so the placeholder renders as the generic phrase rather than
+    as a raw token; a scoped disclosure is already attached to the section a
+    reader is looking at.
+    """
+    if result in SECTION_HEADINGS[LANGUAGE_ENGLISH]:
+        return reason in GOVERNED_SECTION_REASONS
+    return reason not in _RESULT_REASON_CODES
 
 
 def _result_business_name(result: str, language: str) -> str:
