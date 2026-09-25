@@ -147,19 +147,22 @@ def _unlisted_hexes(css: str, palette: set[str]) -> set[str]:
     return {value.lower() for value in _HEX.findall(css)} - palette
 
 
+def _carries_colour(value: str) -> bool:
+    """True if a value, `var()` removed, holds a hex or any word outside `_ADMITTED_WORDS`.
+
+    A functional colour (`rgb(`) and a named colour (`navy`) both surface as such a word."""
+    bare = re.sub(r"var\([^)]*\)", "", value)
+    words = {word.lower() for word in re.findall(r"[a-zA-Z][\w-]*", bare)} - {"px", "rem", "em"}
+    return bool(_HEX.search(bare) or words - _ADMITTED_WORDS)
+
+
 def _non_token_colours(css: str) -> list[str]:
     """Colour declarations below `:root` that carry anything but a `var()` or an admitted word."""
-    found = []
-    for prop, value in _COLOUR_DECLARATION.findall(_below_root(css)):
-        bare = re.sub(r"var\([^)]*\)", "", value)
-        words = set(re.findall(r"[a-zA-Z][\w-]*", bare)) - {"px", "rem", "em"}
-        if (
-            _HEX.search(bare)
-            or _FUNCTIONAL.search(bare)
-            or {w.lower() for w in words} - _ADMITTED_WORDS
-        ):
-            found.append(f"{prop}: {value.strip()}")
-    return found
+    return [
+        f"{prop}: {value.strip()}"
+        for prop, value in _COLOUR_DECLARATION.findall(_below_root(css))
+        if _carries_colour(value)
+    ]
 
 
 def _luminance(value: str) -> float:
