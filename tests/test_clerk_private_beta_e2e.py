@@ -131,7 +131,9 @@ def build_private_beta_journey(tmp_path) -> PrivateBetaJourney:
     try:
         RcaBase.metadata.create_all(engine)
         RraBase.metadata.create_all(engine)
-        client = TestClient(build_web_app(stack), base_url=PARTY)
+        # `Origin` as a browser sends it: a cookie-bearing mutation without either browser
+        # signal is refused (`require_same_origin`, `#434` §2).
+        client = TestClient(build_web_app(stack), base_url=PARTY, headers={"Origin": PARTY})
         return PrivateBetaJourney(
             stack=stack,
             engine=engine,
