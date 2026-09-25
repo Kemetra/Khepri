@@ -43,8 +43,10 @@ from typing import NamedTuple
 import pytest
 from sqlalchemy.orm import sessionmaker
 
+from khepri.rca import invitations
 from khepri.rca.accounts import AccountService
 from khepri.rca.actor_resolution import ActorResolver, ResolvedActor
+from khepri.rca.credentials import KdfParams
 from khepri.rca.errors import INVITATION_FAILURE, InvitationOperationFailed
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_service import InvitationService
@@ -364,19 +366,50 @@ class TestEveryCauseCollapsesToOneRefusal:
         )
         return token, NOW
 
-    def _refusal_for(self, factory: sessionmaker, cause: str) -> str:
+    def _presented(
+        self, factory: sessionmaker, cause: str
+    ) -> tuple[str, ResolvedActor, datetime]:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, f"m{cause}")
         ctx = _Context(organization_id, owner_id, invitee_email)
 
         token, moment = getattr(self, f"_{cause}")(factory, ctx)
+        return token, _actor(factory, invitee_id), moment
+
+    def _refusal_for(self, factory: sessionmaker, cause: str) -> str:
+        token, actor, moment = self._presented(factory, cause)
         with pytest.raises(InvitationOperationFailed) as refusal:
-            _service(factory).redeem(token, _actor(factory, invitee_id), now=moment)
+            _service(factory).redeem(token, actor, now=moment)
         return str(refusal.value)
 
     @pytest.mark.parametrize("cause", _CAUSES)
     def test_the_message_is_the_uniform_one(self, factory: sessionmaker, cause: str) -> None:
         assert self._refusal_for(factory, cause) == INVITATION_FAILURE
+
+    @pytest.mark.parametrize("cause", [cause for cause in _CAUSES if cause != "malformed_token"])
+    def test_every_well_formed_cause_pays_one_hash(
+        self, factory: sessionmaker, cause: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`FR-017` by timing, not only by message (`#434` §7).
+
+        A wrong secret pays one scrypt. An unknown, revoked, or expired invitation used to refuse
+        before any hash -- the row is absent or its verifier destroyed -- so a caller holding a
+        leaked identifier could tell those apart by latency. The seam counts derivations rather
+        than timing them. A malformed token is excluded: its caller already knows it is malformed.
+        """
+        token, actor, moment = self._presented(factory, cause)
+        derivations: list[bytes] = []
+        real_hash = invitations.hash_credential
+
+        def counting(secret: str, salt: bytes, kdf: KdfParams) -> bytes:
+            derivations.append(salt)
+            return real_hash(secret, salt, kdf)
+
+        monkeypatch.setattr(invitations, "hash_credential", counting)
+        with pytest.raises(InvitationOperationFailed):
+            _service(factory).redeem(token, actor, now=moment)
+
+        assert len(derivations) == 1, f"{cause} must cost exactly one scrypt"
 
     def test_no_cause_is_distinguishable_from_another(self, factory: sessionmaker) -> None:
         """The set assertion: six causes, one message.

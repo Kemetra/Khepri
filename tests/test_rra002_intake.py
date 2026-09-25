@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import io
+import re
+import struct
 import zipfile
+import zlib
 
 import pytest
 
 from khepri.rra.intake import (
     CSV_MEDIA_TYPE,
+    MAX_XLSX_EXPANDED_BYTES,
     XLSX_MEDIA_TYPE,
     IntakeRejected,
     UploadAccumulator,
@@ -364,3 +368,84 @@ def test_a_stored_workbook_is_still_accepted() -> None:
     upload.append(content)
 
     assert upload.finish().media_type == XLSX_MEDIA_TYPE
+
+
+# --- #434 §1: a member's recorded size must be its actual inflated size ----------------------
+
+_SHARED_STRINGS_PART = "xl/sharedStrings.xml"
+_SHARED_STRINGS = b"<sst>" + b"x" * 20_000 + b"</sst>"
+
+
+def _with_member(content: bytes, path: str, data: bytes) -> bytes:
+    """The same workbook with one more member, a part intake itself never parses."""
+    buffer = io.BytesIO(content)
+    with zipfile.ZipFile(buffer, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(path, data)
+    return buffer.getvalue()
+
+
+def _honest_with_shared_strings() -> bytes:
+    return _with_member(_xlsx({"Sales": ["revenue"]}), _SHARED_STRINGS_PART, _SHARED_STRINGS)
+
+
+def _misrecorded(content: bytes, path: str, *, size: int, forge_crc: bool) -> bytes:
+    """The workbook with `path`'s recorded size -- and optionally its CRC -- describing a prefix.
+
+    Both the local header (CRC at +14, size at +22) and the central directory record (CRC at +16,
+    size at +24) are rewritten, so neither header tells the truth about the deflate stream.
+    """
+    data = bytearray(content)
+    name = path.encode()
+    local = zipfile.ZipFile(io.BytesIO(content)).getinfo(path).header_offset
+    central = next(
+        match.start()
+        for match in re.finditer(b"PK\x01\x02", data)
+        if data[match.start() + 46 : match.start() + 46 + len(name)] == name
+    )
+    prefix_crc = zlib.crc32(_SHARED_STRINGS[:size])
+    for crc_at, size_at in ((local + 14, local + 22), (central + 16, central + 24)):
+        struct.pack_into("<I", data, size_at, size)
+        if forge_crc:
+            struct.pack_into("<I", data, crc_at, prefix_crc)
+    return bytes(data)
+
+
+def _finished(content: bytes, *, max_expanded_bytes: int = MAX_XLSX_EXPANDED_BYTES) -> str:
+    upload = UploadAccumulator(
+        declared_size=len(content), max_expanded_bytes=max_expanded_bytes
+    )
+    upload.append(content)
+    return upload.finish().media_type
+
+
+def test_an_unparsed_member_with_a_true_recorded_size_is_accepted() -> None:
+    """The control: inflating every member must not refuse an honest one intake never parses."""
+    assert _finished(_honest_with_shared_strings()) == XLSX_MEDIA_TYPE
+
+
+@pytest.mark.parametrize(
+    "forge_crc",
+    [pytest.param(False, id="size_only"), pytest.param(True, id="size_and_prefix_crc")],
+)
+def test_a_member_whose_recorded_size_understates_its_stream_is_rejected(forge_crc: bool) -> None:
+    """`#434` §1: the expansion cap must bound what a member inflates to, not what it declares.
+
+    Intake parses four kinds of part. calamine later reads the whole archive, shared strings
+    included, so a member intake never opens is still inflated in the web process. Its declared
+    size says 10 bytes; its deflate stream holds 20 KB. With the CRC forged to match the 10-byte
+    prefix, even a reader that stops at the declared size and checks the CRC would pass it.
+    """
+    content = _misrecorded(
+        _honest_with_shared_strings(), _SHARED_STRINGS_PART, size=10, forge_crc=forge_crc
+    )
+
+    with pytest.raises(IntakeRejected):
+        _finished(content)
+
+
+def test_actual_inflate_is_bounded_by_the_expansion_budget() -> None:
+    """The budget counts every member's bytes, the unparsed ones included."""
+    content = _honest_with_shared_strings()
+
+    with pytest.raises(IntakeRejected):
+        _finished(content, max_expanded_bytes=len(_SHARED_STRINGS))
