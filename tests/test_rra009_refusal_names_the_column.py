@@ -43,6 +43,7 @@ COLUMN_REASONS = (
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="#560 item 2: the refusing input is not on RefusedResult (facts.py); deferred",
 )
 @pytest.mark.parametrize("language", (LANGUAGE_ENGLISH, LANGUAGE_ARABIC))
