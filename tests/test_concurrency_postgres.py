@@ -21,6 +21,7 @@ the RCA path, a failure points at the new code rather than at untested infrastru
 from __future__ import annotations
 
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
@@ -28,10 +29,20 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from khepri.rra.persistence import Base, SqlSessionStore
+from khepri.rra.persistence import Base, SqlSessionStore, SqlUploadRepository
 from khepri.rra.sessions import BetaSession, InvitationService
+from tests import test_rra002_deletion_persistence as deletion_fixtures
+from tests.rra002_deletion_race_support import (
+    WINDOWS,
+    ObjectStore,
+    assert_one_deletion,
+    delete,
+    hooked_service,
+    settled,
+)
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+ATTEMPTS = 10
 
 pytestmark = pytest.mark.concurrency
 
@@ -111,3 +122,33 @@ def test_concurrent_redemption_of_one_invitation_yields_exactly_one_session(
         outcomes = list(pool.map(redeem, range(2)))
 
     assert sorted(outcomes) == [False, True]
+
+
+@pytest.mark.parametrize("attempt", range(ATTEMPTS))
+@pytest.mark.parametrize("window", WINDOWS)
+@requires_postgres
+def test_two_simultaneous_session_deletions_settle_on_one_job(
+    factory, window: str, attempt: int
+) -> None:
+    """`RRA-002` idempotent deletion, with both requests inside `delete_session_content` (`#560`).
+
+    The barrier holds each request in `window` until the other reaches it, so both pass the
+    unlocked read -- or both hold the one pending job -- on every run. Repeated for the reason
+    `test_rca001_concurrent_final_owner.py` records: one green run cannot tell a sound lock from a
+    lucky schedule.
+    """
+    del attempt
+    scope = deletion_fixtures.session_and_upload(
+        SqlSessionStore(factory), SqlUploadRepository(factory)
+    )
+    barrier = threading.Barrier(2, timeout=10)
+    objects = ObjectStore()
+
+    def request(_: int):
+        service = hooked_service(factory, window=window, hook=barrier.wait, objects=objects)
+        return delete(service, scope, deletion_fixtures.NOW)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(request, range(2)))
+
+    assert_one_deletion(results, settled(factory, scope), "upl_alpha")
