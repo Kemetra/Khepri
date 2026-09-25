@@ -1907,27 +1907,13 @@ def _scoped(
     """
     codes = {code for fact in stated for code in fact.caveats}
     codes |= {f"{refusal.metric}:{refusal.reason}" for refusal in refused}
-    inputs = _refusing_inputs(refused)
+    # The input each refused result names (`#560` item 2). One per code: a family
+    # refuses one result identity once, so a joined code is one refusal.
+    inputs = {f"{refusal.metric}:{refusal.reason}": refusal.input for refusal in refused}
     return tuple(
         StatedCaveat(code=code, section=section_id, refusing_input=inputs.get(code))
         for code in sorted(codes)
     )
-
-
-def _refusing_inputs(refused: tuple[RefusedResult, ...]) -> dict[str, str]:
-    """Each refused result's joined code, and the input it names.
-
-    A code two refusals share with different inputs names neither: stating one
-    would pick a column for the other. Nothing produces that today.
-    """
-    named: dict[str, set[str | None]] = {}
-    for refusal in refused:
-        named.setdefault(f"{refusal.metric}:{refusal.reason}", set()).add(refusal.input)
-    return {
-        code: next(iter(inputs))
-        for code, inputs in named.items()
-        if len(inputs) == 1 and None not in inputs
-    }
 
 
 def _curve_figures(package: FactPackage) -> tuple[CitedFigure, ...]:
