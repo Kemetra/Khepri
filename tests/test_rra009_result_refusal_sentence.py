@@ -19,6 +19,7 @@ from functools import cache
 import pytest
 
 from khepri.rra.bundle import GOVERNED_SECTION_REASONS, ReportBundle
+from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.wording import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -167,6 +168,19 @@ def test_the_sweep_reaches_every_shared_code_a_bundle_emits() -> None:
     }
 
     assert emitted == _EMITTED_SHARED
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_page_names_the_refused_result_inside_its_section(language: str) -> None:
+    """The HTML surface prints a refused section's scoped caveats beneath its refusal panel."""
+    page = HtmlReportRenderer().render_html(_bundle("gapped")).documents[language]
+    start = page.index('<section id="basket"')
+    end = page.find('<section id="', start + 1)
+    block = page[start:] if end == -1 else page[start:end]
+    code = "basket_items_per_transaction:incomplete_transaction_identifiers"
+    opening = _GAPPED_EN if language == LANGUAGE_ENGLISH else _GAPPED_AR
+
+    assert f"{_name(code, language)} {opening}" in block
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
