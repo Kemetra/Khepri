@@ -159,6 +159,9 @@ class DatasetProfileRow(Base):
         ),
         UniqueConstraint("upload_id", name="uq_profile_upload"),
         UniqueConstraint("session_id", name="uq_profile_session"),
+        # The target of `fk_package_profile_scope` and nothing more: `profile_id` is already
+        # unique alone as the primary key (`20260925_0031`, #432).
+        UniqueConstraint("owner_id", "session_id", "profile_id", name="uq_profile_scope"),
         ForeignKeyConstraint(
             ["owner_id", "session_id"],
             ["rra_beta_sessions.owner_id", "rra_beta_sessions.session_id"],
@@ -206,10 +209,16 @@ class FactPackageRow(Base):
             name="uq_package_profile_versions",
         ),
         Index("ix_package_session", "session_id"),
+        # Composite, so the package's scope and its profile's scope are one fact (`RRA-001`,
+        # #432). Two independent keys let a package in scope A cite scope B's profile.
         ForeignKeyConstraint(
-            ["profile_id"],
-            ["rra_dataset_profiles.profile_id"],
-            name="fk_package_profile",
+            ["owner_id", "session_id", "profile_id"],
+            [
+                "rra_dataset_profiles.owner_id",
+                "rra_dataset_profiles.session_id",
+                "rra_dataset_profiles.profile_id",
+            ],
+            name="fk_package_profile_scope",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(

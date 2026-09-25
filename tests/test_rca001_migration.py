@@ -89,9 +89,13 @@ RCA_REVISIONS = (
     # alongside it, which `test_every_rca_table_in_the_models_is_named_here` checks by equality
     # rather than leaving assumed. The middle element is this revision file's own slug.
     ("20260906_0029", "rca_workspace_pins", "20260906_0028"),
+    # #432's active-organization foreign key on `rca_sessions`. RCA-only, so it replays here even
+    # though its parent `20260925_0031` (an RRA revision) cannot -- see `RCA_UNREPLAYED` below.
+    ("20260925_0032", "rca_session_active_organization", "20260925_0031"),
 )
 
-#: The head revision, registered but **not** replayed -- the `20260822_0020` treatment.
+#: Revisions in the chain that are registered but **not** replayed -- the `20260822_0020`
+#: treatment.
 #:
 #: `#505`. `RCA_REVISIONS` is the list `_run` drives, so every member must apply against an
 #: RCA-only SQLite schema. `20260915_0030` cannot: it is a data migration whose four correlated
@@ -106,7 +110,14 @@ RCA_REVISIONS = (
 #:
 #: Its own DDL-free behaviour is covered directly at `tests/test_workspace_retention_migration.py`,
 #: and the single head is pinned by name at `tests/test_rca001_session_persistence.py`.
-RCA_CHAIN_HEAD = ("20260915_0030", "workspace_content_retention", "20260906_0029")
+#:
+#: `20260925_0031` (#432) joins it for the same reason: it rebuilds `rra_fact_packages` and
+#: `rra_dataset_profiles`, which the RCA-only chain never creates. Its DDL is proved against
+#: PostgreSQL at `tests/test_i432_tenant_scope_foreign_keys.py`.
+RCA_UNREPLAYED = (
+    ("20260915_0030", "workspace_content_retention", "20260906_0029"),
+    ("20260925_0031", "rra_package_profile_scope", "20260915_0030"),
+)
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
 # them to head would fail on the INSERT rather than on the behavior they assert.
@@ -275,16 +286,16 @@ def test_the_revisions_form_an_unbroken_chain() -> None:
     `20260814_0013` descends from it. Deriving the parent positionally would assert the wrong
     thing here, and would go on asserting it silently as more revisions interleave.
 
-    `RCA_CHAIN_HEAD` is asserted alongside `RCA_REVISIONS` because this guard is about parentage,
-    which every revision has, rather than about replay, which the head cannot do. Reading only
-    `RCA_REVISIONS` here is what left the current head unchecked (`#505`).
+    `RCA_UNREPLAYED` is asserted alongside `RCA_REVISIONS` because this guard is about parentage,
+    which every revision has, rather than about replay, which those revisions cannot do. Reading
+    only `RCA_REVISIONS` here is what left the then-head unchecked (`#505`).
     """
-    checked = (*RCA_REVISIONS, RCA_CHAIN_HEAD)
-    # The head is *in* what this guard reads. Asserted rather than assumed, because
-    # narrowing the iterable back to `RCA_REVISIONS` alone -- which is `#505` exactly --
+    checked = (*RCA_REVISIONS, *RCA_UNREPLAYED)
+    # The unreplayed revisions are *in* what this guard reads. Asserted rather than assumed,
+    # because narrowing the iterable back to `RCA_REVISIONS` alone -- which is `#505` exactly --
     # cannot be caught by any assertion inside the loop: a guard that stops covering
     # something still passes. This is the line that fails when it stops.
-    assert RCA_CHAIN_HEAD in checked
+    assert all(entry in checked for entry in RCA_UNREPLAYED)
 
     for revision, slug, expected_parent in checked:
         module = _rca_migration_module(revision, slug)
@@ -429,6 +440,14 @@ def test_migration_preserves_constraints_and_nullability(sqlite_url: str) -> Non
     # constraint, so an unconstrained `role` would reach production with every store test green.
     checks = {c["name"] for c in inspector.get_check_constraints("rca_memberships")}
     assert "ck_rca_membership_role" in checks, f"FR-015 constraint lost in the rebuild: {checks}"
+
+
+def test_the_active_organization_key_survives_the_replay(sqlite_url: str) -> None:
+    """`20260925_0032` (#432) rebuilds `rca_sessions` on SQLite; the key must come out of it."""
+    _run(sqlite_url, "upgrade")
+    keys = inspect(create_engine(sqlite_url)).get_foreign_keys("rca_sessions")
+
+    assert "fk_rca_session_active_organization" in {key["name"] for key in keys}
 
 
 def test_migration_columns_match_the_declared_models(sqlite_url: str) -> None:

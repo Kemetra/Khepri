@@ -193,6 +193,14 @@ class SessionRow(Base):
             name="fk_rca_session_account",
             ondelete="RESTRICT",
         ),
+        # Existence only (`20260925_0032`, #432). Membership stays the switcher's check: revoking
+        # one deletes its row while `FR-030` keeps the session, so a membership key would block it.
+        ForeignKeyConstraint(
+            ["active_organization_id"],
+            ["rca_organizations.organization_id"],
+            name="fk_rca_session_active_organization",
+            ondelete="RESTRICT",
+        ),
     )
 
     session_id_hash: Mapped[str] = mapped_column(String, primary_key=True)
