@@ -2190,7 +2190,8 @@ def test_a_repeated_event_key_refuses_the_additive_results() -> None:
         assert result.fact(metric) is None, f"{metric} published over a repeated key"
         refused = result.refusal(metric)
         assert refused is not None
-        assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+        # Its own code since `#326` item 4: a collided key is not a duplicated extract.
+        assert refused.reason == "repeated_event_key"
 
 
 def test_a_return_only_event_key_collision_leaves_sale_only_facts_standing() -> None:

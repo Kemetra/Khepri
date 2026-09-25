@@ -1,25 +1,17 @@
 """A result refusal's fourth part names a column, not the refused metric (`#560` item 2).
 
 `RRA-009` §Refusals: part 4 names "which missing field or evidence caused it, named as a column
-the customer would recognise in their own export". `wording.caveat_prose` fills the `{column}` and
-`{field}` placeholders with the refused metric's business name, so `units_by_channel` refused for
-a gapped column reads "Units sold is in your file but some rows leave it empty".
+the customer would recognise in their own export". `wording.caveat_prose` used to fill the
+`{column}` and `{field}` placeholders with the refused metric's business name, so
+`units_by_channel` refused for a gapped column read "Units sold is in your file but some rows leave
+it empty".
 
-**`required_input_unavailable` is pinned for the combined fix.** It is also a section reason, and
-`caveat_prose` keeps it on its section sentence ("This analysis -- not available"), so today the
-metric is not named at all (count 0). `#575` routed the other four shared reasons to their result
-sentences but held this one back deliberately: its result sentence would fill `{column}` with the
-metric and tell a customer "the file does not contain Units sold" (count 2), which is false. Only
-routing *and* the column together give 1, so both land in the slice that carries the input.
+This was a strict `xfail` until the refusing input travelled on `RefusedResult`. It is now the RED
+test of the slice that carries it: given the input, the metric is stated once, as part 1, and the
+column the customer mapped is named where part 4 belongs, using the journey's own mapping label.
+The labels are written out rather than read from `JOURNEY_COPY`, which would restate the table.
 
-**Pinned as a strict `xfail`, not fixed here.** The joined `<result>:<reason>` code carries no
-refusing input, and a renderer that guessed one would be recomputing (`RRA-009` §Preservation).
-The fix threads the refusing semantic onto `RefusedResult` in `facts.py`, which another slice owns,
-and needs the owner to name the part-4 column vocabulary. When that lands this test XPASSes, strict
-fails it, and the marker comes off -- the future slice's RED step already written.
-
-The assertion is deliberately vocabulary-free: the metric's name is stated once, as part 1, and is
-not restated where the column belongs.
+The real-bundle path to the same sentence is `test_rra009_refusal_inputs.py`.
 """
 
 from __future__ import annotations
@@ -39,17 +31,16 @@ COLUMN_REASONS = (
     "incomplete_column_coverage",
     "ambiguous_mapping",
 )
+#: The journey's mapping label for `channel`, the input `units_by_channel` needs beside units.
+CHANNEL_LABEL = {LANGUAGE_ENGLISH: "Sales channel", LANGUAGE_ARABIC: "قناة البيع"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="#560 item 2: the refusing input is not on RefusedResult (facts.py); deferred",
-)
 @pytest.mark.parametrize("language", (LANGUAGE_ENGLISH, LANGUAGE_ARABIC))
 @pytest.mark.parametrize("reason", COLUMN_REASONS)
 def test_the_missing_column_is_not_the_refused_metric(reason: str, language: str) -> None:
-    prose = caveat_prose(f"{RESULT}:{reason}", language)
+    prose = caveat_prose(f"{RESULT}:{reason}", language, refusing_input="channel")
     name = business_metric_name(RESULT, language)
 
-    assert prose.count(name) == 1
+    assert prose.count(name) == 1, prose
+    assert CHANNEL_LABEL[language] in prose, prose
+    assert "{" not in prose, prose
