@@ -132,12 +132,11 @@ def _section_sentences(language: str) -> frozenset[str]:
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
-@pytest.mark.parametrize(
-    ("fixture", "code", "english", "arabic"), _CASES, ids=[case[1] for case in _CASES]
-)
+@pytest.mark.parametrize("case", _CASES, ids=[case[1] for case in _CASES])
 def test_a_refused_result_opens_with_its_own_name(
-    fixture: str, code: str, english: str, arabic: str, language: str
+    case: tuple[str, str, str, str], language: str
 ) -> None:
+    fixture, code, english, arabic = case
     assert code in _joined_codes(fixture), "the real bundle no longer emits this case"
     opening = english if language == LANGUAGE_ENGLISH else arabic
 
