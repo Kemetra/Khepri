@@ -14,16 +14,29 @@
 
 :root {
   color-scheme: light;
-  --paper: #fbfcfd;
-  --surface: #fbfcfd;
-  --ink: #202326;
-  --muted: #55606d;
-  --line: #cfd6de;
-  --accent: #1e5b96;
-  --accent-dark: #174a7c;
-  --ready: #1d6b45;
-  --danger: #9a2d26;
-  --focus: #1f5fa8;
+  /* `RRA-016` `FR-220`: every colour is a master specification §16.5 row, restated here rather
+   * than referenced, because no shell value reaches a `/beta` page (`FR-222`). The row each
+   * property takes is pinned by `test_rra016_journey_palette.py`; roles were chosen by computed
+   * contrast, so the accent, link and focus colour is `gold-ink` (6.0:1 on the canvas) and not
+   * `gold-500` (2.3:1). No region is navy yet: the journey renders no rail, and where its chrome
+   * carries the navy is the composition slice's question (`FR-223`). Not a dark theme. */
+  --paper: #FBF9F6;                    /* surface-canvas */
+  --surface: #FFFFFF;                  /* surface-card */
+  --ink: #16212B;                      /* ink */
+  --muted: #55616C;                    /* ink-muted */
+  --line: #DED7CC;                     /* border-strong */
+  --accent: #7A5A17;                   /* gold-ink */
+  --accent-dark: #7A5A17;              /* gold-ink */
+  --danger: #B0392F;                   /* error ink */
+  --focus: #7A5A17;                    /* gold-ink */
+  --journey-danger-surface: #FBE9E7;   /* error fill */
+  --journey-danger-border: #F2DAD6;    /* error border */
+  --journey-line-subtle: #EFE9E0;      /* border-inner */
+  --journey-sunken: #F4EEE4;           /* surface-sand */
+  --journey-accent-surface: #F6EBD6;   /* gold-tint */
+  /* ink-secondary: a text input's boundary (4.7:1 on white, over the 3:1 non-text floor that
+   * `border-strong` misses at 1.4:1) and a disabled button's label. */
+  --journey-ink-secondary: #6B7580;
   --radius: 3px;
   --shadow: none;
 
@@ -77,9 +90,9 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 .site-header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border: 1px solid var(--line); background: var(--surface); }
 .brand { display: inline-flex; align-items: center; gap: .75rem; font: 700 var(--journey-text-sm)/1 ui-monospace, monospace; letter-spacing: .28em; text-decoration: none; }
 .language-link { min-block-size: 44px; display: inline-flex; align-items: center; padding-inline: .8rem; }
-.step-nav { min-height: 44px; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid #e4e8ed; background: var(--surface); }
+.step-nav { min-height: 44px; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid var(--journey-line-subtle); background: var(--surface); }
 .step-nav ol { display: flex; gap: 1.7rem; margin: 0; padding: 0; list-style: none; }
-.step-nav a { display: block; min-block-size: 44px; padding-block: .75rem .6rem; color: #667381; font-size: var(--journey-text-xs); text-decoration: none; }
+.step-nav a { display: block; min-block-size: 44px; padding-block: .75rem .6rem; color: var(--muted); font-size: var(--journey-text-xs); text-decoration: none; }
 .step-nav a:hover { color: var(--accent-dark); }
 .step-nav .current a { border-block-end: 2px solid var(--accent); color: var(--ink); font-weight: 600; }
 .step-nav span { font-family: ui-monospace, monospace; }
@@ -91,7 +104,7 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
  * and "a card" three URLs away. The sheets never co-load, so nothing broke and
  * no test could see it; a reader crossing /app to /beta saw the content box
  * change shape. The shell keeps the name it earns and this takes its own. */
-.journey-document { max-width: 860px; background: var(--surface); border: 0; padding: 0; box-shadow: none; }
+.journey-document { max-width: 860px; background: var(--paper); border: 0; padding: 0; box-shadow: none; }
 .journey-document--wide { max-width: 100%; }
 h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-display); font-weight: 650; line-height: var(--journey-leading-tight); letter-spacing: -.018em; }
 [dir="rtl"] h1 { letter-spacing: 0; }
@@ -113,7 +126,7 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-di
 .contract-fieldset legend { padding-inline: .4rem; font-weight: 650; }
 .contract-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-block: .9rem; }
 .contract-row label { flex: 1 1 18ch; color: var(--muted); font-size: var(--journey-text-sm); }
-.contract-row input[type="text"] { flex: 1 1 16ch; max-inline-size: 100%; min-block-size: 44px; padding: .45rem .6rem; border: 1px solid var(--line); background: var(--surface); font: inherit; }
+.contract-row input[type="text"] { flex: 1 1 16ch; max-inline-size: 100%; min-block-size: 44px; padding: .45rem .6rem; border: 1px solid var(--journey-ink-secondary); background: var(--surface); font: inherit; }
 .contract-row--claim { align-items: flex-start; min-block-size: 44px; }
 .contract-row--claim input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
 .contract-row input:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: 1px; }
@@ -134,24 +147,24 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-di
    points at with `aria-describedby` and which is readable before the mistake is
    made rather than only after. */
 #contract-currency-code:invalid:not(:placeholder-shown) { border-color: var(--danger); border-width: 2px; }
-.drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: #fafbfd; text-align: center; cursor: pointer; }
-.drop-zone.is-dragging { border-color: var(--accent); border-style: solid; background: #f0f5fa; }
+.drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: var(--journey-sunken); text-align: center; cursor: pointer; }
+.drop-zone.is-dragging { border-color: var(--accent); border-style: solid; background: var(--journey-accent-surface); }
 .drop-icon { color: var(--accent-dark); }
 .button-like, .primary-button { display: inline-flex; min-block-size: 46px; align-items: center; justify-content: center; padding: .65rem 1.2rem; border: 1px solid var(--accent); border-radius: 0; background: transparent; color: var(--accent); font-weight: 500; cursor: pointer; }
 .primary-button { margin-block-start: 1.25rem; }
 .primary-button:hover:not(:disabled), .button-like:hover { background: var(--accent-dark); color: var(--surface); }
-.primary-button:disabled { border-color: var(--line); color: #7b817e; cursor: not-allowed; }
+.primary-button:disabled { border-color: var(--line); color: var(--journey-ink-secondary); cursor: not-allowed; }
 .text-button { min-block-size: 44px; border: 0; background: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: .2em; cursor: pointer; }
 .meta { color: var(--muted); font: var(--journey-text-sm)/1.4 ui-monospace, monospace; }
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .selected-file { min-block-size: 1.5rem; color: var(--muted); }
-.error-summary { margin-block: 1.5rem; padding: 1rem; border: 1px solid #d9a49f; background: #faece9; color: #6d201b; }
+.error-summary { margin-block: 1.5rem; padding: 1rem; border: 1px solid var(--journey-danger-border); background: var(--journey-danger-surface); color: var(--danger); }
 /* A governed refusal is an outcome, not a problem: `border-inline-start: 4px solid var(--muted)`
  * plus italic carry that meaning independently of each other, per
  * `KHEPRI_DESIGN_LANGUAGE.md` §4.6. No fill and no `--danger` family -- refusal and a transport
  * or system error must not share paint. */
 .refusal-summary { margin-block: 1.5rem; padding-inline-start: 1rem; border-inline-start: 4px solid var(--muted); color: var(--muted); font-style: italic; }
-.progress-track, .indeterminate { overflow: hidden; block-size: 6px; margin-block: 1rem; background: #e3ded1; }
+.progress-track, .indeterminate { overflow: hidden; block-size: 6px; margin-block: 1rem; background: var(--line); }
 .progress-track span, .indeterminate span { display: block; block-size: 100%; inline-size: 0; background: var(--accent-dark); }
 .indeterminate span { inline-size: 35%; animation: journey-progress 1.4s ease-in-out infinite alternate; }
 @keyframes journey-progress { to { transform: translateX(185%); } }
@@ -160,7 +173,7 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-di
 .table-region { overflow-x: auto; margin-block: 2rem; border-block: 1px solid var(--line); }
 table { width: 100%; min-width: 720px; border-collapse: collapse; text-align: start; }
 caption { padding: 1rem; text-align: start; font-weight: 600; }
-th, td { padding: .75rem 0; border-block-start: 1px solid #e3e7eb; text-align: start; vertical-align: top; }
+th, td { padding: .75rem 0; border-block-start: 1px solid var(--journey-line-subtle); text-align: start; vertical-align: top; }
 th + th, td + td { padding-inline-start: 1rem; }
 th { color: var(--muted); font-size: var(--journey-text-sm); }
 .actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
