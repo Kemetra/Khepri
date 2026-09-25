@@ -252,18 +252,16 @@ def _text(html: str) -> str:
 
 def _two_runs(
     *,
-    later_mapping: str = "rra003.mapping.v3",
     later_package: str = "rra004.package.v3",
     later_formula: str = "rra004.formula.v2",
 ) -> _StubRecords:
-    """An earlier run under the v2 triple, and a later one under whatever the case names."""
+    """An earlier run under the v2 pair, and a later one under whatever the case names, both over
+    one dataset version. `FR-116` compares nothing across versions until lineage is governed
+    (`#379`), so the mapping, which the version carries, cannot differ between them."""
     return _StubRecords(
-        versions=(
-            _version("ver-b", later_mapping, created_at=NOW - timedelta(days=1)),
-            _version("ver-a", "rra003.mapping.v2"),
-        ),
+        versions=(_version("ver-a", "rra003.mapping.v2"),),
         runs=(
-            _run("run-b", "ver-b", started_at=NOW, methodology=(later_package, later_formula)),
+            _run("run-b", "ver-a", started_at=NOW, methodology=(later_package, later_formula)),
             _run(
                 "run-a",
                 "ver-a",
@@ -288,8 +286,9 @@ def test_a_later_run_under_other_versions_carries_the_notice_and_names_each_chan
     notice = _notice(html)
     assert copy["notice_title"] in notice
     # Each governed identifier that differs, earlier then later, reachable in the Notice itself.
+    # One dataset version carries one mapping, so the mapping cannot be among them (`#379`).
+    assert copy["notice_mapping"] not in notice
     for label, earlier, later in (
-        (copy["notice_mapping"], "rra003.mapping.v2", "rra003.mapping.v3"),
         (copy["notice_package"], "rra004.package.v2", "rra004.package.v3"),
         (copy["notice_formula"], "rra004.formula.v1", "rra004.formula.v2"),
     ):
@@ -301,7 +300,7 @@ def test_a_later_run_under_other_versions_carries_the_notice_and_names_each_chan
 
 
 def test_only_the_identifiers_that_differ_are_named() -> None:
-    records = _two_runs(later_mapping="rra003.mapping.v2", later_package="rra004.package.v2")
+    records = _two_runs(later_package="rra004.package.v2")
 
     notice = _notice(_detail(records, _StubProvenance(), "run-b"))
 
@@ -351,11 +350,7 @@ def _availability_lines(notice: str) -> list[str]:
 def test_availability_alone_raises_no_notice() -> None:
     """Refusals that change under one methodology are a property of the data, not of the method;
     `FR-116` is about governed versions. Without a version difference there is no Notice."""
-    records = _two_runs(
-        later_mapping="rra003.mapping.v2",
-        later_package="rra004.package.v2",
-        later_formula="rra004.formula.v1",
-    )
+    records = _two_runs(later_package="rra004.package.v2", later_formula="rra004.formula.v1")
     provenance = _StubProvenance(outcomes={"run-a": _sections(), "run-b": _sections("growth")})
 
     html = _detail(records, provenance, "run-b")
@@ -373,9 +368,8 @@ def test_the_earlier_run_carries_no_notice_about_a_later_one() -> None:
 
 
 def test_the_previous_run_is_the_latest_completed_one_over_the_same_data_where_one_exists() -> None:
-    """`FR-116`: "the same or a related dataset version". The same version wins where an earlier
-    completed run over it exists; a started or failed run is not a methodology to compare
-    against."""
+    """`FR-116`: the same dataset version. The latest earlier completed run over it is the
+    predecessor; a started or failed run is not a methodology to compare against."""
     records = _StubRecords(
         versions=(
             _version("ver-b", "rra003.mapping.v3", created_at=NOW - timedelta(days=1)),
@@ -411,7 +405,7 @@ def test_the_previous_run_is_the_latest_completed_one_over_the_same_data_where_o
 
 def test_the_same_version_is_preferred_over_a_more_recent_run_on_other_data() -> None:
     """`FR-116`: the same dataset version wins even when a more recent completed run exists over
-    another version -- a methodology is compared over the same data first, related data second."""
+    another version. Recency across versions is not a relationship (`#379`)."""
     records = _StubRecords(
         versions=(
             _version("ver-o", "rra003.mapping.v3", created_at=NOW - timedelta(hours=1)),
@@ -439,6 +433,33 @@ def test_the_same_version_is_preferred_over_a_more_recent_run_on_other_data() ->
 
     assert f'href="{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b"' in notice
     assert "run-o" not in notice
+
+
+def test_an_earlier_run_over_another_dataset_version_raises_no_notice() -> None:
+    """`#379`: no relationship between dataset versions is governed, so a run over another version
+    is not a predecessor, however much its methodology differs. With no earlier completed run over
+    this run's own version there is nothing to compare, and the Notice fails closed rather than
+    pairing two uploads that may be unrelated (owner decision, 2026-09-24)."""
+    records = _StubRecords(
+        versions=(
+            _version("ver-b", "rra003.mapping.v3", created_at=NOW - timedelta(days=1)),
+            _version("ver-a", "rra003.mapping.v2"),
+        ),
+        runs=(
+            _run("run-b", "ver-b", started_at=NOW, methodology=V3),
+            _run("run-a", "ver-a", started_at=EARLIER, methodology=V2),
+        ),
+        bindings=_bindings("run-a", "run-b"),
+    )
+
+    response = _shell(records, _StubProvenance()).get(
+        f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b"
+    )
+
+    assert response.status_code == 200
+    assert 'class="change-notice"' not in response.text
+    assert EN["notice_title"] not in response.text
+    assert f'href="{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-a"' not in response.text
 
 
 # --- Through the deployed pipeline ----------------------------------------------------------------
@@ -495,14 +516,12 @@ def test_two_runs_of_one_file_under_one_methodology_carry_no_notice() -> None:
 
 
 def _same_methodology() -> _StubRecords:
-    """Two runs under one core triple: only a family version can differ between them."""
+    """Two runs over one dataset version under one core triple: only a family version can differ
+    between them."""
     return _StubRecords(
-        versions=(
-            _version("ver-b", "rra003.mapping.v3", created_at=NOW - timedelta(days=1)),
-            _version("ver-a", "rra003.mapping.v3"),
-        ),
+        versions=(_version("ver-a", "rra003.mapping.v3"),),
         runs=(
-            _run("run-b", "ver-b", started_at=NOW),
+            _run("run-b", "ver-a", started_at=NOW),
             _run("run-a", "ver-a", started_at=EARLIER),
         ),
         bindings=_bindings("run-a", "run-b"),
@@ -572,9 +591,7 @@ def test_an_unreadable_previous_record_leaves_this_analysis_readable() -> None:
     records = _same_methodology()
     provenance = _StubProvenance(unreadable=frozenset({"run-a"}))
 
-    response = _shell(records, provenance).get(
-        f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b"
-    )
+    response = _shell(records, provenance).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b")
 
     assert response.status_code == 200
     assert 'class="change-notice"' not in response.text

@@ -72,6 +72,7 @@ def settings() -> RuntimeSettings:
             "KHEPRI_STORAGE_REGION": "fra1",
             "KHEPRI_BUCKET": "khepri-beta-content",
             "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
+            "PGSSLROOTCERT": "/etc/khepri/tls/database-ca.crt",
         }
     )
 
