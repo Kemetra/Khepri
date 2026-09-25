@@ -443,6 +443,19 @@ def test_a_member_whose_recorded_size_understates_its_stream_is_rejected(forge_c
         _finished(content)
 
 
+def test_a_member_whose_recorded_size_overstates_its_stream_is_rejected() -> None:
+    """The other direction is also a lie. The size check is equality, not a ceiling alone."""
+    content = _misrecorded(
+        _honest_with_shared_strings(),
+        _SHARED_STRINGS_PART,
+        size=len(_SHARED_STRINGS) + 100,
+        forge_crc=False,
+    )
+
+    with pytest.raises(IntakeRejected):
+        _finished(content)
+
+
 def test_actual_inflate_is_bounded_by_the_expansion_budget() -> None:
     """The budget counts every member's bytes, the unparsed ones included."""
     content = _honest_with_shared_strings()

@@ -423,17 +423,17 @@ def _inflates_as_declared(
     `file_size`, and refused unless it ends exactly at the size it declares.
 
     The declared sum is checked first, so an honestly oversized archive costs no inflate at all.
-    Runs after `_unsafe_archive_entry`, so only STORED and DEFLATED members reach it.
+    Each member's inflate then stops one step past its own declared size. Every member must
+    inflate exactly to what it declares, so the declared sum bounds the actual total, and no
+    separate running count is needed. Runs after `_unsafe_archive_entry`, so only STORED and
+    DEFLATED members reach it.
     """
     if sum(entry.file_size for entry in entries) > max_expanded_bytes:
         return False
-    remaining = max_expanded_bytes
-    for entry in entries:
-        inflated = _inflated_size(_member_stream(content, entry), entry, limit=remaining)
-        if inflated != entry.file_size:
-            return False
-        remaining -= inflated
-    return True
+    return all(
+        _inflated_size(_member_stream(content, entry), entry) == entry.file_size
+        for entry in entries
+    )
 
 
 def _member_stream(content: bytes, entry: zipfile.ZipInfo) -> bytes:
@@ -446,17 +446,18 @@ def _member_stream(content: bytes, entry: zipfile.ZipInfo) -> bytes:
     return content[data_start : data_start + entry.compress_size]
 
 
-def _inflated_size(stream: bytes, entry: zipfile.ZipInfo, *, limit: int) -> int | None:
-    """The member's actual inflated length, or None past `limit` or for an unterminated stream."""
+def _inflated_size(stream: bytes, entry: zipfile.ZipInfo) -> int | None:
+    """The member's actual inflated length. None once it passes its declared size, or when the
+    stream is unterminated."""
     if entry.compress_type == zipfile.ZIP_STORED:
-        return len(stream) if len(stream) <= limit else None
+        return len(stream)
     inflater = zlib.decompressobj(-zlib.MAX_WBITS)
     produced = 0
     while not inflater.eof:
         step = inflater.decompress(stream, _INFLATE_STEP_BYTES)
         produced += len(step)
         stream = inflater.unconsumed_tail
-        if produced > limit:
+        if produced > entry.file_size:
             return None
         if not step and not stream:
             return None  # the stream ran out before its end marker

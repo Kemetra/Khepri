@@ -24,9 +24,11 @@ and that includes `xl/sharedStrings.xml`, the styles, and any other member. Pyth
 `ZipExtFile` stops at the declared size, but it only checks the CRC. A CRC forged to match the
 truncated prefix therefore passes.
 
-The fix inflates every member's raw stream once, independent of `ZipInfo.file_size`. The count
-runs against the `max_expanded_bytes` budget. A member is refused when its inflated length differs
-from its declared size, or when its deflate stream does not end. The inflater replaces the
+The fix inflates every member's raw stream once and counts the output itself, without trusting
+`ZipInfo.file_size`. Each member's inflate stops one step past its declared size. A member is
+refused when its inflated length differs from its declared size, or when its deflate stream does
+not end. Every member must match its declared size, so the declared sum, which is still checked
+against `max_expanded_bytes`, bounds the actual total. The inflater replaces the
 declared-sum clause in the existing conditional, with the declared-sum fast path kept inside it,
 so `_validate_xlsx` does not grow.
 
