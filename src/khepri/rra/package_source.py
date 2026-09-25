@@ -135,7 +135,7 @@ def rebuild_fact_package(document: Mapping[str, Any]) -> FactPackage:
         facts=tuple(_fact(entry) for entry in _entries(document, "facts")),
         series=tuple(_series(entry) for entry in _entries(document, "series")),
         comparisons=tuple(_comparison(entry) for entry in _entries(document, "comparisons")),
-        refusals=tuple(_refusal(entry) for entry in _entries(document, "refusals")),
+        refusals=_refusals(document),
         caveats=_labels(document, "caveats"),
         currency=_optional_text(document, "currency"),
         event_kind_filters=_labels(document, "event_kind_filters"),
@@ -361,24 +361,35 @@ def _bucket(entry: Mapping[str, Any]) -> Bucket:
 _GOVERNED_INPUTS = frozenset(rule.semantic for rule in SEMANTIC_RULES)
 
 
-def _refusal(entry: Mapping[str, Any]) -> RefusedResult:
+#: The package shapes `RRA-004` authorizes to record a refusal's input. A document
+#: stamped with any other version that carries one is not the shape it claims.
+_VERSIONS_RECORDING_INPUTS = frozenset({"rra004.package.v4"})
+
+
+def _refusals(document: Mapping[str, Any]) -> tuple[RefusedResult, ...]:
+    records_inputs = document.get("package_version") in _VERSIONS_RECORDING_INPUTS
+    return tuple(_refusal(entry, records_inputs) for entry in _entries(document, "refusals"))
+
+
+def _refusal(entry: Mapping[str, Any], records_inputs: bool) -> RefusedResult:
     return RefusedResult(
         metric=_text(entry, "metric"),
         reason=_text(entry, "reason"),
-        input=_refusing_input(entry),
+        input=_refusing_input(entry, records_inputs),
     )
 
 
-def _refusing_input(entry: Mapping[str, Any]) -> str | None:
+def _refusing_input(entry: Mapping[str, Any], records_inputs: bool) -> str | None:
     """The input a refusal names, or `None` for a document from before it did.
 
     `.get` and not `_required`: `_required` refuses a *missing* key even when
-    optional, and every `rra004.package.v3` document is missing this one.
+    optional, and every `rra004.package.v3` document is missing this one. Present
+    on a shape that predates it, or naming no governed semantic, it is corrupt.
     """
     value = entry.get("input")
     if value is None:
         return None
-    if not isinstance(value, str) or value not in _GOVERNED_INPUTS:
+    if not records_inputs or not isinstance(value, str) or value not in _GOVERNED_INPUTS:
         raise PackageCorrupted("Stored fact package states an ungoverned refusal input.")
     return value
 

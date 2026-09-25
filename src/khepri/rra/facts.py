@@ -993,9 +993,9 @@ def _repeated_signature_kinds(
     and ASP over one reports a defect the reader's sales data does not have.
     Grouped by event kind so each population asks only about the rows it reads.
 
-    A repeated *event key* refuses too, and is detected nowhere in this package.
-    That gap is recorded rather than closed here: it needs the declared key
-    columns read at admission, and no fixture in this suite declares one.
+    A repeated *event key* refuses too, detected at admission
+    (`AdmittedEvents.repeated_event_key_kinds`) and stated as its own code,
+    `REASON_REPEATED_EVENT_KEY` (`#326` item 4).
     """
     if identity.event_key_columns or not frame.height:
         return frozenset()

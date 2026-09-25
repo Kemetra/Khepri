@@ -112,6 +112,11 @@ _FIXTURES = {
         b"date,revenue,invoice_no,product\n2026-01-05,100.00,INV-1,A\n2026-01-06,50.00,INV-2,B\n",
         TEST_CONTRACT,
     ),
+    # A collided key AND a gap in revenue: `RRA-009` states the gap first.
+    "collided_key_and_gap": (
+        _KEYED_HEADER + b"2026-01-05,100.00,2,INV-1,L1,A\n2026-01-06,,1,INV-2,L1,B\n",
+        KEYED_CONTRACT,
+    ),
     # A column named only `discount` states no measure kind.
     "ambiguous_discount": (
         b"date,revenue,units,invoice_no,product,discount\n"
@@ -190,6 +195,12 @@ def test_a_collided_key_and_identical_rows_refuse_with_different_codes() -> None
 def test_every_result_a_keyed_repeat_refuses_names_the_key(fixture: str, metric: str) -> None:
     """A blank reference is no key at all, and `admission` refuses it as a repeat."""
     assert _reason(fixture, metric) == REPEATED_EVENT_KEY
+
+
+def test_a_gap_is_stated_before_a_collided_key() -> None:
+    """`RRA-009`'s order: a gap in the result's own column, then the repeat, of either proof."""
+    assert _reason("collided_key_and_gap", "revenue") == "incomplete_column_coverage"
+    assert _reason("collided_key_and_gap", "transactions") == REPEATED_EVENT_KEY
 
 
 @pytest.mark.parametrize("fixture", ("collided_key", "blank_key"))
@@ -367,6 +378,7 @@ def test_a_document_without_the_input_still_loads_and_reserializes_identically()
     document = _document_with_inputs()
     legacy = {
         **document,
+        "package_version": "rra004.package.v3",
         "refusals": [
             {key: value for key, value in entry.items() if key != "input"}
             for entry in document["refusals"]  # type: ignore[union-attr]
@@ -389,6 +401,15 @@ def test_a_document_naming_an_ungoverned_input_is_refused() -> None:
             for entry in document["refusals"]  # type: ignore[union-attr]
         ],
     }
+
+    with pytest.raises(PackageCorrupted):
+        rebuild_fact_package(forged)
+
+
+@pytest.mark.parametrize("version", ("rra004.package.v3", "rra004.package.v99"))
+def test_a_document_whose_version_predates_the_field_may_not_carry_it(version: str) -> None:
+    """`RRA-004`: a `v3` document never carries an input, so one that does is not a `v3`."""
+    forged = {**_document_with_inputs(), "package_version": version}
 
     with pytest.raises(PackageCorrupted):
         rebuild_fact_package(forged)
