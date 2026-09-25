@@ -73,7 +73,8 @@ _PAIRS = (
 _HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 _FUNCTIONAL = re.compile(r"\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", re.IGNORECASE)
 _COLOUR_DECLARATION = re.compile(
-    r"(?<![\w-])((?:background|border|outline|accent|caret|fill|stroke|color)[\w-]*)\s*:\s*([^;}]+)"
+    r"(?<![\w-])((?:background|border|outline|accent|caret|fill|stroke|color|box-shadow"
+    r"|text-shadow|text-decoration-color)[\w-]*)\s*:\s*([^;}]+)"
 )
 #: Non-colour words a colour-bearing shorthand may carry, and the colour keywords that name no hue.
 _ADMITTED_WORDS = frozenset(
@@ -202,8 +203,31 @@ def test_rules_consume_tokens_and_carry_no_colour_of_their_own() -> None:
     assert _non_token_colours(_journey()) == []
 
 
+def test_no_functional_colour_anywhere_in_the_stylesheet() -> None:
+    """Scanned over the whole sheet, `:root` included, not a list of property names: a guard
+    that names its own scope misses the `rgba()` shadow or wash the handoff writes."""
+    assert _FUNCTIONAL.findall(_journey()) == []
+
+
 @pytest.mark.parametrize(
-    "probe", ("color: #7a5a17", "background: rgb(0 0 0)", "border: 1px solid navy")
+    "probe",
+    (
+        ":root { --journey-wash: rgba(0, 0, 0, .5); }",
+        ".probe { box-shadow: 0 1px 2px rgb(0 0 0); }",
+    ),
+)
+def test_a_functional_colour_is_seen_wherever_it_is_declared(probe: str) -> None:
+    assert _FUNCTIONAL.findall(f"{_journey()}\n{probe}")
+
+
+@pytest.mark.parametrize(
+    "probe",
+    (
+        "color: #7a5a17",
+        "background: rgb(0 0 0)",
+        "border: 1px solid navy",
+        "box-shadow: 0 1px 2px black",
+    ),
 )
 def test_a_literal_colour_below_root_is_seen(probe: str) -> None:
     assert _non_token_colours(_journey() + f"\n.probe {{ {probe}; }}")
@@ -271,6 +295,72 @@ _TEXT_CONTRAST_SCRIPT = """
   return { measured, failures };
 }
 """
+
+
+#: Tabs through the page; each stop must paint an outline that clears 3:1 on its ground.
+#:
+#: A native `type="date"` input is exempt, by name: Tab lands on a date segment inside its
+#: shadow tree, Chromium highlights that segment, and `:focus-visible` never matches the host,
+#: so no journey rule can paint it. That predates this slice and is recorded in its PR.
+_FOCUS_SCRIPT = """
+(stops) => {
+  const rgb = (value) => (value.match(/[\d.]+/g) || []).map(Number);
+  const luminance = ([r, g, b]) => {
+    const lin = [r, g, b].map((c) => c / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const ground = (element) => {
+    for (let node = element; node; node = node.parentElement) {
+      const parts = rgb(getComputedStyle(node).backgroundColor);
+      if (parts.length === 3 || (parts.length === 4 && parts[3] === 1)) return parts.slice(0, 3);
+    }
+    return [255, 255, 255];
+  };
+  const element = document.activeElement;
+  if (element.matches('input[type="date"]')) return "";
+  const style = getComputedStyle(element);
+  if (style.outlineStyle === "none" || parseFloat(style.outlineWidth) === 0) {
+    return `${element.tagName}: no outline`;
+  }
+  const [a, b] = [luminance(rgb(style.outlineColor)), luminance(ground(element.parentElement))]
+    .sort((x, y) => y - x);
+  const ratio = (a + 0.05) / (b + 0.05);
+  return ratio < 3 ? `${element.tagName}: ${ratio.toFixed(2)}` : "";
+}
+"""
+
+
+def _focus_failures(page, stops: int) -> list[str]:
+    failures = []
+    for _ in range(stops):
+        page.keyboard.press("Tab")
+        if page.evaluate("document.activeElement === document.body"):
+            break
+        failures.append(page.evaluate(_FOCUS_SCRIPT, stops))
+    return [failure for failure in failures if failure]
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_every_tab_stop_paints_a_focus_ring_that_clears_three_to_one(language: str) -> None:
+    css = _JOURNEY_CSS.read_text(encoding="utf-8")
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            for step in _STEPS:
+                page.set_content(client().get(f"/beta/{language}/{step}").text)
+                page.add_style_tag(content=css)
+                assert _focus_failures(page, 40) == [], step
+            page.add_style_tag(content=":focus-visible { outline-color: #e9e3da !important; }")
+            page.evaluate("document.activeElement.blur()")
+            assert _focus_failures(page, 3), "the focus measure cannot fail"
+        finally:
+            browser.close()
 
 
 @pytest.mark.browser
