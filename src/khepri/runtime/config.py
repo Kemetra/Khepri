@@ -8,6 +8,7 @@ into a plain connection string or included in this settings object's repr.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 from binascii import Error as BinasciiError
@@ -23,6 +24,11 @@ from khepri.rra.envelope import EnvelopeError, MasterKey
 DATABASE_NAME = "khepri"
 
 DATABASE_SECRET_VARIABLE = "KHEPRI_DATABASE_SECRET"
+# The database server's CA certificate. libpq's own variable, not a `KHEPRI_` one, exactly as
+# botocore's `AWS_CA_BUNDLE` is used for the object store: the migration path reads it natively.
+# Required whenever the database host is not loopback, where the URL verifies the server
+# (`sslmode=verify-full`); loopback alone keeps `require` (owner decision on `#434` §4).
+DATABASE_CA_VARIABLE = "PGSSLROOTCERT"
 # `KHEPRI-DEC-028` states the runtime as a capability contract, so the storage coordinates are the
 # ones an S3-compatible client needs and nothing more. There is no region allowlist and no account
 # identifier: a region is whatever the configured endpoint expects, and ownership is established by
@@ -109,7 +115,7 @@ class RuntimeSettings:
     ) -> RuntimeSettings:
         source = _environment_source(environment)
         return cls(
-            database_url=_database_url(_required(source, DATABASE_SECRET_VARIABLE)),
+            database_url=_database_url(_required(source, DATABASE_SECRET_VARIABLE), source),
             **_runtime_coordinates(source),
             clerk=_clerk_settings(source),
         )
@@ -232,7 +238,7 @@ def _optional(environment: Mapping[str, str], name: str) -> str | None:
     return None if name not in environment else _required(environment, name)
 
 
-def _database_url(encoded: str) -> URL:
+def _database_url(encoded: str, environment: Mapping[str, str]) -> URL:
     document = _database_secret(encoded)
     return URL.create(
         "postgresql+psycopg",
@@ -241,8 +247,29 @@ def _database_url(encoded: str) -> URL:
         host=document["host"],
         port=document["port"],
         database=document["dbname"],
-        query={"sslmode": "require"},
+        query=_tls_query(document["host"], environment),
     )
+
+
+def _tls_query(host: str, environment: Mapping[str, str]) -> dict[str, str]:
+    """`require` on loopback only; everywhere else `verify-full` against a supplied CA (`#434`)."""
+    if _is_loopback(host):
+        return {"sslmode": "require"}
+    ca_file = _optional(environment, DATABASE_CA_VARIABLE)
+    if ca_file is None:
+        raise RuntimeConfigurationError(
+            f"{DATABASE_CA_VARIABLE} is required for a database host that is not loopback."
+        )
+    return {"sslmode": "verify-full", "sslrootcert": ca_file}
+
+
+def _is_loopback(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _database_secret(encoded: str) -> _DatabaseSecret:
@@ -313,6 +340,7 @@ __all__ = [
     "CLERK_KEY_ID_VARIABLE",
     "CLERK_MODE_VARIABLE",
     "ClerkIdentitySettings",
+    "DATABASE_CA_VARIABLE",
     "DATABASE_SECRET_VARIABLE",
     "DEAD_LETTER_QUEUE_URL_VARIABLE",
     "MASTER_KEY_VARIABLE",
