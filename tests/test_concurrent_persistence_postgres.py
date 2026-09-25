@@ -20,17 +20,20 @@ from __future__ import annotations
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import khepri.rca.workspace.persistence  # noqa: F401 -- registers the workspace tables
+from khepri.rca import persistence
 from khepri.rca.accounts import AccountService
-from khepri.rca.errors import RoleChangeFailed
+from khepri.rca.errors import AccountOperationFailed, RoleChangeFailed
+from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import (
+    AccountRow,
     Base,
     MembershipEventRow,
     MembershipRow,
@@ -250,3 +253,71 @@ def test_a_promotion_racing_a_revocation_refuses_rather_than_raising(factory, at
     assert promoted in {"promoted", "refused"}
     assert _promotion_events(factory, member_id) == (1 if promoted == "promoted" else 0)
     assert SqlOrganizationStore(factory).get_membership(organization_id, member_id) is None
+
+
+# --- #434 §6: an enable landing inside the purge's eligibility window ------------------------
+
+#: How long the purge holds its window open for the enable. Under the row lock the enable cannot
+#: finish inside it, so the wait always runs out; without the lock it finishes almost at once.
+ENABLE_WINDOW_SECONDS = 0.5
+PURGE_HORIZON = NOW + timedelta(days=1)
+
+
+def _disabled_account(factory) -> str:
+    accounts = SqlAccountStore(factory)
+    account = AccountService(accounts).create_account("purge@example.test", CREDENTIAL)
+    LifecycleService(accounts, SqlOrganizationStore(factory)).disable_account(
+        account.account_id, now=NOW
+    )
+    return account.account_id
+
+
+def _enable(factory, account_id: str, checked: threading.Event, done: threading.Event) -> str:
+    checked.wait(timeout=10)
+    try:
+        LifecycleService(SqlAccountStore(factory), SqlOrganizationStore(factory)).enable_account(
+            account_id
+        )
+    except AccountOperationFailed:
+        return "refused"
+    finally:
+        done.set()
+    return "enabled"
+
+
+@pytest.mark.parametrize("attempt", range(ATTEMPTS))
+@requires_postgres
+def test_an_enable_inside_the_purge_window_never_leaves_an_enabled_tombstone(
+    factory, attempt: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`KHEPRI-DEC-015` §2b: the purge is irreversible, so it must not land on an enabled row.
+
+    The purge checks eligibility, then holds its transaction open while `enable_account` runs.
+    With `account_for_update` the enable's `UPDATE` waits on the row lock, and once the purge
+    commits `_apply_account`'s `email IS NOT NULL` predicate refuses it. Without the lock the
+    enable commits inside the window and the purge then nulls the identity of an enabled account
+    -- the tombstone `#434` §6 describes, which SQLite's shared connection cannot produce.
+    """
+    account_id = _disabled_account(factory)
+    checked, done = threading.Event(), threading.Event()
+    real_lock = persistence.take_identity_lock
+
+    def lock_then_hold_the_window(database, canonical_address: str) -> bool:
+        taken = real_lock(database, canonical_address)
+        checked.set()
+        done.wait(timeout=ENABLE_WINDOW_SECONDS)
+        return taken
+
+    monkeypatch.setattr(persistence, "take_identity_lock", lock_then_hold_the_window)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        purging = pool.submit(
+            SqlAccountStore(factory).purge_if_still_eligible, account_id, PURGE_HORIZON
+        )
+        enabling = pool.submit(_enable, factory, account_id, checked, done)
+        answers = (purging.result(), enabling.result())
+
+    with factory() as database:
+        row = database.get(AccountRow, account_id)
+    assert answers == (True, "refused"), "the enable must wait for the purge, then be refused"
+    assert row is not None and row.email is None and row.disabled_at is not None
