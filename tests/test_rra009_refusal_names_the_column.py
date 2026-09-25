@@ -6,11 +6,11 @@ the customer would recognise in their own export". `wording.caveat_prose` fills 
 a gapped column reads "Units sold is in your file but some rows leave it empty".
 
 **`required_input_unavailable` is pinned for the combined fix.** It is also a section reason, and
-`caveat_prose` routes every section reason to its section sentence ("This analysis -- not
-available"), so today the metric is not named at all (count 0). Fixing that routing alone would
-reach the result sentence and name the metric twice (count 2); only routing *and* the column give
-1. `incomplete_transaction_identifiers` and `family_version_pairing_unadmitted` share that routing
-defect; it is outside `#560` and recorded on the PR rather than pinned here.
+`caveat_prose` keeps it on its section sentence ("This analysis -- not available"), so today the
+metric is not named at all (count 0). `#575` routed the other four shared reasons to their result
+sentences but held this one back deliberately: its result sentence would fill `{column}` with the
+metric and tell a customer "the file does not contain Units sold" (count 2), which is false. Only
+routing *and* the column together give 1, so both land in the slice that carries the input.
 
 **Pinned as a strict `xfail`, not fixed here.** The joined `<result>:<reason>` code carries no
 refusing input, and a renderer that guessed one would be recomputing (`RRA-009` §Preservation).
