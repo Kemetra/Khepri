@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 from functools import cache
+from pathlib import Path
 
 import pytest
 
@@ -32,6 +33,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.package_source import rebuild_fact_package
 from khepri.rra.packages import PackageCorrupted
 from khepri.rra.profiling import build_profile
+from khepri.rra.rendering import excel
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.wording import (
     LANGUAGE_ARABIC,
@@ -40,7 +42,7 @@ from khepri.rra.rendering.wording import (
     refusal_message,
     section_refusal_message,
 )
-from khepri.rra.report_api import _quality_response
+from khepri.rra.report_api import _evidence_response, _quality_response
 from khepri.rra.source_contract import (
     BasisDeclaration,
     ContractAttribution,
@@ -49,6 +51,7 @@ from khepri.rra.source_contract import (
     build_source_contract,
 )
 from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.test_rra006_excel_surface import rendered
 
 LANGUAGES = (LANGUAGE_ENGLISH, LANGUAGE_ARABIC)
 REPEATED_EVENT_KEY = "repeated_event_key"
@@ -317,6 +320,31 @@ def test_the_quality_response_names_the_metric_and_the_missing_column(language: 
 
     assert prose.startswith(f"{name} {_MISSING[language]}"), prose
     assert prose.count(name) == 1, prose
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_workbook_names_the_metric_and_the_missing_column(
+    language: str, tmp_path: Path
+) -> None:
+    """The limitations sheet, read back from the file that was written."""
+    _, workbook = rendered(_bundle("no_units"), tmp_path)
+    cells = [
+        cell for row in workbook.cells[excel._LIMITATIONS_SHEET[language]] for cell in row if cell
+    ]
+    name = business_metric_name(_ITEMS, language)
+
+    assert any(str(cell).startswith(f"{name} {_MISSING[language]}") for cell in cells), cells
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_evidence_response_names_the_metric_and_the_missing_column(language: str) -> None:
+    bundle = _bundle("no_units")
+    citation = bundle.figures[0].citation_id
+    response = _evidence_response(bundle, _package("no_units"), citation, language)
+    stated = {caveat.code: caveat.wording for caveat in response.caveats}
+    name = business_metric_name(_ITEMS, language)
+
+    assert stated[_ITEMS_UNAVAILABLE].startswith(f"{name} {_MISSING[language]}")
 
 
 # --- 3. The package document: a lenient reader, a lenient writer, a moved version ----
