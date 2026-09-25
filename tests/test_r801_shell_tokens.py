@@ -82,6 +82,25 @@ _SUPPLIED = {
     "#f0e1c2",
 }
 
+#: The pre-handoff values the shell still declares, admitted because `journey.css` shipped them.
+#:
+#: This check used to subtract whatever `journey.css` held **today**, so any colour added to the
+#: journey silently widened what the shell might use. `RRA-016` `FR-220` then moved the journey
+#: onto the §16.5 palette, and these six -- none a §16.5 value -- left it. They are pinned here as
+#: the values `journey.css` shipped at `cbeecf4`, before `FR-220`, so the admission is enumerated
+#: and frozen rather than tracking another surface's stylesheet: strictly stronger, not looser.
+#: That the shell still declares non-§16.5 values is an `RCA-010` residual, not this check's.
+_JOURNEY_SHIPPED = frozenset(
+    {
+        "#1d6b45",
+        "#6d201b",
+        "#9a2d26",
+        "#d9a49f",
+        "#e3ded1",
+        "#faece9",
+    }
+)
+
 #: `R8-01` §2's census of values `journey.css` uses below its `:root` block. The count is the
 #: baseline: a slice that adds an eleventh is choosing a colour outside the system.
 #: The exact hex literals `journey.css` uses below its `:root` block -- the census `R8-01`
@@ -176,19 +195,19 @@ def test_the_comment_stripper_hides_documented_values_and_keeps_declared_ones() 
 def test_shell_introduces_no_colour_outside_the_shipped_palette() -> None:
     """§3's central claim, made falsifiable.
 
-    Every value must already appear in `journey.css`, except the two `--ready` companions the note
-    declares and derives. A third addition fails here, which is the point: the token set exists so
-    nine new surfaces do not each pick their own greys.
+    Every value must be one `journey.css` shipped (`_JOURNEY_SHIPPED`), except the two `--ready`
+    companions the note declares and derives and the owner-supplied §16.5 values. Anything else
+    fails here, which is the point: the token set exists so nine new surfaces do not each pick
+    their own greys.
     """
     declared = _hexes(_declarations(SHELL.read_text(encoding="utf-8")))
-    shipped = _hexes(JOURNEY.read_text(encoding="utf-8"))
 
-    unexplained = declared - shipped - _DERIVED - _SUPPLIED
+    unexplained = declared - _JOURNEY_SHIPPED - _DERIVED - _SUPPLIED
     assert not unexplained, (
-        f"{sorted(unexplained)} appear in shell.css but not in journey.css and are not declared "
-        "as derived or supplied. Either reuse a shipped value, record the derivation in _DERIVED "
-        "and in the note, or — for an owner-supplied palette value — list it in _SUPPLIED with "
-        "the master specification §16.5 row that supplies it."
+        f"{sorted(unexplained)} appear in shell.css, are not values journey.css shipped, and are "
+        "not declared as derived or supplied. Either reuse a shipped value, record the "
+        "derivation in _DERIVED and in the note, or — for an owner-supplied palette value — "
+        "list it in _SUPPLIED with the master specification §16.5 row that supplies it."
     )
 
 
@@ -205,10 +224,9 @@ def test_the_palette_check_still_refuses_an_unlisted_colour() -> None:
     assert invented not in _DERIVED
     assert invented not in _SUPPLIED
 
-    shipped = _hexes(JOURNEY.read_text(encoding="utf-8"))
-    assert invented not in shipped
+    assert invented not in _JOURNEY_SHIPPED
 
-    assert {invented} - shipped - _DERIVED - _SUPPLIED == {invented}
+    assert {invented} - _JOURNEY_SHIPPED - _DERIVED - _SUPPLIED == {invented}
 
 
 #: The token *pairings* the derivation asserts — which shipped ink supplies the hue, and which
