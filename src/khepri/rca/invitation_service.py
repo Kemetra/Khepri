@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from khepri.rca.actor_resolution import ResolvedActor
+    from khepri.rca.credentials import Verifier
     from khepri.rca.stores import InvitationStore
 
 
@@ -200,7 +201,8 @@ class InvitationService:
         # The destroy-on-touch read: an expired invitation's verifier is destroyed here, in the
         # transaction that reads it, before this method refuses.
         invitation = self._store.find_for_redemption(invitation_id, now=now)
-        if invitation is None or not verify_secret(secret, invitation.verifier):
+        matches = verify_secret(secret, _verifier_of(invitation))  # always one scrypt: FR-017
+        if invitation is None or not matches:
             raise InvitationOperationFailed(INVITATION_FAILURE)
 
         # §6.1.1: the addressee is who may redeem, which is what makes a forwarded token useless.
@@ -244,6 +246,16 @@ class InvitationService:
             session_id_hash=actor.session.session_id_hash,
         ):
             raise InvitationOperationFailed(INVITATION_FAILURE)
+
+
+def _verifier_of(invitation: Invitation | None) -> Verifier | None:
+    """The verifier to check a presented secret against. `None` still costs one scrypt.
+
+    `redeem` verifies before it looks at whether the row exists. A missing invitation and a
+    destroyed verifier therefore both reach `verify_secret(secret, None)`, which hashes against a
+    dummy salt. Each refusal then costs what a wrong secret costs (`FR-017`, `#434` §7).
+    """
+    return None if invitation is None else invitation.verifier
 
 
 __all__ = ["InvitationService"]

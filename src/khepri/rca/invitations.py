@@ -28,7 +28,13 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime
 
-from khepri.rca.credentials import SALT_BYTES, KdfParams, Verifier, hash_credential
+from khepri.rca.credentials import (
+    DUMMY_SALT,
+    SALT_BYTES,
+    KdfParams,
+    Verifier,
+    hash_credential,
+)
 from khepri.rca.organizations import ROLES
 from khepri.rca.records import Sealed, assert_sealed, register_sealed, through_door
 
@@ -213,10 +219,14 @@ def verify_secret(secret: str, verifier: Verifier | None) -> bool:
     terminal shape of a redeemed, revoked, or touched-after-expiry invitation and not a defect.
     `hmac.compare_digest` rather than `==`, matching `rra/sessions.py:101`.
 
-    **This does not pay a dummy cost for a missing invitation**, so it is not on its own sufficient
-    for `FR-017`; the caller that sequences lookup and verification owns that, and `R4-05` owes it.
+    **`None` still pays one scrypt**, against `DUMMY_SALT` at `INVITATION_KDF`. A destroyed
+    verifier and a missing invitation, which the caller passes as `None`, therefore cost what a
+    wrong secret costs. `FR-017` forbids revealing which check failed, and latency would reveal it
+    (`#434` §7). The caller still owns the order: it must reach this call on every well-formed
+    token, before any other check refuses.
     """
     if verifier is None:
+        hash_credential(secret, DUMMY_SALT, INVITATION_KDF)
         return False
     candidate = hash_credential(secret, verifier.salt, verifier.kdf)
     return hmac.compare_digest(candidate, verifier.digest)

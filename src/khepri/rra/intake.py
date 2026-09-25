@@ -5,7 +5,9 @@ import hashlib
 import io
 import posixpath
 import secrets
+import struct
 import zipfile
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -328,6 +330,18 @@ def _validate_csv(content: bytes) -> None:
         raise IntakeRejected("Upload content is invalid or unsupported.") from error
 
 
+#: Every way a hostile archive can fail to read. `struct.error` and `zlib.error` come from
+#: `_inflates_as_declared`, which walks local headers and deflate streams itself.
+_ARCHIVE_ERRORS = (
+    KeyError,
+    OSError,
+    ElementTree.ParseError,
+    zipfile.BadZipFile,
+    struct.error,
+    zlib.error,
+)
+
+
 def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -337,7 +351,7 @@ def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
                 len(entries) > MAX_XLSX_ENTRIES
                 or len(names) != len(set(names))
                 or any(_unsafe_archive_entry(entry) for entry in entries)
-                or sum(entry.file_size for entry in entries) > max_expanded_bytes
+                or not _inflates_as_declared(content, entries, max_expanded_bytes)
             ):
                 raise IntakeRejected("Upload content is invalid or unsupported.")
             required = {_CONTENT_TYPES_PATH, _WORKBOOK_PATH, _WORKBOOK_RELS_PATH}
@@ -366,7 +380,7 @@ def _validate_xlsx(content: bytes, *, max_expanded_bytes: int) -> None:
             )
             if populated != 1:
                 raise IntakeRejected("Upload content is invalid or unsupported.")
-    except (KeyError, OSError, ElementTree.ParseError, zipfile.BadZipFile) as error:
+    except _ARCHIVE_ERRORS as error:
         raise IntakeRejected("Upload content is invalid or unsupported.") from error
 
 
@@ -387,6 +401,66 @@ def _unsafe_archive_entry(entry: zipfile.ZipInfo) -> bool:
         or entry.file_size < 0
         or entry.compress_type not in _PERMITTED_COMPRESSION
     )
+
+
+#: Output per inflate step, so a member's running count is checked long before it can reach the
+#: budget's worth of memory in one call.
+_INFLATE_STEP_BYTES = 1024 * 1024
+_LOCAL_HEADER = struct.Struct("<4s22xHH")
+_LOCAL_HEADER_SIGNATURE = b"PK\x03\x04"
+
+
+def _inflates_as_declared(
+    content: bytes, entries: list[zipfile.ZipInfo], max_expanded_bytes: int
+) -> bool:
+    """Whether every member inflates to exactly its declared size, within one running budget.
+
+    `#434` §1. The parts intake parses are read under a byte budget, but calamine later reads the
+    whole archive -- shared strings, styles, anything present -- so a member intake never opens
+    is still inflated in the web process. Its `file_size` is only what its headers claim, and
+    `ZipExtFile` stops at that claim and checks nothing past it but the CRC, which a forger can
+    match to the prefix. So each member's raw stream is inflated here, counted independently of
+    `file_size`, and refused unless it ends exactly at the size it declares.
+
+    The declared sum is checked first, so an honestly oversized archive costs no inflate at all.
+    Runs after `_unsafe_archive_entry`, so only STORED and DEFLATED members reach it.
+    """
+    if sum(entry.file_size for entry in entries) > max_expanded_bytes:
+        return False
+    remaining = max_expanded_bytes
+    for entry in entries:
+        inflated = _inflated_size(_member_stream(content, entry), entry, limit=remaining)
+        if inflated != entry.file_size:
+            return False
+        remaining -= inflated
+    return True
+
+
+def _member_stream(content: bytes, entry: zipfile.ZipInfo) -> bytes:
+    """A member's raw (compressed) bytes, located through its local header."""
+    start = entry.header_offset
+    signature, name_length, extra_length = _LOCAL_HEADER.unpack_from(content, start)
+    if signature != _LOCAL_HEADER_SIGNATURE:
+        raise zipfile.BadZipFile("member local header is missing")
+    data_start = start + _LOCAL_HEADER.size + name_length + extra_length
+    return content[data_start : data_start + entry.compress_size]
+
+
+def _inflated_size(stream: bytes, entry: zipfile.ZipInfo, *, limit: int) -> int | None:
+    """The member's actual inflated length, or None past `limit` or for an unterminated stream."""
+    if entry.compress_type == zipfile.ZIP_STORED:
+        return len(stream) if len(stream) <= limit else None
+    inflater = zlib.decompressobj(-zlib.MAX_WBITS)
+    produced = 0
+    while not inflater.eof:
+        step = inflater.decompress(stream, _INFLATE_STEP_BYTES)
+        produced += len(step)
+        stream = inflater.unconsumed_tail
+        if produced > limit:
+            return None
+        if not step and not stream:
+            return None  # the stream ran out before its end marker
+    return produced
 
 
 def _read_xml_part(archive: zipfile.ZipFile, path: str, *, max_bytes: int) -> bytes:

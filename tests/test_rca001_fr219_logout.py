@@ -114,7 +114,9 @@ def providerless_app_fixture(tmp_path) -> Iterator[ProviderlessApp]:
     engine = stack.factory.kw["bind"]
     RcaBase.metadata.create_all(engine)
     RraBase.metadata.create_all(engine)
-    client = TestClient(build_web_app(stack), base_url=PARTY)
+    # `Origin` as a browser sends it: a cookie-bearing mutation without either browser signal is
+    # refused (`require_same_origin`, `#434` §2).
+    client = TestClient(build_web_app(stack), base_url=PARTY, headers={"Origin": PARTY})
     try:
         yield ProviderlessApp(engine=engine, factory=stack.factory, client=client)
     finally:
