@@ -1042,8 +1042,9 @@ def _takes_section_sentence(result: str, reason: str) -> bool:
     the section sentence, so a refused result read "Basket size -- not
     available" and was never named.
 
-    The section sentence remains for a reason with no result sentence, such as
-    `prior_window_absent`, and for a left half that names a section rather than
+    The section sentence remains for `required_input_unavailable`, held below
+    until its input is known; for a reason with no result sentence, such as
+    `prior_window_absent`; and for a left half that names a section rather than
     a result, which has no result to name. Either way the left half's heading is
     not recovered, so the placeholder renders as the generic phrase rather than
     as a raw token; a scoped disclosure is already attached to the section a
@@ -1051,7 +1052,14 @@ def _takes_section_sentence(result: str, reason: str) -> bool:
     """
     if result in SECTION_HEADINGS[LANGUAGE_ENGLISH]:
         return reason in GOVERNED_SECTION_REASONS
-    return reason not in _RESULT_REASON_CODES
+    return reason in _SECTION_SENTENCE_UNTIL_INPUT_KNOWN or reason not in _RESULT_REASON_CODES
+
+
+# Held on the section sentence, failing closed, until `#560` item 2 carries the
+# refusing input. The result sentence fills `{column}` with the refused metric's
+# own name, so it would tell a customer "the file does not contain Revenue
+# percentage change" -- false, where the section sentence is vague but true.
+_SECTION_SENTENCE_UNTIL_INPUT_KNOWN = frozenset({facts.REASON_INPUT_UNAVAILABLE})
 
 
 def _result_business_name(result: str, language: str) -> str:

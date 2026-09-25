@@ -5,11 +5,12 @@ the customer would recognise in their own export". `wording.caveat_prose` fills 
 `{field}` placeholders with the refused metric's business name, so `units_by_channel` refused for
 a gapped column reads "Units sold is in your file but some rows leave it empty".
 
-**`required_input_unavailable` still fails, for the other half.** It is also a section reason, and
-`caveat_prose` once sent it to the section sentence ("This analysis -- not available"), naming the
-metric zero times. `#575` fixed that routing, so it now reaches the result sentence and names the
-metric twice ("Units sold is not shown -- the file does not contain Units sold"). Only the column
-gives a count of 1.
+**`required_input_unavailable` is pinned for the combined fix.** It is also a section reason, and
+`caveat_prose` keeps it on its section sentence ("This analysis -- not available"), so today the
+metric is not named at all (count 0). `#575` routed the other four shared reasons to their result
+sentences but held this one back deliberately: its result sentence would fill `{column}` with the
+metric and tell a customer "the file does not contain Units sold" (count 2), which is false. Only
+routing *and* the column together give 1, so both land in the slice that carries the input.
 
 **Pinned as a strict `xfail`, not fixed here.** The joined `<result>:<reason>` code carries no
 refusing input, and a renderer that guessed one would be recomputing (`RRA-009` §Preservation).

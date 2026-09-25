@@ -43,6 +43,14 @@ part 4 names the metric ("the file does not contain Revenue change"). The strict
 `tests/test_rra009_refusal_names_the_column.py` move from a count of 0 to a count of 2. They still
 fail, so they stay xfailed; only their docstring is updated.
 
+## Status 2026-09-25 — `required_input_unavailable` held back
+
+Session-lead decision on `#580`: the result sentence for `required_input_unavailable` states a
+falsehood ("the file does not contain Revenue percentage change"), which is worse than the vague
+but true section sentence. So it fails closed and stays on the section sentence until `#560` item 2
+carries the refusing input. The other four shared codes are routed as planned. A real-bundle test
+pins the hold in both languages, and the `#560` strict xfails keep a count of 0.
+
 ## Tests (RED first)
 
 In `tests/test_rra009_result_refusal_sentence.py`, over real bundles built by

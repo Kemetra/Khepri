@@ -4,7 +4,12 @@
 are governed at both the section and the result tier, and `wording.caveat_prose` used to send a
 joined `<result>:<reason>` code carrying any of them to the section sentence. A refused
 `basket_items_per_transaction` therefore read "Basket size -- not available", and a refused revenue
-change read "This analysis -- not available". The result was never named.
+change read "Comparison with an earlier period -- not available". The result was never named.
+
+`required_input_unavailable` is the one shared reason held on the section sentence, failing
+closed: its result sentence fills `{column}` with the refused metric's own name and would tell a
+customer the file "does not contain Revenue percentage change", which is false. It moves with
+`#560` item 2, which carries the refusing input; `test_an_unavailable_input_...` pins the hold.
 
 The cases are built from real CSV bytes through the real pipeline and `ReportBundle.of`, under the
 triple this build publishes, so every family is derived rather than refused on its version. The
@@ -60,6 +65,11 @@ _COVERAGE_EN = "is not shown — the two periods being compared are not covered 
 _COVERAGE_AR = "غير معروض — الفترتان المقارنتان غير مغطاتين بالطريقة نفسها"
 _INPUT_EN = "is not shown — the file does not contain"
 _INPUT_AR = "غير معروض — لا يحتوي الملف على"
+_HELD = "required_input_unavailable"
+_HELD_SECTION = {
+    LANGUAGE_ENGLISH: "This analysis — not available. The figures this analysis needs",
+    LANGUAGE_ARABIC: "هذا التحليل — غير متاح. الأرقام التي يحتاجها هذا التحليل",
+}
 
 #: (fixture, joined code, English sentence opening, Arabic sentence opening). Each opening follows
 #: the refused metric's business name.
@@ -74,12 +84,6 @@ _CASES = (
     ("repeated", "basket_items_per_transaction:repeated_row_signature", _REPEATED_EN, _REPEATED_AR),
     ("repeated", "basket_attach_rate:repeated_row_signature", _REPEATED_EN, _REPEATED_AR),
     (
-        "repeated",
-        "revenue_delta_percent.period_over_period:required_input_unavailable",
-        _INPUT_EN,
-        _INPUT_AR,
-    ),
-    (
         "coverage",
         "revenue_delta_absolute.period_over_period:coverage_structurally_incompatible",
         _COVERAGE_EN,
@@ -87,7 +91,8 @@ _CASES = (
     ),
 )
 
-#: The shared codes a real bundle emits at the result tier. The fifth shared code,
+#: The routed shared codes a real bundle emits at the result tier. The held code is pinned apart,
+#: and the fifth routed code,
 #: `family_version_pairing_unadmitted`, refuses a whole section before any family derives, so it
 #: reaches the result tier only through a direct call (`test_a_version_refusal_...`).
 _EMITTED_SHARED = frozenset(
@@ -95,7 +100,6 @@ _EMITTED_SHARED = frozenset(
         "coverage_structurally_incompatible",
         "incomplete_transaction_identifiers",
         "repeated_row_signature",
-        "required_input_unavailable",
     }
 )
 
@@ -109,8 +113,16 @@ def _joined_codes(fixture: str) -> tuple[str, ...]:
     return tuple(caveat.code for caveat in _bundle(fixture).caveats if ":" in caveat.code)
 
 
+def _reason(code: str) -> str:
+    return code.rpartition(":")[2]
+
+
+def _routed(code: str) -> bool:
+    return _shared(code) and _reason(code) != _HELD
+
+
 def _shared(code: str) -> bool:
-    reason = code.rpartition(":")[2]
+    reason = _reason(code)
     return (
         reason in GOVERNED_SECTION_REASONS and reason in REFUSAL_WORDING["result"][LANGUAGE_ENGLISH]
     )
@@ -150,7 +162,7 @@ def test_a_refused_result_opens_with_its_own_name(
 def test_no_shared_code_result_reads_as_a_section_sentence(fixture: str, language: str) -> None:
     """Swept over every joined code the bundle carries, not only the pinned ones."""
     headings = set(SECTION_HEADINGS[language].values())
-    for code in filter(_shared, _joined_codes(fixture)):
+    for code in filter(_routed, _joined_codes(fixture)):
         prose = caveat_prose(code, language)
         assert prose.split(" — ", maxsplit=1)[0] not in _section_sentences(language), code
         assert not any(heading in prose for heading in headings), code
@@ -160,13 +172,10 @@ def test_no_shared_code_result_reads_as_a_section_sentence(fixture: str, languag
 def test_the_sweep_reaches_every_shared_code_a_bundle_emits() -> None:
     """Extent: a sweep over fixtures that stopped emitting a code would pass having checked it."""
     emitted = {
-        code.rpartition(":")[2]
-        for fixture in _FIXTURES
-        for code in _joined_codes(fixture)
-        if _shared(code)
+        _reason(code) for fixture in _FIXTURES for code in _joined_codes(fixture) if _shared(code)
     }
 
-    assert emitted == _EMITTED_SHARED
+    assert emitted == _EMITTED_SHARED | {_HELD}
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -222,3 +231,18 @@ def test_a_section_id_left_half_keeps_the_section_sentence(language: str, expect
     prose = caveat_prose("growth:family_version_pairing_unadmitted", language)
 
     assert prose.startswith(expected), prose
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_an_unavailable_input_keeps_the_section_sentence_until_its_input_is_known(
+    language: str,
+) -> None:
+    """Held, failing closed, until `#560` item 2: the result sentence would state a falsehood."""
+    held = [code for code in _joined_codes("repeated") if _reason(code) == _HELD]
+    assert held, "the real bundle no longer emits the held reason"
+    false_claim = _INPUT_EN if language == LANGUAGE_ENGLISH else _INPUT_AR
+
+    for code in held:
+        prose = caveat_prose(code, language)
+        assert prose.startswith(_HELD_SECTION[language]), prose
+        assert f"{_name(code, language)} {false_claim}" not in prose, prose
