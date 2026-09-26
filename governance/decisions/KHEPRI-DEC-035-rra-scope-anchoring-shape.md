@@ -55,8 +55,10 @@ cross-package key. It therefore keeps `FR-039` and the separate metadata trees i
   defined by that property, not by a list, so a table added later is covered or its omission fails a
   test.
 - **Policy.** Both `USING` and `WITH CHECK` compare `owner_id` with the unit of work's scope setting.
-  An unset setting must match nothing (Constitution V): the missing-setting read is
-  `current_setting(..., true)`, and a `NULL` comparison admits no row.
+  An unset **or empty** setting must match nothing (Constitution V). The property is what binds, not
+  a mechanism: on a pooled connection that earlier ran `SET LOCAL`, the missing-setting read returns
+  an empty string rather than `NULL`, so a policy relying on `NULL` comparison alone does not satisfy
+  this clause.
 - **Role.** The application connects as a role that neither owns the tables nor bypasses RLS, and
   `FORCE ROW LEVEL SECURITY` applies to every covered table. Migrations and the deletion and
   retention sweeps that must cross scopes run under a separately named role, and each such use is
@@ -64,7 +66,8 @@ cross-package key. It therefore keeps `FR-039` and the separate metadata trees i
 - **Verification.** Against PostgreSQL, not SQLite, as that role:
   - a unit of work scoped to A reads none of B's rows;
   - inserting a session or child row whose `owner_id` differs from the setting fails at the database;
-  - a unit of work with no setting reads zero rows.
+  - a unit of work with no setting reads zero rows, including on a pooled connection reused after
+    an earlier scoped transaction.
 
   These run in the `concurrency`-marked PostgreSQL job, where a skip fails the build.
 
@@ -72,8 +75,12 @@ cross-package key. It therefore keeps `FR-039` and the separate metadata trees i
 
 Until §2 ships, the absence of a database-level scope backstop on RRA tables is **accepted** for the
 conditions `KHEPRI-DEC-031` establishes: local-only rehearsal, internal, no external participant.
-The security pass behind `#432` found no read or write that reaches the database without an owner
-predicate. Under those conditions the risk is a future defect, not a live leak.
+The acceptance rests on those conditions, not on the store being sealed. It is not sealed: the
+store still resolves sessions, uploads, profiles and packages by `session_id` alone
+(`get_session`, `get_upload_for_session`, `get_profile_for_session`, `get_package_for_session`),
+and those lookups are `#152`'s to address (§5). What makes the gap tolerable is that under
+`KHEPRI-DEC-031` there is one operator, fixture data, and in practice one scope, so no row exists
+that another scope could be shown.
 
 The acceptance **ends** at the earliest of:
 
@@ -86,7 +93,8 @@ The acceptance **ends** at the earliest of:
 
 §2, implemented and verified, is **a precondition of beta authorization**, in addition to every gate
 `KHEPRI-DEC-030` §6 lists. It adds to that list and removes nothing from it. `KHEPRI-DEC-030` is not
-amended. `#581`, the hosted-readiness checklist, carries this gate as one of its tracked items.
+amended. `#581`, the hosted-readiness checklist, is to carry this gate as one of its tracked
+items.
 
 ### 5. What this decision does not authorize
 
@@ -126,13 +134,15 @@ amended. `#581`, the hosted-readiness checklist, carries this gate as one of its
 
 ## Evidence
 
-- `#432`: the finding, and the 2026-09-20 audit re-verification that no reachable path omits an
-  owner predicate.
+- `#432`: the finding, its 2026-09-20 audit re-verification, and its list of the unscoped
+  `session_id` lookups §3 names.
 - `#578`: the disposition table recording why an unconditional foreign key refuses beta
   redemptions.
 - `docs/superpowers/plans/2026-09-15-s1-02-store-seam-triage.md` §1 and §3: the ranking and the
   three shapes.
 - `src/khepri/rra/persistence.py`: `owner_id` is unconstrained at `:80`, and the composite child keys
   bind to it.
-- Owner direction in session, 2026-09-26: accept now, and require row-level security before hosted
-  or second-organization use.
+- Owner instruction in session, 2026-09-26: "go", in response to a recommendation to accept the gap
+  now and require row-level security before hosted or second-organization use. The owner approved
+  the recommendation and did not author it; the merge of this document is the approval
+  (Constitution II).
