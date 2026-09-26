@@ -74,6 +74,9 @@ from khepri.rra.facts import (
     RefusedResult,
 )
 from khepri.rra.facts import (
+    REASON_REPEATED_EVENT_KEY as _FACTS_REPEATED_EVENT_KEY,
+)
+from khepri.rra.facts import (
     REASON_REPEATED_ROW_SIGNATURE as _FACTS_REPEATED_ROW_SIGNATURE,
 )
 from khepri.rra.narrative import (
@@ -235,6 +238,10 @@ SECTION_REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 # cannot say it would have to borrow "identifier absent" and name a cause that
 # did not occur.
 SECTION_REASON_REPEATED_ROW_SIGNATURE = _FACTS_REPEATED_ROW_SIGNATURE
+# The same hand-off for the other identity proof (`#326` item 4): a keyed extract
+# whose reference collided or was left blank refuses the transaction count with
+# this, and `basket._identifier_reason` reports it verbatim.
+SECTION_REASON_REPEATED_EVENT_KEY = _FACTS_REPEATED_EVENT_KEY
 
 # Which reasons may refuse an entire section. That is a narrower question than
 # "which reasons can this family produce", and the two come apart wherever a
@@ -352,6 +359,10 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             # byte, which refuses the transaction count outright rather than
             # leaving it partial.
             SECTION_REASON_REPEATED_ROW_SIGNATURE,
+            # And its keyed counterpart: the reference identifying each line
+            # repeated or was blank. `RRA-003` proves identity one way per
+            # contract, so this and the row above never refuse one package.
+            SECTION_REASON_REPEATED_EVENT_KEY,
             # And one that is per-metric *and* whole-family, depending on what
             # else the dataset has. An absent units measure refuses items per
             # transaction while attach rate stands -- carried on the result, not
@@ -808,6 +819,11 @@ class StatedCaveat:
 
     code: str
     section: str | None
+    #: The governed semantic a refused result travelling as this caveat names
+    #: (`#560` item 2), so its sentence can say which column. Not in
+    #: `as_document()`, for `ReportBundle.evidence`'s reason: it is read off the
+    #: package the identity already digests, so `BUNDLE_VERSION` does not move.
+    refusing_input: str | None = None
 
     def __post_init__(self) -> None:
         if self.section is None:
@@ -1891,8 +1907,12 @@ def _scoped(
     """
     codes = {code for fact in stated for code in fact.caveats}
     codes |= {f"{refusal.metric}:{refusal.reason}" for refusal in refused}
+    # The input each refused result names (`#560` item 2). One per code: a family
+    # refuses one result identity once, so a joined code is one refusal.
+    inputs = {f"{refusal.metric}:{refusal.reason}": refusal.input for refusal in refused}
     return tuple(
-        StatedCaveat(code=code, section=section_id) for code in sorted(codes)
+        StatedCaveat(code=code, section=section_id, refusing_input=inputs.get(code))
+        for code in sorted(codes)
     )
 
 

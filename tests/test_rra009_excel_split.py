@@ -580,7 +580,11 @@ def test_collapsing_is_decided_per_language(monkeypatch) -> None:
         ("one", LANGUAGE_ARABIC): "first",
         ("two", LANGUAGE_ARABIC): "second",
     }
-    monkeypatch.setattr(wording, "caveat_prose", lambda code, language: prose[code, language])
+    monkeypatch.setattr(
+        wording,
+        "caveat_prose",
+        lambda code, language, refusing_input=None: prose[code, language],
+    )
     caveats = (
         StatedCaveat(code="one", section=None),
         StatedCaveat(code="two", section=None),

@@ -50,6 +50,8 @@ from khepri.rra.crossversion_bundle import (
     CAVEAT_CROSSVERSION_ADMITTED_PAIR,
     CROSSVERSION_FIGURE_LABELS,
 )
+from khepri.rra.journey.copy import JOURNEY_COPY
+from khepri.rra.mapping import SEMANTIC_RULES
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 
 
@@ -192,6 +194,7 @@ _RESULT_REASON_CODES = {
     facts.REASON_INCOMPLETE_IDENTIFIERS,
     facts.REASON_AMBIGUOUS_MAPPING,
     facts.REASON_REPEATED_ROW_SIGNATURE,
+    facts.REASON_REPEATED_EVENT_KEY,
     facts.REASON_INCOMPLETE_COVERAGE,
     basket.REASON_DIMENSION_ABSENT,
     basket.REASON_DIMENSION_INCOMPLETE,
@@ -546,6 +549,16 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "differs between real repeats, or without the duplicated rows, "
                 "and this becomes available."
             ),
+            "repeated_event_key": (
+                "Basket size — not available. Your file contains sale lines "
+                "that cannot be told apart, sharing the reference that "
+                "identifies them or leaving it empty, so a sale line that "
+                "genuinely repeats cannot be told apart from one exported "
+                "twice. Counting sales would mean guessing which it is. The "
+                "rest of the review is unaffected. Export with a reference on "
+                "every sale line that differs between real repeats, or without "
+                "the duplicated rows, and this becomes available."
+            ),
         },
         LANGUAGE_ARABIC: {
             "returns_present": (
@@ -628,6 +641,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "يختلف بين التكرارات الحقيقية، أو بدون الصفوف المكررة، ليصبح هذا "
                 "التحليل متاحاً."
             ),
+            "repeated_event_key": (
+                "حجم سلة الشراء — غير متاح. يحتوي ملفك على سطور بيع لا يمكن "
+                "التمييز بينها، لاشتراكها في المرجع الذي يُعرِّفها أو لخلوّها "
+                "منه، ولذلك لا يمكن التمييز بين سطر بيع مُتكرر فعلاً وسطر "
+                "صُدِّر مرتين. وعدّ عمليات البيع يعني التخمين بينهما. وما عدا "
+                "ذلك في التقرير غير متأثر. صدِّر الملف مع مرجع لكل سطر بيع "
+                "يختلف بين التكرارات الحقيقية، أو بدون الصفوف المكررة، ليصبح "
+                "هذا التحليل متاحاً."
+            ),
         },
     },
     "result": {
@@ -665,6 +687,17 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "those readings for you. Add a line or receipt reference that "
                 "differs between real repeats, or re-export without the "
                 "duplicates, and this becomes available."
+            ),
+            "repeated_event_key": (
+                "{metric} is not shown — the file contains sale lines that "
+                "cannot be told apart, sharing the reference that identifies "
+                "them or leaving it empty, and there is no way to tell a "
+                "genuinely repeated sale line from the same line exported "
+                "twice. Showing a total would mean choosing one of those "
+                "readings for you. Make the reference that identifies each "
+                "sale line differ between real repeats and fill it on every "
+                "row, or re-export without the duplicates, and this becomes "
+                "available."
             ),
             "incomplete_column_coverage": (
                 "{metric} is not shown — {column} is in your file but some rows "
@@ -736,6 +769,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "وسطر صُدِّر مرتين. إظهار الإجمالي يعني اختيار أحد "
                 "التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو الإيصال يختلف "
                 "بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
+                "المكررة، ليصبح هذا الرقم متاحاً."
+            ),
+            "repeated_event_key": (
+                "{metric} غير معروض — يحتوي الملف على سطور بيع لا يمكن "
+                "التمييز بينها، لاشتراكها في المرجع الذي يُعرِّفها أو لخلوّها "
+                "منه، ولا توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً وسطر "
+                "صُدِّر مرتين. إظهار الإجمالي يعني اختيار أحد التفسيرين نيابةً "
+                "عنك. اجعل المرجع الذي يُعرِّف كل سطر بيع مختلفاً بين التكرارات "
+                "الحقيقية ومُعبّأً في كل صف، أو أعد التصدير بدون الصفوف "
                 "المكررة، ليصبح هذا الرقم متاحاً."
             ),
             "incomplete_column_coverage": (
@@ -814,6 +856,33 @@ def _assert_refusal_language_complete(
 
 
 _assert_refusal_wording_complete()
+
+
+# What a refusal's fourth part calls a column (`RRA-009` §Refusals; owner decision on
+# `#560`, 2026-09-26): the label the customer saw beside it when mapping their file in
+# the journey. Read from the journey's own copy rather than restated, so the two can
+# never name one column differently.
+_COLUMN_LABEL_PREFIX = "semantic_"
+_GOVERNED_INPUTS = frozenset(rule.semantic for rule in SEMANTIC_RULES)
+
+
+def _assert_column_labels_complete() -> None:
+    for language in _GOVERNED_LANGUAGES:
+        copy = JOURNEY_COPY[language]
+        missing = {s for s in _GOVERNED_INPUTS if _COLUMN_LABEL_PREFIX + s not in copy}
+        if missing:
+            message = f"every governed input needs a column label (language={language!r})"
+            raise RuntimeError(message)
+
+
+_assert_column_labels_complete()
+
+
+def column_label(semantic: str, language: str) -> str:
+    """The journey's mapping label for one governed input, refusing unknown ones."""
+    if semantic not in _GOVERNED_INPUTS:
+        raise KeyError(semantic)
+    return JOURNEY_COPY[language][_COLUMN_LABEL_PREFIX + semantic]
 
 
 def refusal_message(reason: str, *, context: str, language: str) -> str:
@@ -1016,24 +1085,58 @@ def section_refusal_message(section_id: str, reason: str, language: str) -> str:
     )
 
 
-def caveat_prose(code: str, language: str) -> str:
-    """Return prose for a caveat or a result-tier refusal travelling as one."""
+def caveat_prose(code: str, language: str, *, refusing_input: str | None = None) -> str:
+    """Return prose for a caveat or a result-tier refusal travelling as one.
+
+    `refusing_input` is the governed semantic the refusal recorded (`#560` item 2),
+    named in the sentence by its journey label. Without it, a sentence that must
+    name a column falls back as `_takes_section_sentence` and `_column_of` say.
+    """
     if RESULT_CAVEAT_SEPARATOR not in code:
         return caveat_message(code, language)
     result, reason = code.rsplit(RESULT_CAVEAT_SEPARATOR, 1)
-    if _takes_section_sentence(result, reason):
+    if _takes_section_sentence(result, reason, refusing_input):
         return refusal_message(reason, context="section", language=language).format(
             section=_UNNAMED_SECTION[language],
         )
     metric = _result_business_name(result, language)
+    column = _column_of(refusing_input, metric, language)
     return refusal_message(reason, context="result", language=language).format(
         metric=metric,
-        column=metric,
-        field=metric,
+        column=column,
+        field=column,
     )
 
 
-def _takes_section_sentence(result: str, reason: str) -> bool:
+def _column_of(refusing_input: str | None, metric: str, language: str) -> str:
+    """What a result sentence's `{column}`/`{field}` says.
+
+    The recorded input's label. Absent that -- a package written before
+    `rra004.package.v4`, or a family refusal that knows no column -- the metric's
+    name, as before this slice: `required_input_unavailable` never reaches here
+    without its input, and `incomplete_column_coverage` and `ambiguous_mapping`
+    have no section sentence to fall back to.
+    """
+    if refusing_input is None:
+        return metric
+    return column_label(refusing_input, language)
+
+
+def stated_prose(caveat: StatedCaveat, language: str) -> str:
+    """One stated caveat's prose, naming the input a refused result recorded."""
+    return caveat_prose(caveat.code, language, refusing_input=caveat.refusing_input)
+
+
+def caveat_proses(caveats: Iterable[StatedCaveat], language: str) -> dict[str, str]:
+    """Every stated caveat's prose, by code: the one resolver every surface reads.
+
+    Keyed by code because a surface addresses a caveat by it. A joined code is one
+    result refused for one reason, and `bundle._scoped` gives it one input.
+    """
+    return {caveat.code: stated_prose(caveat, language) for caveat in caveats}
+
+
+def _takes_section_sentence(result: str, reason: str, refusing_input: str | None) -> bool:
     """Whether a joined code falls back to its section's sentence (`#575`).
 
     A reason governed at the result tier takes the result sentence, which names
@@ -1042,8 +1145,8 @@ def _takes_section_sentence(result: str, reason: str) -> bool:
     the section sentence, so a refused result read "Basket size -- not
     available" and was never named.
 
-    The section sentence remains for `required_input_unavailable`, held below
-    until its input is known; for a reason with no result sentence, such as
+    The section sentence remains for `required_input_unavailable` when no input
+    was recorded, held below; for a reason with no result sentence, such as
     `prior_window_absent`; and for a left half that names a section rather than
     a result, which has no result to name. Either way the left half's heading is
     not recovered, so the placeholder renders as the generic phrase rather than
@@ -1052,14 +1155,19 @@ def _takes_section_sentence(result: str, reason: str) -> bool:
     """
     if result in SECTION_HEADINGS[LANGUAGE_ENGLISH]:
         return reason in GOVERNED_SECTION_REASONS
-    return reason in _SECTION_SENTENCE_UNTIL_INPUT_KNOWN or reason not in _RESULT_REASON_CODES
+    if reason in _RESULT_SENTENCE_NEEDS_ITS_INPUT and refusing_input is None:
+        return True
+    return reason not in _RESULT_REASON_CODES
 
 
-# Held on the section sentence, failing closed, until `#560` item 2 carries the
-# refusing input. The result sentence fills `{column}` with the refused metric's
-# own name, so it would tell a customer "the file does not contain Revenue
-# percentage change" -- false, where the section sentence is vague but true.
-_SECTION_SENTENCE_UNTIL_INPUT_KNOWN = frozenset({facts.REASON_INPUT_UNAVAILABLE})
+# A result sentence that asserts its input is missing ("the file does not contain
+# {column}") is stated only when the input it names is known (`#560` item 2).
+# `#575` held `required_input_unavailable` on the section sentence outright; that
+# hold now applies only where no input was recorded -- a family refusal such as
+# comparison's, which knows no column. Naming the metric there would tell a
+# customer "the file does not contain Revenue percentage change", which is false,
+# where the section sentence is vague but true.
+_RESULT_SENTENCE_NEEDS_ITS_INPUT = frozenset({facts.REASON_INPUT_UNAVAILABLE})
 
 
 def _result_business_name(result: str, language: str) -> str:
@@ -1097,7 +1205,7 @@ def stated_once(caveats: Iterable[StatedCaveat], language: str) -> tuple[str, ..
     """
     stated: dict[str, str] = {}
     for caveat in caveats:
-        stated.setdefault(caveat_prose(caveat.code, language), caveat.code)
+        stated.setdefault(stated_prose(caveat, language), caveat.code)
     return tuple(stated.values())
 
 

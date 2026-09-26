@@ -1310,7 +1310,8 @@ def test_a_repeated_key_withholds_the_auxiliary_evidence_too() -> None:
     one, and both are built from the very rows whose identity was refused.
 
     Left standing, one package said both things at once: revenue refused as
-    `repeated_row_signature` while `sale_units_total` published `4` -- the
+    `repeated_row_signature` (now `repeated_event_key`, `#326`) while
+    `sale_units_total` published `4` -- the
     doubled figure the headline had just declined to state -- and nine retained
     bases each carried `event_count 2` for two rows that may be one event. A
     consumer reconciling against a retained basis would be handed that count as
@@ -1324,7 +1325,7 @@ def test_a_repeated_key_withholds_the_auxiliary_evidence_too() -> None:
     package = package_from(DUPLICATE_KEY_CSV, mapped_contract())
 
     reasons = {refusal.metric: refusal.reason for refusal in package.refusals}
-    assert reasons["revenue"] == "repeated_row_signature"
+    assert reasons["revenue"] == "repeated_event_key"
     assert package.sale_units_total is None
     assert package.retained_bases == ()
     assert package.daily_bases == ()

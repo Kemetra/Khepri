@@ -78,6 +78,8 @@ _FACT_METRICS = (
 )
 _GOVERNED_METRIC_CODES = frozenset(_FACT_METRICS) | frozenset(GOVERNED_METRICS)
 _SECTION_REFUSAL_CODES = frozenset(GOVERNED_SECTION_REASONS)
+#: Spelled as a literal so a build without the code fails these pins on an assertion.
+_REPEATED_EVENT_KEY = "repeated_event_key"
 _RESULT_REFUSAL_CODES = frozenset(
     {
         REASON_INPUT_UNAVAILABLE,
@@ -87,6 +89,7 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_INCOMPLETE_IDENTIFIERS,
         REASON_AMBIGUOUS_MAPPING,
         REASON_REPEATED_ROW_SIGNATURE,
+        _REPEATED_EVENT_KEY,
         REASON_DIMENSION_ABSENT,
         REASON_DIMENSION_INCOMPLETE,
         REASON_COVERAGE_INCOMPATIBLE,
@@ -151,6 +154,14 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "الإجمالي يعني اختيار أحد التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو "
         "الإيصال يختلف بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
         "المكررة، ليصبح هذا الرقم متاحاً."
+    ),
+    _REPEATED_EVENT_KEY: (
+        "{metric} غير معروض — يحتوي الملف على سطور بيع لا يمكن التمييز بينها، "
+        "لاشتراكها في المرجع الذي يُعرِّفها أو لخلوّها منه، ولا توجد طريقة "
+        "للتمييز بين سطر بيع مُتكرر فعلاً وسطر صُدِّر مرتين. إظهار الإجمالي يعني "
+        "اختيار أحد التفسيرين نيابةً عنك. اجعل المرجع الذي يُعرِّف كل سطر بيع "
+        "مختلفاً بين التكرارات الحقيقية ومُعبّأً في كل صف، أو أعد التصدير بدون "
+        "الصفوف المكررة، ليصبح هذا الرقم متاحاً."
     ),
     REASON_INCOMPLETE_COVERAGE: (
         "{metric} غير معروض — {column} موجود في ملفك لكن بعض الصفوف تتركه "
@@ -281,7 +292,7 @@ def test_metric_business_name_refuses_an_unknown_code() -> None:
         wording.metric_business_name("not_a_governed_metric", LANGUAGE_ENGLISH)
 
 
-def test_section_refusal_universe_is_eleven_codes() -> None:
+def test_section_refusal_universe_is_thirteen_codes() -> None:
     """A deliberate count, moved deliberately.
 
     `rra008.comparison.v2` adds the tenth: a window whose structural coverage the
@@ -306,8 +317,14 @@ def test_section_refusal_universe_is_eleven_codes() -> None:
     `basket._identifier_reason` reports the package's cause verbatim, and a
     section that could not say it would have to relabel the refusal as
     "identifier absent" -- naming a cause that did not occur.
+
+    The thirteenth is the same hand-off for the other identity proof. `RRA-003` refuses the
+    same results over a repeated event key, whether collided or blank, and `#326` gave that
+    cause its own code: a keyed extract whose reference collided is not a duplicated extract,
+    and telling its owner so sends them looking for rows that are not there.
     """
-    assert len(_SECTION_REFUSAL_CODES) == 12
+    assert len(_SECTION_REFUSAL_CODES) == 13
+    assert _REPEATED_EVENT_KEY in _SECTION_REFUSAL_CODES
 
 
 def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:
@@ -336,7 +353,7 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_twelve_current_codes() -> None:
+def test_result_refusal_universe_is_thirteen_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
     Seven until the version compatibility gate landed, which added the unadmitted
@@ -368,11 +385,17 @@ def test_result_refusal_universe_is_twelve_current_codes() -> None:
     {column}" with "include the missing column" as its remedy -- a cause that did
     not occur and advice that cannot work when the column is already there.
 
+    The thirteenth splits the eleventh by identity proof (`#326` item 4). A keyed
+    extract whose line reference collided or was left blank refuses as
+    `repeated_event_key`; only an unkeyed extract with a repeated canonical row
+    signature says `repeated_row_signature`. `RRA-003` makes the two proofs
+    exclusive, so the two codes never compete for one result.
+
     The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 12
+    assert len(_RESULT_REFUSAL_CODES) == 13
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:
@@ -662,7 +685,7 @@ def test_every_caveat_constant_defined_in_production_is_a_governed_caveat() -> N
     ), sorted(defined.symmetric_difference(wording._GOVERNED_CAVEAT_CODES))
 
 
-#: The five codes both customer tiers state. A shared code is deliberate and
+#: The six codes both customer tiers state. A shared code is deliberate and
 #: `bundle.py` says why: a family that refuses for one of these hands its own
 #: code straight to the section, because two spellings of one condition would
 #: make the hand-off a translation nobody would remember to keep honest.
@@ -671,6 +694,7 @@ _SHARED_TIER_CODES = frozenset(
         "coverage_structurally_incompatible",
         "family_version_pairing_unadmitted",
         "incomplete_transaction_identifiers",
+        "repeated_event_key",
         "repeated_row_signature",
         "required_input_unavailable",
     }
@@ -683,8 +707,10 @@ def test_the_two_customer_tiers_are_the_only_ones_wording_states() -> None:
     A section refusal says why a whole analysis is absent; a result refusal says
     why one metric inside a produced package is. They are not two spellings of
     one set, so a sweep that unioned them would report their difference as drift.
-    Five codes appear in both, deliberately -- pinned here so a sixth is a
-    decision someone makes rather than one that arrives.
+    Six codes appear in both, deliberately -- pinned here so a seventh is a
+    decision someone makes rather than one that arrives. The sixth,
+    `repeated_event_key`, reaches the section the way `repeated_row_signature`
+    does: the basket family copies the package's transaction refusal verbatim.
 
     The internal `GOVERNED_REASONS` in `bundle` and `narrative` carry
     `BundleRefused`/`NarrativeRefused` integrity codes, which reach no customer

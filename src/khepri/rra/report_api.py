@@ -55,6 +55,7 @@ from khepri.rra.rendering.wording import (
     RESULT_CAVEAT_SEPARATOR,
     business_metric_name,
     caveat_prose,
+    caveat_proses,
 )
 from khepri.rra.reports import (
     DeliveredBundle,
@@ -869,6 +870,7 @@ def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityRes
     identifiers that read the same in either language.
     """
     summary = definitions.summarize(bundle)
+    prose = caveat_proses(bundle.caveats, language)
     return AnalysisQualityResponse(
         answered=summary.answered,
         caveated=summary.caveated,
@@ -878,7 +880,7 @@ def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityRes
             for entry, reason in summary.refusals
         ],
         refused_results=[
-            _result_statement(entry, reason, language)
+            _result_statement(entry, reason, prose)
             for entry, reason in summary.refused_results
         ],
         caveats=_quality_caveats(bundle, language),
@@ -924,18 +926,19 @@ def _section_statement(section_id: str, reason: str, language: str) -> SectionSt
     )
 
 
-def _result_statement(result: str, reason: str, language: str) -> ResultStatement:
+def _result_statement(result: str, reason: str, prose: dict[str, str]) -> ResultStatement:
     """One refused result, whose sentence names the metric that was refused.
 
     The refusal prose carries a `{metric}` placeholder filled from the result
-    scope, and `wording.caveat_prose` is the governed resolver for that joined
+    scope, and `wording.caveat_proses` is the governed resolver for that joined
     shape -- the same one the evidence template renders these with, so the two
-    surfaces cannot word one refusal differently.
+    surfaces cannot word one refusal differently. Read from the bundle's own
+    caveats, because only they carry the input a refused result names.
     """
     return ResultStatement(
         result=result,
         reason=reason,
-        wording=caveat_prose(f"{result}{RESULT_CAVEAT_SEPARATOR}{reason}", language),
+        wording=prose[f"{result}{RESULT_CAVEAT_SEPARATOR}{reason}"],
     )
 
 
@@ -986,12 +989,12 @@ def _evidence_response(
         figure_ids=[cell.figure_id for cell in figures],
         **entry,
         name=business_metric_name(entry["metric"], language),
-        **_audit_evidence(audit, language),
+        **_audit_evidence(audit, caveat_proses(bundle.caveats, language)),
         **_package_evidence(package),
     )
 
 
-def _audit_evidence(audit: dict[str, object], language: str) -> dict[str, object]:
+def _audit_evidence(audit: dict[str, object], prose: dict[str, str]) -> dict[str, object]:
     """The sections and caveats the report already showed, worded for a reader."""
     return {
         "sections": [SectionOutcome(**entry) for entry in audit["sections"]],
@@ -999,7 +1002,7 @@ def _audit_evidence(audit: dict[str, object], language: str) -> dict[str, object
             CaveatStatement(
                 code=entry["code"],
                 section=entry["section"],
-                wording=_caveat_prose(entry["code"], language),
+                wording=prose[entry["code"]],
             )
             for entry in audit["caveats"]
         ],
