@@ -98,8 +98,41 @@ INCOMPLETE_EVIDENCE = {
     ),
 }
 
-#: The two causes whose wording ends without an instruction; part 3 closes them.
-_ENDS_WITHOUT_REMEDY = frozenset({CAUSE_STORE_SET, CAUSE_GRANULARITY})
+#: `RRA-009` §Refusals part 1: which business analysis was unavailable, named as
+#: a capability. Every cross-version refusal opens with it (`#560` item 7).
+PART_ONE = {
+    LANGUAGE_ENGLISH: "The comparison between these two datasets is not available.",
+    LANGUAGE_ARABIC: "المقارنة بين مجموعتي البيانات هاتين غير متاحة.",
+}
+
+#: Part 5 for the two causes that ended on part 3, and part 4 for `CAUSE_SCOPE`,
+#: which named no field. Committed literals, so what merges is what was approved.
+APPROVED_SENTENCES = {
+    CAUSE_STORE_SET: {
+        LANGUAGE_ENGLISH: "Compare two datasets covering the same stores.",
+        LANGUAGE_ARABIC: "قارن مجموعتي بيانات تغطيان المتاجر نفسها.",
+    },
+    CAUSE_GRANULARITY: {
+        LANGUAGE_ENGLISH: (
+            "Compare two datasets stated at the same granularity, both by day or "
+            "both by month."
+        ),
+        LANGUAGE_ARABIC: (
+            "قارن مجموعتي بيانات مذكورتين بالدقة نفسها، كلتاهما باليوم أو كلتاهما "
+            "بالشهر."
+        ),
+    },
+    CAUSE_SCOPE: {
+        LANGUAGE_ENGLISH: (
+            "What decides the scope is the Store or branch column: both datasets "
+            "must list the same stores, or both must state one aggregate."
+        ),
+        LANGUAGE_ARABIC: (
+            "ما يحدد النطاق هو عمود المتجر أو الفرع: يجب أن تذكر المجموعتان المتاجر "
+            "نفسها، أو أن تذكر كلتاهما مستوى إجماليًا واحدًا."
+        ),
+    },
+}
 
 
 class TestRefusalParts:
@@ -126,7 +159,23 @@ class TestRefusalParts:
         sentence = REST_STANDS[language]
 
         assert not text.startswith(sentence)
-        assert text.endswith(sentence) == (cause in _ENDS_WITHOUT_REMEDY)
+        assert not text.endswith(sentence), "part 3 is never the last part"
+
+    @pytest.mark.parametrize("cause", RAISED_CAUSES)
+    @pytest.mark.parametrize("language", REQUIRED_LANGUAGES)
+    def test_every_refusal_opens_by_naming_the_unavailable_analysis(
+        self, cause: str, language: str
+    ) -> None:
+        assert CROSSVERSION_REFUSALS[cause][language].startswith(PART_ONE[language])
+
+    @pytest.mark.parametrize("cause", sorted(APPROVED_SENTENCES))
+    @pytest.mark.parametrize("language", REQUIRED_LANGUAGES)
+    def test_the_approved_sentence_follows_part_three(self, cause: str, language: str) -> None:
+        text = CROSSVERSION_REFUSALS[cause][language]
+        approved = APPROVED_SENTENCES[cause][language]
+
+        assert approved in text
+        assert text.index(REST_STANDS[language]) < text.index(approved)
 
     @pytest.mark.parametrize("language", REQUIRED_LANGUAGES)
     def test_incomplete_coverage_names_the_missing_evidence_after_part_three(
