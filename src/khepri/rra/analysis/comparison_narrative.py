@@ -19,14 +19,15 @@ string here is static: nothing is interpolated, because a format placeholder is
 where a value would eventually be passed.
 
 **`RRA-009`'s parts** (`#560` item 7): every string opens by naming the
-comparison as unavailable (part 1), says why (2), says neither period's report
-is affected (3), and ends on what to do (5). Part 4 names a field for
-`CAUSE_SCOPE`, in the journey's own mapping label, and the missing record for
-`CAUSE_INCOMPLETE`; whether the other causes owe one is an open owner question.
+comparison as unavailable (part 1), says why (2), and says neither period's
+report is affected (3). Part 4 names a field for `CAUSE_SCOPE`, in the
+journey's own mapping label, and the missing record for `CAUSE_INCOMPLETE`;
+whether the other causes owe one is an open owner question.
 
-**Each string says what to do about it.** A refusal that only names its cause
-leaves an owner with a dead end -- these say which of the two versions to
-change, or that the pair itself is the wrong question.
+**Nine of the ten say what to do about it** (part 5): which of the two versions
+to change, or that the pair itself is the wrong question. `CAUSE_INCOMPLETE`
+ends on its part 4 and carries no remedy sentence yet; its wording is an open
+owner question rather than copy this slice may invent.
 """
 
 from __future__ import annotations

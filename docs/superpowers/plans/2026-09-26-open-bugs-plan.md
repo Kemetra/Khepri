@@ -70,7 +70,7 @@ delegation applies.
 - Mutant: an empty exclusion set turns the first test red.
 
 ### 3. #560 · 5: `record_consent` returns what was stored
-- `src/khepri/rra/sessions.py:207-230`: after `update_session`, `return self._store.get_session(session_id)`, raising the existing expired or lookup refusal on `None`.
+- `src/khepri/rra/sessions.py:207-230`: after `update_session`, re-read with `self._store.get_session(session_id)` and return that row. A `None` re-read raises `SessionExpired`, never a bare `None` return (as built: the `_present` helper).
 - Test in `tests/test_rra001_sessions.py`: the fake store records a deletion between the read and the write. The returned session carries `deletion_requested_at`, and passing it to `require_upload_consent` refuses. That is the observable hazard.
 - Mutant: return `consented` again, and the test fails.
 
