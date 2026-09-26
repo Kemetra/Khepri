@@ -435,7 +435,9 @@ class TestTheMigration:
         was followed by `20260915_0030`, the DEC-033 correction that moves existing workspace
         content off the beta timer. #432 then added `20260925_0031`, the composite key binding a
         fact package's profile to the package's scope, and `20260925_0032`, the foreign key on
-        `rca_sessions.active_organization_id`. That key is the head this pin now names.
+        `rca_sessions.active_organization_id`. #593 then added `20260926_0033`, which lets a
+        dataset profile outlive its raw upload (`ON DELETE SET NULL`). That key is the head this
+        pin now names.
         """
         import subprocess
 
@@ -444,7 +446,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260925_0032" in result.stdout
+        assert "20260926_0033" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

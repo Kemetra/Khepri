@@ -168,12 +168,18 @@ class DatasetProfileRow(Base):
             name="fk_profile_session_scope",
             ondelete="RESTRICT",
         ),
+        # `#593` (`KHEPRI-DEC-033` §1): the profile outlives its raw upload. Retention's purge of
+        # the upload clears this column rather than being refused by it or deleting the profile.
+        ForeignKeyConstraint(
+            ["upload_id"], ["rra_uploads.upload_id"], name="fk_profile_upload", ondelete="SET NULL"
+        ),
     )
 
     profile_id: Mapped[str] = mapped_column(String, primary_key=True)
     owner_id: Mapped[str] = mapped_column(String, nullable=False)
     session_id: Mapped[str] = mapped_column(String, nullable=False)
-    upload_id: Mapped[str] = mapped_column(String, nullable=False)
+    #: `None` once retention has purged the raw upload (`#593`).
+    upload_id: Mapped[str | None] = mapped_column(String, nullable=True)
     profile_version: Mapped[str] = mapped_column(String, nullable=False)
     mapping_version: Mapped[str] = mapped_column(String, nullable=False)
     source_sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)

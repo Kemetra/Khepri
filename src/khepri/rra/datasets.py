@@ -77,7 +77,8 @@ class DatasetProfileRecord:
     profile_id: str
     owner_id: str
     session_id: str
-    upload_id: str
+    #: `None` once retention has purged the raw upload; the profile outlives it (`#593`).
+    upload_id: str | None
     profile_version: str
     mapping_version: str
     source_sha256_hex: str

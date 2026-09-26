@@ -43,12 +43,14 @@ from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.session_persistence import SqlSessionStore as RcaSessionStore
 from khepri.rca.sessions import Session
 from khepri.rra.datasets import DatasetProfileRecord
+from khepri.rra.intake import UploadMetadata
 from khepri.rra.packages import FactPackageRecord
 from khepri.rra.persistence import Base as RraBase
 from khepri.rra.persistence import (
     SqlFactPackageRepository,
     SqlProfileRepository,
     SqlSessionStore,
+    SqlUploadRepository,
 )
 from khepri.rra.sessions import BetaSession, open_commercial_session
 from tests.rca_lifecycle_support import build_factory
@@ -84,6 +86,7 @@ class RraStores:
     sessions: SqlSessionStore
     profiles: SqlProfileRepository
     packages: SqlFactPackageRepository
+    uploads: SqlUploadRepository
 
     @classmethod
     def over(cls, factory: sessionmaker) -> RraStores:
@@ -91,12 +94,30 @@ class RraStores:
             SqlSessionStore(factory),
             SqlProfileRepository(factory),
             SqlFactPackageRepository(factory),
+            SqlUploadRepository(factory),
         )
 
     def open(self, owner_id: str) -> BetaSession:
         return open_commercial_session(self.sessions, owner_id=owner_id, now=NOW)
 
     def profile(self, session: BetaSession) -> DatasetProfileRecord:
+        # `fk_profile_upload` (#593): a profile names an upload that exists.
+        self.uploads.add_upload(
+            UploadMetadata(
+                upload_id=f"upl_{session.session_id}",
+                owner_id=session.owner_id,
+                session_id=session.session_id,
+                object_key=f"inputs/{session.session_id}",
+                size_bytes=1,
+                sha256_hex=DIGEST,
+                media_type="text/csv",
+                created_at=NOW,
+                expires_at=NOW + timedelta(days=7),
+                encryption_algorithm="AES-256-GCM",
+                envelope_version=1,
+                ciphertext_sha256_hex=DIGEST,
+            )
+        )
         return self.profiles.add_profile(
             DatasetProfileRecord(
                 profile_id=f"prf_{session.session_id}",
