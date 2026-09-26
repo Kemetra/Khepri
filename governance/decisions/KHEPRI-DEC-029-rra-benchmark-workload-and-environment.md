@@ -136,6 +136,13 @@ floating-point value ever written; `units` is an integer from 1 to 20 inclusive;
 `discount_value` is non-zero on 30% of rows and `refund_value` on 5%, by seeded draw; row counts
 are derived from the target byte size or the recorded row count and are recorded per dataset.
 
+Amended on 2026-09-26 (`#525`): every transaction has three rows (`rows_per_transaction: 3`),
+and a transaction's rows share one `transaction_id`, `transaction_date`, `store` and `channel`, so
+each sale is one basket at one place and time. One row per transaction would make every basket and
+attach-rate figure degenerate, so the value is fixed here rather than left to the descriptor. How a
+dataset whose row count is not a multiple of three, or an exact-size CSV's filler rows, group into
+transactions is not decided here; the descriptor slice raises it before recording any dataset.
+
 If any of the 40 datasets is not admitted by `RRA-003`, the benchmark run is void and the
 descriptor is defective. A rejected dataset is never recorded as a missed sample and never reduces
 the population: the enforcement primitive requires exactly the expected sample count, so a short
@@ -154,6 +161,23 @@ Carried forward unchanged.
 - Generation is free of wall-clock, locale, environment, and iteration-order dependence: fixed
   `PYTHONHASHSEED=0`, UTC only, explicit column order, UTF-8 without BOM, `\n` line endings, and
   explicit quoting rules for CSV.
+
+### Workload descriptor: top-level keys
+
+Amended on 2026-09-26 (`#525`). "Digest computation" requires top-level keys in the order this
+decision lists them; for `KHEPRI-BMK-001-workload.yaml` the order is:
+
+1. `benchmark_id`: the literal `KHEPRI-BMK-001`;
+2. `generator_module`: the generator's module path;
+3. `generator_version`;
+4. `master_seed`;
+5. `rows_per_transaction`: `3`, as fixed under "Workload: dataset shape";
+6. `datasets`: the 40 entries in `sample_id` order, each with the keys `sample_id`, `band`,
+   `input_format`, `column_profile`, `row_count`, `stored_bytes` and `sha256`, in that order.
+
+The values of `generator_version`, `master_seed`, and each dataset's row count, size and digest are
+recorded by the slice that adds the descriptor, and approved when the owner merges it. The
+environment descriptor's key order is fixed by the slice that settles its parameters (`OPS1-09`).
 
 ### Workload: narrative disposition
 
@@ -323,6 +347,11 @@ four byte-size bands, CSV only, six columns, no personal-data column, 28 days in
 and arithmetic seed derivation instead of the recorded per-file digests. Reworking those modules to
 this population, and replacing the content-address comparison with one over the approved descriptor
 bytes, is an obligation of the slice that adds the descriptors.
+
+`src/khepri/rra/benchmark_rows.py` does not yet produce the transaction shape fixed on 2026-09-26
+either: it draws `transaction_date`, `store` and `channel` per row rather than per transaction, and
+its exact-size CSV filler rows form one-row transactions. Bringing it to that shape, under a new
+`generator_version`, is part of the same obligation.
 
 ### Completion objective, restated and not weakened
 
