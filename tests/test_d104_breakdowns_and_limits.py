@@ -404,6 +404,29 @@ def test_the_limits_surface_collects_caveats_without_reading_anything_again() ->
     assert reading.surfaces[0].caveats == ("currency_not_declared",)
 
 
+def test_a_display_only_caveat_still_reaches_the_limits_surface() -> None:
+    """`RCA-008` `FR-162a`: `chart_not_drawn` leaves a card's count, never S-6 (`FR-161`).
+
+    The card side of that reading is asserted on the decision view. This drives `limits` itself
+    with a projection carrying only the display-only code, so a filter that dropped such codes
+    here as well would fail (#211, from the open-bugs PR's adversarial review).
+    """
+    gathered = (
+        (
+            "overview",
+            _projection(
+                seam.BRANCH_PERFORMANCE,
+                _BRANCH_FIELDS,
+                (),
+                _Published(caveats=("chart_not_drawn",)),
+            ),
+        ),
+    )
+    port = _port({seam.METRIC_AVAILABILITY.view_id: _availability(())})
+    reading = limits.read_limits(_actions(port), _limits_request(gathered=gathered))
+    assert reading.surfaces[0].caveats == ("chart_not_drawn",)
+
+
 def test_the_limits_surface_carries_a_gathered_refusal_whole() -> None:
     """`FR-164` -- the governed wording is the surface's to render, so keep it intact."""
     refusal = ports.ViewRefusal(cause="unsupported_filter")

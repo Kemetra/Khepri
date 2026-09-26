@@ -1,9 +1,9 @@
 """The commercial HTTP surface: an authorized RCA actor to an RRA analysis (`R7-05`).
 
-**Authorized by `KHEPRI-DEC-022` §2**, which lifted `KHEPRI-DEC-021` §5's "No endpoint" bullet and
-fixed four things this module may not depart from: `for_request` rather than `resolve`, the cookie
-as the only token source, `R6-08`'s tripwire replaced rather than relaxed, and no new `R6-01` §3.1
-row.
+**Authorized by `KHEPRI-DEC-022` §2**, now carried forward by `KHEPRI-DEC-023` §1. It lifted
+`KHEPRI-DEC-021` §5's "No endpoint" bullet and fixed four things this module may not depart
+from: `for_request` rather than `resolve`, the cookie as the only token source, `R6-08`'s
+tripwire replaced rather than relaxed, and no new `R6-01` §3.1 row.
 
 ## Why this module is in `khepri.runtime`
 

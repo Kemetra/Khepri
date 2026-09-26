@@ -20,9 +20,9 @@ Neither is served by a renderer that launches per call, so the adapter takes a
 running browser and `launch_chromium` is the convenience that supplies one.
 
 **Why `launch_chromium` is not merely a convenience.** It is also the one place
-`KHEPRI-DEC-007`'s required launch flag is applied, so a caller that builds its own
-browser owns `LAUNCH_ARGS` itself. On Fargate a browser launched without them
-crashes while printing instead of reporting a memory limit, which is why the flag
+`KHEPRI-DEC-028` §Report generation's required launch flag is applied, so a caller that
+builds its own browser owns `LAUNCH_ARGS` itself. On Fargate a browser launched without
+them crashes while printing instead of reporting a memory limit, which is why the flag
 lives beside the print options rather than at a call site.
 """
 
@@ -45,8 +45,9 @@ PDF_OPTIONS: dict[str, bool] = {
     "print_background": True,
 }
 
-# `KHEPRI-DEC-007` requires this flag and calls it a correctness requirement rather
-# than a tuning flag. Fargate fixes `/dev/shm` at 64 MiB and does not support
+# `KHEPRI-DEC-028` §Report generation (carried forward from the retired `KHEPRI-DEC-007`)
+# requires this flag and calls it a correctness requirement rather than a tuning flag.
+# Fargate fixes `/dev/shm` at 64 MiB and does not support
 # `linuxParameters.sharedMemorySize`, which is an EC2-launch-type parameter.
 # Chromium's default shared-memory use exceeds 64 MiB while rendering a paginated
 # document and fails as a renderer crash rather than as a memory limit, so the
