@@ -2065,7 +2065,8 @@ def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> _Cause:
     choosing their own and each getting one case wrong.
 
     **The cause carries the column it names** (`#560` item 2): the first of the
-    result's own inputs with a gap, or the first unmapped one. A repeat names no
+    result's own inputs with a gap (else the gapped column that refused it), or
+    the first unmapped one. A repeat names no
     column, and neither does an incomplete identifier. `repeated_event_key` takes
     the slot of the repeat it was split from (`#326` item 4).
 
@@ -2076,7 +2077,12 @@ def _reason_for(inputs: tuple[str, ...], causes: _Causes) -> _Cause:
     never reach here.
     """
     if causes.gapped:
-        gapped = next((semantic for semantic in inputs if semantic in causes.gapped), None)
+        # Returns reads no column of its own, so the gap that refuses it is the
+        # revenue population's: that column is the one to name, not the metric.
+        gapped = next(
+            (semantic for semantic in inputs if semantic in causes.gapped),
+            min(causes.gapped),
+        )
         return _Cause(REASON_INCOMPLETE_COVERAGE, gapped)
     if causes.repeated:
         return _Cause(causes.repeated_reason)

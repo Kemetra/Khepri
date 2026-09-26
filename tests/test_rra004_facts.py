@@ -46,6 +46,7 @@ from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
     SEMANTIC_PRODUCT,
+    SEMANTIC_REVENUE,
     SEMANTIC_STORE,
     build_mapping,
 )
@@ -2550,6 +2551,28 @@ def test_a_violating_return_gives_returns_the_same_cause_as_revenue() -> None:
     assert revenue_refused is not None
     assert returns_refused is not None
     assert returns_refused.reason == revenue_refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_a_violating_return_names_the_revenue_column_on_returns_too() -> None:
+    """The same cause names the same column (`#560` item 2, `RRA-009` part 4).
+
+    Returns reads no column of its own: its gap is the revenue population's. So
+    the input its sentence names is revenue. Recording none fell back to the
+    metric and told the reader the *returns* column had blanks.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-06,return,posted,30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    revenue_refused = result.refusal(METRIC_REVENUE)
+    returns_refused = result.refusal(METRIC_RETURNS)
+    assert revenue_refused is not None
+    assert returns_refused is not None
+    assert returns_refused.input == revenue_refused.input == SEMANTIC_REVENUE
 
 
 def test_an_absent_discount_column_still_says_it_is_absent() -> None:
