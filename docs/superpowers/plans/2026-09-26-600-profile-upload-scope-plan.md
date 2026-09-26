@@ -35,6 +35,7 @@ The downgrade drops the composite key and `uq_upload_scope`, then restores the s
 - The upgrade clears a cross-scope `upload_id` written under `0033`.
 - The downgrade restores the single-column `SET NULL` key.
 
-Pins to move with a new head: `RCA_UNREPLAYED` in `test_rca001_migration.py`, and the single-head
-pin in `test_rca001_session_persistence.py`. `test_i593`'s head assertion moves to `0033`, whose
+Pins to move with a new head: `RCA_UNREPLAYED` in `test_rca001_migration.py`, the single-head
+pin in `test_rca001_session_persistence.py`, and the `Migration head` line in
+`specs/001-rca-001-commercial-identity/STATUS.md`. `test_i593`'s head assertion moves to `0033`, whose
 DDL it describes.
