@@ -37,23 +37,24 @@ EVIDENCE_CODES = frozenset(
 def _emitted_evidence_codes() -> frozenset[str]:
     """String constants passed to `evidence.append(...)` or an `evidence=` argument."""
     tree = ast.parse(files("khepri.rra").joinpath("mapping.py").read_text(encoding="utf-8"))
-    codes: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        appends_to_evidence = (
-            isinstance(func, ast.Attribute)
-            and func.attr == "append"
-            and isinstance(func.value, ast.Name)
-            and func.value.id == "evidence"
-        )
-        if appends_to_evidence:
-            codes.update(_constants(node.args))
-        for keyword in node.keywords:
-            if keyword.arg == "evidence":
-                codes.update(_constants([keyword.value]))
-    return frozenset(codes)
+    calls = (node for node in ast.walk(tree) if isinstance(node, ast.Call))
+    return frozenset(_constants([arg for call in calls for arg in _evidence_arguments(call)]))
+
+
+def _evidence_arguments(call: ast.Call) -> list[ast.expr]:
+    """The arguments of `call` that carry evidence codes, if any."""
+    arguments = [keyword.value for keyword in call.keywords if keyword.arg == "evidence"]
+    return [*call.args, *arguments] if _appends_to_evidence(call) else arguments
+
+
+def _appends_to_evidence(call: ast.Call) -> bool:
+    func = call.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "append"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "evidence"
+    )
 
 
 def _constants(nodes: list[ast.expr]) -> set[str]:

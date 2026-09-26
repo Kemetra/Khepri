@@ -172,28 +172,39 @@ class _RefusedThenAccepted:
         self.profiles = 0
 
     def __call__(self, method: str, path: str) -> tuple[int, object]:
-        if path == "/api/v1/beta/journey":
-            step = "review" if self.profiles > 1 else "upload"
-            return 200, {
-                "step": step,
-                "upload_present": self.upload_present,
-                "profile_present": self.profiles > 1,
-            }
-        if path == "/api/v1/beta/consent":
-            return 204, None
-        if path == "/api/v1/beta/uploads":
-            if self.upload_present:
-                return 409, {"detail": "Upload already exists."}
-            self.upload_present = True
-            return 201, {}
-        if path == "/api/v1/beta/profile" and method == "POST":
-            self.profiles += 1
-            if self.profiles == 1:
-                return 400, {"detail": _COMPOSITE_REFUSAL}
-            return 201, {}
-        if path == "/api/v1/beta/profile":
-            return 200, {"admissible": True, "reasons": [], "findings": [], "mappings": []}
-        return 404, {"detail": "not stubbed"}
+        routes = {
+            ("GET", "/api/v1/beta/journey"): self._journey,
+            ("POST", "/api/v1/beta/consent"): lambda: (204, None),
+            ("POST", "/api/v1/beta/uploads"): self._upload,
+            ("POST", "/api/v1/beta/profile"): self._profile,
+            ("GET", "/api/v1/beta/profile"): self._stored_profile,
+        }
+        answer = routes.get((method, path))
+        return answer() if answer else (404, {"detail": "not stubbed"})
+
+    def _journey(self) -> tuple[int, object]:
+        accepted = self.profiles > 1
+        return 200, {
+            "step": "review" if accepted else "upload",
+            "upload_present": self.upload_present,
+            "profile_present": accepted,
+        }
+
+    def _upload(self) -> tuple[int, object]:
+        if self.upload_present:
+            return 409, {"detail": "Upload already exists."}
+        self.upload_present = True
+        return 201, {}
+
+    def _profile(self) -> tuple[int, object]:
+        self.profiles += 1
+        if self.profiles == 1:
+            return 400, {"detail": _COMPOSITE_REFUSAL}
+        return 201, {}
+
+    @staticmethod
+    def _stored_profile() -> tuple[int, object]:
+        return 200, {"admissible": True, "reasons": [], "findings": [], "mappings": []}
 
 
 @pytest.mark.browser
