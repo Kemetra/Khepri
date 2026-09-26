@@ -38,13 +38,15 @@ const textValue = (control) => {
   const typed = control.value.trim();
   return control.autocapitalize === "characters" ? typed.toUpperCase() : typed;
 };
+const contractValue = (control) => {
+  if (control.type === "checkbox") return control.checked;
+  if (control.dataset.contractList !== undefined) return listValue(control);
+  const blank = control.dataset.contractRequired === undefined ? null : "";
+  return textValue(control) || blank;
+};
 const declaration = () => {
   const contract = {};
-  for (const control of contractFields) {
-    const name = control.dataset.contractField;
-    const blank = control.dataset.contractRequired === undefined ? null : "";
-    contract[name] = control.type === "checkbox" ? control.checked : (textValue(control) || blank);
-  }
+  for (const control of contractFields) contract[control.dataset.contractField] = contractValue(control);
   return contract;
 };
 // The coverage attestation, sent only when the operator made one. `RRA-003`
@@ -74,12 +76,16 @@ const attestation = () => {
     }
     const typed = control.value.trim();
     if (typed) attested = true;
-    manifest[name] = control.dataset.manifestList === undefined
-      ? typed
-      : typed.split(",").map((item) => item.trim()).filter(Boolean);
+    manifest[name] = control.dataset.manifestList === undefined ? typed : listValue(control);
   }
   return attested ? manifest : null;
 };
+// Defined here, after its callers, so the manifest tests that lift
+// `attestation`..`profileRequest` out of this module carry it with them.
+// A comma-separated control, as the list the model types it as. Blank is `[]`,
+// never null: `list[str]` refuses null as a 422, which is the malformed-body
+// failure a declaration must never earn (`#586`).
+const listValue = (control) => control.value.split(",").map((item) => item.trim()).filter(Boolean);
 const profileRequest = () => {
   const attested = attestation();
   return JSON.stringify({ requested_semantics: [], source_contract: declaration(), ...(attested ? { coverage_manifest: attested } : {}) });

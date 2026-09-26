@@ -175,6 +175,13 @@ _EN = {
     ),
     "contract_unique_line_grain_attested": "Each row is one order line",
     "contract_transaction_id_column": "Column holding the transaction reference",
+    "contract_transaction_key_components": (
+        "Columns that together identify one sale, when the reference alone does not"
+    ),
+    "contract_transaction_key_components_hint": (
+        "Separated by commas, and including the transaction reference column — for example "
+        "invoice_no, branch. Leave blank when each reference belongs to one sale only."
+    ),
     "contract_transaction_id_unique_package_wide": (
         "Each reference belongs to one sale only, even when that sale has several rows"
     ),
@@ -345,6 +352,13 @@ _AR = {
     "contract_posted_only": "كل صف مُرحَّل — العمليات الملغاة والباطلة مستبعدة",
     "contract_unique_line_grain_attested": "كل صف يمثل بنداً واحداً من الطلب",
     "contract_transaction_id_column": "العمود الذي يحمل مرجع المعاملة",
+    "contract_transaction_key_components": (
+        "الأعمدة التي تحدد معاً عملية بيع واحدة، إذا لم يكفِ المرجع وحده"
+    ),
+    "contract_transaction_key_components_hint": (
+        "افصل بينها بفواصل، وأدرج عمود مرجع المعاملة، مثل invoice_no, branch. "
+        "اتركه فارغاً إذا كان كل مرجع يخص عملية بيع واحدة فقط."
+    ),
     "contract_transaction_id_unique_package_wide": (
         "كل مرجع يخص عملية بيع واحدة فقط، حتى لو كانت لها عدة صفوف"
     ),

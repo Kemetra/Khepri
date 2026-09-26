@@ -30,6 +30,8 @@ class ApiCalls:
     """Every API request the page made, in order, as `(method, path)`."""
 
     made: list[tuple[str, str]] = field(default_factory=list)
+    #: The JSON body of each call that sent one, keyed by `(method, path)`, in order.
+    bodies: dict[tuple[str, str], list[object]] = field(default_factory=dict)
 
     def count(self, method: str, path: str) -> int:
         return self.made.count((method, path))
@@ -51,6 +53,9 @@ def open_journey_page(
         if path.startswith("/api/"):
             method = route.request.method
             calls.made.append((method, path))
+            if route.request.headers.get("content-type", "").startswith("application/json"):
+                sent = json.loads(route.request.post_data or "null")
+                calls.bodies.setdefault((method, path), []).append(sent)
             status, body = api(method, path)
             route.fulfill(
                 status=status,

@@ -62,6 +62,18 @@
         <input id="contract-transaction-id-column" data-contract-field="transaction_id_column" type="text">
       </p>
       {#
+        `#586`. `RRA-003` makes the canonical key a bare reference only when the
+        contract proves it unique, and otherwise a composite containing the
+        reference. Without this control that second branch was unreachable from
+        the journey. The client adds nothing to what is typed: a composite that
+        omits the reference is refused by the server with its stated reason.
+      #}
+      <p class="contract-row">
+        <label for="contract-transaction-key-components">{{ copy.contract_transaction_key_components }}</label>
+        <input id="contract-transaction-key-components" data-contract-field="transaction_key_components" data-contract-list type="text" dir="ltr" spellcheck="false" aria-describedby="contract-transaction-key-components-hint">
+        <span id="contract-transaction-key-components-hint" class="meta">{{ copy.contract_transaction_key_components_hint }}</span>
+      </p>
+      {#
         Checkboxes rather than a defaulted boolean: `SourceContractBody` would
         accept an omitted flag and supply a value, and that value would be
         indistinguishable downstream from one the operator chose. An unticked
