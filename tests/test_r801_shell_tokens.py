@@ -36,8 +36,8 @@ _SUPPLIED = {
     "#f6eddf",
     # The workspace presentation reset (`RCA-010` §Scope) takes the rest of the §16.5 palette the
     # shell consumes. One entry per value, each beside the row that supplies it; §16.5 values the
-    # shell does not consume (the error fill and border, `ink-disabled`, `gold-eyebrow`, `gold-link`) are
-    # deliberately not listed, so declaring one still fails until it is.
+    # shell does not consume (the error fill and border, `ink-disabled`, `gold-eyebrow`,
+    # `gold-link`) are deliberately not listed, so declaring one still fails until it is.
     #
     # §16.5 "Navy — chrome and ink": `navy-900`, `navy-950`, `ink`, `ink-muted`, `nav-label`.
     # `ink-secondary` and `ink-tertiary` are not consumed: both fall under 4.5:1 on the ivory

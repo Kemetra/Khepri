@@ -303,9 +303,10 @@ _TEXT_CONTRAST_SCRIPT = """
 #: Tabs through the page; each stop must paint an outline that clears 3:1 on its ground.
 #:
 #: Native `type="date"` inputs are measured too. Until `#572` they were exempt by name: their
-#: last Tab stop is the picker button inside the shadow tree, where `:focus-visible` stops
-#: matching the host, so no ring painted. The owner's 2026-09-26 decision on `#572` refuses to
-#: rely on the native segment highlight alone, and `journey.css` now paints the ring on `:focus`.
+#: last Tab stop is the picker button inside the shadow tree, where neither `:focus-visible`
+#: nor `:focus` matches the host, so no ring painted. The owner's 2026-09-26 decision on `#572`
+#: refuses to rely on the native segment highlight alone, and `journey.css` now paints the ring
+#: on `:focus-within`.
 _FOCUS_SCRIPT = """
 (stops) => {
   const rgb = (value) => (value.match(/[\d.]+/g) || []).map(Number);

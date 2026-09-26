@@ -17,13 +17,14 @@ Presentation only. No route, copy, figure, governed word or dependency changes.
    after the operator edits and leaves the field, or tries to submit.
 2. The issue's premise is partly stale. On Chromium 149, `:focus-visible` *does* match the host
    while a date segment has focus. The failing stop is the fourth: the calendar-picker button
-   inside the shadow tree, where `:focus-visible` stops matching the host. **Fix:** paint the
-   journey ring on `input[type="date"]:focus`, which matches while any inner part holds focus.
+   inside the shadow tree, where neither `:focus-visible` nor `:focus` matches the host (measured).
+   **Fix:** paint the journey ring on `input[type="date"]:focus-within`, which matches while any
+   inner part holds focus.
    Native inputs are kept, as the owner decision requires.
 3. Of the six residual values, only `--danger` has a consumer (`.invitation-warning`).
    `--danger-border`, `--danger-surface`, `--danger-ink`, `--ready`, `--track` and the two derived
    `--ready` companions have none. **Fix:** delete the unused tokens and move `--danger` to the
-   §16.5 error ink `#B0392F`, which is 5.6:1 on the card surface.
+   §16.5 error ink `#B0392F`: 6.0:1 on white and 5.8:1 on the canvas (computed).
 
 ## Tests (RED first)
 
