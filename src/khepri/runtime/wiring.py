@@ -673,6 +673,11 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     return ShellServices(
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
+        # `#594`: the chooser's selection (`RCA-001` `FR-029`, `RCA-002` `FR-051a`).
+        switcher=OrganizationSwitcher(
+            RcaSessionService(SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME),
+            SqlOrganizationStore(stack.factory),
+        ),
         # The gateway needs one read and two writes, and they live on two different objects --
         # see `ShellInvitations`. Passing the service alone left the Team surface raising
         # `AttributeError` on `invitations_for_organization` in the built wheel.

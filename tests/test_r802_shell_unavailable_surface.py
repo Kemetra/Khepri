@@ -47,6 +47,9 @@ DELIVERED_PATHS = {
     # `test_it_declares_every_surface_when_fully_wired` exists below: a conditionally registered
     # route is invisible to a scan that never enables it.
     f"{SHELL_PREFIX}/{{language}}/{{organization}}/analyses",
+    # `#594`'s organization switch (`RCA-002` FR-051a). Declared only when a switcher is wired,
+    # so the fully-wired scan below wires one.
+    f"{SHELL_PREFIX}/{{language}}/{{organization}}/switch",
 }
 
 
@@ -155,6 +158,7 @@ class TestScope:
                 organizations=_StubOrganizations(),
                 invitations=object(),
                 bridge=object(),
+                switcher=object(),
             ),
             clock=lambda: NOW,
         )

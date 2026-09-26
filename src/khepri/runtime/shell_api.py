@@ -88,6 +88,7 @@ from khepri.runtime.shell_frame import (
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
 from khepri.runtime.shell_pins import add_pin_routes, offers_pins
+from khepri.runtime.shell_switching import add_switch_route, entry_surface, offers_switching
 from khepri.runtime.shell_workspace import (
     UNRENDERABLE_FAILURE,
     UnrenderableRecord,
@@ -311,6 +312,9 @@ class ShellServices:
     #: like the rest -- a deployment without it declares no decision route, so the address is
     #: unknown rather than refused differently (`FR-046`). See `shell_decisions.offers_decisions`.
     decisions: Any | None = None
+    #: `#594`. The `OrganizationSwitcher` the chooser's selection posts to (`RCA-002` `FR-051a`).
+    #: Optional like the rest; without it the chooser keeps plain links. See `shell_switching`.
+    switcher: Any | None = None
 
 
 def _offers_workspace(services: ShellServices) -> bool:
@@ -458,7 +462,7 @@ def _switcher(
     language: str,
     organizations: list[Any],
     active_organization_id: str | None,
-    entry_surface: str,
+    services: ShellServices,
 ) -> Response:
     """`FR-051`: only what the reader returned, which is only current memberships.
 
@@ -466,8 +470,11 @@ def _switcher(
     succeed. `for_request` refuses any organization that is not this session's active one --
     `FR-027` allows exactly one, and honoring a named one would make the active organization
     advisory -- so an action on any other row would post a value the resolver rejects and land the
-    reader on the uniform unavailable surface. A dead end reads as a fault; the row keeps its link
-    instead, which is the control that does switch.
+    reader on the uniform unavailable surface. A dead end reads as a fault.
+
+    Every other row is the switch itself where this deployment offers one (`#594`, `RCA-002`
+    `FR-051a`): its link used to be taken for the switch, but a link only *compares* with the active
+    organization, so after a revocation every row answered `unavailable`.
     """
     return _render(
         environment,
@@ -476,7 +483,8 @@ def _switcher(
         status_code=200,
         organizations=organizations,
         active_organization_id=active_organization_id,
-        entry_surface=entry_surface,
+        entry_surface=entry_surface(services),
+        switches=offers_switching(services),
         # The chooser is where the frame's organization control leads, so the control is not
         # rendered here: a link to the surface you are on is a control that does nothing.
     )
@@ -878,6 +886,7 @@ _ROUTE_DECLARATIONS = (
     add_pin_routes,
     add_comparison_routes,
     add_decision_routes,
+    add_switch_route,
 )
 
 
@@ -1005,7 +1014,7 @@ def add_shell_routes(
                 language=language,
                 organizations=organizations,
                 active_organization_id=context.organization_id,
-                entry_surface="overview" if _offers_workspace(services) else "team",
+                services=services,
             )
         return _unavailable(environment, language=language)
 
