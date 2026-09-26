@@ -169,7 +169,7 @@ _EN = {
     "contract_unique_line_grain_attested": "Each row is one order line",
     "contract_transaction_id_column": "Column holding the transaction reference",
     "contract_transaction_id_unique_package_wide": (
-        "That reference is unique across the whole file"
+        "Each reference belongs to one sale only, even when that sale has several rows"
     ),
     "contract_revenue_vat_exclusive": "Revenue amounts exclude VAT",
     "contract_revenue_is_net_of_returns": "Revenue is already net of returns",
@@ -331,7 +331,9 @@ _AR = {
     "contract_posted_only": "كل صف مُرحَّل — العمليات الملغاة والباطلة مستبعدة",
     "contract_unique_line_grain_attested": "كل صف يمثل بنداً واحداً من الطلب",
     "contract_transaction_id_column": "العمود الذي يحمل مرجع المعاملة",
-    "contract_transaction_id_unique_package_wide": "هذا المرجع فريد في الملف بأكمله",
+    "contract_transaction_id_unique_package_wide": (
+        "كل مرجع يخص عملية بيع واحدة فقط، حتى لو كانت لها عدة صفوف"
+    ),
     "contract_revenue_vat_exclusive": "مبالغ الإيرادات لا تشمل ضريبة القيمة المضافة",
     "contract_revenue_is_net_of_returns": "الإيرادات صافية من المرتجعات بالفعل",
     "contract_units_are_integral": "الوحدات أعداد صحيحة",
