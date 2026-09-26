@@ -476,6 +476,12 @@ class TestWhatRemainsOpen:
         Anything else -- an `khepri.rra` handler, an `khepri.rca` service reaching past the door --
         is the bypass this file has always watched for, and fails here.
 
+        **`beta_membership_guard.py` (#594) was admitted by the same test.** It calls `for_request`
+        naming no organization -- which is the question `resolve` asks -- and never `resolve`. It
+        declares no membership reader of its own: membership is `IsolationService.resolve_scope`,
+        the existing verb. And `wiring.py` builds it from `build_commercial_services`'s resolver,
+        so the guard, the API and the shell share one instance.
+
         **`shell_api.py` was admitted deliberately, and the reasoning is the test's own.** A second
         route module is exactly what this assertion watches for, so adding one is a decision rather
         than a formality. It is admitted because it satisfies the property the chokepoint protects
@@ -503,6 +509,7 @@ class TestWhatRemainsOpen:
             "so this test proves nothing about who consumes the resolver"
         )
         assert importers == [
+            "khepri/runtime/beta_membership_guard.py",
             "khepri/runtime/commercial_api.py",
             "khepri/runtime/shell_api.py",
             "khepri/runtime/wiring.py",

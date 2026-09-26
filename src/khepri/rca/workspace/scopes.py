@@ -24,11 +24,20 @@ class SqlIsolationScopes:
         self._factory = factory
 
     def exists(self, owner_id: str) -> bool:
+        return self.organization_of(owner_id) is not None
+
+    def organization_of(self, owner_id: str) -> str | None:
+        """The organization whose isolation scope this is, or `None` when no organization owns it.
+
+        `exists` is this read's truth test, so "is a workspace" and "whose workspace" cannot
+        disagree (`#594`: the beta guard checks membership in exactly this organization).
+        """
         with reading(self._factory) as database:
-            found = database.scalar(
-                select(IsolationScopeRow.owner_id).where(IsolationScopeRow.owner_id == owner_id)
+            return database.scalar(
+                select(IsolationScopeRow.organization_id).where(
+                    IsolationScopeRow.owner_id == owner_id
+                )
             )
-        return found is not None
 
 
 # Named for what it reads, not "workspace scopes": `test_portable_storage_boundary.py` scans the

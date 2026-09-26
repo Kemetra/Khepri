@@ -23,13 +23,15 @@ from khepri.rca.accounts import AccountService
 from khepri.rca.organizations import OrganizationService
 from khepri.rca.persistence import Base as RcaBase
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.session_cookie import SESSION_COOKIE as RCA_SESSION_COOKIE
+from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
+from khepri.rca.session_service import SessionService as RcaSessionService
+from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rra.envelope import MasterKey
 from khepri.rra.persistence import Base as RraBase
-from khepri.rra.persistence import SqlSessionStore
-from khepri.rra.session_cookie import SESSION_COOKIE
-from khepri.rra.sessions import open_commercial_session
 from khepri.runtime.config import RuntimeSettings
+from khepri.runtime.external_auth_api import KHEPRI_SESSION_LIFETIME
 from khepri.runtime.wiring import RuntimeClients, build_stack, build_web_app
 from tests.w104_support import CREDENTIAL, NOW
 from tests.w104b_support import HTTPS, submit
@@ -81,13 +83,24 @@ def test_the_deployed_app_records_a_dataset_version_for_an_upload(tmp_path) -> N
         )
         scope = organizations.get_scope(organization.organization_id)
         assert scope is not None
-        session = open_commercial_session(
-            SqlSessionStore(stack.factory), owner_id=scope.owner_id, now=NOW
+        # A browser reaches the analysis the way the deployed shell hands it over: a live RCA
+        # session enters the journey, which sets the beta cookie. A bare workspace cookie is
+        # refused since `#594`, because the beta routes re-check membership.
+        sessions = RcaSessionService(
+            SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME
+        )
+        token = sessions.create(owner.account_id, now=NOW)
+        OrganizationSwitcher(sessions, organizations).switch(
+            token, organization.organization_id, now=NOW
         )
         app = build_web_app(stack)
         # `Origin` as a browser sends it (`require_same_origin`, `#434` §2).
         with TestClient(app, base_url=HTTPS, headers={"Origin": HTTPS}) as client:
-            client.cookies.set(SESSION_COOKIE, session.session_id)
+            client.cookies.set(RCA_SESSION_COOKIE, token)
+            entered = client.post(
+                f"/app/en/{organization.organization_id}/analyses", follow_redirects=False
+            )
+            assert entered.status_code == 303, entered.text
             consented = client.post("/api/v1/beta/consent", json={"consent_version": "v1"})
             assert consented.status_code == 204, consented.text
 
