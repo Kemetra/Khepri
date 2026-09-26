@@ -95,6 +95,10 @@ from khepri.rra.versions import (
 PACKAGE_VERSION = "rra004.package.v4"
 FORMULA_VERSION = "rra004.formula.v2"
 
+#: The package shapes `RRA-004` authorizes to record a refused result's input. A
+#: package stamped with any other version states none, and its reader refuses one.
+VERSIONS_RECORDING_REFUSAL_INPUTS = frozenset({"rra004.package.v4"})
+
 # The governed comparison window, recorded rather than chosen by whichever module
 # needs one. `RRA-008` asks for "a prior window of equal length" and names no
 # length; one period at the package's own granularity is the only reading that
@@ -595,6 +599,23 @@ def _refused(metric: str, cause: str | _Cause) -> RefusedResult:
     if isinstance(cause, _Cause):
         return RefusedResult(metric=metric, reason=cause.reason, input=cause.input)
     return RefusedResult(metric=metric, reason=cause)
+
+
+def _stamped_refusals(
+    refusals: list[RefusedResult], package_version: str
+) -> tuple[RefusedResult, ...]:
+    """The refusals, sorted, stating an input only where the stamped shape records one.
+
+    A package built under an earlier admitted identity is that earlier shape, so it
+    must not carry a field its reader refuses as corrupt.
+    """
+    records = package_version in VERSIONS_RECORDING_REFUSAL_INPUTS
+    return tuple(
+        sorted(
+            (refusal if records else replace(refusal, input=None) for refusal in refusals),
+            key=lambda refusal: refusal.metric,
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1438,7 +1459,7 @@ def _build(
         facts=tuple(facts),
         series=tuple(series),
         comparisons=tuple(comparisons),
-        refusals=tuple(sorted(refusals, key=lambda refusal: refusal.metric)),
+        refusals=_stamped_refusals(refusals, PACKAGE_VERSION),
         caveats=tuple(sorted(set(caveats))),
         # `rra004.package.v3` provenance. `RRA-004` requires the package to
         # record these, and requires every derived fact to cite "exactly one

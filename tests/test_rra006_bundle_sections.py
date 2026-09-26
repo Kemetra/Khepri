@@ -423,6 +423,10 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
             # package's reason verbatim, so the family refuses with it and the
             # section has to be able to say it.
             "repeated_row_signature",
+            # And its keyed sibling (`#326` item 4): a contract that declares
+            # event keys refuses a shared or blank key as `repeated_event_key`,
+            # which the family reports verbatim for the same reason.
+            "repeated_event_key",
             "required_input_unavailable",
             "family_version_pairing_unadmitted",
         }
@@ -521,6 +525,11 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
             # names that cause rather than borrowing "identifier absent", which
             # did not occur.
             "repeated_row_signature",
+            # Added by the `#326` item 4 slice, which split the repeat cause in
+            # two: a keyed contract whose event key is shared or blank refuses
+            # the transaction count as `repeated_event_key`, and the basket
+            # family names that cause rather than the unkeyed one.
+            "repeated_event_key",
             # Added by the basket slice, which proved it reachable: an identifier
             # column with gaps takes both basket metrics, and the fact package
             # already refuses its transaction count with this rather than with

@@ -41,6 +41,7 @@ from khepri.rra.bases import RetainedBasis
 from khepri.rra.coverage_signature import CoverageSignature
 from khepri.rra.daily_bases import AlignedDailyBasis, DailyValue
 from khepri.rra.facts import (
+    VERSIONS_RECORDING_REFUSAL_INPUTS,
     Fact,
     FactComparison,
     FactPackage,
@@ -361,13 +362,8 @@ def _bucket(entry: Mapping[str, Any]) -> Bucket:
 _GOVERNED_INPUTS = frozenset(rule.semantic for rule in SEMANTIC_RULES)
 
 
-#: The package shapes `RRA-004` authorizes to record a refusal's input. A document
-#: stamped with any other version that carries one is not the shape it claims.
-_VERSIONS_RECORDING_INPUTS = frozenset({"rra004.package.v4"})
-
-
 def _refusals(document: Mapping[str, Any]) -> tuple[RefusedResult, ...]:
-    records_inputs = document.get("package_version") in _VERSIONS_RECORDING_INPUTS
+    records_inputs = document.get("package_version") in VERSIONS_RECORDING_REFUSAL_INPUTS
     return tuple(_refusal(entry, records_inputs) for entry in _entries(document, "refusals"))
 
 
