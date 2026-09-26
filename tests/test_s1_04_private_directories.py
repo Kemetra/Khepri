@@ -14,12 +14,14 @@ from __future__ import annotations
 import ast
 import inspect
 import os
+import textwrap
 from pathlib import Path
 
 import pytest
 
 from khepri.local import cli as local_cli
 from khepri.local import wiring as local_wiring
+from khepri.runtime import comparison_assembly
 from khepri.runtime import wiring as runtime_wiring
 from khepri.runtime.private_directory import own_private_directory
 
@@ -68,39 +70,61 @@ def test_the_guard_names_its_purpose_in_the_refusal(tmp_path) -> None:
         own_private_directory(link, purpose="worker workbook directory")
 
 
-def _creates_a_directory_through_the_guard(function) -> bool:
-    """True when `function`'s body creates its directory through the guard and not by `mkdir`.
+_DIRECTORY_MAKERS = frozenset({GUARD, "mkdir", "mkdtemp", "makedirs"})
+
+
+def _creates_a_directory(function) -> bool:
+    """True when `function`'s body creates a directory by any spelling.
 
     Structural, over the real source, because the alternative -- building a `LocalStack` --
     reaches PostgreSQL and localstack, so those tests skip in CI and would report `NOT
     EXERCISED` as a pass.
     """
-    tree = ast.parse(inspect.getsource(function))
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    guarded = any(
-        isinstance(call.func, ast.Name) and call.func.id == GUARD for call in calls
-    )
-    bare_mkdir = any(
-        isinstance(call.func, ast.Attribute) and call.func.attr == "mkdir"
-        for call in calls
-    )
-    return guarded and not bare_mkdir
+    return _creates_a_directory_in(ast.parse(textwrap.dedent(inspect.getsource(function))))
+
+
+def _creates_a_directory_in(tree: ast.AST) -> bool:
+    names = {
+        call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, "attr", "")
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+    }
+    return bool(names & _DIRECTORY_MAKERS)
 
 
 @pytest.mark.parametrize(
     ("label", "function"),
     [
         ("runtime pipeline", runtime_wiring.build_pipeline),
+        ("runtime comparisons", runtime_wiring.build_comparison_actions),
         ("local worker stack", local_wiring.build_worker_stack),
         ("local cli drain", local_cli._work),
     ],
 )
-def test_every_workbook_entry_point_creates_its_directory_through_the_guard(
-    label: str, function
-) -> None:
-    assert _creates_a_directory_through_the_guard(function), (
-        f"{label} must create its workbook directory through {GUARD}, not a bare mkdir"
-    )
+def test_no_workbook_entry_point_creates_a_directory(label: str, function) -> None:
+    """`#465`: workbooks are built in memory, so there is no directory to own.
+
+    These entry points once created a workbook directory through the guard
+    (`#434` item 5), which validated it by pathname while the renderer reopened
+    it by pathname (CWE-367). With no directory, that race has no subject. The
+    guard and its sweep stay, for the next directory anyone adds.
+    """
+    assert not _creates_a_directory(function), f"{label} creates a directory again"
+
+
+def test_a_comparison_renders_without_a_scratch_directory() -> None:
+    """The in-request comparison once made, and removed, a directory per request."""
+    source = Path(inspect.getfile(comparison_assembly)).read_text(encoding="utf-8")
+
+    assert not _creates_a_directory_in(ast.parse(source))
+
+
+def test_the_workbook_renderer_takes_no_directory() -> None:
+    from dataclasses import fields
+
+    from khepri.rra.rendering.excel import ExcelSurfaceRenderer
+
+    assert [field.name for field in fields(ExcelSurfaceRenderer)] == []
 
 
 def _is_mkdir_call(node: ast.AST) -> bool:

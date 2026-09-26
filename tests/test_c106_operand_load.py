@@ -71,7 +71,7 @@ def test_an_unreadable_stored_manifest_refuses_as_incomplete_with_one_audit_even
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     j.clock.advance(timedelta(minutes=1))
     before = len(j.w.audit.events_for_scope(who.owner_id))
 
@@ -94,7 +94,7 @@ def test_a_workspace_pair_remains_available_past_the_beta_horizon(tmp_path) -> N
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     j.clock.advance(timedelta(days=8))
     before = len(j.w.audit.events_for_scope(who.owner_id))
 

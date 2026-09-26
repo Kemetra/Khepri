@@ -76,9 +76,8 @@ identifier written above each block, not their absence from the tab bar.
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
-from pathlib import Path
-from uuid import uuid4
 
 import xlsxwriter
 from xlsxwriter.chart import Chart
@@ -398,83 +397,44 @@ GOVERNED_LABELS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class ExcelSurfaceRenderer:
-    """Writes one workbook per bundle into a caller-supplied directory.
+    """Builds one workbook per bundle, entirely in memory (`#465`).
 
-    The destination is a constructor argument because `SurfaceRenderer.render`
-    takes only a bundle. The file is named by `bundle_id`, which is a digest and
-    so carries no customer content, and which keeps one run's workbook from
-    overwriting another's.
+    It once wrote to a caller-supplied directory and read the file back. That
+    directory was validated by pathname and reopened by pathname, so a local
+    attacker who controlled its parent could redirect the write (CWE-367), and
+    the file was never deleted -- a customer workbook kept outside the session's
+    expiry and deletion boundary (`RRA-006`: outputs share the input's boundary
+    and a comparison is "retained nowhere"; `RRA-002`: deletion reaches
+    "temporary materializations"). Every caller wanted the bytes, so the
+    workbook is now built into a buffer with `in_memory`, which keeps even
+    XlsxWriter's packaging parts off disk. Each render owns its buffer, so two
+    workers rendering one bundle cannot see each other's archive.
     """
-
-    directory: Path
-
-    def __post_init__(self) -> None:
-        _require_directory(self.directory, "directory")
 
     @property
     def surface(self) -> str:
         return SURFACE_EXCEL
 
-    def path_for(self, bundle: RenderableBundle) -> Path:
-        return self.directory / f"{bundle.bundle_id}{WORKBOOK_SUFFIX}"
-
-    def _attempt_path(self, bundle: RenderableBundle) -> Path:
-        """A destination no concurrent render of this bundle can be holding.
-
-        `path_for` is derived from `bundle_id` alone, so two workers rendering the
-        same bundle -- which is what happens when an expired lease is reclaimed --
-        resolve to the same file. Each attempt therefore writes somewhere unique
-        and only afterwards claims the shared name.
-        """
-        return self.directory / f"{bundle.bundle_id}.{_new_attempt_id()}{WORKBOOK_SUFFIX}"
+    def _build(self, bundle: RenderableBundle) -> bytes:
+        """The finished archive's bytes. A refusal raised inside the `with` drops them."""
+        buffer = io.BytesIO()
+        with xlsxwriter.Workbook(buffer, {**WORKBOOK_OPTIONS, "in_memory": True}) as workbook:
+            _write_workbook(workbook, bundle)
+        return buffer.getvalue()
 
     def render(self, bundle: RenderableBundle) -> SurfaceContent:
-        """Write the workbook, then report what it presents and how large it is.
+        """Build the workbook, then report what it presents and how large it is.
 
-        The size is read from the closed file rather than accumulated while
-        writing. A workbook is a compressed archive, so the bytes a caller ends
-        up holding are only knowable once the archive has been finished, and any
-        figure taken earlier would describe something that never existed.
-
-        The size is taken from this attempt's own file, before the shared name is
-        claimed, so it describes the archive this call wrote and not one a
-        concurrent worker happened to leave there.
+        The size is taken from the finished archive rather than accumulated while
+        writing: a workbook is a compressed archive, so its size is only knowable
+        once the archive is closed.
         """
-        attempt = self._attempt_path(bundle)
-        try:
-            with xlsxwriter.Workbook(str(attempt), dict(WORKBOOK_OPTIONS)) as workbook:
-                _write_workbook(workbook, bundle)
-            written = attempt.stat().st_size
-            attempt.replace(self.path_for(bundle))
-        except WorkbookUnavailable:
-            # A refused cell or chart is raised inside the `with`, whose exit still
-            # closes -- and so writes -- the archive. That file holds customer
-            # content under a name nothing will ever claim, so it goes here.
-            attempt.unlink(missing_ok=True)
-            raise
-        except OSError as error:
-            raise WorkbookUnavailable("The Excel surface could not be written.") from error
-        return _content(bundle, written)
-
-    def payload_for(self, bundle: RenderableBundle, content: SurfaceContent) -> bytes:
-        """The archive bytes this renderer wrote, verified against what it reported.
-
-        Reading the shared path can observe a concurrent worker's half-written
-        archive, and the digest a caller derives afterwards would be taken from
-        those same bytes -- so a corrupt workbook would verify against itself. The
-        recorded size is the one independent check available, and a mismatch means
-        the file was replaced under us.
-        """
-        payload = self.path_for(bundle).read_bytes()
-        if len(payload) != content.output_size_bytes:
-            raise WorkbookUnavailable("The Excel surface could not be read.")
-        return payload
+        return _content(bundle, len(self._build(bundle)))
 
     def render_materialized(self, bundle: RenderableBundle) -> MaterializedSurface:
-        content = self.render(bundle)
-        payload = self.payload_for(bundle, content)
+        payload = self._build(bundle)
         return MaterializedSurface(
-            content=content,
+            content=_content(bundle, len(payload)),
             artifacts=(
                 ArtifactPayload.of(
                     kind="excel",
@@ -484,10 +444,6 @@ class ExcelSurfaceRenderer:
                 ),
             ),
         )
-
-
-def _new_attempt_id() -> str:
-    return uuid4().hex
 
 
 def _write_workbook(workbook: Workbook, bundle: RenderableBundle) -> None:
@@ -1016,7 +972,3 @@ def _content_language(bundle: RenderableBundle, language: str) -> SurfaceLanguag
         disclosure=bundle.disclosure(language),
     )
 
-
-def _require_directory(value: Path, name: str) -> None:
-    if not value.is_dir():
-        raise ValueError(f"{name} must be an existing directory.")

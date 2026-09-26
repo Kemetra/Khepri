@@ -35,12 +35,12 @@ def test_a_cell_excel_would_truncate_fails_the_workbook(tmp_path: Path) -> None:
     never carried while the claim still reconciled.
     """
     bundle = _long_label_bundle(32_768)
-    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+    renderer = ExcelSurfaceRenderer()
 
     with pytest.raises(WorkbookUnavailable):
         renderer.render(bundle)
-    assert not renderer.path_for(bundle).exists()
-    # Nor is the abandoned attempt left behind carrying the customer's content.
+    # The workbook is built in memory (`#465`), so a refused one leaves nothing on
+    # disk carrying the customer's content.
     assert list(tmp_path.iterdir()) == []
 
 
@@ -48,7 +48,7 @@ def test_a_label_at_the_cell_limit_is_written_whole(tmp_path: Path) -> None:
     """The boundary: 32,767 characters is a legal cell, and is written verbatim."""
     bundle = _long_label_bundle(32_767)
 
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     assert "L" * 32_767 in workbook.texts
 

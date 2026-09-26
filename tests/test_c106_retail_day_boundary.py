@@ -39,7 +39,7 @@ def test_two_zones_refuse_under_the_retail_day_boundary_cause(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
 
     with patch(
         "khepri.runtime.comparison_operands.stored_manifest",
@@ -61,7 +61,7 @@ def test_one_zone_on_both_sides_is_admitted(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
 
     with patch(
         "khepri.runtime.comparison_operands.stored_manifest",

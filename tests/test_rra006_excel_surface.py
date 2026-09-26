@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import itertools
+import tempfile
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -40,7 +42,6 @@ from khepri.rra.rendering.excel import (
     EXCEL_SURFACE_VERSION,
     GOVERNED_LABELS,
     ExcelSurfaceRenderer,
-    WorkbookUnavailable,
 )
 from khepri.rra.rendering.excel_rows import business_name as _business_name
 from khepri.rra.rendering.wording import caveat_prose
@@ -147,14 +148,10 @@ def hostile_bundle() -> ReportBundle:
     )
 
 
-def rendered(
-    bundle: ReportBundle,
-    directory: Path,
-) -> tuple[SurfaceContent, rra_workbooks.ReadWorkbook]:
-    """Render the workbook, then reopen the file that was actually written."""
-    renderer = ExcelSurfaceRenderer(directory=directory)
-    content = renderer.render(bundle)
-    return content, rra_workbooks.read(renderer.path_for(bundle).read_bytes())
+def rendered(bundle: ReportBundle) -> tuple[SurfaceContent, rra_workbooks.ReadWorkbook]:
+    """Render the workbook, then reopen the bytes that were actually built."""
+    materialized = ExcelSurfaceRenderer().render_materialized(bundle)
+    return materialized.content, rra_workbooks.read(materialized.artifacts[0].content)
 
 
 def presented(workbook: rra_workbooks.ReadWorkbook) -> SurfaceContent:
@@ -312,22 +309,20 @@ class FaithfulRenderer:
 # --- the workbook presents what the renderer claims ------------------------
 
 
-def test_the_workbook_surface_reports_the_size_of_the_file_it_wrote(tmp_path: Path) -> None:
-    # RRA-007 records output size per stage. This surface's payload is a file, so
-    # the size is the file's, read back from disk rather than predicted.
-    bundle = ReportBundle.of(package())
-    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+def test_the_workbook_surface_reports_the_size_of_the_archive_it_built() -> None:
+    # RRA-007 records output size per stage. The size is the finished archive's,
+    # measured rather than predicted.
+    materialized = ExcelSurfaceRenderer().render_materialized(ReportBundle.of(package()))
+    content = materialized.content
 
-    content = renderer.render(bundle)
-
-    assert content.output_size_bytes == len(renderer.path_for(bundle).read_bytes())
+    assert content.output_size_bytes == len(materialized.artifacts[0].content)
     assert content.output_size_bytes > 0
 
 
 def test_the_workbook_on_disk_presents_exactly_what_the_renderer_claims(tmp_path: Path) -> None:
     bundle = ReportBundle.of(package())
 
-    content, workbook = rendered(bundle, tmp_path)
+    content, workbook = rendered(bundle)
     surface = presented(workbook)
 
     # Compared field by field rather than whole. This test's purpose is unchanged --
@@ -356,7 +351,7 @@ def test_the_claimed_surface_reconciles_and_completes_a_bundle(tmp_path: Path) -
         renderers=[
             FaithfulRenderer(SURFACE_WEB),
             FaithfulRenderer(SURFACE_PDF),
-            ExcelSurfaceRenderer(directory=tmp_path),
+            ExcelSurfaceRenderer(),
         ]
     )
 
@@ -375,7 +370,7 @@ def test_a_hostile_label_is_written_as_an_inert_literal(tmp_path: Path) -> None:
     # cell as text, and a label shaped like an address must not become a link.
     bundle = hostile_bundle()
 
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     for label in HOSTILE_LABELS:
         # Verbatim, leading character included: inert is not the same as
@@ -414,7 +409,7 @@ def test_no_worksheet_cell_is_written_as_a_number(tmp_path: Path) -> None:
     # permission holds for that sheet and must not have leaked anywhere a reader could
     # quote a cell as the figure. `test_rra006_excel_charts` holds the other side of
     # it, that the numbers on that sheet are faithful copies of the governed strings.
-    _, workbook = rendered(ReportBundle.of(package()), tmp_path)
+    _, workbook = rendered(ReportBundle.of(package()))
 
     permitted = {
         excel._chartdata_sheet(language)
@@ -439,7 +434,7 @@ def test_every_cell_is_a_bundle_value_or_a_governed_label(tmp_path: Path) -> Non
     # by definition something the renderer made up.
     bundle = ReportBundle.of(package())
 
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     allowed = _allowed_text(bundle)
     for text in workbook.texts:
@@ -462,7 +457,7 @@ def test_a_total_the_bundle_never_published_appears_nowhere(tmp_path: Path) -> N
         if (text := str(left.value + right.value)) not in published
     )
 
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     assert unpublished not in workbook.texts
 
@@ -585,7 +580,7 @@ def _allowed_text(bundle: ReportBundle) -> set[str]:
 def test_both_languages_carry_the_same_figures_and_caveats(tmp_path: Path) -> None:
     bundle = ReportBundle.of(package())
 
-    content, workbook = rendered(bundle, tmp_path)
+    content, workbook = rendered(bundle)
     surface = presented(workbook)
 
     english, arabic = surface.languages
@@ -681,7 +676,7 @@ def test_every_arabic_sheet_is_declared_right_to_left(tmp_path: Path) -> None:
     # The rich bundle writes every business sheet and a chart data sheet; the
     # golden one writes the smaller set a plain export produces.
     for bundle in (rich_bundle(), ReportBundle.of(package())):
-        _, workbook = rendered(bundle, tmp_path)
+        _, workbook = rendered(bundle)
         assert_every_sheet_declares_its_direction(workbook)
 
 
@@ -691,7 +686,7 @@ def test_every_arabic_sheet_is_declared_right_to_left(tmp_path: Path) -> None:
 def test_the_workbook_carries_machine_readable_provenance(tmp_path: Path) -> None:
     bundle = ReportBundle.of(package())
 
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     provenance = _provenance(workbook)
     assert provenance["bundle_id"] == bundle.bundle_id
@@ -720,7 +715,7 @@ def test_the_narrative_state_reaches_no_sheet(tmp_path: Path) -> None:
     provenance sheet."""
     bundle = ReportBundle.of(package())
 
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     assert_no_internal_field_is_written(workbook)
     assert "narrative_state" not in _provenance(workbook)
@@ -738,15 +733,10 @@ def test_regenerating_the_workbook_reproduces_the_same_cells(tmp_path: Path) -> 
     # comment already said byte identity is not the claim; the assertion overshot it.
     #
     # Nothing is lost by excluding it: `test_the_workbook_surface_reports_the_size_of
-    # _the_file_it_wrote` holds each render's size against the file that render actually
-    # produced, which is the claim worth making about a size.
-    first = tmp_path / "first"
-    second = tmp_path / "second"
-    for directory in (first, second):
-        directory.mkdir()
-
-    left, left_workbook = rendered(ReportBundle.of(package()), first)
-    right, right_workbook = rendered(ReportBundle.of(package()), second)
+    # _the_archive_it_built` holds each render's size against the archive that render actually
+    # built, which is the claim worth making about a size.
+    left, left_workbook = rendered(ReportBundle.of(package()))
+    right, right_workbook = rendered(ReportBundle.of(package()))
 
     assert replace(left, output_size_bytes=right.output_size_bytes) == right
     assert left_workbook.cells == right_workbook.cells
@@ -755,74 +745,61 @@ def test_regenerating_the_workbook_reproduces_the_same_cells(tmp_path: Path) -> 
     assert left_workbook.numbers == right_workbook.numbers
 
 
-def test_the_workbook_is_named_by_the_bundle_it_was_built_for(tmp_path: Path) -> None:
-    # A digest carries no customer content, and naming the file by it is what
-    # keeps one run's workbook from overwriting another's.
-    bundle = ReportBundle.of(package())
-
-    path = ExcelSurfaceRenderer(directory=tmp_path).path_for(bundle)
-
-    assert path.name == f"{bundle.bundle_id}.xlsx"
-    assert path.parent == tmp_path
-
-
-def test_a_destination_that_is_not_a_directory_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ValueError):
-        ExcelSurfaceRenderer(directory=tmp_path / "absent")
-
-
-def test_a_concurrent_render_of_the_same_bundle_cannot_truncate_the_payload(
-    tmp_path: Path,
-) -> None:
-    # Two workers may hold the same bundle at once -- an expired lease is reclaimed
-    # while the first worker is still writing. Both derive the same destination from
-    # the bundle id, so a payload read from that shared name may be the other
-    # worker's half-written archive. A digest taken afterwards would be computed
-    # from those same bytes and so would verify the corruption against itself;
-    # refusing the read is what keeps a corrupt workbook from being published.
-    bundle = ReportBundle.of(package())
-    renderer = ExcelSurfaceRenderer(directory=tmp_path)
-
-    content = renderer.render(bundle)
-    renderer.path_for(bundle).write_bytes(b"PK truncated")
-
-    with pytest.raises(WorkbookUnavailable):
-        renderer.payload_for(bundle, content)
-
-
-def test_a_render_never_writes_directly_to_the_shared_destination(
+def test_a_render_writes_nothing_to_disk(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The shared name is what a concurrent worker may be reading. If a render
-    # streamed the archive there directly, that worker could observe a partial
-    # file; the name must only ever be claimed by an already-closed archive.
-    bundle = ReportBundle.of(package())
-    renderer = ExcelSurfaceRenderer(directory=tmp_path)
-    shared = renderer.path_for(bundle)
-    opened: list[str] = []
+    """`#465`: the workbook is built in memory, so no path exists to race or to leak.
 
+    It was written to a shared directory, validated by pathname and reopened by
+    pathname (CWE-367), and the file was never deleted -- a customer workbook kept
+    outside the session's expiry and deletion boundary (`RRA-006`, `RRA-002`).
+    `tempfile.tempdir` is pointed at a directory this test watches, so a
+    packager temp file would be caught too.
+    """
+    scratch = tmp_path / "tmp"
+    scratch.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    targets: list[tuple[object, dict[str, object]]] = []
     original = excel.xlsxwriter.Workbook
 
-    def record(path, options):
-        opened.append(str(path))
-        return original(path, options)
+    def record(target, options):
+        targets.append((target, dict(options)))
+        return original(target, options)
 
     monkeypatch.setattr(excel.xlsxwriter, "Workbook", record)
 
-    content = renderer.render(bundle)
+    ExcelSurfaceRenderer().render_materialized(ReportBundle.of(package()))
 
-    assert opened, "the renderer never opened a workbook"
-    assert str(shared) not in opened
-    # The finished archive still arrives under the name callers resolve.
-    assert shared.stat().st_size == content.output_size_bytes
-    assert list(tmp_path.iterdir()) == [shared]
+    assert targets, "the renderer never opened a workbook"
+    assert all(isinstance(target, io.BytesIO) for target, _ in targets)
+    assert all(options.get("in_memory") is True for _, options in targets)
+    assert list(scratch.iterdir()) == []
+    assert list(tmp_path.iterdir()) == [scratch]
+
+
+def test_two_renders_of_one_bundle_each_yield_a_whole_workbook() -> None:
+    """Rendering one bundle twice yields two whole workbooks with the same cells.
+
+    Sequential, so it says nothing about concurrency: that no two renders share
+    a destination is structural (`test_a_render_writes_nothing_to_disk`).
+    """
+    bundle = ReportBundle.of(package())
+    renderer = ExcelSurfaceRenderer()
+
+    first = renderer.render_materialized(bundle).artifacts[0].content
+    second = renderer.render_materialized(bundle).artifacts[0].content
+
+    # Cells, not bytes: the archive stamps its creation time, so two renders can
+    # differ by a byte while every cell is identical (see the regeneration test).
+    assert rra_workbooks.read(first).cells == rra_workbooks.read(second).cells
 
 
 def test_a_materialized_workbook_carries_the_bytes_it_measured(
     tmp_path: Path,
 ) -> None:
-    materialized = ExcelSurfaceRenderer(directory=tmp_path).render_materialized(
+    materialized = ExcelSurfaceRenderer().render_materialized(
         ReportBundle.of(package())
     )
 

@@ -338,7 +338,7 @@ def test_the_workbook_names_the_metric_and_the_missing_column(
     language: str, tmp_path: Path
 ) -> None:
     """The limitations sheet, read back from the file that was written."""
-    _, workbook = rendered(_bundle("no_units"), tmp_path)
+    _, workbook = rendered(_bundle("no_units"))
     cells = [
         cell for row in workbook.cells[excel._LIMITATIONS_SHEET[language]] for cell in row if cell
     ]

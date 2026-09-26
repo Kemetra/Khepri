@@ -28,7 +28,7 @@ class UnusedPrinter:
 
 
 def test_local_renderers_follow_the_required_surface_order(tmp_path: Path) -> None:
-    renderers = local_renderers(workbooks=tmp_path, printer=UnusedPrinter())
+    renderers = local_renderers(printer=UnusedPrinter())
 
     assert tuple(renderer.surface for renderer in renderers) == REQUIRED_SURFACES
 

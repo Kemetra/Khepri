@@ -13,7 +13,6 @@ import socket
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Protocol
 
 from khepri.rra.claim_queue import ClaimedDelivery, ClaimingReportQueue, ClaimPolicy
@@ -39,7 +38,6 @@ RETRY_DELAY = timedelta(seconds=60)
 #: Pause between idle claims. `run_forever` used to spin `recover`/`receive`
 #: against PostgreSQL with no wait, which is a self-DoS on an empty queue.
 IDLE_BACKOFF = timedelta(seconds=1)
-WORKBOOK_DIRECTORY = Path("/tmp/khepri-workbooks")
 
 
 class QueuePort(Protocol):
@@ -154,7 +152,6 @@ def build_worker_loop(
     stack: RuntimeStack,
     *,
     printer: object,
-    workbooks: Path = WORKBOOK_DIRECTORY,
     worker_id: str | None = None,
 ) -> ClaimWorkerLoop:
     identity = worker_id or f"worker-{socket.gethostname()}"
@@ -173,7 +170,7 @@ def build_worker_loop(
     )
     worker = ReportWorker(
         jobs=jobs,
-        handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
+        handler=build_pipeline(stack, printer=printer),
         clock=stack.clock,
         policy=WorkerPolicy(
             worker_id=identity,

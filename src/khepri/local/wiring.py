@@ -20,7 +20,6 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from fastapi import FastAPI
 from sqlalchemy import create_engine
@@ -82,7 +81,6 @@ from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.legal_api import add_legal_routes
-from khepri.runtime.private_directory import own_private_directory
 from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 
@@ -208,7 +206,6 @@ def build_stack(
 
 def local_renderers(
     *,
-    workbooks: Path,
     printer: PagePrinter | None,
 ) -> tuple[MaterializedRenderer, ...]:
     """The surface renderers one local pipeline runs, in the order they publish.
@@ -220,13 +217,12 @@ def local_renderers(
     is left empty and `BundleAssembler` refuses the bundle as `missing_surface`.
     """
     pdf = () if printer is None else (PdfReportRenderer(printer=printer),)
-    return (HtmlReportRenderer(), *pdf, ExcelSurfaceRenderer(directory=workbooks))
+    return (HtmlReportRenderer(), *pdf, ExcelSurfaceRenderer())
 
 
 def build_pipeline(
     stack: LocalStack,
     *,
-    workbooks: Path,
     printer: PagePrinter | None = None,
 ) -> ReportPipeline:
     """The report stages, wired to the deterministic narrator.
@@ -249,7 +245,7 @@ def build_pipeline(
                 now=stack.clock,
             ),
             adapter=DeterministicNarrator(),
-            renderers=local_renderers(workbooks=workbooks, printer=printer),
+            renderers=local_renderers(printer=printer),
             deliveries=stack.reports.publisher,
         ),
         monotonic_ms=lambda: int(stack.clock().timestamp() * 1000),
@@ -308,17 +304,15 @@ def build_web_app(stack: LocalStack) -> FastAPI:
 def build_worker_stack(
     stack: LocalStack,
     *,
-    workbooks: Path,
     printer: PagePrinter | None = None,
 ) -> WorkerStack:
     """The worker loop and the sweeper, over one already-built stack."""
-    own_private_directory(workbooks, purpose="worker workbook directory")
     return WorkerStack(
         worker=build_local_worker(
             LocalWorkerPorts(
                 jobs=stack.reports.jobs,
                 factory=stack.factory,
-                handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
+                handler=build_pipeline(stack, printer=printer),
             ),
             clock=stack.clock,
         ),

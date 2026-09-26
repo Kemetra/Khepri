@@ -151,7 +151,8 @@ analytics exists; `W1-11` and `R8-08` both wait on a `KHEPRI-DEC-015` §3 amendm
   table, no cookie; the snapshot is booleans and enums.
 - **`ReportBundle`** — never stored; reconstructed from the fact package (`KHEPRI-DEC-032`).
 - **Benchmark rows** — synthetic, seeded (`benchmark_rows.py:117-236`).
-- **Local workbooks** — `./.local-workbooks` under `khepri.local`, excluded from the wheel.
+- **Local workbooks** — none since `#465`: the Excel surface is built in memory. (`./.local-workbooks`
+  under `khepri.local` held them before, excluded from the wheel.)
 
 ---
 

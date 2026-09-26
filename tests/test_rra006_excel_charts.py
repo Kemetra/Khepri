@@ -21,10 +21,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -124,11 +122,11 @@ def rendered(bundle: ReportBundle | None = None) -> tuple[
     ReportBundle,
     rra_workbooks.ReadWorkbook,
 ]:
-    """Render, then reopen the file rather than trusting what the renderer claimed."""
+    """Render, then reopen the built bytes rather than trusting what the renderer claimed."""
     resolved = bundle if bundle is not None else ReportBundle.of(package())
-    renderer = ExcelSurfaceRenderer(directory=Path(tempfile.mkdtemp()))
-    renderer.render(resolved)
-    return resolved, rra_workbooks.read(renderer.path_for(resolved).read_bytes())
+    return resolved, rra_workbooks.read(
+        ExcelSurfaceRenderer().render_materialized(resolved).artifacts[0].content
+    )
 
 
 # Three ranked cumulative shares, as the concentration curve states them.

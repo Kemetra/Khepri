@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -72,7 +71,7 @@ def completed_pair(j: Journey, who: Member) -> CompletedPair:
     )
 
 
-def comparison_actions(j: Journey, workbooks: Path, printer: Any = None) -> Any:
+def comparison_actions(j: Journey, printer: Any = None) -> Any:
     """ComparisonActions over the journey's live stores and a fake printer (or the given one)."""
     from khepri.rca.workspace.comparisons import ComparisonActions, ComparisonStores
     from khepri.rra.rendering import ExcelSurfaceRenderer, HtmlReportRenderer, PdfReportRenderer
@@ -96,7 +95,7 @@ def comparison_actions(j: Journey, workbooks: Path, printer: Any = None) -> Any:
             ),
             html=HtmlReportRenderer(),
             pdf=PdfReportRenderer(printer=printer or _Printer()),
-            excel=ExcelSurfaceRenderer(directory=workbooks),
+            excel=ExcelSurfaceRenderer(),
         ),
     )
 
@@ -109,12 +108,10 @@ def compare_address(who: Member, subject_id: str, baseline_id: str, language: st
     return f"{compare_form_address(who, language)}/{subject_id}/{baseline_id}"
 
 
-def shell_with_comparisons(
-    j: Journey, who: Member, workbooks: Path, printer: Any = None
-) -> TestClient:
+def shell_with_comparisons(j: Journey, who: Member, printer: Any = None) -> TestClient:
     """A shell whose comparison action is wired, over the journey's isolation door."""
     app = FastAPI()
-    actions = comparison_actions(j, workbooks, printer)
+    actions = comparison_actions(j, printer)
     services = replace(services_over(j, who), comparisons=actions)
     add_shell_routes(app, services=services, clock=j.clock)
     client = TestClient(app, base_url=HTTPS)
