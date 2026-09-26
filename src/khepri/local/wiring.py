@@ -206,6 +206,23 @@ def build_stack(
     )
 
 
+def local_renderers(
+    *,
+    workbooks: Path,
+    printer: PagePrinter | None,
+) -> tuple[MaterializedRenderer, ...]:
+    """The surface renderers one local pipeline runs, in the order they publish.
+
+    **The order is `REQUIRED_SURFACES`, and it is load-bearing.** The pipeline
+    concatenates artifacts in renderer order and `ReportPublication` refuses any
+    sequence but `REQUIRED_ARTIFACT_KINDS`, so PDF sits between HTML and Excel
+    exactly as `khepri.runtime.wiring` places it. Without a printer the PDF slot
+    is left empty and `BundleAssembler` refuses the bundle as `missing_surface`.
+    """
+    pdf = () if printer is None else (PdfReportRenderer(printer=printer),)
+    return (HtmlReportRenderer(), *pdf, ExcelSurfaceRenderer(directory=workbooks))
+
+
 def build_pipeline(
     stack: LocalStack,
     *,
@@ -225,12 +242,6 @@ def build_pipeline(
     run substituting some other PDF writer would be delivering a report whose
     surfaces were not produced the way the approved ones are.
     """
-    renderers: list[MaterializedRenderer] = [
-        HtmlReportRenderer(),
-        ExcelSurfaceRenderer(directory=workbooks),
-    ]
-    if printer is not None:
-        renderers.append(PdfReportRenderer(printer=printer))
     return ReportPipeline(
         ports=ReportPipelinePorts(
             packages=build_package_source(
@@ -238,7 +249,7 @@ def build_pipeline(
                 now=stack.clock,
             ),
             adapter=DeterministicNarrator(),
-            renderers=tuple(renderers),
+            renderers=local_renderers(workbooks=workbooks, printer=printer),
             deliveries=stack.reports.publisher,
         ),
         monotonic_ms=lambda: int(stack.clock().timestamp() * 1000),
@@ -364,5 +375,6 @@ __all__ = [
     "build_web_app",
     "build_worker_stack",
     "local_page_printer",
+    "local_renderers",
     "utc_now",
 ]
