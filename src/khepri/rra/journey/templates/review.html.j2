@@ -41,7 +41,14 @@
     data-state-mapped="{{ copy.state_mapped }}"
     data-state-ambiguous="{{ copy.state_ambiguous }}"
     data-state-conflicting="{{ copy.state_conflicting }}"
-    data-state-unavailable="{{ copy.state_unavailable }}"></div>
+    data-state-unavailable="{{ copy.state_unavailable }}"
+    data-evidence-label-exact="{{ copy.evidence_label_exact }}"
+    data-evidence-label-token="{{ copy.evidence_label_token }}"
+    data-evidence-label-substring="{{ copy.evidence_label_substring }}"
+    data-evidence-type-confirmed="{{ copy.evidence_type_confirmed }}"
+    data-evidence-type-conflict="{{ copy.evidence_type_conflict }}"
+    data-evidence-type-only="{{ copy.evidence_type_only }}"
+    data-evidence-declared-in-source-contract="{{ copy.evidence_declared_in_source_contract }}"></div>
   <div class="table-region" role="region" aria-labelledby="mapping-caption" tabindex="0">
     <table id="mapping-table"><caption id="mapping-caption">{{ copy.review_title }}</caption>
       <thead><tr><th scope="col">{{ copy.column }}</th><th scope="col">{{ copy.retail_meaning }}</th><th scope="col">{{ copy.status }}</th><th scope="col">{{ copy.evidence }}</th></tr></thead>
