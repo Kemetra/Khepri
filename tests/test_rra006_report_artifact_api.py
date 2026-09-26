@@ -95,7 +95,29 @@ def test_every_closed_artifact_route_returns_exact_bytes_and_private_headers() -
         assert response.content == f"bytes:{kind}".encode()
         assert response.headers["cache-control"] == "private, no-store"
         assert response.headers["x-content-type-options"] == "nosniff"
-        assert response.headers["content-disposition"] == f'attachment; filename="{file_name}"'
+        assert response.headers["content-disposition"] == (
+            f'attachment; filename="{DOWNLOAD_NAMES[kind]}"'
+        )
+
+
+#: What each route offers to save as (`#590`). The stored `file_name` is shared by a
+#: surface's two languages, so a participant saving both got one name twice and the
+#: second download renamed or replaced the first. The bilingual workbook has one
+#: language-free name because it has one file.
+DOWNLOAD_NAMES = {
+    "web_business_ar": "khepri-report-ar.html",
+    "web_business_en": "khepri-report-en.html",
+    "web_evidence_ar": "khepri-evidence-ar.html",
+    "web_evidence_en": "khepri-evidence-en.html",
+    "pdf_ar": "khepri-report-ar.pdf",
+    "pdf_en": "khepri-report-en.pdf",
+    "excel": "khepri-report.xlsx",
+}
+
+
+def test_every_route_offers_a_distinct_download_name() -> None:
+    assert set(DOWNLOAD_NAMES) == set(ROUTES.values())
+    assert len(set(DOWNLOAD_NAMES.values())) == len(DOWNLOAD_NAMES)
 
 
 def test_artifact_routes_require_the_session_cookie() -> None:
