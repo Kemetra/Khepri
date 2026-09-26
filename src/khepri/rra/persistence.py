@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -366,6 +368,20 @@ def session_for_update_statement(session_id: str) -> Select[tuple[BetaSessionRow
     return select(BetaSessionRow).where(BetaSessionRow.session_id == session_id).with_for_update()
 
 
+def _first[R](
+    factory: sessionmaker[Session], statement: Select, convert: Callable[[Any], R]
+) -> R | None:
+    """The first row the statement selects, converted, or `None`."""
+    with factory() as database:
+        row = database.scalar(statement)
+        return None if row is None else convert(row)
+
+
+def _in_scope(row_type: Any, scope: SessionScope) -> tuple[ColumnElement[bool], ...]:
+    """The `(owner_id, session_id)` predicate every scoped read carries."""
+    return (row_type.owner_id == scope.owner_id, row_type.session_id == scope.session_id)
+
+
 class SqlSessionStore:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
@@ -470,23 +486,13 @@ class SqlSessionStore:
         `database.get` would find the row and force the owner check into caller code. Putting the
         predicate in the statement is what makes the guard unbypassable.
         """
-        with self._factory() as database:
-            row = database.scalar(
-                select(BetaSessionRow).where(
-                    BetaSessionRow.owner_id == owner_id,
-                    BetaSessionRow.session_id == session_id,
-                )
-            )
-            if row is None:
-                return None
-            return _session_from_row(row)
+        scope = SessionScope(owner_id=owner_id, session_id=session_id)
+        statement = select(BetaSessionRow).where(*_in_scope(BetaSessionRow, scope))
+        return _first(self._factory, statement, _session_from_row)
 
     def get_session(self, session_id: str) -> BetaSession | None:
-        with self._factory() as database:
-            row = database.get(BetaSessionRow, session_id)
-            if row is None:
-                return None
-            return _session_from_row(row)
+        statement = select(BetaSessionRow).where(BetaSessionRow.session_id == session_id)
+        return _first(self._factory, statement, _session_from_row)
 
     def update_session(self, session: BetaSession) -> None:
         """Persist a session's consent, never undoing a deletion the row already records.
@@ -541,19 +547,12 @@ class SqlUploadRepository:
 
     def get_upload_for_session(self, session_id: str) -> UploadMetadata | None:
         statement = select(UploadRow).where(UploadRow.session_id == session_id)
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _upload_from_row(row)
+        return _first(self._factory, statement, _upload_from_row)
 
     def get_upload_for_scope(self, scope: SessionScope) -> UploadMetadata | None:
-        """The same read with the owner in the statement, not checked after (#596)."""
-        statement = select(UploadRow).where(
-            UploadRow.owner_id == scope.owner_id,
-            UploadRow.session_id == scope.session_id,
-        )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _upload_from_row(row)
+        # #596: the owner is in the statement, not checked after.
+        statement = select(UploadRow).where(*_in_scope(UploadRow, scope))
+        return _first(self._factory, statement, _upload_from_row)
 
     def get_upload_in_scope(
         self,
@@ -562,12 +561,9 @@ class SqlUploadRepository:
     ) -> UploadMetadata | None:
         statement = select(UploadRow).where(
             UploadRow.upload_id == upload_id,
-            UploadRow.owner_id == scope.owner_id,
-            UploadRow.session_id == scope.session_id,
+            *_in_scope(UploadRow, scope),
         )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _upload_from_row(row)
+        return _first(self._factory, statement, _upload_from_row)
 
 
 class SqlProfileRepository:
@@ -608,30 +604,18 @@ class SqlProfileRepository:
     ) -> DatasetProfileRecord | None:
         statement = select(DatasetProfileRow).where(
             DatasetProfileRow.upload_id == upload_id,
-            DatasetProfileRow.owner_id == scope.owner_id,
-            DatasetProfileRow.session_id == scope.session_id,
+            *_in_scope(DatasetProfileRow, scope),
         )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _profile_from_row(row)
+        return _first(self._factory, statement, _profile_from_row)
 
     def get_profile_for_session(self, session_id: str) -> DatasetProfileRecord | None:
-        statement = select(DatasetProfileRow).where(
-            DatasetProfileRow.session_id == session_id
-        )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _profile_from_row(row)
+        statement = select(DatasetProfileRow).where(DatasetProfileRow.session_id == session_id)
+        return _first(self._factory, statement, _profile_from_row)
 
     def get_profile_for_scope(self, scope: SessionScope) -> DatasetProfileRecord | None:
-        """The same read with the owner in the statement, not checked after (#596)."""
-        statement = select(DatasetProfileRow).where(
-            DatasetProfileRow.owner_id == scope.owner_id,
-            DatasetProfileRow.session_id == scope.session_id,
-        )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _profile_from_row(row)
+        # #596: the owner is in the statement, not checked after.
+        statement = select(DatasetProfileRow).where(*_in_scope(DatasetProfileRow, scope))
+        return _first(self._factory, statement, _profile_from_row)
 
 
 class SqlFactPackageRepository:
@@ -684,12 +668,9 @@ class SqlFactPackageRepository:
             FactPackageRow.package_version == versions.package_version,
             FactPackageRow.formula_version == versions.formula_version,
             FactPackageRow.mapping_version == versions.mapping_version,
-            FactPackageRow.owner_id == scope.owner_id,
-            FactPackageRow.session_id == scope.session_id,
+            *_in_scope(FactPackageRow, scope),
         )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _package_from_row(row)
+        return _first(self._factory, statement, _package_from_row)
 
     def get_owned_package(
         self,
@@ -712,9 +693,7 @@ class SqlFactPackageRepository:
             FactPackageRow.package_digest == package_digest,
             FactPackageRow.owner_id == owner_id,
         )
-        with self._factory() as database:
-            row = database.scalars(statement).first()
-            return None if row is None else _package_from_row(row)
+        return _first(self._factory, statement, _package_from_row)
 
     def get_package_for_session(
         self,
@@ -725,16 +704,10 @@ class SqlFactPackageRepository:
         return self._latest_package(FactPackageRow.session_id == session_id, versions=versions)
 
     def get_package_for_scope(
-        self,
-        scope: SessionScope,
-        versions: PackageVersions,
+        self, scope: SessionScope, versions: PackageVersions
     ) -> FactPackageRecord | None:
-        """The same read with the owner in the statement, not checked after (#596)."""
-        return self._latest_package(
-            FactPackageRow.owner_id == scope.owner_id,
-            FactPackageRow.session_id == scope.session_id,
-            versions=versions,
-        )
+        # #596: the owner is in the statement, not checked after.
+        return self._latest_package(*_in_scope(FactPackageRow, scope), versions=versions)
 
     def _latest_package(
         self, *where: ColumnElement[bool], versions: PackageVersions
@@ -752,9 +725,7 @@ class SqlFactPackageRepository:
                 FactPackageRow.package_id.desc(),
             )
         )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _package_from_row(row)
+        return _first(self._factory, statement, _package_from_row)
 
 
 class SqlDeletionRepository:
@@ -775,8 +746,7 @@ class SqlDeletionRepository:
                 raise CrossSessionAccessDenied("Resource is unavailable.")
             existing = database.scalar(
                 select(DeletionJobRow).where(
-                    DeletionJobRow.owner_id == scope.owner_id,
-                    DeletionJobRow.session_id == scope.session_id,
+                    *_in_scope(DeletionJobRow, scope),
                 )
             )
             if existing is not None:
@@ -805,9 +775,7 @@ class SqlDeletionRepository:
             UploadRow.owner_id == job.owner_id,
             UploadRow.session_id == job.session_id,
         )
-        with self._factory() as database:
-            row = database.scalar(statement)
-            return None if row is None else _upload_from_row(row)
+        return _first(self._factory, statement, _upload_from_row)
 
     def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]:
         from khepri.rra.deletion_persistence import deletion_targets  # noqa: PLC0415
@@ -950,8 +918,7 @@ def session_scope_for_update_statement(
     return (
         select(BetaSessionRow)
         .where(
-            BetaSessionRow.owner_id == scope.owner_id,
-            BetaSessionRow.session_id == scope.session_id,
+            *_in_scope(BetaSessionRow, scope),
         )
         .with_for_update()
     )
