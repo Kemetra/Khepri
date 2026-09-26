@@ -55,7 +55,9 @@ _PROFILE = (
     ":upload, 'rra003.profile.v1', 'rra003.mapping.v1', :digest, :digest, 1, 1, true, :now, "
     "'{}')"
 )
-_STORED = "select owner_id, session_id, upload_id from rra_dataset_profiles where profile_id = 'prf_a'"
+_STORED = (
+    "select owner_id, session_id, upload_id from rra_dataset_profiles where profile_id = 'prf_a'"
+)
 
 
 def _values(**extra: object) -> dict[str, object]:
