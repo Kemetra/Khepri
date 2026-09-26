@@ -68,6 +68,12 @@ outlive the raw upload it came from — the upload is the bulkiest and least use
 but if the customer deletes the *dataset version*, every derivative of it goes too, because the
 derivative is a transformation of content the customer withdrew.
 
+**A dataset profile outlives its raw upload too** (owner decision, 2026-09-26, `#593`). The profile
+is retained interpretation of the dataset, not the raw object, so the raw upload's retention purge
+leaves it standing and clears the profile's `upload_id` (`ON DELETE SET NULL`), rather than being
+refused by the profile (`RESTRICT`) or deleting it (`CASCADE`). Deleting the dataset version still
+removes the profile with every other derivative.
+
 ### 2. Retention matrix
 
 This matrix is authoritative. Every value is fixed; no cell defers to a later choice.
@@ -75,6 +81,7 @@ This matrix is authoritative. Every value is fixed; no cell defers to a later ch
 | Data class | Purpose | Active retention | End trigger | Post-trigger state | Deletion rule | Backup rule | Anchor |
 |---|---|---|---|---|---|---|---|
 | **Raw upload** (CSV/XLSX bytes) | Admission, profiling, and re-attestation of a source | **7 days** after its dataset version is *sealed* (facts derived and reconciled), then purged | Sealing plus seven days (purge); dataset-version deletion (cascade); organization closure | **Purged.** The *live* dataset version keeps the upload's digests, size and media type and its coverage manifest; the rows are gone | Immediate on trigger; idempotent | 14-day bounded horizon (§4) | `RRA-002`, `RRA-003` |
+| **Dataset profile** (`rra_dataset_profiles`: the profile document, digests, admissibility) | Retained interpretation of an admitted source | With its dataset version; it outlives the raw upload (`#593`, §1). Workspace content only: `RRA-002` governs a design-partner session's profile and on-demand session deletion | Dataset-version deletion (cascade); organization closure. The raw upload's purge is **not** a trigger: it clears the profile's `upload_id` (`ON DELETE SET NULL`) | Kept, naming no upload once the raw upload is purged | Cascade with the dataset version | As dataset version | `RRA-003`, `#593` |
 | **Normalized events** (materialized rows) | Fact derivation | Same as raw upload — a materialization is the upload in another shape | As raw upload | **Purged** | As raw upload | As raw upload | `RRA-002`, `RRA-004` |
 | **Dataset version** (record: digests, mapping, manifest, admission outcome, versions) | The durable identity of one admitted source; what *Remember My Data* re-attests against | While the organization exists, or until the customer deletes it. **No inactivity expiry** (§4) | Customer deletion; organization closure | **Tombstone, by allowlist** (§3): opaque identifiers, timestamps, digests, version identifiers, admission outcome code. **Everything in the profile document is excluded** — column labels, min/max values, the manifest's text fields | Immediate, cascading to every derivative below; evidence recorded | 14-day bounded horizon; a restored deleted version must not become readable (revocation-ledger pattern, `KHEPRI-DEC-015` §8) | `RRA-003`, `KHEPRI-DEC-015` §6 |
 | **Mapping and coverage manifest** | Provenance of admission; reuse as a *source profile* | With the dataset version they describe | As dataset version | Tombstoned with it | Cascade | As dataset version | `RRA-003` |

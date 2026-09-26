@@ -25,10 +25,24 @@
         §7.1: orientation first), Team when it does not -- `FR-049` forbids a link to a surface
         that is not there. `entry_surface` is decided by `_switcher`, not here.
       #}
+      {#
+        `#594`, `RCA-002` FR-051a: every row but the active one is the switch itself, a POST to the
+        switch route. A link here only *compared* with the active organization, so after a
+        revocation every row answered `unavailable`. The visible text is unchanged: the
+        organization's own name, now naming a button rather than a link. A deployment without a
+        switcher keeps the link.
+      #}
+      {% if switches and organization.organization_id != active_organization_id %}
+      <form class="organization-switch" method="post"
+            action="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/switch">
+        <button id="organization-name-{{ loop.index }}" type="submit">{{ organization.name }}</button>
+      </form>
+      {% else %}
       <a id="organization-name-{{ loop.index }}"
          href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/{{ entry_surface }}">
         {{ organization.name }}
       </a>
+      {% endif %}
       {#
         The entry point into the journey, on the active organization's row and no other. It named
         `organizations[0]` before, so a member of several opened an analysis in whichever one the

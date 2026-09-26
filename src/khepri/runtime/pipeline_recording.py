@@ -30,8 +30,10 @@ The beta cookie names a session, not an account: the member who opened it is not
 admission or report route without persisting an account identifier beside a bearer-adjacent session
 identifier, which `KHEPRI-DEC-015` §7 rules out. The events therefore name the pipeline as their
 actor (`ACTOR_PIPELINE`), in the scope the session carries. That scope was minted by
-`resolve_scope` when `CommercialBridge.open` opened the session, so authorization happened once, at
-the door the customer came through; the pipeline re-verifies only that the scope is a workspace.
+`resolve_scope` when `CommercialBridge.open` opened the session. Since `#594` that door is not the
+only check: `beta_membership_guard` re-resolves the member's live RCA session against the scope on
+every beta request, so a revoked membership stops the pipeline being driven. The pipeline itself
+re-verifies only that the scope is a workspace.
 
 ## What is not recorded, deliberately
 

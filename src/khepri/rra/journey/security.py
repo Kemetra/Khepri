@@ -27,11 +27,19 @@ def require_same_origin(request: Request) -> None:
 
 
 def _marked_cross_site(request: Request) -> bool:
-    """Whether either browser signal present names another site."""
+    """Whether either browser signal present names another site.
+
+    **`Origin: null` beside `Sec-Fetch-Site: same-origin` is this origin** (#598). Under the
+    `no-referrer` policy these pages carry, Chromium serializes a form-navigation POST's origin
+    as `null`, so every shell form answered 403. `Sec-Fetch-Site` is set by the browser and cannot
+    be written by a page, so a `null` it marks same-origin is admitted, and a `null` marked any
+    other way, or not marked, is not.
+    """
     site = request.headers.get("sec-fetch-site")
     origin = request.headers.get("origin")
     expected = f"{request.url.scheme}://{request.url.netloc}"
-    return site not in {None, "same-origin", "none"} or origin not in {None, expected}
+    admitted = {None, expected} | ({"null"} if site == "same-origin" else set())
+    return site not in {None, "same-origin", "none"} or origin not in admitted
 
 
 def _unmarked_with_cookie(request: Request) -> bool:

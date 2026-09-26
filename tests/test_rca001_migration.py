@@ -114,9 +114,14 @@ RCA_REVISIONS = (
 #: `20260925_0031` (#432) joins it for the same reason: it rebuilds `rra_fact_packages` and
 #: `rra_dataset_profiles`, which the RCA-only chain never creates. Its DDL is proved against
 #: PostgreSQL at `tests/test_i432_tenant_scope_foreign_keys.py`.
+#:
+#: `20260926_0033` (#593) joins it too: it alters `rra_dataset_profiles`, which the RCA-only
+#: chain never creates. Its DDL is proved against PostgreSQL at
+#: `tests/test_i593_profile_outlives_upload.py`.
 RCA_UNREPLAYED = (
     ("20260915_0030", "workspace_content_retention", "20260906_0029"),
     ("20260925_0031", "rra_package_profile_scope", "20260915_0030"),
+    ("20260926_0033", "rra_profile_upload_set_null", "20260925_0032"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running

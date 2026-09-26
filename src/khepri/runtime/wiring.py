@@ -79,6 +79,7 @@ from khepri.rra.report_services import (
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
+from khepri.runtime.beta_membership_guard import BetaMembershipGuard, add_beta_membership_guard
 from khepri.runtime.bridge import CommercialBridge
 from khepri.runtime.clerk_identity import ClerkIdentityProvider
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
@@ -568,10 +569,12 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         report_services=beta.reports,
         journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
-    add_commercial_routes(
+    commercial = build_commercial_services(stack)
+    add_commercial_routes(app, services=commercial, clock=stack.clock)
+    # `#594`: the beta cookie reaches a workspace analysis only while membership holds.
+    add_beta_membership_guard(
         app,
-        services=build_commercial_services(stack),
-        clock=stack.clock,
+        BetaMembershipGuard.over(stack.factory, resolver=commercial.resolver, clock=stack.clock),
     )
     add_external_authentication_routes(
         app,
@@ -670,6 +673,11 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     return ShellServices(
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
+        # `#594`: the chooser's selection (`RCA-001` `FR-029`, `RCA-002` `FR-051a`).
+        switcher=OrganizationSwitcher(
+            RcaSessionService(SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME),
+            SqlOrganizationStore(stack.factory),
+        ),
         # The gateway needs one read and two writes, and they live on two different objects --
         # see `ShellInvitations`. Passing the service alone left the Team surface raising
         # `AttributeError` on `invitations_for_organization` in the built wheel.

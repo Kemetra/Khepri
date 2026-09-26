@@ -140,10 +140,15 @@ class _StubOrganizations:
     def organizations_for_account(self, account_id: str) -> list[Organization]:
         if not self._memberships:
             return []
+        # Two, so the chooser renders the switch (`#594`) beside the active organization's link,
+        # and every browser case measures the button that switch is.
         return [
             Organization._from_storage(
                 organization_id="org-acme", name="Acme", created_at=NOW
-            )
+            ),
+            Organization._from_storage(
+                organization_id="org-globex", name="Globex", created_at=NOW
+            ),
         ]
 
     def memberships_for_organization(self, organization_id: str) -> list[OrganizationMember]:
@@ -372,6 +377,9 @@ def _client(surface: str) -> TestClient:
             bridge=_StubBridge(),
             comparisons=_StubComparisons(),
             decisions=_StubDecisions(),
+            # `#594`: with a switcher the chooser's other rows are switch buttons. The route is
+            # never called here; only its presence changes what the chooser renders.
+            switcher=object(),
         ),
         clock=lambda: NOW,
     )

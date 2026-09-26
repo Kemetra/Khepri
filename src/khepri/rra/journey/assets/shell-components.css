@@ -470,6 +470,21 @@ body {
   margin-inline-start: auto;
 }
 
+/* `#594`: a row's switch reads as the row's name, exactly as the link it replaced. */
+.organization-item > .organization-switch {
+  flex: 1 1 14rem;
+  margin-inline-start: 0;
+}
+
+.shell-main .organization-switch > button {
+  justify-content: flex-start;
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink);
+  text-align: start;
+}
+
 .member-identity,
 .invitation-identity {
   flex: 1 1 14rem;

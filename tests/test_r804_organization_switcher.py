@@ -260,8 +260,9 @@ class TestTheSwitcher:
 
         An action on another row would post an organization `for_request` rejects, and the reader
         would get the uniform unavailable surface -- indistinguishable from a fault. So the row the
-        session is in gets the action and the others keep only their link, which is the control
-        that actually switches.
+        session is in gets the action. The other rows are not the switch here: this shell is wired
+        without a switcher, so they keep plain links. Where one is wired they post to the switch
+        route (`#594`, `RCA-002` FR-051a; `tests/test_i594_organization_switch.py`).
 
         Asserted on the form's `action` rather than on the id appearing anywhere in the page: the
         id is already in that row's team link, so an id-in-the-text assertion passes either way.
