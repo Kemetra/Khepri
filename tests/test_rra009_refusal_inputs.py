@@ -416,8 +416,20 @@ def test_a_document_whose_version_predates_the_field_may_not_carry_it(version: s
 
 
 def test_this_build_publishes_the_package_version_that_carries_inputs() -> None:
-    assert facts_module.PACKAGE_VERSION == "rra004.package.v4"
-    assert _package("no_units").package_version == "rra004.package.v4"
+    assert facts_module.PACKAGE_VERSION == "rra004.package.v5"
+    assert _package("no_units").package_version == "rra004.package.v5"
+
+
+@pytest.mark.parametrize("version", ("rra004.package.v4", "rra004.package.v5"))
+def test_every_shape_that_records_inputs_still_reads_them(version: str) -> None:
+    """`#431` §6 moved the package to `v5`; a stored `v4` package keeps its inputs.
+
+    The gate is an exact set of version strings, so moving `PACKAGE_VERSION`
+    alone would have stripped inputs on write and refused them as corrupt on read.
+    """
+    document = {**_document_with_inputs(), "package_version": version}
+
+    assert rebuild_fact_package(document).as_document() == document
 
 
 def test_an_unadmitted_package_version_refuses_to_build(monkeypatch) -> None:

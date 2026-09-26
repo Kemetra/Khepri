@@ -64,8 +64,14 @@ GOVERNED_EVIDENCE_KEYS = {
 }
 
 
-def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
-    """One package built under the published triple, so every family publishes."""
+def package_for(
+    rows: list[tuple[str, int, str]], **attestation_change: object
+) -> FactPackage:
+    """One package built under the published triple, so every family publishes.
+
+    `attestation_change` re-attests the same bytes with those manifest fields
+    changed -- a second, real attestation of one upload (`#431` §6).
+    """
     body = b"".join(
         f"{(START + timedelta(days=index)).isoformat()},{amount},{units},"
         f"INV-{index},{product}\n".encode()
@@ -78,9 +84,10 @@ def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    manifest = dataclasses.replace(manifest_for_csv(content, TEST_CONTRACT), **attestation_change)
     return build_fact_package(
         AdmittedInput(
-            manifest=manifest_for_csv(content, TEST_CONTRACT),
+            manifest=manifest,
             content=content,
             media_type=CSV_MEDIA_TYPE,
             profile=profile,
@@ -240,12 +247,29 @@ def test_coverage_lives_in_the_identity_once_and_on_no_record(
         )
 
 
-def test_a_coverage_only_difference_changes_the_bundle_id(package: FactPackage) -> None:
-    """FR-105: two packages identical but for their coverage manifest are two reports."""
-    other = dataclasses.replace(
-        package, coverage_manifest_identity=f"{package.coverage_manifest_identity}-other"
-    )
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"attested_by": "A second operator's attestation."},
+        {"timezone": "Asia/Dubai"},
+    ],
+    ids=["attester", "timezone"],
+)
+def test_a_coverage_only_difference_changes_the_bundle_id(
+    package: FactPackage, change: dict[str, object]
+) -> None:
+    """FR-105: two packages identical but for their coverage manifest are two reports.
+
+    Two **real** attestations of the same bytes (`#431` §6). The identity was
+    the upload digest, so these shared it, and with it the package digest and
+    the `bundle_id`: two reports at one address. The test this replaces
+    appended a suffix to the identity string and never built a second
+    attestation, so it could not see that.
+    """
+    other = package_for(ROWS, **change)
+
     assert other.facts == package.facts, "the variant changed more than coverage"
+    assert other.coverage_manifest_identity != package.coverage_manifest_identity
     assert ReportBundle.of(package).bundle_id != ReportBundle.of(other).bundle_id
 
 
@@ -357,3 +381,38 @@ def test_the_renderer_contract_and_pipeline_call_are_unchanged() -> None:
         "the pipeline no longer calls the renderer with the bundle alone"
     )
     assert not hasattr(bundle_module, "render_evidence"), "the bundle module grew a renderer"
+
+
+def test_the_coverage_identity_is_the_digest_the_workspace_records() -> None:
+    """`#431` §6: the package and the workspace name one attestation alike.
+
+    `workspace_recording` records a dataset version's `manifest_digest` as
+    `datasets.document_digest(manifest.as_document())`. The package must carry
+    that same value, computed by that same function, or one attestation would
+    have two identities.
+    """
+    from khepri.rra import datasets, profiling
+
+    content = HEADER + b"2026-01-01,100,1,INV-1,alpha\n"
+    manifest = manifest_for_csv(content, TEST_CONTRACT)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    package = build_fact_package(
+        AdmittedInput(
+            manifest=manifest,
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=TEST_CONTRACT,
+        )
+    )
+
+    assert datasets.document_digest is profiling.document_digest
+    assert package.coverage_manifest_identity == datasets.document_digest(manifest.as_document())
+    assert package.coverage_manifest_identity != manifest.input_digest

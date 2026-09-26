@@ -71,6 +71,10 @@ ADMITTED_PACKAGE_PAIRS: frozenset[tuple[str, str, str]] = frozenset(
         # records the input a refused result names. Mapping and formula are
         # unmoved, so no family pair changes.
         ("rra003.mapping.v3", "rra004.package.v4", "rra004.formula.v2"),
+        # `#431` §6's own row, and the only one it adds: `rra004.package.v5`
+        # records the attestation's digest as `coverage_manifest_identity`.
+        # Mapping and formula are unmoved, so no family pair changes.
+        ("rra003.mapping.v3", "rra004.package.v5", "rra004.formula.v2"),
     }
 )
 

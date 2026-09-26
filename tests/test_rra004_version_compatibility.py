@@ -268,8 +268,8 @@ def test_the_admitted_package_table_holds_exactly_the_published_triples() -> Non
     uses this idiom -- `test_the_published_predecessor_triple_stays_admitted`
     hardcodes its literals for the same reason.
 
-    Four triples, one per publication state: the predecessor, `V-package`'s
-    row, `V-formula`'s row, and `rra004.package.v4`'s.
+    Five triples, one per publication state: the predecessor, `V-package`'s
+    row, `V-formula`'s row, `rra004.package.v4`'s, and `rra004.package.v5`'s.
     """
     published = {
         ("rra003.mapping.v2", "rra004.package.v2", "rra004.formula.v1"),
@@ -277,6 +277,8 @@ def test_the_admitted_package_table_holds_exactly_the_published_triples() -> Non
         ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v2"),
         # `#560` item 2's row: the package shape that records a refused result's input.
         ("rra003.mapping.v3", "rra004.package.v4", "rra004.formula.v2"),
+        # `#431` §6's row: the coverage identity names the attestation.
+        ("rra003.mapping.v3", "rra004.package.v5", "rra004.formula.v2"),
     }
 
     assert published == ADMITTED_PACKAGE_PAIRS

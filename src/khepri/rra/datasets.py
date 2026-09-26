@@ -25,7 +25,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import (
     DatasetProfile,
     build_profile,
-    canonical_json,
+    document_digest,
 )
 from khepri.rra.sessions import (
     SessionExpired,
@@ -611,6 +611,3 @@ def _recorded_contract_digest(record: DatasetProfileRecord) -> str | None:
 def _requested_semantics(record: DatasetProfileRecord) -> tuple[str, ...]:
     return tuple(record.document["admissibility"]["requested_semantics"])
 
-
-def document_digest(document: dict[str, Any]) -> str:
-    return hashlib.sha256(canonical_json(document).encode()).hexdigest()
