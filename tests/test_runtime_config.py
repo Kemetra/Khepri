@@ -11,6 +11,8 @@ from khepri.runtime import config
 from khepri.runtime.config import RuntimeConfigurationError, RuntimeSettings
 
 PASSWORD = "p@ss:/word"
+#: Where the hosted target's CA certificate is mounted. `PGSSLROOTCERT` is libpq's own variable.
+CA_FILE = "/etc/khepri/tls/database-ca.crt"
 SECRET = {
     "username": "khepri_runtime",
     "password": PASSWORD,
@@ -31,6 +33,7 @@ def environment(**overrides: str) -> dict[str, str]:
         "KHEPRI_STORAGE_REGION": "fra1",
         "KHEPRI_BUCKET": "khepri-beta-content",
         "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
+        "PGSSLROOTCERT": CA_FILE,
     }
     values.update(overrides)
     return values
@@ -42,15 +45,75 @@ def test_valid_settings_build_a_tls_postgresql_url_without_exposing_the_password
     assert settings.storage_endpoint == "https://fra1.digitaloceanspaces.example"
     assert settings.storage_region == "fra1"
     assert settings.database_url.drivername == "postgresql+psycopg"
-    assert settings.database_url.query == {"sslmode": "require"}
+    assert settings.database_url.query == {"sslmode": "verify-full", "sslrootcert": CA_FILE}
     assert settings.database_url.password == PASSWORD
     assert settings.database_url.render_as_string(hide_password=False) == (
         "postgresql+psycopg://khepri_runtime:p%40ss%3A%2Fword@"
-        "khepri.cluster.internal:5432/khepri?sslmode=require"
+        "khepri.cluster.internal:5432/khepri?sslmode=verify-full&sslrootcert=%2Fetc%2Fkhepri"
+        "%2Ftls%2Fdatabase-ca.crt"
     )
     assert PASSWORD not in repr(settings)
     assert PASSWORD not in str(settings.database_url)
     assert settings.clerk is None
+
+
+def _with_host(host: str, **overrides: str) -> dict[str, str]:
+    return environment(KHEPRI_DATABASE_SECRET=json.dumps({**SECRET, "host": host}), **overrides)
+
+
+@pytest.mark.parametrize(
+    "host", ["localhost", "LOCALHOST", "127.0.0.1", "127.8.9.10", "::1", "0:0:0:0:0:0:0:1"]
+)
+def test_a_loopback_database_encrypts_without_verifying_and_needs_no_ca(host: str) -> None:
+    """`#434` §4 (owner decision, 2026-09-26): `require` stays only for local loopback. A
+    developer's PostgreSQL has no CA to verify against, and the traffic never leaves the machine.
+    """
+    values = _with_host(host)
+    del values["PGSSLROOTCERT"]
+
+    settings = RuntimeSettings.from_environment(values)
+
+    assert settings.database_url.query == {"sslmode": "require"}
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "khepri.cluster.internal",
+        # A compose service name is not loopback: the gate cannot tell a compose network's
+        # `postgres` from a hosted private network's, so it does not guess.
+        "postgres",
+        "db",
+        # Names that only look local.
+        "127.0.0.1.evil.example",
+        "localhost.example",
+        "0.0.0.0",
+        "10.0.0.5",
+        "::2",
+    ],
+)
+def test_any_other_database_host_verifies_the_server_against_the_supplied_ca(host: str) -> None:
+    """`#434` §4: off loopback the certificate chain and the host name are verified, so a
+    man-in-the-middle holding any certificate at all can no longer terminate the connection."""
+    settings = RuntimeSettings.from_environment(_with_host(host))
+
+    assert settings.database_url.query == {"sslmode": "verify-full", "sslrootcert": CA_FILE}
+
+
+@pytest.mark.parametrize("host", ["khepri.cluster.internal", "postgres", "127.0.0.1.evil.example"])
+def test_a_hosted_database_without_a_ca_fails_closed(host: str) -> None:
+    """No CA means nothing to verify against. Falling back to `require` would reopen the gap the
+    decision closes, so boot is refused and the error names the variable to supply."""
+    values = _with_host(host)
+    del values["PGSSLROOTCERT"]
+
+    with pytest.raises(RuntimeConfigurationError, match="PGSSLROOTCERT"):
+        RuntimeSettings.from_environment(values)
+
+
+def test_a_ca_supplied_empty_is_refused() -> None:
+    with pytest.raises(RuntimeConfigurationError, match="PGSSLROOTCERT"):
+        RuntimeSettings.from_environment(environment(PGSSLROOTCERT=" "))
 
 
 def clerk_environment(**overrides: str) -> dict[str, str]:
@@ -137,9 +200,7 @@ def test_every_database_secret_field_is_required(field: str) -> None:
     del secret[field]
 
     with pytest.raises(RuntimeConfigurationError, match="database secret"):
-        RuntimeSettings.from_environment(
-            environment(KHEPRI_DATABASE_SECRET=json.dumps(secret))
-        )
+        RuntimeSettings.from_environment(environment(KHEPRI_DATABASE_SECRET=json.dumps(secret)))
 
 
 @pytest.mark.parametrize(
@@ -267,9 +328,7 @@ def test_the_retired_queue_constants_are_inert() -> None:
     loads = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.Name)
-        and node.id in retired
-        and isinstance(node.ctx, ast.Load)
+        if isinstance(node, ast.Name) and node.id in retired and isinstance(node.ctx, ast.Load)
     ]
 
     assert loads == [], "a retired queue constant is read by runtime code"
