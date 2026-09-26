@@ -19,6 +19,8 @@
     </label>
     <input id="sales-file" class="visually-hidden" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled>
     <p id="file-help" class="meta">CSV · XLSX · 50 MB</p>
+    {# `#587`: shown once the upload is stored, when the file control locks. #}
+    <p id="upload-kept" class="meta" hidden>{{ copy.upload_kept }}</p>
     {#
       The source contract, declared by the operator. `RRA-003` holds that generic
       headers and observed values never establish event kind, status, currency,

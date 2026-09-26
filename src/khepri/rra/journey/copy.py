@@ -103,8 +103,12 @@ _EN = {
     "invitation_unavailable": "This invitation is unavailable.",
     "temporary_unavailable": "The secure session is temporarily unavailable. Try again.",
     "profile_rejected": (
-        "The file was uploaded but could not be profiled. Delete this session and "
-        "request a new invitation."
+        "Your file is uploaded, but it could not be analysed with this declaration. "
+        "Correct the declaration and submit again — your file is kept."
+    ),
+    "upload_kept": (
+        "Your uploaded file is kept for this session. To use a different file, "
+        "delete this session's content."
     ),
     "manifest_legend": "Tell us what period this file covers",
     "manifest_intro": (
@@ -288,7 +292,10 @@ _AR = {
     "invitation_unavailable": "هذه الدعوة غير متاحة.",
     "temporary_unavailable": "الجلسة الآمنة غير متاحة مؤقتاً. حاول مرة أخرى.",
     "profile_rejected": (
-        "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
+        "تم رفع ملفك، لكن تعذر تحليله بهذا الإقرار. صحّح الإقرار وأرسله مرة أخرى، فملفك محفوظ."
+    ),
+    "upload_kept": (
+        "ملفك المرفوع محفوظ لهذه الجلسة. لاستخدام ملف آخر، احذف محتوى هذه الجلسة."
     ),
     "manifest_legend": "أخبرنا بالفترة التي يغطيها هذا الملف",
     "manifest_intro": (

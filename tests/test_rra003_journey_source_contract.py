@@ -407,18 +407,24 @@ def test_a_request_without_a_declaration_is_still_refused() -> None:
 def test_both_profile_call_sites_send_the_collected_contract() -> None:
     """The submit path and the resume path, because one fix leaves half broken.
 
-    `upload.js` posts a profile from two places: the form's submit handler and
+    `upload.js` posts a profile from two places: the form's submit path and
     `bootstrap()`'s resume branch, which fires when an upload landed but its
     profile response was lost. A contract added only to the submit handler
     leaves every interrupted upload answering 422.
+
+    Since `#587` both paths call one `postProfile()`, so the guarantee is
+    structural: exactly one POST exists, it carries `profileRequest()`, and each
+    path reaches it -- the submit path through `submitDeclaration()`.
     """
     script = journey_asset("upload.js")
     posts = re.findall(r'api\("/api/v1/beta/profile"[^\n]*', script)
-    assert len(posts) == 2, "upload.js should post a profile from exactly two places"
-    # Both bodies come from the one builder, so neither can drift from the other
-    # and a contract cannot be added to one path and forgotten on the other.
-    for post in posts:
-        assert "profileRequest()" in post, f"a profile POST carries no contract: {post}"
+    assert len(posts) == 1, "upload.js should post a profile from exactly one helper"
+    assert "profileRequest()" in posts[0], f"the profile POST carries no contract: {posts[0]}"
+    assert re.search(r'const postProfile = \(\) => api\("/api/v1/beta/profile"', script)
+    submit = re.search(r"const submitDeclaration = .*?\n};", script, re.DOTALL)
+    resume = re.search(r"const bootstrap = .*?\n};", script, re.DOTALL)
+    assert submit and "await postProfile()" in submit.group(), "the submit path skips the contract"
+    assert resume and "await postProfile()" in resume.group(), "the resume path skips the contract"
     # And that builder is what actually names the field the route requires.
     # Matched to the end of its body rather than to the end of its first line:
     # the builder became a block when the optional coverage attestation was
