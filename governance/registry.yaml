@@ -224,6 +224,17 @@ artifacts:
       - KHEPRI-DEC-033
       - RCA-005
 
+  - type: decision
+    id: KHEPRI-DEC-035
+    state: active
+    document: governance/decisions/KHEPRI-DEC-035-rra-scope-anchoring-shape.md
+    depends_on:
+      - KHEPRI-DEC-023
+      - KHEPRI-DEC-030
+      - KHEPRI-DEC-031
+      - RCA-001
+      - RRA-001
+
   - type: specification
     id: FND-001
     state: active
