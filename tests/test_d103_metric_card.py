@@ -290,6 +290,7 @@ def test_an_unknown_availability_does_not_crash_the_surface() -> None:
         availability="a-code-the-catalog-does-not-name",
         reason=None,
         caveats=(),
+        figure_caveats=(),  # `MetricCard` derives it; this stand-in states it.
         evidence=None,
     )
     view = shell_decisions._named(card, "en")
@@ -395,3 +396,62 @@ def test_the_request_sends_no_filter() -> None:
     card.read_cards(actions, _request())
     assert compatibility  # the allowlist this would have been refused against
     assert port.seen
+
+
+# --- FR-162a: display-only caveats do not qualify a card (#560 item 1) -------
+
+_DRAWN = SimpleNamespace(code="chart_not_drawn", section="overview")
+_SAMPLED = SimpleNamespace(code="curve_points_sampled", section="concentration")
+_DATA = SimpleNamespace(code="currency_not_declared", section=None)
+
+
+def test_the_display_only_codes_match_the_bundles_constants() -> None:
+    """Pinned as literals because `khepri.rca` may not import `khepri.rra`."""
+    from khepri.rra import bundle
+
+    assert frozenset(
+        {bundle.CAVEAT_CHART_NOT_DRAWN, bundle.CAVEAT_CURVE_SAMPLED}
+    ) == card.DISPLAY_ONLY_CAVEATS
+
+
+def test_a_card_qualified_only_by_how_the_report_is_drawn_reads_verified() -> None:
+    one = _one_card(caveats=(_DRAWN, _SAMPLED))
+
+    assert one.status == card.STATUS_VERIFIED
+    assert one.figure_caveats == ()
+    assert one.caveats == (_DRAWN, _SAMPLED)
+
+
+def test_a_data_caveat_beside_a_display_only_one_still_caveats_the_card() -> None:
+    one = _one_card(caveats=(_DRAWN, _DATA))
+
+    assert one.status == card.STATUS_CAVEATED
+    assert one.figure_caveats == (_DATA,)
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_caveat_count_follows_the_status_rule_and_the_prose_keeps_every_caveat(
+    language: str,
+) -> None:
+    """A `verified` card beside "1 caveat" would contradict itself (FR-162a).
+
+    The page's caveat prose still states every caveat, so nothing is hidden.
+    """
+    rows = (("revenue", "7", None, ()),)
+    reading = card.read_cards(
+        _actions(
+            {
+                seam.EXECUTIVE_OVERVIEW.view_id: _overview(rows, caveats=(_DRAWN,)),
+                seam.METRIC_AVAILABILITY.view_id: _availability(
+                    (("revenue", definitions.AVAILABLE, None, ()),)
+                ),
+            }
+        ),
+        _request(),
+    )
+    view = shell_decisions.decision_view(reading, language=language)
+
+    assert view.cards[0].status == card.STATUS_VERIFIED
+    assert view.cards[0].caveat_count == 0
+    assert view.caveats == (caveat_message("chart_not_drawn", language),)
+

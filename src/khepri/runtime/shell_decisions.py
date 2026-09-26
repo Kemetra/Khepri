@@ -400,7 +400,9 @@ def _named(card: Any, language: str) -> _CardView:
         ),
         reason=card.reason,
         versions=_stated_versions(card.versions),
-        caveat_count=len(card.caveats),
+        # `FR-162a`: the count follows the status rule, so a verified card never
+        # reads beside a caveat count its status ignored.
+        caveat_count=len(card.figure_caveats),
         drawer=_drawer(card.metric, card.evidence, language),
     )
 

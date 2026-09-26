@@ -202,20 +202,22 @@ def test_a_card_reads_verified_when_the_source_states_the_figure_available() -> 
 
 
 def test_a_real_report_bundle_carries_availability_and_versions_to_every_card() -> None:
-    """Over `ReportBundle.of(package)`, every card is affirmed and versioned.
+    """Over `ReportBundle.of(package)`, every card is affirmed, versioned and verified.
 
-    The real bundle states `chart_not_drawn` on its overview, so these cards read
-    `caveated` rather than `verified`: `card._admitted` qualifies each card with
-    the whole projection's caveats. That is the card's reading, not the
-    projector's, and it is reported as an `RCA-008` follow-up rather than changed
-    here.
+    The real bundle states `chart_not_drawn` on its overview, because the
+    overview declares no chart. That caveat is about how the report is drawn,
+    and its governed prose says the figures beside it are complete, so it does
+    not qualify a card's value (`RCA-008` FR-162a, `#560` item 1). It still
+    reaches the reader on the projection's caveats.
     """
     reading = _cards(ReportBundle.of(package()))
 
     assert reading.cards
     for one in reading.cards:
         assert one.availability == definitions.AVAILABLE, one.metric
-        assert one.status == card.STATUS_CAVEATED, one.metric
+        assert one.status == card.STATUS_VERIFIED, one.metric
+        assert one.figure_caveats == (), one.metric
+        assert any(getattr(c, "code", c) == "chart_not_drawn" for c in one.caveats)
         assert dict(one.versions)["view"] == _OVERVIEW.view_version  # type: ignore[arg-type]
 
 
