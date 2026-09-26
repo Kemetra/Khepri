@@ -42,9 +42,14 @@ def _emitted_evidence_codes() -> frozenset[str]:
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "append":
-            if isinstance(func.value, ast.Name) and func.value.id == "evidence":
-                codes.update(_constants(node.args))
+        appends_to_evidence = (
+            isinstance(func, ast.Attribute)
+            and func.attr == "append"
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "evidence"
+        )
+        if appends_to_evidence:
+            codes.update(_constants(node.args))
         for keyword in node.keywords:
             if keyword.arg == "evidence":
                 codes.update(_constants([keyword.value]))
@@ -99,9 +104,7 @@ def _review_api(method: str, path: str) -> tuple[int, object]:
                     "semantic": "revenue",
                     "state": "mapped",
                     "requirement": "required",
-                    "candidates": [
-                        {"safe_label": "revenue", "evidence": sorted(EVIDENCE_CODES)}
-                    ],
+                    "candidates": [{"safe_label": "revenue", "evidence": sorted(EVIDENCE_CODES)}],
                 }
             ],
         }

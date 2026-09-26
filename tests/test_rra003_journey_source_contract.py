@@ -166,9 +166,10 @@ def test_declining_a_package_level_claim_needs_a_column_the_form_lacks(
     Each of these three checkboxes reads as a choice, but the form offers no
     control for the column that `RRA-003` requires instead when the claim is
     declined. The uniqueness claim left this list in `#586`, when the form gained
-    the composite-key control its refusal asks for. So unticking one is currently a governed refusal with no remedy on
-    the page. The refusal is correct -- the rule is doing its job -- and it is
-    the *collection surface* that is incomplete, which is what this records.
+    the composite-key control its refusal asks for. So unticking one is currently
+    a governed refusal with no remedy on the page. The refusal is correct -- the
+    rule is doing its job -- and it is the *collection surface* that is
+    incomplete, which is what this records.
 
     **Each claim is pinned to the message it actually produces.** A bare
     `raises(ContractRefused)` would be satisfied by any refusal at all, so a
@@ -638,7 +639,8 @@ def test_the_composite_key_control_sends_a_list() -> None:
     `data-contract-list` is what `declaration()` reads to split it.
     """
     template = upload_template()
-    control = re.search(r'<input[^>]*data-contract-field="transaction_key_components"[^>]*>', template)
+    pattern = r'<input[^>]*data-contract-field="transaction_key_components"[^>]*>'
+    control = re.search(pattern, template)
 
     assert control, "the form has no composite-key control"
     assert "data-contract-list" in control.group(0)
@@ -712,7 +714,7 @@ def test_the_page_posts_the_composite_as_a_list(typed: str, expected: list[str])
     """
     from playwright.sync_api import Error, sync_playwright
 
-    from tests.journey_routed_page import open_journey_page
+    from tests.journey_routed_page import choose_sales_file, fill_declaration, open_journey_page
 
     def api(method: str, path: str) -> tuple[int, object]:
         if path == "/api/v1/beta/journey":
@@ -728,14 +730,9 @@ def test_the_page_posts_the_composite_as_a_list(typed: str, expected: list[str])
             pytest.skip(f"Pinned Chromium is unavailable: {error}")
         try:
             page, calls = open_journey_page(browser, language="en", step="upload", api=api)
-            page.check("#consent")
-            for name, value in (("contract_id", "src_1"), ("evidence", "operator"), ("currency_code", "EGP")):
-                page.fill(f"[data-contract-field='{name}']", value)
+            fill_declaration(page)
             page.fill("[data-contract-field='transaction_key_components']", typed)
-            page.set_input_files(
-                "#sales-file",
-                files=[{"name": "s.csv", "mimeType": "text/csv", "buffer": b"date,revenue\n2026-01-01,1\n"}],
-            )
+            choose_sales_file(page)
             page.click("#start-assessment")
             page.wait_for_function("() => !document.querySelector('#error-summary').hidden")
         finally:

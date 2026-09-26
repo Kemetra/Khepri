@@ -21,6 +21,15 @@ from tests.test_rra_journey_api import client
 
 ORIGIN = "http://journey.test"
 
+#: The three declaration fields the browser requires before a submit fires.
+REQUIRED_DECLARATION = (
+    ("contract_id", "src_1"),
+    ("evidence", "operator"),
+    ("currency_code", "EGP"),
+)
+#: An upload the stubbed routes never read; only its presence matters.
+SALES_FILE = {"name": "s.csv", "mimeType": "text/csv", "buffer": b"date,revenue\n2026-01-01,1\n"}
+
 #: `(method, path) -> (status, JSON body or None)`.
 ApiHandler = Callable[[str, str], tuple[int, object]]
 
@@ -74,3 +83,14 @@ def open_journey_page(
     page.route(f"{ORIGIN}/**", handle)
     page.goto(f"{ORIGIN}/beta/{language}/{step}")
     return page, calls
+
+
+def fill_declaration(page: Page) -> None:
+    """Consent and the required declaration fields, so a submit can fire."""
+    page.check("#consent")
+    for name, value in REQUIRED_DECLARATION:
+        page.fill(f"[data-contract-field='{name}']", value)
+
+
+def choose_sales_file(page: Page) -> None:
+    page.set_input_files("#sales-file", files=[SALES_FILE])

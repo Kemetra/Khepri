@@ -157,6 +157,9 @@ def test_journey_pages_fit_viewport_and_keep_operable_targets(
             browser.close()
 
 
+_COMPOSITE_REFUSAL = "A transaction identifier not proven unique needs a composite key."
+
+
 class _RefusedThenAccepted:
     """A journey API whose first profile is refused and whose second is accepted.
 
@@ -186,17 +189,11 @@ class _RefusedThenAccepted:
         if path == "/api/v1/beta/profile" and method == "POST":
             self.profiles += 1
             if self.profiles == 1:
-                return 400, {"detail": "A transaction identifier not proven unique needs a composite key."}
+                return 400, {"detail": _COMPOSITE_REFUSAL}
             return 201, {}
         if path == "/api/v1/beta/profile":
             return 200, {"admissible": True, "reasons": [], "findings": [], "mappings": []}
         return 404, {"detail": "not stubbed"}
-
-
-def _fill_declaration(page) -> None:
-    page.check("#consent")
-    for name, value in (("contract_id", "src_1"), ("evidence", "operator"), ("currency_code", "EGP")):
-        page.fill(f"[data-contract-field='{name}']", value)
 
 
 @pytest.mark.browser
@@ -209,7 +206,7 @@ def test_a_refused_declaration_is_corrected_without_a_new_upload(language: str) 
     this session and request a new invitation". The server accepts a second
     profile on the same session, so the page now profiles again and uploads once.
     """
-    from tests.journey_routed_page import open_journey_page
+    from tests.journey_routed_page import choose_sales_file, fill_declaration, open_journey_page
 
     api = _RefusedThenAccepted()
     with sync_playwright() as playwright:
@@ -219,11 +216,8 @@ def test_a_refused_declaration_is_corrected_without_a_new_upload(language: str) 
             pytest.skip(f"Pinned Chromium is unavailable: {error}")
         try:
             page, calls = open_journey_page(browser, language=language, step="upload", api=api)
-            _fill_declaration(page)
-            page.set_input_files(
-                "#sales-file",
-                files=[{"name": "s.csv", "mimeType": "text/csv", "buffer": b"date,revenue\n2026-01-01,1\n"}],
-            )
+            fill_declaration(page)
+            choose_sales_file(page)
             page.click("#start-assessment")
             page.wait_for_function("() => !document.querySelector('#error-summary').hidden")
 
@@ -248,7 +242,7 @@ def test_after_a_reload_the_declaration_can_be_resubmitted_without_a_file() -> N
     declares and resubmits. Requiring a file there would force them to pick a
     throwaway one that the page would not even send.
     """
-    from tests.journey_routed_page import open_journey_page
+    from tests.journey_routed_page import fill_declaration, open_journey_page
 
     api = _RefusedThenAccepted(upload_present=True)
     with sync_playwright() as playwright:
@@ -264,7 +258,7 @@ def test_after_a_reload_the_declaration_can_be_resubmitted_without_a_file() -> N
             assert page.is_disabled("#sales-file")
             assert page.is_visible("#upload-kept")
 
-            _fill_declaration(page)
+            fill_declaration(page)
             page.click("#start-assessment")
             page.wait_for_url("**/beta/en/review")
         finally:
