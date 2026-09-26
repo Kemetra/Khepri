@@ -20,6 +20,7 @@ credential: no owner exists until it resolves.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 
 from sqlalchemy import select
@@ -35,13 +36,17 @@ from tests.w107_support import journey, sealed_version
 _SRC = Path(__file__).resolve().parents[1] / "src" / "khepri"
 _UNSCOPED = ("get_upload_for_session", "get_profile_for_session", "get_package_for_session")
 
-#: The only production calls of a session-only verb allowed to remain: each Protocol's default
-#: scoped body, which filters the session-only result by the whole scope.
-_ALLOWED_CALLS = {
-    ("rra/intake.py", "get_upload_for_session"),
-    ("rra/datasets.py", "get_profile_for_session"),
-    ("rra/packages.py", "get_package_for_session"),
-}
+#: The only production calls of a session-only verb allowed to remain, **with multiplicity**: each
+#: Protocol's default scoped body, which filters the session-only result by the whole scope. Counted
+#: rather than collected in a set, because a set cannot see a second call in a file that already
+#: holds its allowed one: reverting `IntakeService.begin` survived the set version.
+_ALLOWED_CALLS = Counter(
+    {
+        ("rra/intake.py", "get_upload_for_session"): 1,
+        ("rra/datasets.py", "get_profile_for_session"): 1,
+        ("rra/packages.py", "get_package_for_session"): 1,
+    }
+)
 
 
 def _foreign(scope: SessionScope) -> SessionScope:
@@ -122,13 +127,13 @@ def test_no_production_code_reads_a_session_child_by_session_id_alone() -> None:
     modules = sorted(_SRC.rglob("*.py"))
     assert len(modules) > 50, f"scanned {len(modules)} modules under {_SRC}, so this proves nothing"
 
-    found = {
+    found = Counter(
         (path.relative_to(_SRC).as_posix(), verb)
         for path in modules
         for verb in _unscoped_calls(path.read_text(encoding="utf-8"))
-    }
+    )
 
     assert found == _ALLOWED_CALLS, (
-        f"session-only reads outside the Protocol defaults: {sorted(found - _ALLOWED_CALLS)}; "
-        f"defaults no longer present: {sorted(_ALLOWED_CALLS - found)}"
+        f"session-only reads beyond the Protocol defaults: {dict(found - _ALLOWED_CALLS)}; "
+        f"defaults no longer present: {dict(_ALLOWED_CALLS - found)}"
     )
