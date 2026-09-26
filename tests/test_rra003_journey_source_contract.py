@@ -214,8 +214,13 @@ def test_the_currency_control_makes_a_lowercase_code_hard_to_send() -> None:
     invalid_rule = next(
         line
         for line in css.splitlines()
-        if line.startswith("#contract-currency-code:invalid")
+        if line.startswith("#contract-currency-code:user-invalid")
     )
+    # `#572`: `:invalid:not(:placeholder-shown)` matched from first paint, because
+    # the input is `required` and has no placeholder. `:user-invalid` waits for
+    # the operator; `test_the_currency_field_is_not_red_before_the_operator_types`
+    # proves the difference in a browser.
+    assert ":placeholder-shown" not in invalid_rule
     assert "var(--danger)" in invalid_rule
     assert "#" not in invalid_rule.split("{", 1)[1], (
         "the invalid state must use a token, not a hex literal"

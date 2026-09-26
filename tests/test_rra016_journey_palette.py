@@ -302,9 +302,10 @@ _TEXT_CONTRAST_SCRIPT = """
 
 #: Tabs through the page; each stop must paint an outline that clears 3:1 on its ground.
 #:
-#: A native `type="date"` input is exempt, by name: Tab lands on a date segment inside its
-#: shadow tree, Chromium highlights that segment, and `:focus-visible` never matches the host,
-#: so no journey rule can paint it. That predates this slice and is recorded in its PR.
+#: Native `type="date"` inputs are measured too. Until `#572` they were exempt by name: their
+#: last Tab stop is the picker button inside the shadow tree, where `:focus-visible` stops
+#: matching the host, so no ring painted. The owner's 2026-09-26 decision on `#572` refuses to
+#: rely on the native segment highlight alone, and `journey.css` now paints the ring on `:focus`.
 _FOCUS_SCRIPT = """
 (stops) => {
   const rgb = (value) => (value.match(/[\d.]+/g) || []).map(Number);
@@ -321,7 +322,6 @@ _FOCUS_SCRIPT = """
     return [255, 255, 255];
   };
   const element = document.activeElement;
-  if (element.matches('input[type="date"]')) return "";
   const style = getComputedStyle(element);
   if (style.outlineStyle === "none" || parseFloat(style.outlineWidth) === 0) {
     return `${element.tagName}: no outline`;
@@ -394,3 +394,40 @@ def test_journey_text_clears_contrast_and_fits_the_viewport(
             assert page.evaluate(_TEXT_CONTRAST_SCRIPT)["failures"], "the measure cannot fail"
         finally:
             browser.close()
+
+
+_CURRENCY_STATE = """
+() => {
+  const field = document.getElementById("contract-currency-code");
+  const style = getComputedStyle(field);
+  return { width: style.borderInlineStartWidth, color: style.borderInlineStartColor };
+}
+"""
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_the_currency_field_is_not_red_before_the_operator_types(language: str) -> None:
+    """`#572` item 1: the error border waits for a mistake, then appears.
+
+    Both halves are measured, so a rule that never fires cannot pass as a rule that waits.
+    """
+    css = _JOURNEY_CSS.read_text(encoding="utf-8")
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_content(client().get(f"/beta/{language}/upload").text)
+            page.add_style_tag(content=css)
+            at_rest = page.evaluate(_CURRENCY_STATE)
+            page.fill("#contract-currency-code", "E1")
+            page.focus("#contract-transaction-id-column")
+            after = page.evaluate(_CURRENCY_STATE)
+        finally:
+            browser.close()
+    assert at_rest["width"] == "1px", f"painted as invalid before any input: {at_rest}"
+    assert after["width"] == "2px", f"a malformed code left the field unmarked: {after}"
+    assert after["color"] != at_rest["color"]
