@@ -48,6 +48,7 @@ from khepri.rra.bundle import ReportBundle
 from khepri.rra.datasets import ProfileCorrupted
 from khepri.rra.facts import FactPackage
 from khepri.rra.jobs import UnknownJobState
+from khepri.rra.narrative import REQUIRED_LANGUAGES
 from khepri.rra.package_source import SessionPackageReader, rebuild_fact_package
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted, PackageRefused
 from khepri.rra.rendering.html import build_cells, build_context
@@ -419,7 +420,8 @@ def add_report_routes(
                         now=clock(),
                     ),
                     missing=_NO_ARTIFACT,
-                )
+                ),
+                artifact_kind,
             )
 
         @app.get("/api/v1/beta/reports/{job_id}/surfaces/web/{language}")
@@ -551,12 +553,29 @@ def _bundle_response(bundle: DeliveredBundle, *, job_id: str) -> ReportBundleRes
     )
 
 
-def _artifact_response(document: ArtifactDocument) -> Response:
+def _download_name(file_name: str, artifact_kind: str) -> str:
+    """The name a download is saved under, carrying the artifact's language.
+
+    A surface's two languages share one stored `file_name`, so saving both gave
+    one name twice and the second download renamed or replaced the first (`#590`).
+    The language comes from the artifact kind rather than the stored name, which
+    the persistence CHECK pins; the bilingual workbook's kind carries no language
+    and keeps its name.
+    """
+    stem, dot, extension = file_name.rpartition(".")
+    language = artifact_kind.rpartition("_")[2]
+    if not dot or language not in REQUIRED_LANGUAGES:
+        return file_name
+    return f"{stem}-{language}.{extension}"
+
+
+def _artifact_response(document: ArtifactDocument, artifact_kind: str) -> Response:
+    file_name = _download_name(document.file_name, artifact_kind)
     return Response(
         content=document.content,
         media_type=document.media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{document.file_name}"',
+            "Content-Disposition": f'attachment; filename="{file_name}"',
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
         },
