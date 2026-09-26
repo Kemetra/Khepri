@@ -110,6 +110,16 @@ class UploadRepository(Protocol):
 
     def get_upload_for_session(self, session_id: str) -> UploadMetadata | None: ...
 
+    def get_upload_for_scope(self, scope: SessionScope) -> UploadMetadata | None:
+        """The session's upload, read under its whole `(owner_id, session_id)` scope (#596).
+
+        This default serves a store that implements only `get_upload_for_session`:
+        it answers nothing unless the record's scope is the one asked for. The SQL
+        store overrides it with both columns in the statement.
+        """
+        upload = self.get_upload_for_session(scope.session_id)
+        return upload if upload is not None and upload.scope == scope else None
+
     def get_upload_in_scope(
         self,
         upload_id: str,
@@ -195,7 +205,8 @@ class IntakeService:
         if session is None:
             raise SessionExpired("Session content has expired.")
         require_upload_consent(session, now=now)
-        if self._uploads.get_upload_for_session(session_id) is not None:
+        scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
+        if self._uploads.get_upload_for_scope(scope) is not None:
             raise UploadAlreadyExists("This beta session already has an upload.")
         return PendingUpload(
             service=self,

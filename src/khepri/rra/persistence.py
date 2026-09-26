@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
-from sqlalchemy.sql import Select
+from sqlalchemy.sql import ColumnElement, Select
 
 from khepri.rra.datasets import DatasetProfileRecord
 from khepri.rra.deletion import (
@@ -535,12 +535,22 @@ class SqlUploadRepository:
                 )
             return True
         except IntegrityError:
-            if self.get_upload_for_session(upload.session_id) is not None:
+            if self.get_upload_for_scope(upload.scope) is not None:
                 return False
             raise
 
     def get_upload_for_session(self, session_id: str) -> UploadMetadata | None:
         statement = select(UploadRow).where(UploadRow.session_id == session_id)
+        with self._factory() as database:
+            row = database.scalar(statement)
+            return None if row is None else _upload_from_row(row)
+
+    def get_upload_for_scope(self, scope: SessionScope) -> UploadMetadata | None:
+        """The same read with the owner in the statement, not checked after (#596)."""
+        statement = select(UploadRow).where(
+            UploadRow.owner_id == scope.owner_id,
+            UploadRow.session_id == scope.session_id,
+        )
         with self._factory() as database:
             row = database.scalar(statement)
             return None if row is None else _upload_from_row(row)
@@ -608,6 +618,16 @@ class SqlProfileRepository:
     def get_profile_for_session(self, session_id: str) -> DatasetProfileRecord | None:
         statement = select(DatasetProfileRow).where(
             DatasetProfileRow.session_id == session_id
+        )
+        with self._factory() as database:
+            row = database.scalar(statement)
+            return None if row is None else _profile_from_row(row)
+
+    def get_profile_for_scope(self, scope: SessionScope) -> DatasetProfileRecord | None:
+        """The same read with the owner in the statement, not checked after (#596)."""
+        statement = select(DatasetProfileRow).where(
+            DatasetProfileRow.owner_id == scope.owner_id,
+            DatasetProfileRow.session_id == scope.session_id,
         )
         with self._factory() as database:
             row = database.scalar(statement)
@@ -702,10 +722,27 @@ class SqlFactPackageRepository:
         versions: PackageVersions,
     ) -> FactPackageRecord | None:
         """The session's package under the given governed versions, latest first."""
+        return self._latest_package(FactPackageRow.session_id == session_id, versions=versions)
+
+    def get_package_for_scope(
+        self,
+        scope: SessionScope,
+        versions: PackageVersions,
+    ) -> FactPackageRecord | None:
+        """The same read with the owner in the statement, not checked after (#596)."""
+        return self._latest_package(
+            FactPackageRow.owner_id == scope.owner_id,
+            FactPackageRow.session_id == scope.session_id,
+            versions=versions,
+        )
+
+    def _latest_package(
+        self, *where: ColumnElement[bool], versions: PackageVersions
+    ) -> FactPackageRecord | None:
         statement = (
             select(FactPackageRow)
             .where(
-                FactPackageRow.session_id == session_id,
+                *where,
                 FactPackageRow.package_version == versions.package_version,
                 FactPackageRow.formula_version == versions.formula_version,
                 FactPackageRow.mapping_version == versions.mapping_version,

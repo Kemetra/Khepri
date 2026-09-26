@@ -93,7 +93,7 @@ from khepri.rra.intake import UploadMetadata, UploadRepository
 from khepri.rra.packages import FactPackageRecord, FactPackageService
 from khepri.rra.pipeline import DeliveryRecord
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
-from khepri.rra.sessions import SessionStore
+from khepri.rra.sessions import SessionScope, SessionStore
 from khepri.runtime.run_quality import section_states_of
 from khepri.runtime.workspace_retention import retain_workspace_content
 
@@ -364,7 +364,9 @@ class WorkspaceRecording:
         other way to a profile, and `test_w104_workspace_services.py` asserts that on its source.
         """
         self._require_owned_session(owner_id, session_id)
-        upload = self._rra.uploads.get_upload_for_session(session_id)
+        upload = self._rra.uploads.get_upload_for_scope(
+            SessionScope(owner_id=owner_id, session_id=session_id)
+        )
         profile = self._session_profile(session_id, now)
         if upload is None or profile is None:
             raise WorkspaceRefused(NO_ADMISSION_FAILURE)

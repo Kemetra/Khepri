@@ -357,6 +357,20 @@ class FactPackageRepository(Protocol):
         versions: PackageVersions,
     ) -> FactPackageRecord | None: ...
 
+    def get_package_for_scope(
+        self,
+        scope: SessionScope,
+        versions: PackageVersions,
+    ) -> FactPackageRecord | None:
+        """The session's package under `versions`, read under its whole scope (#596).
+
+        This default serves a store that implements only `get_package_for_session`:
+        it answers nothing unless the record's scope is the one asked for. The SQL
+        store overrides it with both columns in the statement.
+        """
+        package = self.get_package_for_session(scope.session_id, versions)
+        return package if package is not None and package.scope == scope else None
+
 
 class FactPackageService:
     """Publish the immutable fact package for a session's governed upload.
@@ -398,7 +412,7 @@ class FactPackageService:
         require_upload_consent(session, now=now)
         scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
 
-        profile_record = self._profiles.get_profile_for_session(session_id)
+        profile_record = self._profiles.get_profile_for_scope(scope)
         if profile_record is None:
             raise ProfileNotFound("No dataset profile is available for this session.")
         assert_same_scope(scope, profile_record.scope)
@@ -422,7 +436,7 @@ class FactPackageService:
             self._assert_current(existing, profile_record)
             return existing, False
 
-        upload = self._uploads.get_upload_for_session(session_id)
+        upload = self._uploads.get_upload_for_scope(scope)
         if upload is None:
             raise StoragePolicyViolation("Stored upload is no longer available.")
         assert_same_scope(scope, upload.scope)
@@ -482,8 +496,8 @@ class FactPackageService:
         # Selected by the versions this build publishes under, so a session
         # holding an older publication reads as having none rather than being
         # handed figures the current builder would not produce.
-        record = self._packages.get_package_for_session(
-            session_id,
+        record = self._packages.get_package_for_scope(
+            SessionScope(owner_id=session.owner_id, session_id=session.session_id),
             PackageVersions.current(),
         )
         if record is not None:
@@ -501,9 +515,7 @@ class FactPackageService:
         this one question rather than each keeping its own list of checks --
         which is how the read path came to be missing several of them.
         """
-        profile = profile_record or self._profiles.get_profile_for_session(
-            record.session_id
-        )
+        profile = profile_record or self._profiles.get_profile_for_scope(record.scope)
         # Everything the package claims about its provenance, checked against
         # the profile it names. None of it is covered by the package's own
         # content address: some is stored beside the document, and the rest is

@@ -134,6 +134,16 @@ class ProfileRepository(Protocol):
 
     def get_profile_for_session(self, session_id: str) -> DatasetProfileRecord | None: ...
 
+    def get_profile_for_scope(self, scope: SessionScope) -> DatasetProfileRecord | None:
+        """The session's profile, read under its whole `(owner_id, session_id)` scope (#596).
+
+        This default serves a store that implements only `get_profile_for_session`:
+        it answers nothing unless the record's scope is the one asked for. The SQL
+        store overrides it with both columns in the statement.
+        """
+        profile = self.get_profile_for_session(scope.session_id)
+        return profile if profile is not None and profile.scope == scope else None
+
 
 class ProfileObjectReader(Protocol):
     def get(self, key: str, *, envelope: StoredEnvelope) -> bytes: ...
@@ -193,10 +203,10 @@ class ProfilingService:
             raise SessionExpired("Session content has expired.")
         require_upload_consent(session, now=now)
 
-        upload = self._uploads.get_upload_for_session(session_id)
+        scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
+        upload = self._uploads.get_upload_for_scope(scope)
         if upload is None:
             raise UploadNotFound("No governed upload is available for this session.")
-        scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
         assert_same_scope(scope, upload.scope)
 
         question = ProfileQuestion(
@@ -262,7 +272,9 @@ class ProfilingService:
         if session is None:
             raise SessionExpired("Session content has expired.")
         require_upload_consent(session, now=now)
-        return self._profiles.get_profile_for_session(session_id)
+        return self._profiles.get_profile_for_scope(
+            SessionScope(owner_id=session.owner_id, session_id=session.session_id)
+        )
 
 
 def build_document(
