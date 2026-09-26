@@ -2,10 +2,11 @@
 §7.4).
 
 Where a run's governed versions -- mapping, package, formula -- differ from the previous completed
-run's, detail says so before the Passport, names each identifier that differs, and states that the
-two analyses are not numerically comparable. A *difference*, never a comparison: no figure from
-either run is read here, and availability that moved is stated in the report's own quality words
-(`RRA-012`), taken from the section outcomes each run retained (`KHEPRI-DEC-033` §3).
+run's over the same dataset version, detail says so before the Passport, names each identifier
+that differs, and states that the two analyses are not numerically comparable. A *difference*,
+never a comparison: no figure from either run is read here, and availability that moved is stated
+in the report's own quality words (`RRA-012`), taken from the section outcomes each run retained
+(`KHEPRI-DEC-033` §3).
 
 Availability alone raises no Notice. A section that refused under one methodology and answered
 under the same one is the data's story, not the method's, and saying "methodology changed" over
@@ -42,12 +43,15 @@ _GOVERNED = (
 
 def previous_completed(run: Any, runs: tuple[Any, ...]) -> Any | None:
     """The run a Notice compares against: the most recent *completed* run started before this
-    one, over the same dataset version where one exists, else over any (`FR-116`: "the same or a
-    related dataset version" -- the scope's other versions are this organization's data too). A
-    started or failed run is not a methodology to compare against."""
-    earlier = sorted((r for r in runs if _completed_before(r, run)), key=_order, reverse=True)
-    same = [r for r in earlier if r.version_id == run.version_id]
-    return next(iter(same or earlier), None)
+    one over the **same** dataset version, or `None` (`FR-116`). A started or failed run is not a
+    methodology to compare against.
+
+    No relationship between dataset versions is governed, so a run over another version is never
+    a predecessor, however recent: another upload in the same scope may be unrelated data. Where
+    this version has no earlier completed run the Notice fails closed. Cross-version comparison
+    waits for lineage work (`T1-06`), which may reopen it (owner decision on `#379`)."""
+    earlier = (r for r in runs if r.version_id == run.version_id and _completed_before(r, run))
+    return max(earlier, key=_order, default=None)
 
 
 def methodology_change(

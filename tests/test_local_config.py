@@ -8,7 +8,12 @@ all.
 
 from __future__ import annotations
 
+import base64
 import json
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -31,6 +36,7 @@ from khepri.runtime.config import (
     MASTER_KEY_VARIABLE,
     STORAGE_ENDPOINT_VARIABLE,
     STORAGE_REGION_VARIABLE,
+    RuntimeSettings,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -180,9 +186,9 @@ class TestComposeContract:
             "a committed .env would configure MinIO without reaching uv run clients"
         )
         ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
-        assert any(
-            line.strip() == ".env" for line in ignored.splitlines()
-        ), ".gitignore must exclude .env so one cannot be committed"
+        assert any(line.strip() == ".env" for line in ignored.splitlines()), (
+            ".gitignore must exclude .env so one cannot be committed"
+        )
 
     def test_every_local_port_is_bound_to_loopback(self) -> None:
         """The same exposure the staging stack had: short syntax means all interfaces.
@@ -269,11 +275,11 @@ class TestStagingComposeContract:
         assert all(clerk.values()), f"empty Clerk variables would fail boot: {clerk}"
 
     def test_both_storage_hops_are_encrypted(self) -> None:
-        """`_database_url` pins `sslmode=require` and offers no override.
+        """Both hops are TLS and both chains are verified.
 
-        A plaintext PostgreSQL is therefore not merely weaker here, it is
-        unreachable by this image. The object-store hop is TLS for the same
-        reason the deployed one will be, and botocore verifies its chain.
+        The secret names `postgres`, which is not loopback, so `_database_url` builds a
+        `verify-full` URL and refuses to boot without `PGSSLROOTCERT` (`#434` §4). The
+        object-store hop is verified by botocore through `AWS_CA_BUNDLE`.
         """
         services = _staging()["services"]
         environment = services["web"]["environment"]
@@ -281,7 +287,74 @@ class TestStagingComposeContract:
         assert environment[STORAGE_ENDPOINT_VARIABLE].startswith("https://")
         assert environment["AWS_CA_BUNDLE"], "botocore must be told to trust the local CA"
         assert "ssl=on" in services["postgres"]["command"]
-        assert "sslmode=require" in services["migrate"]["environment"]["KHEPRI_DATABASE_URL"]
+        settings = RuntimeSettings.from_environment(
+            {**environment, "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode()}
+        )
+        assert settings.database_url.query["sslmode"] == "verify-full"
+
+    def test_migrations_and_the_runtime_verify_postgres_against_one_mounted_ca(self) -> None:
+        """Compose and config share one source (`#434` §4).
+
+        `migrations/env.py` reads `KHEPRI_DATABASE_URL` raw, so the migrate URL is a
+        second, hand-written statement of the database TLS mode. It names the same CA
+        file the runtime receives through `PGSSLROOTCERT`, and every service that reads
+        that path has it mounted.
+        """
+        services = _staging()["services"]
+        ca = services["web"]["environment"]["PGSSLROOTCERT"]
+        url = services["migrate"]["environment"]["KHEPRI_DATABASE_URL"]
+
+        assert services["worker"]["environment"]["PGSSLROOTCERT"] == ca
+        assert url.endswith(f"?sslmode=verify-full&sslrootcert={ca}"), url
+        for role in ("web", "worker", "migrate"):
+            mounted = {volume.rsplit(":", 2)[1] for volume in services[role]["volumes"]}
+            assert ca in mounted, f"{role} does not mount {ca}"
+
+    def test_the_postgres_leaf_is_issued_by_the_local_ca_for_its_service_name(self) -> None:
+        """`verify-full` checks the chain and the host name, so a self-signed leaf with only
+        a CN fails. It is issued by the CA the runtime trusts, for `DNS:postgres`, and lives
+        at new paths so an existing checkout's self-signed pair is reissued, not kept."""
+        script = (REPOSITORY_ROOT / "ops" / "staging" / "generate-certs.sh").read_text("utf-8")
+        dockerfile = (REPOSITORY_ROOT / "ops" / "staging" / "postgres-tls.Dockerfile").read_text(
+            "utf-8"
+        )
+
+        assert "subjectAltName=DNS:postgres" in script
+        assert "-out postgres/server.crt" in script and "-CA ca.crt" in script
+        required = re.search(r"for required in(.*?)\ndo", script, re.DOTALL)
+        assert required is not None and "postgres/server.crt" in required.group(1).split()
+        assert "COPY certs/postgres/server.crt" in dockerfile
+        assert "COPY certs/postgres/server.key" in dockerfile
+
+    @pytest.mark.skipif(
+        not (shutil.which("sh") and shutil.which("openssl")), reason="needs sh and openssl"
+    )
+    def test_the_generated_postgres_leaf_verifies_against_the_ca_for_postgres(
+        self, tmp_path: Path
+    ) -> None:
+        """What the script *produces*, not what it says: a leaf self-signed with the right SAN
+        would pass every string check above and still be refused by `verify-full`. A legacy
+        self-signed `server.crt` is seeded so the reissue path is the one exercised."""
+        shutil.copy(REPOSITORY_ROOT / "ops" / "staging" / "generate-certs.sh", tmp_path)
+        certs = tmp_path / "certs"
+        certs.mkdir()
+        (certs / "server.crt").write_text("legacy self-signed leaf")
+        # Git Bash would otherwise rewrite `-subj "/CN=..."` into a Windows path.
+        environment = {**os.environ, "MSYS_NO_PATHCONV": "1"}
+
+        def run(*command: str) -> str:
+            done = subprocess.run(
+                command, cwd=tmp_path, env=environment, capture_output=True, text=True
+            )
+            assert done.returncode == 0, done.stderr
+            return done.stdout
+
+        assert "[OK] certificates generated" in run("sh", "generate-certs.sh")
+        leaf = "certs/postgres/server.crt"
+        assert run("openssl", "verify", "-CAfile", "certs/ca.crt", leaf).strip().endswith("OK")
+        san = run("openssl", "x509", "-in", leaf, "-noout", "-ext", "subjectAltName")
+        assert san.split(":", 1)[1].split() == ["DNS:postgres"], san
+        assert not (certs / "server.crt").exists(), "the legacy leaf would be mistaken for current"
 
     def test_web_and_worker_wait_for_migrations_and_the_bucket(self) -> None:
         """Either racing the schema or the bucket fails in a way that looks flaky."""

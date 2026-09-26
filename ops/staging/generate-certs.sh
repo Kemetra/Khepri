@@ -1,11 +1,11 @@
 #!/bin/sh
-# Self-signed TLS material for the local staging stack.
+# Local TLS material for the staging stack.
 #
-# `khepri.runtime.config` builds every database URL with `sslmode=require` and
-# offers no override, so a non-TLS PostgreSQL is not connectable by the runtime
-# image at all. `require` encrypts without verifying the chain, so a self-signed
-# pair is sufficient for PostgreSQL. MinIO is verified by botocore, so its cert is
-# issued by a local CA that the client trusts through `AWS_CA_BUNDLE`.
+# The staging database host is the service name `postgres`, which is not loopback,
+# so `khepri.runtime.config` connects with `sslmode=verify-full` (`#434` §4). That
+# checks the chain and the host name, so PostgreSQL's leaf is issued by the local CA
+# for `DNS:postgres` and trusted through `PGSSLROOTCERT`. MinIO's is issued by the
+# same CA and trusted by botocore through `AWS_CA_BUNDLE`.
 #
 # Nothing here is a secret and nothing here may be reused: this material exists so
 # the staging stack exercises the same TLS paths the runtime will use in a
@@ -17,15 +17,18 @@ set -eu
 # script invoked as `sh script.sh`, which exits 0 regardless, so a caller chaining
 # commands would go on to start a stack with no certificates at all.
 certs="$(dirname "$0")/certs"
-mkdir -p "$certs/minio"
+mkdir -p "$certs/minio" "$certs/postgres"
 cd "$certs"
 
 # Every file the stack mounts, not a representative three. An interrupted earlier
 # run can leave `minio/public.crt` written but `minio/ca.crt` not yet copied, and a
 # key can be removed on its own; checking a subset then reports success and the
 # stack fails later with a TLS error that points nowhere near the missing file.
+# PostgreSQL's pair lives under `postgres/`: a checkout holding the earlier
+# self-signed `server.crt` is then incomplete and reissued, instead of reporting
+# `[OK]` over a leaf `verify-full` refuses.
 complete=1
-for required in   ca.crt ca.key server.crt server.key   minio/public.crt minio/private.key minio/ca.crt
+for required in   ca.crt ca.key   postgres/server.crt postgres/server.key   minio/public.crt minio/private.key minio/ca.crt
 do
   [ -f "$required" ] || complete=0
 done
@@ -39,9 +42,14 @@ fi
 openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   -keyout ca.key -out ca.crt -subj "/CN=khepri-local-staging-ca" 2>/dev/null
 
-# PostgreSQL: self-signed is enough, because `sslmode=require` does not verify.
-openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
-  -keyout server.key -out server.crt -subj "/CN=postgres" 2>/dev/null
+# PostgreSQL: issued by the CA above for the service name the runtime connects to,
+# because `verify-full` checks both the chain and the host name.
+openssl req -newkey rsa:2048 -nodes -keyout postgres/server.key \
+  -out postgres.csr -subj "/CN=postgres" 2>/dev/null
+printf 'subjectAltName=DNS:postgres\nextendedKeyUsage=serverAuth\n' > postgres.ext
+openssl x509 -req -in postgres.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out postgres/server.crt -days 3650 -sha256 -extfile postgres.ext 2>/dev/null
+rm -f postgres.csr postgres.ext server.crt server.key
 
 # MinIO: issued by the CA above, with the service name the containers resolve and
 # the host name a developer's browser uses.
@@ -55,6 +63,6 @@ rm -f minio.csr minio.ext
 
 # PostgreSQL refuses to start if its key is group- or world-readable, and it reads
 # the key as uid 999 inside the container.
-chmod 600 server.key minio/private.key
-chmod 644 server.crt ca.crt minio/public.crt
+chmod 600 postgres/server.key minio/private.key
+chmod 644 postgres/server.crt ca.crt minio/public.crt
 echo "[OK] certificates generated"

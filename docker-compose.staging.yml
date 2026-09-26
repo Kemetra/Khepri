@@ -15,13 +15,16 @@
 # recovery, or approval evidence, and none of it authorizes spend.
 #
 # **TLS is not optional here, it is what makes the stack work.**
-# `khepri.runtime.config` builds every database URL with `sslmode=require` and
-# offers no override, so a plaintext PostgreSQL is unreachable by this image. The
-# certificates are local, self-signed, and written by `ops/staging/generate-certs.sh`.
-# PostgreSQL's is trusted implicitly because `require` encrypts without verifying a
-# chain, while MinIO's is issued by a local CA that botocore verifies through
-# `AWS_CA_BUNDLE` -- a variable it reads natively, so neither the image nor
-# `wiring.py` is modified to accommodate the local stack.
+# `khepri.runtime.config` keeps `sslmode=require` for a loopback database host only.
+# This stack's host is the service name `postgres`, which is not loopback, so the
+# runtime builds a `sslmode=verify-full` URL and refuses to boot without
+# `PGSSLROOTCERT` (`#434` §4). The gate does not recognise compose service names: it
+# cannot tell this network's `postgres` from a hosted one. The certificates are
+# local and written by `ops/staging/generate-certs.sh`. One local CA issues both
+# leaves, PostgreSQL's for `DNS:postgres` and MinIO's for `DNS:minio`. libpq
+# verifies the first through `PGSSLROOTCERT` and botocore the second through
+# `AWS_CA_BUNDLE`. Both are variables the clients read natively, so neither the
+# image nor `wiring.py` is modified to accommodate the local stack.
 #
 # **No broker, no KMS, no separate browser.** `KHEPRI-DEC-008` replaced the message
 # broker with a PostgreSQL claim query and moved encryption into the application, and
@@ -67,6 +70,9 @@ x-runtime-environment: &runtime-environment
   # botocore reads this natively, so the local CA is trusted without modifying the
   # image's trust store -- which the image could not do anyway, as it runs as `pwuser`.
   AWS_CA_BUNDLE: /opt/khepri/tls/ca.crt
+  # libpq's own variable, read by `khepri.runtime.config` as the database CA. The
+  # same file as the object store's: one local CA issues both leaves.
+  PGSSLROOTCERT: /opt/khepri/tls/ca.crt
 
 services:
   postgres:
@@ -197,9 +203,12 @@ services:
         condition: service_healthy
     environment:
       # `migrations/env.py` prefers this over `alembic.ini`, whose pinned URL points
-      # at the *local* stack. `sslmode=require` matches what the runtime will use.
-      KHEPRI_DATABASE_URL: postgresql+psycopg://khepri:khepri@postgres:5432/khepri?sslmode=require
+      # at the *local* stack. It reads this URL raw, so it states the TLS mode the
+      # runtime derives for `postgres`: `verify-full`, against the mounted CA.
+      KHEPRI_DATABASE_URL: postgresql+psycopg://khepri:khepri@postgres:5432/khepri?sslmode=verify-full&sslrootcert=/opt/khepri/tls/ca.crt
     command: ["alembic", "upgrade", "head"]
+    volumes:
+      - ./ops/staging/certs/ca.crt:/opt/khepri/tls/ca.crt:ro
     restart: "no"
 
   web:
