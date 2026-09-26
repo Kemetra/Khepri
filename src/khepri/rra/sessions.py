@@ -214,20 +214,31 @@ class InvitationService:
         consent_version = consent_version.strip()
         if not consent_version:
             raise ValueError("Consent version is required.")
-        session = self._store.get_session(session_id)
-        if (
-            session is None
-            or now >= session.content_expires_at
-            or session.deletion_requested_at is not None
-        ):
-            raise SessionExpired("Session content has expired.")
+        session = _live(self._store.get_session(session_id), now)
         consented = replace(
             session,
             consent_version=consent_version,
             consented_at=now,
         )
         self._store.update_session(consented)
-        return consented
+        # The stored row, not `consented`: a deletion that began between the read
+        # and the write survives it (write-once, `#547`), and the local copy would
+        # still read as live and pass `require_upload_consent` (`#560` item 5).
+        return _present(self._store.get_session(session_id))
+
+
+def _live(session: BetaSession | None, now: datetime) -> BetaSession:
+    """The session, if it exists, has not expired, and is not being deleted."""
+    session = _present(session)
+    if now >= session.content_expires_at or session.deletion_requested_at is not None:
+        raise SessionExpired("Session content has expired.")
+    return session
+
+
+def _present(session: BetaSession | None) -> BetaSession:
+    if session is None:
+        raise SessionExpired("Session content has expired.")
+    return session
 
 
 def require_upload_consent(session: BetaSession, *, now: datetime) -> None:

@@ -204,3 +204,37 @@ def test_resource_scope_allows_only_exact_owner_and_session_match() -> None:
     expected = SessionScope(owner_id="own_expected", session_id="ses_expected")
 
     assert_same_scope(expected, expected)
+
+
+class _DeletionLandsBeforeTheWrite(MemorySessionStore):
+    """A deletion that begins between `record_consent`'s read and its write.
+
+    The write keeps the deletion (it is write-once, `#547`), so the stored row
+    is a session being deleted. Only the value `record_consent` hands back could
+    still say otherwise.
+    """
+
+    def update_session(self, session: BetaSession) -> None:
+        current = self.sessions[session.session_id]
+        self.sessions[session.session_id] = replace(current, deletion_requested_at=NOW)
+        super().update_session(session)
+
+
+def test_consent_returns_the_stored_session_not_its_own_copy() -> None:
+    """`#560` item 5: a consent that races a deletion must not report a live session.
+
+    The copy `record_consent` built before its write still reads
+    `deletion_requested_at=None`, so it would pass `require_upload_consent` for
+    a session whose stored row refuses every upload.
+    """
+    store = _DeletionLandsBeforeTheWrite()
+    service = InvitationService(store)
+    session = service.redeem(service.issue_invitation(expires_at=INVITATION_EXPIRY), now=NOW)
+
+    consented = service.record_consent(
+        session.session_id, consent_version="beta-privacy-v1", now=NOW
+    )
+
+    assert consented == store.sessions[session.session_id]
+    with pytest.raises(SessionExpired):
+        require_upload_consent(consented, now=NOW)
