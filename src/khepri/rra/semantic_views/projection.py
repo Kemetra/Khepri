@@ -39,8 +39,9 @@ refused section. Nothing is read past the bundle.
 `RenderableBundle` -- the shape `FR-136` admits -- exposes `identity`, `figures`,
 `caveats`, `narrative_state`, `sections`, `narrative`, `evidence` and
 `refusals`, and no
-population qualifier. Population codes live on `FactPackage` and `Fact`, which no
-governed member of the bundle surfaces. Several published views nonetheless name
+population qualifier. Population codes live on the package's retained bases
+(`RetainedBasis`), never on a `Fact` (`RRA-004` §Population contract), and no
+governed member of the bundle surfaces them. Several published views nonetheless name
 `population` in their `output_field_order`. That field therefore projects as an
 absence, which is the honest answer and the one `FR-140` prescribes: the source
 states no population here, so the projection says so rather than inventing one
