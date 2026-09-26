@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 from datetime import UTC, datetime
 
-import pytest
 from fastapi.testclient import TestClient
 
 from khepri.rca.identity import IdentityProvider
@@ -16,6 +14,7 @@ from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.envelope import MasterKey
+from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
@@ -318,7 +317,7 @@ def test_the_worker_settles_jobs_through_the_recording_store(tmp_path) -> None:
     completes its run and a dead-lettered one fails it. `ReportWorker` holds the wrapped store."""
     stack = runtime_stack()
 
-    loop = build_worker_loop(stack, printer=object(), workbooks=tmp_path)
+    loop = build_worker_loop(stack, printer=object())
 
     jobs = loop._worker._jobs
     assert isinstance(jobs, SettlingJobStore)
@@ -353,46 +352,18 @@ def test_the_deployed_shell_offers_the_deletion_route() -> None:
     assert all("POST" in route.methods for route in app.routes if route.path in delete)
 
 
-def test_the_comparison_render_directory_is_deployment_chosen(tmp_path) -> None:
-    """Review on `#409`: the parent of the per-request render directories was a fresh `mkdtemp`
-    per process start -- never removed, never configurable. It is a parameter now, created in
-    place, and kept apart from the retained-report workbook directory."""
-    chosen = tmp_path / "comparisons"
+def test_the_comparison_action_renders_without_a_directory() -> None:
+    """`#465`: the comparison's workbook is built in memory, so wiring owns no directory.
 
-    shell = build_shell_services(runtime_stack(), comparisons=chosen)
+    Review on `#409` made the render parent a deployment-chosen, guarded directory, because
+    per-request directories sat under it in a shared temporary namespace (`CWE-377`). With
+    nothing written to disk there is no parent to choose, guard, or race (`CWE-367`).
+    """
+    shell = build_shell_services(runtime_stack())
 
     assert shell is not None and shell.comparisons is not None
-    assert chosen.is_dir()
-    assert shell.comparisons._assembly._excel.directory == chosen
-
-
-def test_the_comparison_render_directory_refuses_a_symlink(tmp_path) -> None:
-    """`CWE-377` (review on `#409`): the default parent sits in a shared temporary namespace, so a
-    symlink pre-placed at the path must be refused rather than followed."""
-    target = tmp_path / "elsewhere"
-    target.mkdir()
-    link = tmp_path / "comparisons"
-    try:
-        os.symlink(target, link, target_is_directory=True)
-    except (OSError, NotImplementedError) as error:
-        pytest.skip(f"symlinks unavailable here: {error}")
-
-    with pytest.raises(RuntimeError, match="symlink"):
-        build_shell_services(runtime_stack(), comparisons=link)
-
-
-def test_a_pre_existing_render_directory_is_made_private(tmp_path) -> None:
-    """The mode leg of the guard: a directory already present keeps whatever mode it had unless
-    the guard sets it, so a parent left wide open by an earlier run is closed on wiring."""
-    if os.name != "posix":
-        pytest.skip("POSIX permission bits only")
-    chosen = tmp_path / "comparisons"
-    chosen.mkdir(mode=0o777)
-    chosen.chmod(0o777)
-
-    build_shell_services(runtime_stack(), comparisons=chosen)
-
-    assert chosen.stat().st_mode & 0o777 == 0o700
+    assert isinstance(shell.comparisons._assembly._excel, ExcelSurfaceRenderer)
+    assert not hasattr(shell.comparisons._assembly._excel, "directory")
 
 
 def test_the_deployed_app_serves_no_api_schema_or_documentation() -> None:

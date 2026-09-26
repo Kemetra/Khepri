@@ -152,7 +152,7 @@ class TestTheWholeJourney:
             pytest.skip("the pinned Chromium is not installed; the PDF surface cannot render")
 
         with local_page_printer() as printer:
-            workers = build_worker_stack(stack, workbooks=tmp_path, printer=printer)
+            workers = build_worker_stack(stack, printer=printer)
             assert workers.worker.drain(limit=5) >= 1
 
         finished = client.get(f"/api/v1/beta/reports/{job_id}")
@@ -225,7 +225,7 @@ class TestTheSweeper:
         tmp_path: Path,
     ) -> None:
         """Evidence of a sweep is counts. A session id here would be content."""
-        report = build_worker_stack(stack, workbooks=tmp_path).sweeper.sweep(
+        report = build_worker_stack(stack).sweeper.sweep(
             now=stack.clock()
         )
 
@@ -246,7 +246,7 @@ class TestTheSweeper:
         The ungated half of this evidence is in `test_local_sweeper.py`, which asserts the same
         wiring without needing docker. This adds that the wired passes survive a real sweep.
         """
-        sweeper = build_worker_stack(stack, workbooks=tmp_path).sweeper
+        sweeper = build_worker_stack(stack).sweeper
         retention = sweeper._retention  # noqa: SLF001 -- the wiring *is* the assertion
 
         assert retention is not None, "production must configure the retention passes"

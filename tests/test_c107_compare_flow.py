@@ -293,7 +293,7 @@ def test_a_completed_pair_renders_the_compare_form(tmp_path) -> None:
     who = member(j.w)
     pair = completed_pair(j, who)
     newer, older = j.w.store.dataset_versions_for_scope(who.owner_id)
-    page = shell_with_comparisons(j, who, tmp_path).get(analyses_address(who))
+    page = shell_with_comparisons(j, who).get(analyses_address(who))
     form = _parse(page.text)
 
     assert page.status_code == 200
@@ -316,7 +316,7 @@ def test_one_completed_run_offers_no_compare_form_and_no_disabled_control(tmp_pa
     j = journey()
     who = member(j.w)
     completed_run(j, who)
-    page = shell_with_comparisons(j, who, tmp_path).get(analyses_address(who)).text
+    page = shell_with_comparisons(j, who).get(analyses_address(who)).text
 
     assert 'action="' not in page or "/analyses/compare" not in page
     assert "<select" not in page
@@ -357,7 +357,7 @@ def test_posting_the_form_defaults_renders_the_admitted_result(tmp_path) -> None
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    client = shell_with_comparisons(j, who, tmp_path)
+    client = shell_with_comparisons(j, who)
     form = _parse(client.get(analyses_address(who)).text)
     posted = client.post(
         form.action,
@@ -383,7 +383,7 @@ def test_arabic_labels_precede_their_controls_inside_rtl(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     completed_pair(j, who)
-    page = shell_with_comparisons(j, who, tmp_path).get(analyses_address(who, language="ar")).text
+    page = shell_with_comparisons(j, who).get(analyses_address(who, language="ar")).text
 
     assert 'dir="rtl"' in page
     assert page.index('dir="rtl"') < page.index("<form")
@@ -402,7 +402,7 @@ def test_version_identifiers_appear_only_as_option_values(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    page = shell_with_comparisons(j, who, tmp_path).get(analyses_address(who)).text
+    page = shell_with_comparisons(j, who).get(analyses_address(who)).text
     visible = _visible(page)
 
     for version_id in (pair.subject.version_id, pair.baseline.version_id):

@@ -222,6 +222,11 @@ class DatasetProfile:
         return hashlib.sha256(canonical_json(self.as_document()).encode()).hexdigest()
 
 
+def document_digest(document: dict[str, object]) -> str:
+    """The SHA-256 of a document's canonical JSON: one attestation, one identity."""
+    return hashlib.sha256(canonical_json(document).encode()).hexdigest()
+
+
 def canonical_json(document: object) -> str:
     return json.dumps(
         document,

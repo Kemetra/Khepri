@@ -9,12 +9,9 @@ surfaces in-request. `R7-01` §3 forbids `khepri.rca` from importing
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from khepri.rca.workspace.comparisons import (
@@ -128,22 +125,10 @@ class CrossVersionAssembly:
     def _render(
         self, bundle: Any, subject_run_id: str, baseline_run_id: str
     ) -> ComparisonSurfaces | None:
-        # The workbook renderer writes a file to reach its bytes, named by `bundle_id`
-        # alone -- so two requests for one pair would share a path, and one request's
-        # cleanup or replace would fail the other's read. Each request therefore renders
-        # into a directory of its own. `RRA-006` §Not stored: a two-population bundle is
-        # rendered on request and retained nowhere, so that directory goes as soon as the
-        # bytes are in hand -- and just the same when the bundle comes back incomplete or
-        # a later renderer faults, since the assembler has already written the file by
-        # then. A process that ran for a year has kept no comparison on disk.
-        scratch = _scratch_under(self._excel.directory)
-        if scratch is None:
-            return None
-        excel = replace(self._excel, directory=scratch)
-        try:
-            return self._surfaces(bundle, excel, subject_run_id, baseline_run_id)
-        finally:
-            shutil.rmtree(scratch, ignore_errors=True)
+        # `RRA-006` §Not stored: a two-population bundle is rendered on request and
+        # retained nowhere. The workbook is built in memory (`#465`), so no request
+        # touches disk and two requests for one pair cannot share a path.
+        return self._surfaces(bundle, self._excel, subject_run_id, baseline_run_id)
 
     def _surfaces(
         self,
@@ -166,20 +151,6 @@ class CrossVersionAssembly:
             subject_run_id=subject_run_id,
             baseline_run_id=baseline_run_id,
         )
-
-
-def _scratch_under(directory: Path) -> Path | None:
-    """A request's own render directory, or None when none can be made.
-
-    The configured directory can be gone or unwritable by the time a request
-    arrives. That is a failure to render, and it owes the caller the same
-    `None` a renderer fault does, so the action still returns the uniform
-    unavailable outcome and writes its one audit event.
-    """
-    try:
-        return Path(tempfile.mkdtemp(dir=directory))
-    except OSError:
-        return None
 
 
 def _refused_outcome(cause: str) -> ComparisonOutcome:

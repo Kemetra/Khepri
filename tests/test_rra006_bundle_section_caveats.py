@@ -10,9 +10,7 @@ now compares pairs, so a misplaced caveat fails it exactly as a missing one does
 
 from __future__ import annotations
 
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -215,9 +213,7 @@ def test_a_caveat_scoped_to_a_declared_section_is_accepted() -> None:
             id="web",
         ),
         pytest.param(
-            lambda bundle: ExcelSurfaceRenderer(
-                directory=Path(tempfile.mkdtemp())
-            ).render(bundle),
+            lambda bundle: ExcelSurfaceRenderer().render(bundle),
             id="workbook",
         ),
     ],

@@ -198,9 +198,8 @@ def test_workbook_writes_the_sibling_cells_to_their_own_sheet(
     from tests import rra_workbooks
 
     bundle = _bundle(comparison_request)
-    renderer = ExcelSurfaceRenderer(directory=tmp_path)
-    renderer.render(bundle)
-    workbook = rra_workbooks.read(renderer.path_for(bundle).read_bytes())
+    materialized = ExcelSurfaceRenderer().render_materialized(bundle)
+    workbook = rra_workbooks.read(materialized.artifacts[0].content)
 
     names = set(workbook.sheets)
     for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
@@ -229,9 +228,8 @@ def test_workbook_writes_no_internal_field_and_every_sheet_declares_direction(
     )
 
     bundle = _bundle(comparison_request)
-    renderer = ExcelSurfaceRenderer(directory=tmp_path)
-    renderer.render(bundle)
-    workbook = rra_workbooks.read(renderer.path_for(bundle).read_bytes())
+    materialized = ExcelSurfaceRenderer().render_materialized(bundle)
+    workbook = rra_workbooks.read(materialized.artifacts[0].content)
 
     assert_no_internal_field_is_written(workbook)
     assert_every_sheet_declares_its_direction(workbook)
@@ -364,7 +362,7 @@ def test_all_surfaces_assemble_and_reconcile(
         renderers=(
             HtmlReportRenderer(),
             PdfReportRenderer(printer=_Printer()),
-            ExcelSurfaceRenderer(directory=tmp_path),
+            ExcelSurfaceRenderer(),
         )
     ).assemble(bundle)
 
@@ -385,7 +383,7 @@ def test_every_surface_states_the_admitted_pair_caveat(
         renderers=(
             HtmlReportRenderer(),
             PdfReportRenderer(printer=_Printer()),
-            ExcelSurfaceRenderer(directory=tmp_path),
+            ExcelSurfaceRenderer(),
         )
     ).assemble(_bundle(comparison_request))
 

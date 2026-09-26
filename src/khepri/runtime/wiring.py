@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import boto3
@@ -100,7 +99,6 @@ from khepri.runtime.pipeline_recording import (
     RecordingProfilingService,
     RecordingReportRequests,
 )
-from khepri.runtime.private_directory import own_private_directory
 from khepri.runtime.retention_sweep import (
     RetentionPasses,
     RetentionSweeper,
@@ -342,10 +340,9 @@ class _OnDemandPrinter:
             return printer.print_to_pdf(page)
 
 
-def build_comparison_actions(stack: RuntimeStack, *, workbooks: Path) -> ComparisonActions:
+def build_comparison_actions(stack: RuntimeStack) -> ComparisonActions:
     """The comparison door (`C1-06`): a pair, resolved through `IsolationService`."""
     factory = stack.factory
-    own_private_directory(workbooks, purpose="comparison render directory")
     return ComparisonActions(
         isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
         stores=ComparisonStores(
@@ -364,7 +361,7 @@ def build_comparison_actions(stack: RuntimeStack, *, workbooks: Path) -> Compari
             ),
             html=HtmlReportRenderer(),
             pdf=PdfReportRenderer(printer=_OnDemandPrinter()),
-            excel=ExcelSurfaceRenderer(directory=workbooks),
+            excel=ExcelSurfaceRenderer(),
         ),
     )
 
@@ -559,14 +556,7 @@ def build_recovery_security_service(stack: RuntimeStack) -> RecoverySecurityServ
     )
 
 
-#: Where a comparison's per-request render directories are made. A deployment chooses it by
-#: passing another path; it is created in place, so nothing is left behind per process start.
-#: Deliberately not the retained-report workbook directory: a comparison is rendered on request
-#: and retained nowhere (`RRA-006` §Not stored), and its files never outlive the request.
-COMPARISON_DIRECTORY = Path("/tmp/khepri-comparisons")
-
-
-def build_web_app(stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY) -> FastAPI:
+def build_web_app(stack: RuntimeStack) -> FastAPI:
     beta = build_beta_services(stack)
     app = create_app(
         service=stack.services.invitations,
@@ -600,7 +590,7 @@ def build_web_app(stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTO
     add_legal_routes(app)
     add_landing_routes(app)
     add_shell_routes(
-        app, services=build_shell_services(stack, comparisons=comparisons), clock=stack.clock
+        app, services=build_shell_services(stack), clock=stack.clock
     )
     return app
 
@@ -657,9 +647,7 @@ def _shell_decisions(
     )
 
 
-def build_shell_services(
-    stack: RuntimeStack, *, comparisons: Path = COMPARISON_DIRECTORY
-) -> ShellServices | None:
+def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     """The shell over the same resolver the commercial API uses (`RCA-002` `FR-041`).
 
     Returns `None` when the commercial half is unwired, so the shell exists exactly when the
@@ -732,7 +720,7 @@ def build_shell_services(
         # same tables the Overview and Data surfaces read, and the cascade that ends a pin lives
         # inside `set_retention_state` on this very class. A second `SqlWorkspaceRecordStore` over
         # the same factory would work and would be a second object holding one definition.
-        comparisons=build_comparison_actions(stack, workbooks=comparisons),
+        comparisons=build_comparison_actions(stack),
         # `D1-04`: the decision route (`RCA-008` `FR-159`). See `_shell_decisions` for why
         # this is composed there and why it reuses the door and the store above.
         decisions=_shell_decisions(stack, isolation, records),
@@ -783,14 +771,12 @@ def build_retention_sweep(stack: RuntimeStack) -> RetentionSweeper:
 def build_pipeline(
     stack: RuntimeStack,
     *,
-    workbooks: Path,
     printer: PagePrinter,
 ) -> ReportPipeline:
-    own_private_directory(workbooks, purpose="worker workbook directory")
     renderers: tuple[MaterializedRenderer, ...] = (
         HtmlReportRenderer(),
         PdfReportRenderer(printer=printer),
-        ExcelSurfaceRenderer(directory=workbooks),
+        ExcelSurfaceRenderer(),
     )
     return ReportPipeline(
         ports=ReportPipelinePorts(

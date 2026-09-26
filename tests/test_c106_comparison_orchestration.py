@@ -10,7 +10,6 @@ import asyncio
 import base64
 import re
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -104,7 +103,7 @@ def test_cross_organization_pair_matches_a_nonexistent_id(tmp_path) -> None:
     stranger = member(j.w, email="other@example.test", name="Other")
     pair = completed_pair(j, owner)
     foreign = completed_pair(j, stranger)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     now = j.clock()
 
     cross = actions.request(
@@ -129,7 +128,7 @@ def test_a_renderer_fault_is_governed_audited_once_and_leaves_no_workbook(tmp_pa
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     fault = WorkbookUnavailable("The Excel surface could not be read.")
     j.clock.advance(timedelta(minutes=1))
     before = len(j.w.audit.events_for_scope(who.owner_id))
@@ -145,36 +144,13 @@ def test_a_renderer_fault_is_governed_audited_once_and_leaves_no_workbook(tmp_pa
     assert not any(tmp_path.iterdir())
 
 
-def test_a_scratch_directory_failure_is_governed_and_audited_once(tmp_path) -> None:
-    """The per-request render directory can fail to allocate (the configured directory
-    gone or unwritable); that is a failure to render and owes the same governed shape."""
-    j = journey()
-    who = member(j.w)
-    pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
-    j.clock.advance(timedelta(minutes=1))
-    before = len(j.w.audit.events_for_scope(who.owner_id))
-
-    with patch(
-        "khepri.runtime.comparison_assembly.tempfile.mkdtemp",
-        side_effect=OSError("no scratch directory"),
-    ):
-        outcome = actions.request(
-            _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
-        )
-
-    added = j.w.audit.events_for_scope(who.owner_id)[before:]
-    assert outcome.unavailable
-    assert [event.action for event in added] == [ACTION_RUN_FAILED]
-
-
 def test_each_surface_is_rendered_once_and_its_claim_describes_the_delivered_bytes(
     tmp_path,
 ) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     calls = {"html": 0, "pdf": 0, "excel": 0}
 
     def counting(name: str, original: Any) -> Any:
@@ -209,28 +185,20 @@ def test_each_surface_is_rendered_once_and_its_claim_describes_the_delivered_byt
 
 
 def test_two_requests_for_one_pair_never_share_a_workbook_path(tmp_path) -> None:
-    """The workbook is named by `bundle_id`, so one pair is one name; two requests for
-    that pair in one process would race on it -- one request's cleanup or replace failing
-    the other's read. Each request renders into a directory of its own instead."""
+    """Two requests for one pair once raced on a workbook path named by `bundle_id`. The
+    workbook is built in memory now (`#465`), so each request holds its own bytes and nothing
+    reaches disk."""
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     request = _request(who, pair.subject.version_id, pair.baseline.version_id)
-    seen: list[Path] = []
-    original = ExcelSurfaceRenderer.render
 
-    def recording(self: ExcelSurfaceRenderer, bundle: Any) -> Any:
-        seen.append(self.path_for(bundle))
-        return original(self, bundle)
-
-    with patch.object(ExcelSurfaceRenderer, "render", recording):
-        first = actions.request(request, now=j.clock())
-        second = actions.request(request, now=j.clock())
+    first = actions.request(request, now=j.clock())
+    second = actions.request(request, now=j.clock())
 
     assert first.admitted and second.admitted
-    assert seen, "the workbook was never written"
-    assert len({path.parent for path in seen}) == 2
+    assert first.surfaces.excel and second.surfaces.excel
     assert not any(tmp_path.iterdir())
 
 
@@ -264,7 +232,7 @@ def test_a_foreign_baseline_never_reaches_the_package_loader(tmp_path) -> None:
     stranger = member(j.w, email="other@example.test", name="Other")
     pair = completed_pair(j, owner)
     foreign = completed_pair(j, stranger)
-    real = comparison_actions(j, tmp_path)
+    real = comparison_actions(j)
     spy = _CountingAssembly(real._assembly)
     actions = ComparisonActions(real._isolation, real._stores, spy)
 
@@ -280,7 +248,7 @@ def test_three_ids_and_self_pair_refuse_before_any_store_read(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     now = j.clock()
     store = j.w.store
 
@@ -313,7 +281,7 @@ def test_deleted_version_refuses_uniformly(tmp_path) -> None:
     deletion_service(j).delete_version(
         who.owner_id, pair.subject.version_id, actor_account_id=who.account_id, now=j.clock()
     )
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
 
     deleted = actions.request(
         _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
@@ -328,7 +296,7 @@ def test_admitted_pair_renders_three_surfaces_and_reconciles(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    outcome = comparison_actions(j, tmp_path).request(
+    outcome = comparison_actions(j).request(
         _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
     )
 
@@ -350,7 +318,7 @@ def test_an_admitted_request_leaves_no_workbook_on_disk(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    outcome = comparison_actions(j, tmp_path).request(
+    outcome = comparison_actions(j).request(
         _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
     )
 
@@ -363,7 +331,7 @@ def test_exactly_one_audit_event_per_request_in_both_outcomes(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     audit = j.w.audit
     j.clock.advance(timedelta(minutes=1))
     before = len(audit.events_for_scope(who.owner_id))
@@ -398,7 +366,7 @@ def test_a_request_writes_no_row_except_the_audit_event(tmp_path) -> None:
     pair = completed_pair(j, who)
     before = _table_counts(j.w.factory)
 
-    comparison_actions(j, tmp_path).request(
+    comparison_actions(j).request(
         _request(who, pair.subject.version_id, pair.baseline.version_id), now=j.clock()
     )
 
@@ -417,7 +385,7 @@ def test_refusal_detail_never_reaches_the_audit_record(tmp_path) -> None:
     who = member(j.w)
     pair = completed_pair(j, who)
     j.clock.advance(timedelta(minutes=1))
-    outcome = comparison_actions(j, tmp_path).request(
+    outcome = comparison_actions(j).request(
         _request(who, pair.subject.version_id, pair.subject.version_id), now=j.clock()
     )
     events = j.w.audit.events_for_scope(who.owner_id)
@@ -437,7 +405,7 @@ def test_the_result_page_names_both_versions_and_links_both_passports(tmp_path) 
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    client = shell_with_comparisons(j, who, tmp_path)
+    client = shell_with_comparisons(j, who)
     page = client.get(compare_address(who, pair.subject.version_id, pair.baseline.version_id))
 
     assert page.status_code == 200
@@ -458,7 +426,7 @@ def test_the_arabic_page_is_rtl(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    client = shell_with_comparisons(j, who, tmp_path)
+    client = shell_with_comparisons(j, who)
     page = client.get(
         compare_address(who, pair.subject.version_id, pair.baseline.version_id, language="ar")
     )
@@ -487,7 +455,7 @@ def test_http_cross_organization_matches_nonexistent_byte_for_byte(tmp_path) -> 
     stranger = member(j.w, email="other@example.test", name="Other")
     pair = completed_pair(j, owner)
     foreign = completed_pair(j, stranger)
-    client = shell_with_comparisons(j, owner, tmp_path)
+    client = shell_with_comparisons(j, owner)
 
     cross = client.get(compare_address(owner, foreign.subject.version_id, pair.baseline.version_id))
     missing = client.get(compare_address(owner, MISSING_ID, pair.baseline.version_id))
@@ -500,7 +468,7 @@ def test_post_form_renders_the_same_admitted_pair(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    client = shell_with_comparisons(j, who, tmp_path)
+    client = shell_with_comparisons(j, who)
     posted = client.post(
         compare_form_address(who),
         data={
@@ -535,7 +503,7 @@ def test_the_posted_form_renders_off_the_event_loop(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    client = shell_with_comparisons(j, who, tmp_path, printer=_LoopRefusingPrinter())
+    client = shell_with_comparisons(j, who, printer=_LoopRefusingPrinter())
     data = {"subject": pair.subject.version_id, "baseline": pair.baseline.version_id}
 
     posted = client.post(compare_form_address(who), data=data)
@@ -559,7 +527,7 @@ def test_the_posted_form_renders_with_the_production_printer(tmp_path) -> None:
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    client = shell_with_comparisons(j, who, tmp_path, printer=_OnDemandPrinter())
+    client = shell_with_comparisons(j, who, printer=_OnDemandPrinter())
 
     posted = client.post(
         compare_form_address(who),
@@ -581,7 +549,7 @@ def test_a_version_with_no_completed_run_is_uniformly_unavailable(tmp_path) -> N
         for version in j.w.store.dataset_versions_for_scope(who.owner_id)
         if version.version_id not in {pair.subject.version_id, pair.baseline.version_id}
     ][0]
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
 
     none = actions.request(
         _request(who, unfinished.version_id, pair.baseline.version_id), now=j.clock()

@@ -59,6 +59,7 @@ __all__ = [
     "AVAILABILITY_AVAILABLE",
     "AVAILABILITY_PARTIAL",
     "AVAILABILITY_UNAVAILABLE",
+    "DISPLAY_ONLY_CAVEATS",
     "STATUS_CAVEATED",
     "STATUS_REFUSED",
     "STATUS_UNAVAILABLE",
@@ -85,6 +86,16 @@ STATUS_CAVEATED = "caveated"
 STATUS_REFUSED = KIND_REFUSED
 #: `FR-146`'s content-free miss, or an availability of unavailable.
 STATUS_UNAVAILABLE = KIND_UNAVAILABLE
+
+#: `FR-162a`: caveat codes about how the report is drawn, not about any value.
+#: `chart_not_drawn` says a section has no chart and "the figures beside it are
+#: complete"; `curve_points_sampled` says how many curve points are shown. Every
+#: real bundle carries the first on its overview, so counting it left no card
+#: able to read verified (`#560` item 1). Literals for the reason the
+#: availability literals are: `bundle.CAVEAT_CHART_NOT_DRAWN` and
+#: `bundle.CAVEAT_CURVE_SAMPLED` are `khepri.rra`'s, and `test_d103_metric_card`
+#: asserts these against them.
+DISPLAY_ONLY_CAVEATS = frozenset({"chart_not_drawn", "curve_points_sampled"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +131,17 @@ class MetricCard:
     caveats: tuple[object, ...] = field(default_factory=tuple)
     comparison: None = None
     evidence: EvidenceAction | None = None
+
+    @property
+    def figure_caveats(self) -> tuple[object, ...]:
+        """The caveats that qualify this figure's value (`FR-162a`).
+
+        `caveats` less the display-only codes. Derived rather than stored, so
+        no constructor can set `caveats` and leave this empty -- which would
+        show "0 caveats" and could read verified. `caveats` stays the
+        projection's whole tuple, which the page states.
+        """
+        return _figure_caveats(self.caveats)
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +237,15 @@ def _qualifiers(outcome: ViewOutcome | None) -> dict[str, dict[str, object]]:
     return {str(cell["metric"]): cell for cell in _cells(projection)}
 
 
+def _figure_caveats(caveats: tuple[object, ...]) -> tuple[object, ...]:
+    """`caveats` less the display-only codes (`FR-162a`). A selection, not a count."""
+    return tuple(
+        caveat
+        for caveat in caveats
+        if str(getattr(caveat, "code", caveat)) not in DISPLAY_ONLY_CAVEATS
+    )
+
+
 def _card(
     cell: dict[str, object],
     qualifier: dict[str, object],
@@ -229,7 +260,7 @@ def _card(
         value=cell["value"],
         population=cell["population"],
         versions=cell["versions"],
-        status=card_status(KIND_ADMITTED, availability, caveats),
+        status=card_status(KIND_ADMITTED, availability, _figure_caveats(caveats)),
         availability=availability,
         reason=qualifier.get("reason"),
         caveats=caveats,

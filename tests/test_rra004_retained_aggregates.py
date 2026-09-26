@@ -97,8 +97,9 @@ def test_package_version_moves_to_the_amended_shape() -> None:
     two is the defect `facts._build` was corrected for: it read the module
     constant while checking a mapping the caller supplied.
     """
-    # `rra004.package.v4` (`#560` item 2) succeeds it: a refused result records its input.
-    assert PACKAGE_VERSION == "rra004.package.v4"
+    # `rra004.package.v4` (`#560` item 2) records a refused result's input, and
+    # `rra004.package.v5` (`#431` §6) names the attestation by its own digest.
+    assert PACKAGE_VERSION == "rra004.package.v5"
     assert package(GOLDEN).package_version == "rra004.package.v2"
 
 

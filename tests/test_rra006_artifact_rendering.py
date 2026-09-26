@@ -107,7 +107,7 @@ def test_pdf_renderer_materializes_one_document_per_language() -> None:
 
 
 def test_excel_renderer_materializes_the_closed_workbook(tmp_path) -> None:
-    materialized = ExcelSurfaceRenderer(directory=tmp_path).render_materialized(
+    materialized = ExcelSurfaceRenderer().render_materialized(
         ReportBundle.of(package())
     )
 

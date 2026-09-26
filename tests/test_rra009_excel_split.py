@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import re
 import zipfile
 from pathlib import Path
@@ -24,20 +25,18 @@ def _plain_bundle() -> ReportBundle:
     return ReportBundle.of(package_for(ROWS))
 
 
-def _workbook_bytes(bundle: ReportBundle, directory: Path) -> Path:
-    renderer = ExcelSurfaceRenderer(directory=directory)
-    renderer.render(bundle)
-    return renderer.path_for(bundle)
+def _workbook_bytes(bundle: ReportBundle) -> io.BytesIO:
+    return io.BytesIO(ExcelSurfaceRenderer().render_materialized(bundle).artifacts[0].content)
 
 
 def _sheet_names(bundle: ReportBundle, directory: Path) -> list[str]:
-    with zipfile.ZipFile(_workbook_bytes(bundle, directory)) as archive:
+    with zipfile.ZipFile(_workbook_bytes(bundle)) as archive:
         workbook = archive.read("xl/workbook.xml").decode()
     return re.findall(r'name="([^"]+)" sheetId', workbook)
 
 
 def _shared_strings(bundle: ReportBundle, directory: Path) -> str:
-    with zipfile.ZipFile(_workbook_bytes(bundle, directory)) as archive:
+    with zipfile.ZipFile(_workbook_bytes(bundle)) as archive:
         return archive.read("xl/sharedStrings.xml").decode()
 
 
@@ -54,7 +53,7 @@ def _cells_of_sheet(
     what the *workbook* holds and never which sheet holds it, which is exactly the
     distinction a business/audit separation test needs.
     """
-    with zipfile.ZipFile(_workbook_bytes(bundle, directory)) as archive:
+    with zipfile.ZipFile(_workbook_bytes(bundle)) as archive:
         shared = re.findall(
             r"<t[^>]*>(.*?)</t>", archive.read("xl/sharedStrings.xml").decode(), re.S
         )
@@ -395,7 +394,7 @@ def test_every_charted_section_still_gets_a_chart(tmp_path: Path) -> None:
     bundle = rich_bundle()
     charted = [section for section in bundle.sections if section.chart is not None]
 
-    with zipfile.ZipFile(_workbook_bytes(bundle, tmp_path)) as archive:
+    with zipfile.ZipFile(_workbook_bytes(bundle)) as archive:
         parts = [
             name
             for name in archive.namelist()
@@ -426,7 +425,7 @@ def test_the_workbook_still_reconciles(tmp_path: Path) -> None:
     from khepri.rra.bundle import reconcile
 
     for bundle in (rich_bundle(), _plain_bundle()):
-        content, workbook = rendered(bundle, tmp_path)
+        content, workbook = rendered(bundle)
         reconcile(content, bundle=bundle)
         # The claim is built from the bundle (`excel._content`), so reconciling it
         # alone compares the bundle with itself. What the file presents is read
@@ -451,7 +450,7 @@ def test_the_workbook_states_every_figure_the_bundle_carries(tmp_path: Path) -> 
     bundle, so asserting it against the bundle can only ever pass.
     """
     bundle = rich_bundle()
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     for entry in presented(workbook).languages:
         assert [
@@ -464,7 +463,7 @@ def test_the_workbook_states_every_figure_the_bundle_carries(tmp_path: Path) -> 
 
 def test_the_workbook_states_every_section_the_bundle_carries(tmp_path: Path) -> None:
     bundle = rich_bundle()
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     for entry in presented(workbook).languages:
         assert entry.sections == bundle.section_ids, entry.language
@@ -485,7 +484,7 @@ def test_every_figure_value_is_on_its_own_business_sheet(tmp_path: Path) -> None
     from khepri.rra.rendering.excel_rows import business_name
 
     bundle = rich_bundle()
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     checked = 0
     for language in REQUIRED_LANGUAGES:
@@ -524,7 +523,7 @@ def test_no_limitation_is_stated_twice(tmp_path: Path) -> None:
     from khepri.rra.rendering.wording import caveat_prose
 
     bundle = rich_bundle()
-    _, workbook = rendered(bundle, tmp_path)
+    _, workbook = rendered(bundle)
 
     for language in REQUIRED_LANGUAGES:
         # The precondition, asserted: without two codes sharing one sentence the

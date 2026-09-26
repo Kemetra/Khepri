@@ -84,7 +84,7 @@ def test_the_deployed_app_records_a_dataset_version_for_an_upload(tmp_path) -> N
         session = open_commercial_session(
             SqlSessionStore(stack.factory), owner_id=scope.owner_id, now=NOW
         )
-        app = build_web_app(stack, comparisons=tmp_path / "comparisons")
+        app = build_web_app(stack)
         # `Origin` as a browser sends it (`require_same_origin`, `#434` §2).
         with TestClient(app, base_url=HTTPS, headers={"Origin": HTTPS}) as client:
             client.cookies.set(SESSION_COOKIE, session.session_id)

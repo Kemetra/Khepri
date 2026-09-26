@@ -332,7 +332,7 @@ def test_a_foreign_pair_is_indistinguishable_from_a_missing_one(tmp_path) -> Non
     stranger = member(j.w, email="other@example.test", name="Other")
     mine = completed_pair(j, owner)
     theirs = completed_pair(j, stranger)
-    client = shell_with_comparisons(j, owner, tmp_path)
+    client = shell_with_comparisons(j, owner)
 
     foreign = client.get(
         compare_address(owner, theirs.subject.version_id, mine.baseline.version_id)
@@ -360,7 +360,7 @@ def test_a_deleted_version_leaves_the_pair_unavailable_and_audited(tmp_path) -> 
     j = journey()
     who = member(j.w)
     pair = completed_pair(j, who)
-    actions = comparison_actions(j, tmp_path)
+    actions = comparison_actions(j)
     deletion_service(j).delete_version(
         who.owner_id, pair.subject.version_id, actor_account_id=who.account_id, now=j.clock()
     )

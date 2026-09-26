@@ -20,7 +20,6 @@ from pathlib import Path
 
 from khepri.local.config import LocalSettings
 from khepri.local.wiring import build_stack, build_worker_stack, local_page_printer
-from khepri.runtime.private_directory import own_private_directory
 
 DEFAULT_INVITATION_DAYS = 7
 
@@ -46,8 +45,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     work.add_argument(
         "--workbooks",
         type=Path,
-        default=Path("./.local-workbooks"),
-        help="directory the Excel surface writes into",
+        default=None,
+        help="ignored: the Excel surface is built in memory (#465); kept so scripts still run",
     )
     work.add_argument("--limit", type=int, default=10, help="maximum jobs per run")
 
@@ -58,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _invite(settings, days=arguments.days)
     if arguments.command == "sweep":
         return _sweep(settings)
-    return _work(settings, workbooks=arguments.workbooks, limit=arguments.limit)
+    return _work(settings, limit=arguments.limit)
 
 
 def _invite(settings: LocalSettings, *, days: int) -> int:
@@ -72,9 +71,7 @@ def _invite(settings: LocalSettings, *, days: int) -> int:
 
 def _sweep(settings: LocalSettings) -> int:
     stack = build_stack(settings)
-    report = build_worker_stack(stack, workbooks=Path("./.local-workbooks")).sweeper.sweep(
-        now=stack.clock()
-    )
+    report = build_worker_stack(stack).sweeper.sweep(now=stack.clock())
     print(
         f"expired_leases={report.expired_leases} "
         f"orphaned_jobs={report.orphaned_jobs} "
@@ -84,7 +81,7 @@ def _sweep(settings: LocalSettings) -> int:
     return 0
 
 
-def _work(settings: LocalSettings, *, workbooks: Path, limit: int) -> int:
+def _work(settings: LocalSettings, *, limit: int) -> int:
     """Drain due jobs with the browser held open for the whole run.
 
     The printer is built once around the loop rather than per job: launching
@@ -92,9 +89,8 @@ def _work(settings: LocalSettings, *, workbooks: Path, limit: int) -> int:
     browser for its lifetime too.
     """
     stack = build_stack(settings)
-    own_private_directory(workbooks, purpose="worker workbook directory")
     with local_page_printer() as printer:
-        worker = build_worker_stack(stack, workbooks=workbooks, printer=printer).worker
+        worker = build_worker_stack(stack, printer=printer).worker
         processed = worker.drain(limit=limit)
     print(f"processed={processed}")
     return 0

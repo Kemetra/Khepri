@@ -72,6 +72,7 @@ from khepri.rra.profiling import (
     DatasetProfile,
     build_profile,
     canonical_json,
+    document_digest,
     is_personal_value,
     materialize,
     parse_date,
@@ -92,12 +93,15 @@ from khepri.rra.versions import (
 # comparison window, and the formula version as a field on every emitted fact.
 #
 # v4 (`#560` item 2) adds one optional field: the input a refused result names.
-PACKAGE_VERSION = "rra004.package.v4"
+#
+# v5 (`#431` §6) changes one value: `coverage_manifest_identity` is the digest of
+# the attestation document, not the upload digest it used to repeat.
+PACKAGE_VERSION = "rra004.package.v5"
 FORMULA_VERSION = "rra004.formula.v2"
 
 #: The package shapes `RRA-004` authorizes to record a refused result's input. A
 #: package stamped with any other version states none, and its reader refuses one.
-VERSIONS_RECORDING_REFUSAL_INPUTS = frozenset({"rra004.package.v4"})
+VERSIONS_RECORDING_REFUSAL_INPUTS = frozenset({"rra004.package.v4", "rra004.package.v5"})
 
 # The governed comparison window, recorded rather than chosen by whichever module
 # needs one. `RRA-008` asks for "a prior window of equal length" and names no
@@ -430,7 +434,11 @@ class FactPackage:
     #: The event kinds and statuses every population here was filtered to.
     event_kind_filters: tuple[str, ...] = ()
     status_filters: tuple[str, ...] = ()
-    #: The attestation this package's coverage claims rest on, by identity.
+    #: The attestation this package's coverage claims rest on, by identity: the
+    #: digest of its whole document from `rra004.package.v5` (`#431` §6). Up to
+    #: `v4` it repeated the upload digest, so two attestations of one upload --
+    #: another attester, another timezone -- shared it, and with it the package
+    #: digest and the `bundle_id`. Older packages keep the value they recorded.
     coverage_manifest_identity: str | None = None
     #: Structural coverage signatures, one per accepted window and scope.
     coverage_signatures: tuple[CoverageSignature, ...] = ()
@@ -1468,9 +1476,7 @@ def _build(
         currency=admitted_events.currency,
         event_kind_filters=admitted_kinds,
         status_filters=(STATUS_POSTED,),
-        coverage_manifest_identity=(
-            None if admitted.manifest is None else admitted.manifest.input_digest
-        ),
+        coverage_manifest_identity=_manifest_identity(admitted.manifest),
         coverage_signatures=_signatures_of(admitted, measures, admitted_kinds),
         # The same refusal reaches the aligned daily bases and the retained
         # bases, which are additive and distinct-transaction evidence over the
@@ -1823,6 +1829,17 @@ def _returning_periods(
         for day in returns
     }
     return tuple(sorted(labels))
+
+def _manifest_identity(manifest: CoverageManifest | None) -> str | None:
+    """The attestation's identity: `document_digest` of its whole document.
+
+    The one function the workspace also uses for a dataset version's
+    `manifest_digest`, so the two name one attestation alike.
+    """
+    if manifest is None:
+        return None
+    return document_digest(manifest.as_document())
+
 
 def _signatures_of(
     admitted: AdmittedInput,

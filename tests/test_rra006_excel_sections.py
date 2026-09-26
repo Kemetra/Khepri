@@ -19,9 +19,7 @@ its absence. The audit sheets do not vary.
 from __future__ import annotations
 
 import hashlib
-import tempfile
 from datetime import date, timedelta
-from pathlib import Path
 
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
@@ -87,11 +85,11 @@ def package(rows: list | None = None) -> FactPackage:
 
 
 def workbook_of(rows: list | None = None) -> rra_workbooks.ReadWorkbook:
-    """Render, then reopen the file that was written rather than trusting the claim."""
+    """Render, then reopen the built bytes rather than trusting the claim."""
     bundle = ReportBundle.of(package(rows))
-    renderer = ExcelSurfaceRenderer(directory=Path(tempfile.mkdtemp()))
-    renderer.render(bundle)
-    return rra_workbooks.read(renderer.path_for(bundle).read_bytes())
+    return rra_workbooks.read(
+        ExcelSurfaceRenderer().render_materialized(bundle).artifacts[0].content
+    )
 
 
 def test_one_worksheet_per_presented_business_concept_per_language() -> None:
