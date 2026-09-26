@@ -130,7 +130,6 @@ UNCOLLECTED_WIRE_FIELDS = frozenset(
         "status_column",
         "currency_column",
         "event_key_columns",
-        "transaction_key_components",
     }
 )
 
@@ -156,10 +155,6 @@ def test_the_uncollected_declarations_are_exactly_the_known_gap() -> None:
             "unique_line_grain_attested",
             "must supply event keys or attest unique line grain",
         ),
-        (
-            "transaction_id_unique_package_wide",
-            "transaction identifier not proven unique needs a composite key",
-        ),
     ],
 )
 def test_declining_a_package_level_claim_needs_a_column_the_form_lacks(
@@ -168,11 +163,13 @@ def test_declining_a_package_level_claim_needs_a_column_the_form_lacks(
 ) -> None:
     """Why the gap above matters, stated as behaviour rather than as a field list.
 
-    Each of these four checkboxes reads as a choice, but the form offers no
+    Each of these three checkboxes reads as a choice, but the form offers no
     control for the column that `RRA-003` requires instead when the claim is
-    declined. So unticking one is currently a governed refusal with no remedy on
-    the page. The refusal is correct -- the rule is doing its job -- and it is
-    the *collection surface* that is incomplete, which is what this records.
+    declined. The uniqueness claim left this list in `#586`, when the form gained
+    the composite-key control its refusal asks for. So unticking one is currently
+    a governed refusal with no remedy on the page. The refusal is correct -- the
+    rule is doing its job -- and it is the *collection surface* that is
+    incomplete, which is what this records.
 
     **Each claim is pinned to the message it actually produces.** A bare
     `raises(ContractRefused)` would be satisfied by any refusal at all, so a
@@ -285,6 +282,7 @@ def client_profile_payload() -> dict[str, object]:
             "unique_line_grain_attested": True,
             "transaction_id_column": "invoice_no",
             "transaction_id_unique_package_wide": True,
+            "transaction_key_components": [],
             "revenue_vat_exclusive": True,
             "revenue_is_net_of_returns": False,
             "units_are_integral": True,
@@ -351,10 +349,13 @@ def untouched_value(name: str, filled: object) -> object:
 
     An unticked checkbox is `False`; a blank required identifier is `""`, which
     reaches the governed refusal; a blank optional column is null, which the
-    server reads as "not declared by column".
+    server reads as "not declared by column"; a blank list control is `[]`,
+    because the model types it `list[str]` and a null there is a 422 (`#586`).
     """
     if isinstance(filled, bool):
         return False
+    if isinstance(filled, list):
+        return []
     return "" if name in REQUIRED_TEXT_FIELDS else None
 
 
@@ -407,18 +408,24 @@ def test_a_request_without_a_declaration_is_still_refused() -> None:
 def test_both_profile_call_sites_send_the_collected_contract() -> None:
     """The submit path and the resume path, because one fix leaves half broken.
 
-    `upload.js` posts a profile from two places: the form's submit handler and
+    `upload.js` posts a profile from two places: the form's submit path and
     `bootstrap()`'s resume branch, which fires when an upload landed but its
     profile response was lost. A contract added only to the submit handler
     leaves every interrupted upload answering 422.
+
+    Since `#587` both paths call one `postProfile()`, so the guarantee is
+    structural: exactly one POST exists, it carries `profileRequest()`, and each
+    path reaches it -- the submit path through `submitDeclaration()`.
     """
     script = journey_asset("upload.js")
     posts = re.findall(r'api\("/api/v1/beta/profile"[^\n]*', script)
-    assert len(posts) == 2, "upload.js should post a profile from exactly two places"
-    # Both bodies come from the one builder, so neither can drift from the other
-    # and a contract cannot be added to one path and forgotten on the other.
-    for post in posts:
-        assert "profileRequest()" in post, f"a profile POST carries no contract: {post}"
+    assert len(posts) == 1, "upload.js should post a profile from exactly one helper"
+    assert "profileRequest()" in posts[0], f"the profile POST carries no contract: {posts[0]}"
+    assert re.search(r'const postProfile = \(\) => api\("/api/v1/beta/profile"', script)
+    submit = re.search(r"const submitDeclaration = .*?\n};", script, re.DOTALL)
+    resume = re.search(r"const bootstrap = .*?\n};", script, re.DOTALL)
+    assert submit and "await postProfile()" in submit.group(), "the submit path skips the contract"
+    assert resume and "await postProfile()" in resume.group(), "the resume path skips the contract"
     # And that builder is what actually names the field the route requires.
     # Matched to the end of its body rather than to the end of its first line:
     # the builder became a block when the optional coverage attestation was
@@ -621,3 +628,116 @@ def test_the_client_payload_and_the_form_agree_on_every_key() -> None:
     assert set(contract) == declared_field_names()
     # Round-trips as JSON, which is how it actually reaches the route.
     assert json.loads(json.dumps(payload)) == payload
+
+
+def test_the_composite_key_control_sends_a_list() -> None:
+    """`#586`: the one declaration whose wire value is a list, not a string.
+
+    `SourceContractBody.transaction_key_components` is `list[str]`. A text
+    control read like its neighbours would post `"invoice_no, branch"`, which
+    the model refuses as a 422 -- the failure this module exists to prevent.
+    `data-contract-list` is what `declaration()` reads to split it.
+    """
+    template = upload_template()
+    pattern = r'<input[^>]*data-contract-field="transaction_key_components"[^>]*>'
+    control = re.search(pattern, template)
+
+    assert control, "the form has no composite-key control"
+    assert "data-contract-list" in control.group(0)
+
+
+@pytest.mark.parametrize(
+    ("unique", "components", "refusal_message"),
+    [
+        (False, ["invoice_no", "branch"], None),
+        (False, ["branch"], "composite transaction key must contain the source identifier"),
+        (True, ["invoice_no", "branch"], None),
+    ],
+    ids=["composite-with-reference", "composite-without-reference", "unique-wins"],
+)
+def test_declining_uniqueness_is_answered_by_a_composite(
+    unique: bool,
+    components: list[str],
+    refusal_message: str | None,
+) -> None:
+    """The remedy `#586` adds, stated against the rule it satisfies (`RRA-003`:59-64).
+
+    The client adds nothing on the operator's behalf: a composite that omits
+    the reference is refused by the server with its governed reason, because
+    completing it would be synthesizing a declaration. A ticked uniqueness claim
+    keeps the bare identifier as the key, so a typed composite is not an error.
+    """
+    declared = client_profile_payload()["source_contract"]
+    assert isinstance(declared, dict)
+    body = SourceContractBody(
+        **{
+            **declared,
+            "transaction_id_unique_package_wide": unique,
+            "transaction_key_components": components,
+        }
+    )
+
+    if refusal_message is None:
+        body.to_contract()
+    else:
+        with pytest.raises(ContractRefused, match=refusal_message):
+            body.to_contract()
+
+
+def test_a_declared_composite_profiles_through_the_running_route() -> None:
+    """Not a model-only proof: the route accepts the composite end to end."""
+    test = api_harness()
+    redeem_and_consent(test)
+    upload(test)
+    payload = client_profile_payload()
+    contract = payload["source_contract"]
+    assert isinstance(contract, dict)
+    contract["transaction_id_unique_package_wide"] = False
+    contract["transaction_key_components"] = ["invoice_no", "branch"]
+
+    response = test.client.post("/api/v1/beta/profile", json=payload)
+
+    assert response.status_code == 201, response.text
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize(
+    ("typed", "expected"),
+    [(" invoice_no , branch,, ", ["invoice_no", "branch"]), ("", [])],
+    ids=["typed", "blank"],
+)
+def test_the_page_posts_the_composite_as_a_list(typed: str, expected: list[str]) -> None:
+    """`declaration()` itself, on the served page, reaching the stubbed route.
+
+    Blank must travel as `[]`: the model types the field `list[str]`, so the
+    null every other optional text control sends would be a 422.
+    """
+    from playwright.sync_api import Error, sync_playwright
+
+    from tests.journey_routed_page import choose_sales_file, fill_declaration, open_journey_page
+
+    def api(method: str, path: str) -> tuple[int, object]:
+        if path == "/api/v1/beta/journey":
+            return 200, {"step": "upload", "upload_present": False, "profile_present": False}
+        if path == "/api/v1/beta/profile":
+            return 400, {"detail": "stop here"}
+        return (204, None) if path == "/api/v1/beta/consent" else (201, {})
+
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page, calls = open_journey_page(browser, language="en", step="upload", api=api)
+            fill_declaration(page)
+            page.fill("[data-contract-field='transaction_key_components']", typed)
+            choose_sales_file(page)
+            page.click("#start-assessment")
+            page.wait_for_function("() => !document.querySelector('#error-summary').hidden")
+        finally:
+            browser.close()
+
+    sent = calls.bodies[("POST", "/api/v1/beta/profile")][0]
+    assert isinstance(sent, dict)
+    assert sent["source_contract"]["transaction_key_components"] == expected

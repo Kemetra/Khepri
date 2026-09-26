@@ -39,10 +39,15 @@ def test_bootstrap_profiles_an_upload_whose_response_was_interrupted() -> None:
 
 def test_consent_precedes_raw_xhr_upload_and_profile_request() -> None:
     script = _script()
-    assert script.index("/api/v1/beta/consent") < script.index("await upload()")
+    # The sequence lives in `submitDeclaration()`; the profile POST itself is the
+    # shared `postProfile()` helper defined above it (`#587`), so order is read
+    # inside the function rather than across the whole file.
+    start = script.index("const submitDeclaration")
+    submit = script[start : script.index("\n};", start)]
+    assert submit.index("/api/v1/beta/consent") < submit.index("await upload()")
     assert 'xhr.send(file)' in script
     assert 'xhr.upload.addEventListener("progress"' in script
-    assert script.index("await upload()") < script.index("/api/v1/beta/profile")
+    assert submit.index("await upload()") < submit.index("await postProfile()")
     assert "Content-Length" not in script
 
 

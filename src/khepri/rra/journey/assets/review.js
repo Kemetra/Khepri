@@ -40,7 +40,8 @@ const load = async () => {
   for (const mapping of profile.mappings) {
     const row = document.createElement("tr");
     const candidate = mapping.candidates[0];
-    row.append(cell(candidate?.safe_label), cell(wordFor("semantic", mapping.semantic)), cell(wordFor("state", mapping.state)), cell(candidate?.evidence?.join(" · ")));
+    const evidence = candidate?.evidence?.map((code) => wordFor("evidence", code)).join(" · ");
+    row.append(cell(candidate?.safe_label), cell(wordFor("semantic", mapping.semantic)), cell(wordFor("state", mapping.state)), cell(evidence));
     table.append(row);
   }
   if (!profile.admissible) {

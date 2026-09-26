@@ -65,6 +65,13 @@ _EN = {
     "state_ambiguous": "Not determined",
     "state_conflicting": "Not usable",
     "state_unavailable": "Not found",
+    "evidence_label_exact": "Column name matches exactly",
+    "evidence_label_token": "Column name contains a matching word",
+    "evidence_label_substring": "Column name partly matches",
+    "evidence_type_confirmed": "Values have the expected type",
+    "evidence_type_conflict": "Values do not have the expected type",
+    "evidence_type_only": "Matched by value type only",
+    "evidence_declared_in_source_contract": "Named in your declaration",
     "review_blocked_title": "Analysis cannot start yet:",
     "reason_generic": "The dataset cannot be analysed safely in its current form.",
     "reason_no_data_rows": "The uploaded sheet has no data rows.",
@@ -96,8 +103,12 @@ _EN = {
     "invitation_unavailable": "This invitation is unavailable.",
     "temporary_unavailable": "The secure session is temporarily unavailable. Try again.",
     "profile_rejected": (
-        "The file was uploaded but could not be profiled. Delete this session and "
-        "request a new invitation."
+        "Your file is uploaded, but it could not be analysed with this declaration. "
+        "Correct the declaration and submit again — your file is kept."
+    ),
+    "upload_kept": (
+        "Your uploaded file is kept for this session. To use a different file, "
+        "delete this session's content."
     ),
     "manifest_legend": "Tell us what period this file covers",
     "manifest_intro": (
@@ -168,8 +179,15 @@ _EN = {
     ),
     "contract_unique_line_grain_attested": "Each row is one order line",
     "contract_transaction_id_column": "Column holding the transaction reference",
+    "contract_transaction_key_components": (
+        "Columns that together identify one sale, when the reference alone does not"
+    ),
+    "contract_transaction_key_components_hint": (
+        "Separated by commas, and including the transaction reference column — for example "
+        "invoice_no, branch. Leave blank when each reference belongs to one sale only."
+    ),
     "contract_transaction_id_unique_package_wide": (
-        "That reference is unique across the whole file"
+        "Each reference belongs to one sale only, even when that sale has several rows"
     ),
     "contract_revenue_vat_exclusive": "Revenue amounts exclude VAT",
     "contract_revenue_is_net_of_returns": "Revenue is already net of returns",
@@ -238,6 +256,13 @@ _AR = {
     "state_ambiguous": "غير محدد",
     "state_conflicting": "غير قابل للاستخدام",
     "state_unavailable": "غير موجود",
+    "evidence_label_exact": "اسم العمود مطابق تماماً",
+    "evidence_label_token": "اسم العمود يتضمن كلمة مطابقة",
+    "evidence_label_substring": "اسم العمود مطابق جزئياً",
+    "evidence_type_confirmed": "القيم من النوع المتوقع",
+    "evidence_type_conflict": "القيم ليست من النوع المتوقع",
+    "evidence_type_only": "مطابق حسب نوع القيم فقط",
+    "evidence_declared_in_source_contract": "مذكور في إقرارك",
     "review_blocked_title": "لا يمكن بدء التحليل بعد:",
     "reason_generic": "لا يمكن تحليل مجموعة البيانات بأمان في صورتها الحالية.",
     "reason_no_data_rows": "لا تحتوي الورقة المرفوعة على صفوف بيانات.",
@@ -267,7 +292,10 @@ _AR = {
     "invitation_unavailable": "هذه الدعوة غير متاحة.",
     "temporary_unavailable": "الجلسة الآمنة غير متاحة مؤقتاً. حاول مرة أخرى.",
     "profile_rejected": (
-        "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
+        "تم رفع ملفك، لكن تعذر تحليله بهذا الإقرار. صحّح الإقرار وأرسله مرة أخرى، فملفك محفوظ."
+    ),
+    "upload_kept": (
+        "ملفك المرفوع محفوظ لهذه الجلسة. لاستخدام ملف آخر، احذف محتوى هذه الجلسة."
     ),
     "manifest_legend": "أخبرنا بالفترة التي يغطيها هذا الملف",
     "manifest_intro": (
@@ -331,7 +359,16 @@ _AR = {
     "contract_posted_only": "كل صف مُرحَّل — العمليات الملغاة والباطلة مستبعدة",
     "contract_unique_line_grain_attested": "كل صف يمثل بنداً واحداً من الطلب",
     "contract_transaction_id_column": "العمود الذي يحمل مرجع المعاملة",
-    "contract_transaction_id_unique_package_wide": "هذا المرجع فريد في الملف بأكمله",
+    "contract_transaction_key_components": (
+        "الأعمدة التي تحدد معاً عملية بيع واحدة، إذا لم يكفِ المرجع وحده"
+    ),
+    "contract_transaction_key_components_hint": (
+        "افصل بينها بفواصل، وأدرج عمود مرجع المعاملة، مثل invoice_no, branch. "
+        "اتركه فارغاً إذا كان كل مرجع يخص عملية بيع واحدة فقط."
+    ),
+    "contract_transaction_id_unique_package_wide": (
+        "كل مرجع يخص عملية بيع واحدة فقط، حتى لو كانت لها عدة صفوف"
+    ),
     "contract_revenue_vat_exclusive": "مبالغ الإيرادات لا تشمل ضريبة القيمة المضافة",
     "contract_revenue_is_net_of_returns": "الإيرادات صافية من المرتجعات بالفعل",
     "contract_units_are_integral": "الوحدات أعداد صحيحة",

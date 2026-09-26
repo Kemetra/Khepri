@@ -155,3 +155,124 @@ def test_journey_pages_fit_viewport_and_keep_operable_targets(
                     assert box is not None and box["height"] >= 44
         finally:
             browser.close()
+
+
+_COMPOSITE_REFUSAL = "A transaction identifier not proven unique needs a composite key."
+
+
+class _RefusedThenAccepted:
+    """A journey API whose first profile is refused and whose second is accepted.
+
+    Stateful so the page's own navigation is real: once a profile is accepted
+    the journey reports `review`, which is where `resume()` then keeps it.
+    """
+
+    def __init__(self, *, upload_present: bool = False) -> None:
+        self.upload_present = upload_present
+        self.profiles = 0
+
+    def __call__(self, method: str, path: str) -> tuple[int, object]:
+        routes = {
+            ("GET", "/api/v1/beta/journey"): self._journey,
+            ("POST", "/api/v1/beta/consent"): lambda: (204, None),
+            ("POST", "/api/v1/beta/uploads"): self._upload,
+            ("POST", "/api/v1/beta/profile"): self._profile,
+            ("GET", "/api/v1/beta/profile"): self._stored_profile,
+        }
+        answer = routes.get((method, path))
+        return answer() if answer else (404, {"detail": "not stubbed"})
+
+    def _journey(self) -> tuple[int, object]:
+        accepted = self.profiles > 1
+        return 200, {
+            "step": "review" if accepted else "upload",
+            "upload_present": self.upload_present,
+            "profile_present": accepted,
+        }
+
+    def _upload(self) -> tuple[int, object]:
+        if self.upload_present:
+            return 409, {"detail": "Upload already exists."}
+        self.upload_present = True
+        return 201, {}
+
+    def _profile(self) -> tuple[int, object]:
+        self.profiles += 1
+        if self.profiles == 1:
+            return 400, {"detail": _COMPOSITE_REFUSAL}
+        return 201, {}
+
+    @staticmethod
+    def _stored_profile() -> tuple[int, object]:
+        return 200, {"admissible": True, "reasons": [], "findings": [], "mappings": []}
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_a_refused_declaration_is_corrected_without_a_new_upload(language: str) -> None:
+    """`#587`: one wrong checkbox must not cost the session.
+
+    The refused declaration left the upload stored, and the resubmit re-ran
+    consent and upload, earning a 409 whose missing detail fell back to "delete
+    this session and request a new invitation". The server accepts a second
+    profile on the same session, so the page now profiles again and uploads once.
+    """
+    from tests.journey_routed_page import choose_sales_file, fill_declaration, open_journey_page
+
+    api = _RefusedThenAccepted()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page, calls = open_journey_page(browser, language=language, step="upload", api=api)
+            fill_declaration(page)
+            choose_sales_file(page)
+            page.click("#start-assessment")
+            page.wait_for_function("() => !document.querySelector('#error-summary').hidden")
+
+            assert page.is_disabled("#sales-file"), "a new file would be silently ignored"
+            assert page.is_visible("#upload-kept")
+
+            page.check("[data-contract-field='transaction_id_unique_package_wide']")
+            page.click("#start-assessment")
+            page.wait_for_url(f"**/beta/{language}/review")
+        finally:
+            browser.close()
+
+    assert calls.count("POST", "/api/v1/beta/uploads") == 1
+    assert calls.count("POST", "/api/v1/beta/profile") == 2
+
+
+@pytest.mark.browser
+def test_after_a_reload_the_declaration_can_be_resubmitted_without_a_file() -> None:
+    """The resume path: the upload is stored, the page is fresh, no file is chosen.
+
+    `bootstrap` profiles the blank form and is refused; the participant then
+    declares and resubmits. Requiring a file there would force them to pick a
+    throwaway one that the page would not even send.
+    """
+    from tests.journey_routed_page import fill_declaration, open_journey_page
+
+    api = _RefusedThenAccepted(upload_present=True)
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page, calls = open_journey_page(browser, language="en", step="upload", api=api)
+            page.wait_for_function("() => !document.querySelector('#error-summary').hidden")
+
+            assert page.is_enabled("#start-assessment")
+            assert page.is_disabled("#sales-file")
+            assert page.is_visible("#upload-kept")
+
+            fill_declaration(page)
+            page.click("#start-assessment")
+            page.wait_for_url("**/beta/en/review")
+        finally:
+            browser.close()
+
+    assert calls.count("POST", "/api/v1/beta/uploads") == 0

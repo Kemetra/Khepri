@@ -10,6 +10,7 @@ const selected = document.querySelector("#selected-file");
 const errorSummary = document.querySelector("#error-summary");
 const dropZone = document.querySelector("#drop-zone");
 const recovery = document.querySelector("#upload-recovery");
+const uploadKept = document.querySelector("#upload-kept");
 const contractFields = document.querySelectorAll("[data-contract-field]");
 const manifestFields = document.querySelectorAll("[data-manifest-field]");
 let file = null;
@@ -38,13 +39,15 @@ const textValue = (control) => {
   const typed = control.value.trim();
   return control.autocapitalize === "characters" ? typed.toUpperCase() : typed;
 };
+const contractValue = (control) => {
+  if (control.type === "checkbox") return control.checked;
+  if (control.dataset.contractList !== undefined) return listValue(control);
+  const blank = control.dataset.contractRequired === undefined ? null : "";
+  return textValue(control) || blank;
+};
 const declaration = () => {
   const contract = {};
-  for (const control of contractFields) {
-    const name = control.dataset.contractField;
-    const blank = control.dataset.contractRequired === undefined ? null : "";
-    contract[name] = control.type === "checkbox" ? control.checked : (textValue(control) || blank);
-  }
+  for (const control of contractFields) contract[control.dataset.contractField] = contractValue(control);
   return contract;
 };
 // The coverage attestation, sent only when the operator made one. `RRA-003`
@@ -74,12 +77,16 @@ const attestation = () => {
     }
     const typed = control.value.trim();
     if (typed) attested = true;
-    manifest[name] = control.dataset.manifestList === undefined
-      ? typed
-      : typed.split(",").map((item) => item.trim()).filter(Boolean);
+    manifest[name] = control.dataset.manifestList === undefined ? typed : listValue(control);
   }
   return attested ? manifest : null;
 };
+// Defined here, after its callers, so the manifest tests that lift
+// `attestation`..`profileRequest` out of this module carry it with them.
+// A comma-separated control, as the list the model types it as. Blank is `[]`,
+// never null: `list[str]` refuses null as a 422, which is the malformed-body
+// failure a declaration must never earn (`#586`).
+const listValue = (control) => control.value.split(",").map((item) => item.trim()).filter(Boolean);
 const profileRequest = () => {
   const attested = attestation();
   return JSON.stringify({ requested_semantics: [], source_contract: declaration(), ...(attested ? { coverage_manifest: attested } : {}) });
@@ -98,9 +105,18 @@ const valid = (candidate) => {
   const extension = candidate.name.toLowerCase().split(".").pop();
   return ["csv", "xlsx"].includes(extension) && candidate.size > 0 && candidate.size <= MAX_BYTES;
 };
+// Once the upload is stored the file is settled for this session (`#587`): the
+// control locks, so a different file cannot be picked and then silently not
+// sent, and the declaration can be resubmitted with no file chosen -- which is
+// the only state a reload leaves the page in.
 const update = () => {
-  input.disabled = !consent.checked;
-  button.disabled = !(consent.checked && file);
+  input.disabled = uploaded || !consent.checked;
+  button.disabled = !(uploaded || (consent.checked && file));
+};
+const settleUpload = () => {
+  uploaded = true;
+  uploadKept.hidden = false;
+  update();
 };
 const choose = (candidate) => {
   if (!valid(candidate)) {
@@ -137,15 +153,26 @@ const upload = () => new Promise((resolve, reject) => {
   xhr.send(file);
 });
 
+const postProfile = () => api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: profileRequest() });
+// A refused declaration leaves the upload stored, and the server profiles the same
+// upload again on the same session. Re-running consent and upload there earned a
+// 409 whose missing detail told the participant to start over with a new
+// invitation (`#587`), so a stored upload is profiled again and never re-sent.
+const submitDeclaration = async () => {
+  if (!uploaded) {
+    await api("/api/v1/beta/consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent_version: CONSENT_VERSION }) });
+    await upload();
+    settleUpload();
+  }
+  await postProfile();
+  location.assign(routeFor("review"));
+};
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   button.disabled = true;
   try {
-    await api("/api/v1/beta/consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent_version: CONSENT_VERSION }) });
-    await upload();
-    uploaded = true;
-    await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: profileRequest() });
-    location.assign(routeFor("review"));
+    await submitDeclaration();
   } catch (error) {
     message(uploaded ? refusalText(error) : errorSummary.dataset.uploadFailed);
     recovery.hidden = !uploaded;
@@ -160,7 +187,7 @@ const bootstrap = async () => {
     if (invitation) await api("/api/v1/beta/sessions/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation }) });
     const state = await resume();
     if (state?.upload_present && !state.profile_present) {
-      uploaded = true;
+      settleUpload();
       // The upload landed but its profile response was lost, so the file is here
       // and the profile is not. This posts the declaration as it stands on the
       // page: nothing is stored in the browser, so on a fresh load the form is
@@ -173,7 +200,7 @@ const bootstrap = async () => {
       // shows the operator that reason. Synthesizing a contract here to finish
       // the request unattended is the one thing `RRA-003` forbids, so the
       // refusal is the correct outcome and the operator declares and resubmits.
-      await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: profileRequest() });
+      await postProfile();
       location.replace(routeFor("review"));
     }
   } catch (error) {
