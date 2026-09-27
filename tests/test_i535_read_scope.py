@@ -11,18 +11,34 @@ to another key, which the envelope itself refuses.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
-from khepri.rra.persistence import BetaSessionRow, DatasetProfileRow, UploadRow
+from khepri.rra.api import create_app
+from khepri.rra.artifact_persistence import ReportArtifactRow
+from khepri.rra.delivery_persistence import ReportDeliveryRow
+from khepri.rra.persistence import BetaSessionRow, DatasetProfileRow, SqlSessionStore, UploadRow
+from khepri.rra.report_services import ReportArtifactAdapter
+from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import (
     CrossSessionAccessDenied,
+    InvitationService,
     SessionScope,
     assert_object_in_scope,
     object_prefix,
 )
 from tests.rra003_contract_fixtures import profile_payload
 from tests.test_rra004_packages import GOLDEN_CSV, Harness, harness, redeem_and_consent
+from tests.test_rra006_artifact_publication import MemoryObjects, _publication, _publisher
+from tests.test_rra006_delivery_persistence import NOW
+from tests.test_rra006_report_api import (
+    FakeBundleService,
+    FakeReportService,
+    invitation_service,
+)
 
 SCOPE = SessionScope(owner_id="own_alpha", session_id="ses_alpha")
 
@@ -103,3 +119,40 @@ def test_packaging_refuses_rows_moved_to_the_callers_scope() -> None:
     response = test.client.post("/api/v1/beta/facts")
 
     assert response.status_code == 401
+
+
+def test_an_artifact_row_moved_to_the_callers_scope_reads_as_absent() -> None:
+    """Byte-identical to the route's answer for a report this caller does not have."""
+    objects = MemoryObjects()
+    test, publisher = _publisher(objects)
+    publication = _publication(test)
+    publisher.publish(publication)
+    job_id = publication.delivery.record.job_id
+    invitations = InvitationService(SqlSessionStore(test.factory))
+    second = invitations.redeem(
+        invitations.issue_invitation(expires_at=NOW + timedelta(hours=1)), now=NOW
+    )
+    first = SessionScope(owner_id=test.session.owner_id, session_id=test.session.session_id)
+    target = SessionScope(owner_id=second.owner_id, session_id=second.session_id)
+    for table in (ReportDeliveryRow, ReportArtifactRow):
+        _move_scope_columns(test, table, first, target)
+    client = TestClient(
+        create_app(
+            service=invitation_service(),
+            clock=lambda: NOW,
+            report_services=ReportServices(
+                jobs=FakeReportService(),
+                bundles=FakeBundleService(),
+                artifacts=ReportArtifactAdapter(publisher),
+            ),
+        ),
+        base_url="https://testserver",
+    )
+    client.cookies.set("khepri_beta_session", second.session_id)
+
+    moved = client.get(f"/api/v1/beta/reports/{job_id}/surfaces/excel")
+    unknown = client.get("/api/v1/beta/reports/job_unknown/surfaces/excel")
+
+    assert moved.status_code == unknown.status_code == 404
+    assert moved.content == unknown.content
+    assert objects.values

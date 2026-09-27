@@ -17,13 +17,12 @@ from khepri.rra.artifact_persistence import (
 )
 from khepri.rra.envelope import (
     ALGORITHM_AES_256_GCM,
-    READABLE_ENVELOPE_VERSIONS,
     WRITE_ENVELOPE_VERSION,
 )
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
-from khepri.rra.sessions import SessionScope, assert_object_in_scope, object_prefix
+from khepri.rra.sessions import SessionScope, object_in_scope, object_prefix
 from khepri.rra.storage import ObjectWrite, PutResult, StoredEnvelope
 
 _ATTEMPT_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -236,9 +235,13 @@ class ReportArtifactPublisher:
                 return None
             # The read carries only the caller's session. Session identifiers are
             # unique, so the session segment is what a row-only scope edit cannot
-            # satisfy; the owner segment is held to the row it came with.
+            # satisfy; the owner segment is held to the row it came with. A key
+            # outside it is another scope's object, and this surface answers
+            # another scope's resource as absent -- the same `None` a foreign
+            # session gets -- never as unavailable, which would confirm it exists.
             caller = SessionScope(owner_id=metadata.owner_id, session_id=session_id)
-            assert_object_in_scope(caller, metadata.object_key)
+            if not object_in_scope(caller, metadata.object_key):
+                return None
             return self._read_document(metadata)
         except ArtifactUnavailable:
             raise
@@ -360,11 +363,18 @@ def _provable_versions(*, created: bool) -> frozenset[int]:
     """What a stored object may carry, by whether this call wrote it.
 
     A write this call made is the write version, always. An object that already
-    existed, proved by `put_or_verify`, may predate #535 and be `v1`.
+    existed, proved by `put_or_verify`, may predate #535 and be `v1`; attaching a
+    new row to it is an owner item on #535 and, until it is ruled on, is refused
+    (Constitution V). Plain reads of rows already recorded as `v1` are unaffected.
     """
     if created:
         return frozenset({WRITE_ENVELOPE_VERSION})
-    return READABLE_ENVELOPE_VERSIONS
+    return _EXISTING_OBJECT_VERSIONS
+
+
+# Interim, pending the owner's ruling on #535 item (a). Relaxing it to
+# `READABLE_ENVELOPE_VERSIONS` is the one-line change that ruling would make.
+_EXISTING_OBJECT_VERSIONS = frozenset({WRITE_ENVELOPE_VERSION})
 
 
 __all__ = [

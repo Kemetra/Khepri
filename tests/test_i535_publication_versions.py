@@ -1,8 +1,9 @@
 """#535: which envelope versions publication and intake accept, and from whom.
 
-A write the store just made is the write version, always. Only an object that
-already existed -- `put_or_verify`'s race loser -- may carry a pre-#535 `v1`.
-Anything else is refused and leaves nothing behind.
+A write the store just made is the write version, always. An object that already
+existed -- `put_or_verify`'s race loser -- may carry a pre-#535 `v1`; attaching a
+new row to one is an open owner item on #535, so for now it is refused too.
+Rows already recorded as `v1` stay readable.
 """
 
 from __future__ import annotations
@@ -60,7 +61,8 @@ def test_publication_refuses_an_object_it_created_as_v1(monkeypatch) -> None:
     assert _recorded_versions(test) == []
 
 
-def test_publication_proves_an_existing_v1_object_and_records_it_as_v1(monkeypatch) -> None:
+def test_publication_refuses_to_attach_a_row_to_an_existing_v1_object(monkeypatch) -> None:
+    """Fail closed until the owner rules on #535 item (a)."""
     monkeypatch.setattr(artifact_publication, "_new_attempt_id", lambda: ATTEMPT)
     objects = MemoryObjects(existing_version=1)
     test, publisher = _publisher(objects)
@@ -72,13 +74,31 @@ def test_publication_proves_an_existing_v1_object_and_records_it_as_v1(monkeypat
         first.sha256_hex,
     )
 
+    with pytest.raises(ArtifactUnavailable):
+        publisher.publish(publication)
+
+    assert _recorded_versions(test) == []
+
+
+def test_publication_still_proves_an_existing_write_version_object(monkeypatch) -> None:
+    monkeypatch.setattr(artifact_publication, "_new_attempt_id", lambda: ATTEMPT)
+    objects = MemoryObjects()
+    test, publisher = _publisher(objects)
+    publication = _publication(test)
+    first = publication.artifacts[0]
+    objects.values[_first_key(test, publication)] = (
+        first.content,
+        first.media_type,
+        first.sha256_hex,
+    )
+
     publisher.publish(publication)
 
-    assert _recorded_versions(test) == [1, 2, 2, 2, 2, 2, 2]
+    assert _recorded_versions(test) == [2] * 7
 
 
 def test_an_artifact_row_pointing_outside_its_session_is_not_served() -> None:
-    """The artifact read carries only the caller's session, so the key is held to it."""
+    """The key is held to the caller's session; outside it, the artifact is absent."""
     objects = MemoryObjects()
     test, publisher = _publisher(objects)
     publication = _publication(test)
@@ -94,10 +114,12 @@ def test_an_artifact_row_pointing_outside_its_session_is_not_served() -> None:
         )
         database.commit()
 
-    with pytest.raises(ArtifactUnavailable):
+    assert (
         publisher.read(
             session_id=test.session.session_id,
             job_id=publication.delivery.record.job_id,
             artifact_kind="excel",
             now=NOW,
         )
+        is None
+    )

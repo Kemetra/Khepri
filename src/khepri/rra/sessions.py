@@ -272,5 +272,10 @@ def assert_object_in_scope(expected: SessionScope, object_key: str) -> None:
     verify. Checking the key against the *caller's* scope, not the row's, is what
     refuses it.
     """
-    if not object_key.startswith(object_prefix(expected)):
+    if not object_in_scope(expected, object_key):
         raise CrossSessionAccessDenied("Resource is unavailable.")
+
+
+def object_in_scope(expected: SessionScope, object_key: str) -> bool:
+    """Whether `object_key` lies in `expected`'s own namespace."""
+    return object_key.startswith(object_prefix(expected))

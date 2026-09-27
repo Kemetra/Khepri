@@ -9,9 +9,11 @@ from typing import Protocol
 
 from khepri.rra.intake import SessionReader
 from khepri.rra.sessions import (
+    CrossSessionAccessDenied,
     SessionExpired,
     SessionScope,
     assert_same_scope,
+    object_in_scope,
     object_prefix,
 )
 
@@ -214,8 +216,9 @@ class DeletionService:
             # evidence rows for it.
             raise DeletionRetryRequired("Content deletion must be retried.")
         targets = self._deletions.get_targets(job)
-        for target in targets:
-            assert_same_scope(job.scope, target.scope)
+        refused = self._refuse_foreign_targets(job=job, targets=targets, now=now)
+        if refused is not None:
+            return refused
 
         prefix = object_prefix(job.scope)
         evidence: list[DeletionEvidence] = []
@@ -294,6 +297,42 @@ class DeletionService:
         if result.state == "complete":
             return result
         raise DeletionRetryRequired("Content deletion must be retried.")
+
+    def _refuse_foreign_targets(
+        self,
+        *,
+        job: DeletionJob,
+        targets: tuple[DeletionTarget, ...],
+        now: datetime,
+    ) -> DeletionJob | None:
+        """Fail the whole job closed when any target's key is outside the job's scope (#535).
+
+        `None` means every target is the job's own and deletion may proceed. A row's
+        scope columns can be edited while its key still names another scope's object;
+        deleting by that key would remove another scope's content. So before any store
+        call, nothing is deleted -- not even the job's own prefix -- and every target is
+        recorded as a failed attempt, the way a store failure is, leaving the job open.
+        """
+        for target in targets:
+            assert_same_scope(job.scope, target.scope)
+        if all(object_in_scope(job.scope, target.object_key) for target in targets):
+            return None
+        evidence = tuple(
+            self._evidence(
+                job=job,
+                target=target,
+                attempted_at=now,
+                outcome="failed",
+                error_code="object_outside_scope",
+            )
+            for target in targets
+        )
+        return self._retry_or_complete(
+            job=job,
+            evidence=evidence,
+            now=now,
+            error=CrossSessionAccessDenied("Resource is unavailable."),
+        )
 
     def _retry_or_complete(
         self,
