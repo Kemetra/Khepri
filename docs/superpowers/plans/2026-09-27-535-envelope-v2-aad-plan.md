@@ -104,3 +104,80 @@ empty key admitted, the recorded-version comparison disabled, `v1` made unreadab
 persistence tightened to the write version. All 15 killed.
 
 Still open under #535: rewriting stored `v1` objects as `v2`, its own slice by the owner's decision.
+
+## Status as of 2026-09-27, revision after two independent REVISE verdicts
+
+Two judges returned REVISE with the same two HIGH findings. This block records the fix round; the
+blocks above are left as written.
+
+**Correction to "The identity: the object key" and to the Shape section.** Two claims above were
+wrong or incomplete:
+
+1. *Binding the key does not bind the scope at read.* `datasets.py`, `packages.py` and the artifact
+   read compared the row's scope columns with `assert_same_scope` and then read `object_key`
+   unchecked. Edit only a row's `owner_id`/`session_id` to scope B and the row still names scope
+   A's object; `v2` binds that object to *its* key, so the tag verifies and B is served A's content.
+   The fix is a reader-side check: `khepri.rra.sessions.object_prefix(scope)` is now the one
+   spelling of a scope's namespace (intake, publication and deletion build keys with it), and
+   `assert_object_in_scope(caller, key)` refuses a key outside the **caller's** namespace with the
+   existing uniform `CrossSessionAccessDenied`. It runs in `ProfilingService`,
+   `FactPackageService` and `ReportArtifactPublisher.read`. Deletion needed no check: it already
+   deletes by the caller's prefix (`deletion.py`), never by a row's key.
+   - The artifact read carries only the caller's `session_id`, not an owner. It holds the key to
+     `owners/{row owner}/sessions/{caller session}/`. Session identifiers are unique, so the
+     session segment is what a row-only edit cannot satisfy. Widening the read to carry the
+     caller's owner would change the route contract, which is outside this slice.
+2. *"The version byte is authenticated, so rewriting a `v2` header to `1` fails the tag"* gives the
+   wrong reason. That rewrite fails because `v1` opens with no AAD while the object was sealed with
+   some. The version inside the AAD separates `v2` from later formats. It is now pinned by a forge
+   whose AAD names version `3` under a `v2` header, and the module docstring says so.
+
+**Version rules tightened.** Publication now requires `created ⇒ WRITE_ENVELOPE_VERSION` and
+`not created ⇒ READABLE_ENVELOPE_VERSIONS` (`_provable_versions`). `artifact_persistence` sees only
+the recorded artifact and not whether the store created it, so it keeps the readable check, and a
+comment says the publisher enforces the created rule. Intake's refusal of a non-write-version fresh
+write was untested: a `put` returning `1` or `3` is now refused, the object removed and no row kept.
+
+**RED evidence.** The RED commit's eleven xfails failed on the signature change (`seal` and
+`open_envelope` did not yet take a key), not on the behaviour each names. They show the tests could
+not pass against the old code, nothing more. The behavioural evidence is the GREEN-phase mutation
+check.
+
+**Tests added.** `tests/test_i535_read_scope.py` makes the row-only scope edit against the real
+routes, for profiling and for packaging, and asserts the uniform 401. It also covers the helper's
+boundaries, including `ses_alpha0` against `ses_alpha`. `tests/test_i535_publication_versions.py`
+covers intake with `1` and `3`, publication refusing a created `v1`, proving an existing `v1` and
+recording it as `v1`, and an artifact row pointing outside its session. The moved-object test in
+`test_i535_envelope_aad.py` is now labelled as the narrower attack.
+
+**Mutation check: 22 mutants, all killed, each restored byte-for-byte.** These are the 15 above,
+with "publication requires write version" split into two directional mutants, plus seven more:
+
+- intake admitting `v1` on a fresh write (`in (1, 2)`);
+- the scope check removed from each of the three readers;
+- the helper disabled;
+- the prefix losing its trailing slash.
+
+### Owner items (raised here, not decided in code)
+
+(a) **New rows may attach to a pre-existing `v1` object and are recorded as `v1`.** This happens
+when `put_or_verify` loses the `IfNoneMatch` race or a publication is retried onto an existing
+attempt key. It proves the existing object by decryption and records the version that object
+carries. So a `v1` row can be written after this slice ships, and it is not only one written
+before. The alternative is to refuse or rewrite the existing object as `v2`, which is the
+migration slice's territory. Accept, or require the race-loser path to rewrite?
+
+(b) **`READABLE_ENVELOPE_VERSIONS = {1, 2}` has no end condition.** There are two options: retire
+`v1` once every `v1` row has expired, or leave it to the migration slice. What I found on expiry:
+
+- A sweep exists in the wheel. `khepri-retention-sweep` (`pyproject.toml:54`,
+  `khepri.runtime.retention_sweep`) deletes sessions past `content_expires_at` and purges
+  workspace raw uploads seven days after seal.
+- Nothing schedules it. The module says so ("Nothing here is a scheduler"), and nothing in the
+  repository invokes it on a cadence.
+- A session bound to a workspace version moves to `KHEPRI-DEC-033`'s organization lifetime.
+  `workspace_retention.py:92-98` sets its upload, delivery and report-artifact rows to
+  `WORKSPACE_CONTENT_END`, so its report artifacts have no seven-day end.
+
+So "all `v1` rows have expired" is not a condition the running system guarantees today. Which end
+condition should govern?

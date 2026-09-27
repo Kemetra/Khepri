@@ -15,10 +15,15 @@ from khepri.rra.artifact_persistence import (
     ArtifactCorrupted,
     StoredArtifact,
 )
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, READABLE_ENVELOPE_VERSIONS
+from khepri.rra.envelope import (
+    ALGORITHM_AES_256_GCM,
+    READABLE_ENVELOPE_VERSIONS,
+    WRITE_ENVELOPE_VERSION,
+)
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
+from khepri.rra.sessions import SessionScope, assert_object_in_scope, object_prefix
 from khepri.rra.storage import ObjectWrite, PutResult, StoredEnvelope
 
 _ATTEMPT_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -229,6 +234,11 @@ class ReportArtifactPublisher:
             )
             if metadata is None:
                 return None
+            # The read carries only the caller's session. Session identifiers are
+            # unique, so the session segment is what a row-only scope edit cannot
+            # satisfy; the owner segment is held to the row it came with.
+            caller = SessionScope(owner_id=metadata.owner_id, session_id=session_id)
+            assert_object_in_scope(caller, metadata.object_key)
             return self._read_document(metadata)
         except ArtifactUnavailable:
             raise
@@ -262,8 +272,9 @@ class ReportArtifactPublisher:
 
 def _object_key(context: PublicationContext, artifact_kind: str) -> str:
     boundary = context.boundary
+    scope = SessionScope(owner_id=boundary.owner_id, session_id=boundary.session_id)
     return (
-        f"owners/{boundary.owner_id}/sessions/{boundary.session_id}/reports/"
+        f"{object_prefix(scope)}reports/"
         f"{context.record.bundle_id}/attempts/{context.attempt_id}/{artifact_kind}"
     )
 
@@ -341,10 +352,19 @@ def _require_proven(
     )
     if actual != expected or len(result.stored.ciphertext_sha256_hex) != 64:
         raise StoragePolicyViolation("Object storage did not prove publication policy.")
-    # Readable, not written: `put_or_verify` may prove an object that already
-    # exists, and one stored before #535 is `v1`.
-    if result.stored.envelope_version not in READABLE_ENVELOPE_VERSIONS:
+    if result.stored.envelope_version not in _provable_versions(created=result.created):
         raise StoragePolicyViolation("Object storage did not prove publication policy.")
+
+
+def _provable_versions(*, created: bool) -> frozenset[int]:
+    """What a stored object may carry, by whether this call wrote it.
+
+    A write this call made is the write version, always. An object that already
+    existed, proved by `put_or_verify`, may predate #535 and be `v1`.
+    """
+    if created:
+        return frozenset({WRITE_ENVELOPE_VERSION})
+    return READABLE_ENVELOPE_VERSIONS
 
 
 __all__ = [

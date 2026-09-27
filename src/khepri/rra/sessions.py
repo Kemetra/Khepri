@@ -251,3 +251,26 @@ def require_upload_consent(session: BetaSession, *, now: datetime) -> None:
 def assert_same_scope(expected: SessionScope, resource: SessionScope) -> None:
     if expected != resource:
         raise CrossSessionAccessDenied("Resource is unavailable.")
+
+
+def object_prefix(scope: SessionScope) -> str:
+    """The one place a scope's object namespace is spelled.
+
+    Writers build keys under it and readers check keys against it, so the two
+    cannot drift into different spellings of the same namespace.
+    """
+    return f"owners/{scope.owner_id}/sessions/{scope.session_id}/"
+
+
+def assert_object_in_scope(expected: SessionScope, object_key: str) -> None:
+    """Refuse an object key outside the caller's own namespace (#535).
+
+    `assert_same_scope` compares a row's scope columns, which a row carries about
+    itself. The object key says where the bytes actually live. A row whose scope
+    columns were edited to another scope still points at the first scope's
+    object, and envelope `v2` binds that object to its own key, so the tag would
+    verify. Checking the key against the *caller's* scope, not the row's, is what
+    refuses it.
+    """
+    if not object_key.startswith(object_prefix(expected)):
+        raise CrossSessionAccessDenied("Resource is unavailable.")

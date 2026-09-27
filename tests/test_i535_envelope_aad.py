@@ -42,8 +42,10 @@ GOLDEN_V1 = bytes.fromhex(
 GOLDEN_V1_SHA = "5547118e8c421962446d70bf9815b86821a3fbb55b8f71a3261f2c3efe686ac8"
 
 
-def _aad(purpose: bytes, object_key: str) -> bytes:
-    return b"khepri.envelope\x00" + purpose + b"\x00" + bytes([2]) + object_key.encode("utf-8")
+def _aad(purpose: bytes, object_key: str, version: int = 2) -> bytes:
+    return (
+        b"khepri.envelope\x00" + purpose + b"\x00" + bytes([version]) + object_key.encode("utf-8")
+    )
 
 
 def _forge(*, wrap_aad: bytes | None, content_aad: bytes | None) -> bytes:
@@ -122,6 +124,17 @@ def test_the_content_call_must_carry_its_aad() -> None:
         _open(body)
 
 
+def test_a_v2_header_does_not_open_bytes_bound_to_another_version() -> None:
+    """The version inside the AAD is what separates `v2` from any later format.
+
+    A `v2` header rewritten to `1` is refused for a different reason -- `v1` reads
+    with no AAD -- so that test cannot show the version is bound. This one can.
+    """
+    body = _forge(wrap_aad=_aad(b"wrap", KEY_A, 3), content_aad=_aad(b"content", KEY_A, 3))
+    with pytest.raises(env.EnvelopeError):
+        _open(body)
+
+
 def test_the_two_calls_are_domain_separated() -> None:
     body = _forge(wrap_aad=_aad(b"content", KEY_A), content_aad=_aad(b"wrap", KEY_A))
     with pytest.raises(env.EnvelopeError):
@@ -165,7 +178,12 @@ def _serving(stubber: Stubber, body: bytes, key: str) -> None:
 
 
 def test_an_object_moved_with_its_row_to_another_scope_refuses() -> None:
-    """Both digests hold, so only the bound key can refuse this splice."""
+    """Both digests hold, so only the bound key can refuse this splice.
+
+    The narrower attack: object and row both moved. A row whose scope columns
+    alone were edited, leaving its object where it was, is refused by the reader's
+    scope check instead (`test_i535_read_scope`).
+    """
     body = _seal(KEY_A).envelope
     store, stubber = _store()
     _serving(stubber, body, KEY_B)

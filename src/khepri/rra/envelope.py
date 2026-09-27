@@ -47,9 +47,20 @@ GCM calls -- the format version and the object key, domain-separated per call as
 ``wrap`` or ``content``. Every key is built under its scope
 (``owners/{owner_id}/sessions/{session_id}/...``) and names one object, so the key
 is the object/scope identity. The caller supplies it from the row it read; it is
-never read from the envelope, which would let the bytes vouch for themselves. The
-version is inside the AAD, so rewriting a `v2` header to `1` sends the reader down
-the AAD-free path and fails the tag.
+never read from the envelope, which would let the bytes vouch for themselves.
+
+A `v2` header rewritten to `1` fails because `v1` opens with *no* AAD while the
+object was sealed with some -- not because the version is inside the AAD. The
+version is bound for the versions after `v2`: an envelope sealed as `v2` must not
+open under a later format's reading of the same bytes, and that holds only because
+each version's AAD differs. `test_i535_envelope_aad` pins it with a forge whose AAD
+names another version.
+
+**Scope is checked by the reader, not here.** The envelope proves the bytes belong
+to the key they were sealed for. It cannot prove the key belongs to the caller: a
+row whose scope columns were edited still names the first scope's key, and the tag
+verifies. Every reader holds the key to the caller's own namespace with
+`khepri.rra.sessions.assert_object_in_scope` before it reads.
 
 **Version compatibility.** New writes are `WRITE_ENVELOPE_VERSION` (`2`). A reader
 accepts exactly `READABLE_ENVELOPE_VERSIONS`: `v1`, which binds no AAD and stays

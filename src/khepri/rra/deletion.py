@@ -12,6 +12,7 @@ from khepri.rra.sessions import (
     SessionExpired,
     SessionScope,
     assert_same_scope,
+    object_prefix,
 )
 
 _RETRY_DELAY = timedelta(minutes=5)
@@ -216,7 +217,7 @@ class DeletionService:
         for target in targets:
             assert_same_scope(job.scope, target.scope)
 
-        prefix = f"owners/{job.owner_id}/sessions/{job.session_id}/"
+        prefix = object_prefix(job.scope)
         evidence: list[DeletionEvidence] = []
         try:
             self._objects.abort_multipart_uploads(prefix)

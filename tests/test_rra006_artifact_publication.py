@@ -14,6 +14,7 @@ from khepri.rra.artifact_publication import (
     ReportArtifactPublisher,
 )
 from khepri.rra.delivery_persistence import ReportDeliveryRow
+from khepri.rra.envelope import WRITE_ENVELOPE_VERSION
 from khepri.rra.intake import StoragePolicyViolation, StoredObject
 from khepri.rra.jobs import LeaseRequest
 from khepri.rra.storage import ObjectWrite, PutResult
@@ -24,6 +25,10 @@ from tests.test_rra006_delivery_persistence import NOW, harness
 @dataclass
 class MemoryObjects:
     fail_on: int | None = None
+    # A real store's `put_or_verify` creates the write version and proves an
+    # existing object as whatever it carries, which may be a pre-#535 `v1`.
+    created_version: int = WRITE_ENVELOPE_VERSION
+    existing_version: int = WRITE_ENVELOPE_VERSION
     values: dict[str, tuple[bytes, str, str]] = field(default_factory=dict)
     put_calls: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
@@ -48,7 +53,7 @@ class MemoryObjects:
                 sha256_hex=request.sha256_hex,
                 media_type=request.media_type,
                 encryption_algorithm="AES-256-GCM",
-                envelope_version=1,
+                envelope_version=self.created_version if created else self.existing_version,
                 ciphertext_sha256_hex="c" * 64,
             ),
             created=created,

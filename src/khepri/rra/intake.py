@@ -20,6 +20,7 @@ from khepri.rra.sessions import (
     BetaSession,
     SessionExpired,
     SessionScope,
+    object_prefix,
     require_upload_consent,
 )
 
@@ -223,9 +224,8 @@ class IntakeService:
     ) -> UploadMetadata:
         require_upload_consent(session, now=now)
         upload_id = self._new_upload_id()
-        object_key = (
-            f"owners/{session.owner_id}/sessions/{session.session_id}/inputs/{upload_id}"
-        )
+        scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
+        object_key = f"{object_prefix(scope)}inputs/{upload_id}"
         stored = self._objects.put(
             key=object_key,
             content=validated.content,

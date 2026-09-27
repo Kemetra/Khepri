@@ -63,6 +63,7 @@ from khepri.rra.profiling import PROFILE_VERSION, build_profile, canonical_json
 from khepri.rra.sessions import (
     SessionExpired,
     SessionScope,
+    assert_object_in_scope,
     assert_same_scope,
     require_upload_consent,
 )
@@ -439,19 +440,7 @@ class FactPackageService:
         upload = self._uploads.get_upload_for_scope(scope)
         if upload is None:
             raise StoragePolicyViolation("Stored upload is no longer available.")
-        assert_same_scope(scope, upload.scope)
-
-        content = self._objects.get(
-            upload.object_key,
-            envelope=StoredEnvelope(
-                ciphertext_sha256_hex=upload.ciphertext_sha256_hex,
-                sha256_hex=upload.sha256_hex,
-                encryption_algorithm=upload.encryption_algorithm,
-                envelope_version=upload.envelope_version,
-            ),
-        )
-        if hashlib.sha256(content).hexdigest() != upload.sha256_hex:
-            raise StoragePolicyViolation("Stored upload does not match its recorded digest.")
+        content = self._read_upload(scope, upload)
 
         admitted = _readmit(
             content=content,
@@ -482,6 +471,23 @@ class FactPackageService:
         )
         stored = self._packages.add_package(candidate)
         return stored, stored.package_id == candidate.package_id
+
+    def _read_upload(self, scope: SessionScope, upload: UploadMetadata) -> bytes:
+        """Read the scope's upload, holding its row *and* its object key to the caller."""
+        assert_same_scope(scope, upload.scope)
+        assert_object_in_scope(scope, upload.object_key)
+        content = self._objects.get(
+            upload.object_key,
+            envelope=StoredEnvelope(
+                ciphertext_sha256_hex=upload.ciphertext_sha256_hex,
+                sha256_hex=upload.sha256_hex,
+                encryption_algorithm=upload.encryption_algorithm,
+                envelope_version=upload.envelope_version,
+            ),
+        )
+        if hashlib.sha256(content).hexdigest() != upload.sha256_hex:
+            raise StoragePolicyViolation("Stored upload does not match its recorded digest.")
+        return content
 
     def get_session_package(
         self,

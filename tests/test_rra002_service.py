@@ -64,8 +64,14 @@ class MemorySessionReader:
 
 
 class MemoryEncryptedObjectStore(EncryptedObjectStore):
-    def __init__(self, *, encryption_algorithm: str = "AES-256-GCM") -> None:
+    def __init__(
+        self,
+        *,
+        encryption_algorithm: str = "AES-256-GCM",
+        envelope_version: int = WRITE_ENVELOPE_VERSION,
+    ) -> None:
         self.encryption_algorithm = encryption_algorithm
+        self.envelope_version = envelope_version
         self.objects: dict[str, bytes] = {}
         self.deleted_keys: list[str] = []
 
@@ -84,7 +90,7 @@ class MemoryEncryptedObjectStore(EncryptedObjectStore):
             sha256_hex=sha256_hex,
             media_type=media_type,
             encryption_algorithm=self.encryption_algorithm,
-            envelope_version=WRITE_ENVELOPE_VERSION,
+            envelope_version=self.envelope_version,
             ciphertext_sha256_hex="c" * 64,
         )
 
