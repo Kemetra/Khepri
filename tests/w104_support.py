@@ -19,7 +19,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -168,12 +168,12 @@ class World:
     services: WorkspaceActions
 
 
-def world() -> World:
-    """Both packages' tables on one engine, with foreign keys enforced.
+def sqlite_engine() -> Engine:
+    """The default engine: in-memory SQLite through a `StaticPool`, foreign keys enforced.
 
-    The workspace tables key onto `rca_isolation_scopes`; the RRA content tables key onto
-    `rra_beta_sessions`. One engine carrying both is what the production database is, and it is
-    the only shape in which a service that reads one side and writes the other can be exercised.
+    One shared connection, so two transactions can never overlap on it -- which is why
+    `tests/w110_postgres_support.py` hands `world` a PostgreSQL engine for `FR-127`'s concurrent
+    cases instead (`#388`).
     """
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -187,6 +187,18 @@ def world() -> World:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
+    return engine
+
+
+def world(engine: Engine | None = None) -> World:
+    """Both packages' tables on one engine, with foreign keys enforced.
+
+    The workspace tables key onto `rca_isolation_scopes`; the RRA content tables key onto
+    `rra_beta_sessions`. One engine carrying both is what the production database is, and it is
+    the only shape in which a service that reads one side and writes the other can be exercised.
+    `engine` defaults to `sqlite_engine()`; a caller passing one owns its schema's lifetime.
+    """
+    engine = engine or sqlite_engine()
     RcaBase.metadata.create_all(engine)
     RraBase.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)

@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.rca.workspace.scopes import SqlIsolationScopes
@@ -232,8 +233,10 @@ def _beta_app(
     )
 
 
-def journey() -> Journey:
-    w = base_world()
+def journey(engine: Engine | None = None) -> Journey:
+    """The composition over `engine`, or over `w104_support`'s SQLite default when none is given.
+    The PostgreSQL form is `tests/w110_postgres_support.py`'s (`#388`)."""
+    w = base_world(engine)
     clock = Clock()
     side = _report_side(w, clock)
     recorder = _recorder(w, side)
