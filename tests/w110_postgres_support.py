@@ -9,8 +9,17 @@ each request gets its own connection and a `FOR UPDATE` either blocks the other 
 accident, and a test that passes on a lucky schedule proves nothing about the lock. So each case
 here pauses the first request at a named point -- `LockPause` holds it just after its locking
 statement returns, `PausedCall` just before a collaborator is called -- starts the second, and,
-where a lock is the claim, reads `pg_stat_activity` to prove the second is *waiting on a lock*
-before letting the first go. Removing the lock turns that proof red, not merely the outcome.
+where a lock is the claim, reads `pg_stat_activity` to prove the second is *waiting on the first's
+lock* before letting the first go.
+
+**Three ways a test here can fail, kept apart**, so a strict `xfail` pinning a known defect cannot
+absorb the others:
+
+- `HarnessError` when the instrument did not do its job: a pause never reached, a request that
+  never finished, a database not named as a test database.
+- A plain `AssertionError` when a property fails, the lock-wait proof included.
+- `DefectStillPresent` only where a test pins a filed defect. It is the only failure that test's
+  `xfail(raises=...)` names.
 
 Gated on `KHEPRI_TEST_DATABASE_URL` like `test_concurrency_postgres.py`, and every test using it
 carries the `concurrency` marker, so `require_concurrency_tests.py` fails CI if one ever skips.
@@ -23,6 +32,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -40,6 +50,27 @@ requires_postgres = pytest.mark.skipif(
 #: Long enough for a loaded CI runner, short enough that a lock that never contends fails fast.
 WAIT_SECONDS = 10.0
 
+#: A database whose name does not carry this is never emptied. CI's is `khepri_test`.
+TEST_DATABASE_MARK = "test"
+
+
+class HarnessError(RuntimeError):
+    """The instrument failed, not the code under test.
+
+    Never an `AssertionError`, so no strict `xfail` pinning a defect can mistake a broken harness
+    for the defect still being present.
+    """
+
+
+class DefectStillPresent(AssertionError):
+    """A filed defect's own assertion: the only failure a pinning `xfail` names in `raises=`."""
+
+
+def await_reached(reached: threading.Event, what: str) -> None:
+    """Wait for a pause point, or fail as the harness: the interleaving was never set up."""
+    if not reached.wait(WAIT_SECONDS):
+        raise HarnessError(f"{what} never reached its pause point")
+
 
 def postgres_engine() -> Engine:
     """A pooled engine over an emptied `public` schema.
@@ -54,6 +85,11 @@ def postgres_engine() -> Engine:
 
 
 def _empty_public_schema(engine: Engine) -> None:
+    """Drop and recreate `public`, refused unless the database is named as a test database, so a
+    mis-pointed `KHEPRI_TEST_DATABASE_URL` cannot empty a real one."""
+    name = engine.url.database or ""
+    if TEST_DATABASE_MARK not in name:
+        raise HarnessError(f"refusing to empty database {name!r}: its name does not mark a test")
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
@@ -81,7 +117,8 @@ class LockPause:
     Hooked on the engine's `after_cursor_execute`, which is the seam that survives any refactor of
     the store: the statement has returned, so PostgreSQL has granted whatever lock it took, and the
     transaction stays open while this waits. Only the first matching statement after `arm` pauses;
-    every later one, including the second request's, passes straight through.
+    every later one, including the second request's, passes straight through. The held backend's
+    pid is recorded, so the lock-wait proof can ask who is blocked by *it*.
     """
 
     def __init__(self, engine: Engine, table: str) -> None:
@@ -91,6 +128,7 @@ class LockPause:
         self._guard = threading.Lock()
         self.reached = threading.Event()
         self.release = threading.Event()
+        self.backend_pid: int | None = None
 
     def arm(self) -> None:
         self._armed = True
@@ -106,13 +144,14 @@ class LockPause:
             self._armed = False
         self.release.set()
 
-    def _after(self, _conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+    def _after(self, conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
         if self._table not in statement or "FOR UPDATE" not in statement:
             return
         with self._guard:
             if not self._armed:
                 return
             self._armed = False
+        self.backend_pid = conn.connection.dbapi_connection.info.backend_pid
         self.reached.set()
         self.release.wait(WAIT_SECONDS * 3)
 
@@ -148,27 +187,28 @@ class PausedCall:
         return paused
 
 
-def backends_waiting_on_a_lock(engine: Engine) -> int:
-    """How many other backends in this database are waiting to acquire a lock right now."""
+def backends_blocked_by(engine: Engine, blocker_pid: int) -> int:
+    """How many backends are waiting, right now, on a lock `blocker_pid` holds."""
     with engine.connect() as connection:
         return connection.execute(
             text(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND wait_event_type = 'Lock' "
-                "AND pid <> pg_backend_pid()"
-            )
+                "SELECT count(*) FROM pg_stat_activity WHERE :blocker = ANY(pg_blocking_pids(pid))"
+            ),
+            {"blocker": blocker_pid},
         ).scalar_one()
 
 
-def blocked_on_a_lock(engine: Engine) -> bool:
-    """Whether some backend comes to wait on a lock within `WAIT_SECONDS`.
+def blocked_by(engine: Engine, blocker_pid: int | None) -> bool:
+    """Whether some backend comes to wait on a lock `blocker_pid` holds, within `WAIT_SECONDS`.
 
-    Polled rather than slept: the second request needs a moment to reach its locking statement,
-    and a fixed sleep either wastes time or, on a slow runner, reads before it arrives.
+    Filtered by the blocker, so an unrelated wait elsewhere in the database cannot satisfy it.
+    Polled rather than slept: the second request needs a moment to reach its locking statement.
     """
+    if blocker_pid is None:
+        raise HarnessError("the held request's backend was never recorded")
     deadline = time.monotonic() + WAIT_SECONDS
     while time.monotonic() < deadline:
-        if backends_waiting_on_a_lock(engine) > 0:
+        if backends_blocked_by(engine, blocker_pid) > 0:
             return True
         time.sleep(0.05)
     return False
@@ -197,7 +237,8 @@ class Background:
     def failure(self) -> BaseException | None:
         """What the call raised, once it has finished, or `None` if it returned."""
         self._thread.join(WAIT_SECONDS * 3)
-        assert not self._thread.is_alive(), "the request never finished"
+        if self._thread.is_alive():
+            raise HarnessError("the request never finished")
         return self._failure[0] if self._failure else None
 
     def result(self) -> Any:
@@ -207,9 +248,60 @@ class Background:
         return self._outcome[0]
 
 
+@dataclass(frozen=True, slots=True)
+class Overlap:
+    """Two calls that genuinely overlapped: the first held on its lock, the second shown waiting."""
+
+    first: Background
+    second: Background
+
+
+def overlap_on_lock(
+    j: Journey, table: str, first: Callable[[], Any], second: Callable[[], Any]
+) -> Overlap:
+    """Run `first` until it holds its `FOR UPDATE` on `table`, start `second`, prove `second` waits
+    on *that* lock, then let `first` go.
+
+    The proof is a plain assertion, because it is the property and not the instrument. It is made
+    before the first request is released, so an outcome that comes out right on a serial schedule
+    cannot pass for it.
+    """
+    engine = engine_of(j)
+    pause = LockPause(engine, table)
+    pause.arm()
+    try:
+        held = Background(first)
+        await_reached(pause.reached, "the first request")
+        waiting = Background(second)
+        assert blocked_by(engine, pause.backend_pid), (
+            f"the second request never waited on the first's lock on {table}"
+        )
+        assert not waiting.finished, "the second request finished while the first held the lock"
+    finally:
+        pause.disarm()
+    return Overlap(held, waiting)
+
+
 def engine_of(j: Journey) -> Engine:
-    """The engine a journey's stores write through -- the one a `LockPause` hooks."""
+    """The engine a journey's stores write through, and the one a `LockPause` hooks."""
     return j.w.factory.kw["bind"]
+
+
+def outcomes_of(j: Journey, owner_id: str, action: str) -> list[str]:
+    """Every audit outcome this scope recorded for one action, sorted."""
+    return sorted(e.outcome for e in j.w.audit.events_for_scope(owner_id) if e.action == action)
+
+
+def tombstones_of(j: Journey, owner_id: str, kind: type, subject_id: str) -> list[Any]:
+    """This scope's tombstones of one kind for one subject: a version's, or a run's."""
+    from khepri.rca.workspace.tombstones import RunTombstone
+
+    subject = "run_id" if kind is RunTombstone else "version_id"
+    return [
+        stone
+        for stone in j.w.store.tombstones_for_scope(owner_id)
+        if isinstance(stone, kind) and getattr(stone, subject) == subject_id
+    ]
 
 
 def shell_with_bridge(j: Journey, who: Any, bridge: Any) -> Any:
@@ -251,14 +343,21 @@ def delivered_unsettled(j: Journey, job_id: str) -> None:
 
 __all__ = [
     "Background",
+    "DefectStillPresent",
+    "HarnessError",
+    "LockPause",
+    "Overlap",
+    "PausedCall",
+    "await_reached",
+    "backends_blocked_by",
+    "blocked_by",
     "delivered_unsettled",
     "engine_of",
-    "shell_with_bridge",
-    "LockPause",
-    "PausedCall",
-    "backends_waiting_on_a_lock",
-    "blocked_on_a_lock",
+    "outcomes_of",
+    "overlap_on_lock",
     "postgres_engine",
+    "tombstones_of",
     "postgres_journey",
     "requires_postgres",
+    "shell_with_bridge",
 ]

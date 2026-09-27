@@ -332,10 +332,12 @@ class TestConcurrent:
     driven on this fixture: `w104_support.sqlite_engine` builds the engine with `StaticPool` and
     `check_same_thread=False`, so threads share one connection and a parallel write raises
     `InterfaceError` rather than racing. `test_w102_workspace_locks.py:142` concedes the same
-    limitation. **The overlapping halves are `test_w110_concurrent_postgres.py`'s** (`#388`): the
-    same `journey()` over a pooled PostgreSQL engine, each interleaving forced and each lock shown
-    waiting in `pg_stat_activity`, marked `concurrency` so CI fails if they skip. What they found,
-    `#605` and `#606`, is recorded there as strict `xfail`s rather than fixed in a test slice.
+    limitation. **The overlapping halves are `test_w110_concurrent_postgres.py`'s and
+    `test_w110_concurrent_runs_postgres.py`'s** (`#388`): the same `journey()` over a pooled
+    PostgreSQL engine, each interleaving forced and, where a lock is the claim, the second request
+    shown waiting on the first's lock in `pg_stat_activity`; marked `concurrency` so CI fails if
+    they skip. What they found -- `#605`, `#606`, `#610` -- is recorded there as strict `xfail`s
+    rather than fixed in a test slice.
 
     What these prove is the property that must hold whatever the engine does: a repeat neither
     succeeds twice nor corrupts the first ending, and a handoff after a recorded ending refuses.
