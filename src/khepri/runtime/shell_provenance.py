@@ -56,6 +56,7 @@ from datetime import date, datetime
 from khepri.rca.workspace.provenance import RunProvenance, SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.rca.workspace.tombstones import SectionStates
+from khepri.rra.sessions import content_is_live
 from khepri.runtime.job_sessions import JobSession, JobSessionsPort
 from khepri.runtime.shell_workspace import UNRENDERABLE_FAILURE, UnrenderableRecord
 
@@ -189,10 +190,9 @@ class ProvenanceReader:
         """Whether the analysis session's content is still live: no deletion requested, not past
         `content_expires_at` -- the facts the journey and the artifact repository read. A requested
         deletion is already refused there while its cleanup is pending or retrying, so it is
-        unreachable here from the request, not from the completion."""
-        if job.deletion_requested_at is not None:
-            return False
-        return self._clock() < job.content_expires_at
+        unreachable here from the request, not from the completion. `content_is_live` is the rule,
+        stated once, which the handoff asks again of the session it resumes (`#605`)."""
+        return content_is_live(job, self._clock())
 
 
 def _settling_job(run_id: str, owner_id: str, reads: _ScopeReads) -> JobSession | None:

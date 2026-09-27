@@ -60,9 +60,6 @@ def test_a_live_resumed_session_is_handed_over() -> None:
     assert answer.cookies.get(SESSION_COOKIE)
 
 
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="#605: RED until the handoff re-checks"
-)
 @pytest.mark.parametrize(
     "ended",
     [

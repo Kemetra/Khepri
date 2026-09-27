@@ -15,7 +15,8 @@ else; a template carrying report-API addresses would be a second place to reach 
 `test_w106_analysis_detail.py` scans every template for one.
 
 **Every refusal is `unavailable`, with no cookie.** A run that is not this scope's, a run with no
-report, a kind the address does not name, a session the bridge will not resume: the same surface,
+report, a kind the address does not name, a session the bridge will not resume or resumes already
+ended (`#605`): the same surface,
 and no `Set-Cookie`, because a cookie beside a refusal would hand a session to a reader who was
 just denied one (the entry route's rule).
 """
@@ -29,6 +30,7 @@ from fastapi import FastAPI, Response
 from fastapi.responses import RedirectResponse
 
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.rra.sessions import content_is_live
 from khepri.runtime.shell_frame import offers_analyses
 from khepri.runtime.shell_invitations import ShellRendering
 from khepri.runtime.shell_journey_entry import hand_off_session
@@ -85,7 +87,7 @@ def add_artifact_handoff_route(
             )
         except (PermissionError, UnrenderableRecord):
             return unavailable(environment, language=rendered)
-        if resumed is None:
+        if not _still_live(resumed, now):
             return unavailable(environment, language=rendered)
         response = RedirectResponse(
             url=target.format(job=located.job_id, language=rendered), status_code=303
@@ -112,6 +114,18 @@ def _locate(services: Any, context: Any, run_id: str) -> Any:
         raise UnrenderableRecord("A run names a version the history does not hold.")
     located = services.provenance.for_run(owner_id, run, version)
     return located if located is not None and located.reachable else None
+
+
+def _still_live(resumed: Any, now: Any) -> bool:
+    """Whether the session the bridge resumed may still be handed a cookie.
+
+    `_locate` read the session as reachable, but that read came first. A deletion committing
+    between it and `resume` left the session ended, and the handoff answered `303` with its cookie
+    anyway (`#605`). Only the report API refused one step later. The session `resume` returns is
+    what the cookie will name, so it is the one that must be live, by the same rule `_locate`
+    applied.
+    """
+    return resumed is not None and content_is_live(resumed, now)
 
 
 def _run_with_report(history: Any, run_id: str) -> Any:
