@@ -15,7 +15,9 @@ commits, and A's locked read either sees B's value or does not. SQLite emits no 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, create_engine, event, text
@@ -27,6 +29,51 @@ from khepri.rca.workspace.schema import AnalysisRunRow, DatasetVersionRow
 from tests.w104_support import member
 from tests.w104b_support import journey
 from tests.w106_support import started_run
+
+_RUN_FAILED_BEHIND = "UPDATE rca_workspace_analysis_runs SET state = :value WHERE run_id = :key"
+_VERSION_ENDED_BEHIND = (
+    "UPDATE rca_workspace_dataset_versions SET retention_state = :value WHERE version_id = :key"
+)
+
+
+@dataclass(frozen=True)
+class LockCase:
+    """One named lock: the row it locks, how another transaction changes it, and what must show."""
+
+    row: type
+    key: Callable[[Any], str]
+    lock: Callable[[Any, str], Any]
+    change: str
+    attribute: str
+    value: str
+
+
+CASES = {
+    "run_for_update": LockCase(
+        AnalysisRunRow,
+        lambda run: run.run_id,
+        lambda run, owner: run_for_update(run.run_id, owner),
+        _RUN_FAILED_BEHIND,
+        "state",
+        RUN_FAILED,
+    ),
+    "version_for_update": LockCase(
+        DatasetVersionRow,
+        lambda run: run.version_id,
+        lambda run, owner: version_for_update(run.version_id, owner),
+        _VERSION_ENDED_BEHIND,
+        "retention_state",
+        "tombstoned",
+    ),
+    "live_runs_for_update": LockCase(
+        AnalysisRunRow,
+        lambda run: run.run_id,
+        lambda run, owner: live_runs_for_update(run.version_id, owner),
+        _RUN_FAILED_BEHIND,
+        "state",
+        RUN_FAILED,
+    ),
+}
 
 
 def _file_engine(path: Path) -> Engine:
@@ -44,82 +91,37 @@ def _file_engine(path: Path) -> Engine:
 
 @pytest.fixture
 def run_world(tmp_path: Path):
-    """A journey over a file engine, with one started run: `(engine, journey, run, owner_id)`."""
+    """A journey over a file engine, with one started run: `(engine, run, owner_id)`."""
     engine = _file_engine(tmp_path / "w606.sqlite")
     j = journey(engine)
     who = member(j.w)
     run, _job_id, _session_id = started_run(j, who)
-    yield engine, j, run, who.owner_id
+    yield engine, run, who.owner_id
     engine.dispose()
 
 
-def _changed_behind(engine: Engine, statement: str, **values: str) -> None:
-    """Session B: change the row beneath the ORM and commit, as another transaction would."""
-    with engine.begin() as connection:
-        connection.execute(text(statement), values)
-
-
-def _locked_after_stale_load(
-    engine: Engine, load: Callable[[Session], object], change: Callable[[], None], lock
-) -> list:
-    """Session A loads the row, B changes it, then A takes the lock and returns what it sees.
+def _locked_after_stale_load(engine: Engine, case: LockCase, run: Any, owner_id: str) -> list:
+    """Session A loads the row, B changes it and commits, then A takes the lock: what A sees.
 
     `loaded` is held until the lock has run. The identity map keeps objects by weak reference, so
     a load nobody holds is collected and the locked read would load afresh -- a test that passes
     with the defect present. In production the holder is the caller's own earlier read.
     """
     with Session(engine) as database:
-        loaded = load(database)
+        loaded = database.get(case.row, case.key(run))
         assert loaded is not None, "the row to hold was not loaded"
-        change()
-        seen = list(database.scalars(lock))
+        with engine.begin() as other:
+            other.execute(text(case.change), {"value": case.value, "key": case.key(run)})
+        seen = list(database.scalars(case.lock(run, owner_id)))
         del loaded
         return seen
 
 
-def test_run_for_update_reads_the_run_as_the_lock_found_it(run_world) -> None:
-    engine, _j, run, owner_id = run_world
-    (row,) = _locked_after_stale_load(
-        engine,
-        lambda database: database.get(AnalysisRunRow, run.run_id),
-        lambda: _changed_behind(
-            engine,
-            "UPDATE rca_workspace_analysis_runs SET state = :state WHERE run_id = :run",
-            state=RUN_FAILED,
-            run=run.run_id,
-        ),
-        run_for_update(run.run_id, owner_id),
-    )
-    assert row.state == RUN_FAILED, "the locked read returned the run as first loaded (#606)"
+@pytest.mark.parametrize("name", sorted(CASES))
+def test_a_locked_read_sees_the_row_as_the_lock_found_it(run_world, name: str) -> None:
+    engine, run, owner_id = run_world
+    case = CASES[name]
 
+    (row,) = _locked_after_stale_load(engine, case, run, owner_id)
 
-def test_version_for_update_reads_the_version_as_the_lock_found_it(run_world) -> None:
-    engine, _j, run, owner_id = run_world
-    (row,) = _locked_after_stale_load(
-        engine,
-        lambda database: database.get(DatasetVersionRow, run.version_id),
-        lambda: _changed_behind(
-            engine,
-            "UPDATE rca_workspace_dataset_versions SET retention_state = 'tombstoned' "
-            "WHERE version_id = :version",
-            version=run.version_id,
-        ),
-        version_for_update(run.version_id, owner_id),
-    )
-    assert row.retention_state == "tombstoned", "the locked read returned the version as loaded"
-
-
-def test_live_runs_for_update_reads_each_run_as_the_lock_found_it(run_world) -> None:
-    engine, _j, run, owner_id = run_world
-    (row,) = _locked_after_stale_load(
-        engine,
-        lambda database: database.get(AnalysisRunRow, run.run_id),
-        lambda: _changed_behind(
-            engine,
-            "UPDATE rca_workspace_analysis_runs SET state = :state WHERE run_id = :run",
-            state=RUN_FAILED,
-            run=run.run_id,
-        ),
-        live_runs_for_update(run.version_id, owner_id),
-    )
-    assert row.state == RUN_FAILED, "the locked read returned a live run as first loaded"
+    assert getattr(row, case.attribute) == case.value, f"{name} returned the row as first loaded"
