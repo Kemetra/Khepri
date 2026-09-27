@@ -1,0 +1,95 @@
+/* Khepri v2 design tokens.
+ * Colours sampled from the "Khepri UI v2" mockups; names follow Khepri's shipped
+ * shell tokens (--ink, --muted, --paper, --gold-*, --border-card) with a --k- prefix. */
+:root {
+  /* Brand gold */
+  --k-gold-900: #5c4212;
+  --k-gold-700: #7a5a17;
+  --k-gold-600: #946a2e;
+  --k-gold-500: #b98c39;
+  --k-gold-400: #d5ae63;
+  --k-gold-200: #e3ce9f;
+  --k-gold-100: #f6ebd6;
+  --k-gold-50: #faf6ee;
+  --k-gold-gradient: linear-gradient(180deg, #a87e3c 0%, #8c6428 100%);
+
+  /* Neutrals */
+  --k-ink: #16212b;
+  --k-ink-2: #2e3a45;
+  --k-muted: #55616c;
+  --k-subtle: #8a94a0;
+  --k-canvas: #f7f7f7;
+  --k-surface: #ffffff;
+  --k-surface-2: #fbfaf8;
+  --k-sunken: #f3f4f5;
+  --k-border: #ebe5dc;
+  --k-line: #efe9e0;
+  --k-line-strong: #ded7cc;
+  --k-console: #1c232b;
+
+  /* Semantic tones: solid / surface (tinted background) */
+  --k-teal: #0a8d88;
+  --k-teal-surface: #e3f4f2;
+  --k-green: #18a37a;
+  --k-green-strong: #117956;
+  --k-green-surface: #e3f6ef;
+  --k-blue: #316ab9;
+  --k-blue-surface: #e6effa;
+  --k-sky: #2f9ec4;
+  --k-sky-surface: #e5f5fa;
+  --k-amber: #d99a1e;
+  --k-amber-strong: #a86f0c;
+  --k-amber-surface: #fcf0db;
+  --k-red: #d2463a;
+  --k-red-strong: #b0392f;
+  --k-red-surface: #fdecea;
+  --k-purple: #7c5cd6;
+  --k-purple-surface: #f0ebfd;
+
+  /* Chart series (in order) */
+  --k-chart-1: #0a8d88;
+  --k-chart-2: #e0a43a;
+  --k-chart-3: #4a86e8;
+  --k-chart-4: #2fa36b;
+  --k-chart-5: #8b6ae0;
+  --k-chart-6: #f17750;
+
+  /* Typography */
+  --k-font: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  --k-font-mono: ui-monospace, monospace;
+  --k-text-xs: 12px;
+  --k-text-sm: 13px;
+  --k-text-md: 14px;
+  --k-text-lg: 16px;
+  --k-text-xl: 18px;
+  --k-text-2xl: 22px;
+  --k-text-3xl: 28px;
+  --k-text-display: 36px;
+  --k-leading: 1.6;
+  --k-leading-tight: 1.3;
+
+  /* Space (4px grid) */
+  --k-space-1: 4px;
+  --k-space-2: 8px;
+  --k-space-3: 12px;
+  --k-space-4: 16px;
+  --k-space-5: 20px;
+  --k-space-6: 24px;
+  --k-space-8: 32px;
+
+  /* Shape + depth */
+  --k-radius-sm: 6px;
+  --k-radius-md: 8px;
+  --k-radius-lg: 12px;
+  --k-radius-xl: 16px;
+  --k-radius-pill: 999px;
+  --k-shadow-card: 0 1px 2px rgba(22, 33, 43, 0.04), 0 2px 8px rgba(22, 33, 43, 0.04);
+  --k-shadow-raised: 0 4px 16px rgba(22, 33, 43, 0.08);
+  --k-shadow-gold: 0 2px 6px rgba(122, 90, 23, 0.25);
+  --k-focus-ring: 0 0 0 3px rgba(185, 140, 57, 0.35);
+
+  /* Layout */
+  --k-sidebar-width: 240px;
+  --k-topbar-height: 64px;
+  --k-control-height: 40px;
+}
