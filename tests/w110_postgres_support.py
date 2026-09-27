@@ -28,6 +28,7 @@ carries the `concurrency` marker, so `require_concurrency_tests.py` fails CI if 
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -50,8 +51,9 @@ requires_postgres = pytest.mark.skipif(
 #: Long enough for a loaded CI runner, short enough that a lock that never contends fails fast.
 WAIT_SECONDS = 10.0
 
-#: A database whose name does not carry this is never emptied. CI's is `khepri_test`.
-TEST_DATABASE_MARK = "test"
+#: A database whose name lacks `test` as a whole `_`-separated token is never emptied. CI's is
+#: `khepri_test`; `contest` or `testimony` do not match.
+TEST_DATABASE_NAME = re.compile(r"(^|_)test($|_)")
 
 
 class HarnessError(RuntimeError):
@@ -88,7 +90,7 @@ def _empty_public_schema(engine: Engine) -> None:
     """Drop and recreate `public`, refused unless the database is named as a test database, so a
     mis-pointed `KHEPRI_TEST_DATABASE_URL` cannot empty a real one."""
     name = engine.url.database or ""
-    if TEST_DATABASE_MARK not in name:
+    if not TEST_DATABASE_NAME.search(name):
         raise HarnessError(f"refusing to empty database {name!r}: its name does not mark a test")
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA public CASCADE"))
@@ -187,28 +189,38 @@ class PausedCall:
         return paused
 
 
-def backends_blocked_by(engine: Engine, blocker_pid: int) -> int:
-    """How many backends are waiting, right now, on a lock `blocker_pid` holds."""
+def backends_blocked_by(engine: Engine, blocker_pid: int, table: str) -> int:
+    """How many backends are waiting, right now, on a lock `blocker_pid` holds **while running a
+    `FOR UPDATE` on `table`**.
+
+    The statement filter is the point. A child-row insert waits on its parent's `FOR KEY SHARE`, so
+    a request whose own lock was removed can still be seen blocked by the holder -- on the foreign
+    key -- and an unfiltered count would read that as the lock working.
+    `test_w102_workspace_lock_contention.py` records the same trap for its `NOWAIT` probe.
+    """
     with engine.connect() as connection:
         return connection.execute(
             text(
-                "SELECT count(*) FROM pg_stat_activity WHERE :blocker = ANY(pg_blocking_pids(pid))"
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE :blocker = ANY(pg_blocking_pids(pid)) "
+                "AND query ILIKE '%FOR UPDATE%' AND query LIKE '%' || :table || '%'"
             ),
-            {"blocker": blocker_pid},
+            {"blocker": blocker_pid, "table": table},
         ).scalar_one()
 
 
-def blocked_by(engine: Engine, blocker_pid: int | None) -> bool:
-    """Whether some backend comes to wait on a lock `blocker_pid` holds, within `WAIT_SECONDS`.
+def blocked_by(engine: Engine, blocker_pid: int | None, table: str) -> bool:
+    """Whether some backend comes to wait on `blocker_pid`'s lock, in a `FOR UPDATE` on `table`,
+    within `WAIT_SECONDS`.
 
-    Filtered by the blocker, so an unrelated wait elsewhere in the database cannot satisfy it.
-    Polled rather than slept: the second request needs a moment to reach its locking statement.
+    Filtered by the blocker and by the waiting statement, so neither an unrelated wait nor a
+    foreign-key wait can satisfy it. Polled rather than slept.
     """
     if blocker_pid is None:
         raise HarnessError("the held request's backend was never recorded")
     deadline = time.monotonic() + WAIT_SECONDS
     while time.monotonic() < deadline:
-        if backends_blocked_by(engine, blocker_pid) > 0:
+        if backends_blocked_by(engine, blocker_pid, table) > 0:
             return True
         time.sleep(0.05)
     return False
@@ -273,8 +285,8 @@ def overlap_on_lock(
         held = Background(first)
         await_reached(pause.reached, "the first request")
         waiting = Background(second)
-        assert blocked_by(engine, pause.backend_pid), (
-            f"the second request never waited on the first's lock on {table}"
+        assert blocked_by(engine, pause.backend_pid, table), (
+            f"the second request never waited on the first's lock in a FOR UPDATE on {table}"
         )
         assert not waiting.finished, "the second request finished while the first held the lock"
     finally:

@@ -170,8 +170,11 @@ def test_a_late_handoff_issues_no_cookie_for_an_ended_session() -> None:
     with postgres_journey() as j:
         answer = _paused_handoff(j, member(j.w), delete=True)
 
-        if answer.status_code != 404 or "set-cookie" in answer.headers:
-            raise DefectStillPresent("handed off an artifact after its ending was recorded (#605)")
+        if answer.status_code == 404 and "set-cookie" not in answer.headers:
+            return
+        assert answer.status_code == 303, f"not #605's answer: {answer.status_code}"
+        assert answer.cookies.get(SESSION_COOKIE), "not #605's answer: a 303 with no session cookie"
+        raise DefectStillPresent("handed off an artifact after its ending was recorded (#605)")
 
 
 def test_a_handoff_during_the_ending_does_not_hand_over_ended_content() -> None:

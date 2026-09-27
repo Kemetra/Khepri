@@ -19,6 +19,7 @@ settlement and the reconcile sweep completing the *same* run. It is not `#388`'s
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from khepri.rca.workspace.audit import (
@@ -28,13 +29,13 @@ from khepri.rca.workspace.audit import (
     OUTCOME_COMPLETED,
     AuditActor,
 )
-from khepri.rca.workspace.contracts import RUN_FAILED
+from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_FAILED
 from khepri.rca.workspace.tombstones import RunTombstone
 from khepri.runtime.workspace_recording import Attempt, WorkspaceRefused
 from tests.w104_support import LATER, Member, member
 from tests.w104b_support import Journey
 from tests.w106_support import completed_run, started_run
-from tests.w107_support import NOW, deletion_service
+from tests.w107_support import NOW, deletion_service, sealed_version
 from tests.w110_postgres_support import (
     DefectStillPresent,
     Overlap,
@@ -84,6 +85,24 @@ def _refused_or_returned(failure: BaseException | None) -> bool:
     return failure is None or isinstance(failure, WorkspaceRefused)
 
 
+def _active_rows(j: Journey, version_id: str) -> list[str]:
+    """Every run row under `version_id` still `active`, read raw.
+
+    Not `analysis_runs_for_scope`: its revocation filter hides a run whose version is in the
+    ledger, so a live run committed under a tombstoned version would be invisible to it.
+    """
+    with j.w.factory() as database:
+        return list(
+            database.execute(
+                text(
+                    "SELECT run_id FROM rca_workspace_analysis_runs "
+                    "WHERE version_id = :v AND retention_state = 'active'"
+                ),
+                {"v": version_id},
+            ).scalars()
+        )
+
+
 class TestTwoRunsOverOneVersion:
     """A second run over a version, and the version's deletion, overlapping on the version lock."""
 
@@ -92,7 +111,9 @@ class TestTwoRunsOverOneVersion:
 
         The start's unlocked read sees the version live -- the tombstone has not committed -- so
         the lock in `add_analysis_run` is all that stops a live derivative of withdrawn input.
-        Asserted: the start waited on the deletion's lock, was refused, and no live run remains.
+        Asserted: the start waited on the deletion's lock -- in its `FOR UPDATE`, not on a foreign
+        key's `FOR KEY SHARE` -- was refused with the store's refusal, and no `active` run row
+        remains under the version, read raw.
         """
         with postgres_journey() as j:
             who = member(j.w)
@@ -107,8 +128,9 @@ class TestTwoRunsOverOneVersion:
             )
 
             assert both.first.result().deleted
-            assert _refused_or_returned(both.second.failure()), repr(both.second.failure())
-            assert _live_runs(j, who, version.version_id) == [], (
+            refusal = both.second.failure()
+            assert isinstance(refusal, WorkspaceRefused), f"the start was not refused: {refusal!r}"
+            assert _active_rows(j, version.version_id) == [], (
                 "a run was added live under a version whose deletion it waited on"
             )
 
@@ -136,6 +158,30 @@ class TestTwoRunsOverOneVersion:
             assert _live_runs(j, who, version.version_id) == []
             assert len(tombstones_of(j, who.owner_id, RunTombstone, added.run_id)) == 1, (
                 "the run added before the deletion escaped its cascade"
+            )
+
+    def test_two_runs_started_over_one_version_serialise_on_its_lock(self) -> None:
+        """`#388`'s literal case: two runs started over one live version at once.
+
+        Both are legitimate and both must land. What is asserted is that the version lock is held
+        between them -- the second start waits in its `FOR UPDATE` on the first's lock -- and that
+        each ends as its own live run.
+        """
+        with postgres_journey() as j:
+            who = member(j.w)
+            version, _ = sealed_version(j, who)
+
+            both = overlap_on_lock(
+                j,
+                VERSIONS,
+                _start_run(j, who, version.version_id),
+                _start_run(j, who, version.version_id),
+            )
+
+            first, second = both.first.result(), both.second.result()
+            assert first.run_id != second.run_id
+            assert sorted(_active_rows(j, version.version_id)) == sorted(
+                [first.run_id, second.run_id]
             )
 
 
@@ -189,8 +235,8 @@ class TestARunFailingWhileEnded:
     @pytest.mark.xfail(
         raises=DefectStillPresent,
         strict=True,
-        reason="#610/#606: the failure's locked re-check reads a stale row, so it reaches the "
-        "update and the tombstone guard faults instead of the store refusing",
+        reason="#611: `complete_analysis_run` guards with `_visible_in`, not `_live_in`, so a "
+        "failure under the cascade reaches the update and the tombstone guard faults",
     )
     def test_the_failure_under_the_cascade_is_refused_not_faulted(self) -> None:
         """The loser's answer is the refusal `perform` records, not the tombstone guard's fault."""
@@ -202,9 +248,9 @@ class TestARunFailingWhileEnded:
             if _refused_or_returned(failure):
                 return
             assert isinstance(failure, ValueError) and "tombstoned" in str(failure), (
-                f"not #610's failure: {failure!r}"
+                f"not #611's failure: {failure!r}"
             )
-            raise DefectStillPresent("the failure passed the lock guard under the cascade (#610)")
+            raise DefectStillPresent("the failure passed the liveness guard (#611)")
 
     @pytest.mark.xfail(
         raises=DefectStillPresent,
@@ -233,8 +279,10 @@ class TestARunFailingWhileEnded:
             both.second.failure()
             ended = j.w.store.get_analysis_run(run.run_id, who.owner_id)
             assert ended is not None, "the run vanished, which is not #610"
-            if (ended.state, ended.completed_at) != (RUN_FAILED, LATER):
-                raise DefectStillPresent("a settlement completed a run that had already failed")
+            if (ended.state, ended.completed_at) == (RUN_FAILED, LATER):
+                return
+            assert ended.state == RUN_COMPLETED, f"not #610's outcome: {ended.state!r}"
+            raise DefectStillPresent("a settlement completed a run that had already failed (#610)")
 
 
 def _overlapping_settlements(j: Journey, who: Member) -> tuple[str, Overlap]:
