@@ -1,0 +1,54 @@
+/* Root, tone utilities, shared primitives. */
+.k-root {
+  font-family: var(--k-font);
+  font-size: var(--k-text-md);
+  line-height: var(--k-leading);
+  color: var(--k-ink);
+  background: var(--k-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.k-root *, .k-root *::before, .k-root *::after { box-sizing: border-box; }
+.k-root :where(h1, h2, h3, h4, h5, p, dl, dd, ol, ul) { margin: 0; }
+.k-root :where(ol, ul) { padding: 0; list-style: none; }
+.k-root :where(button, input, select, textarea) { font: inherit; color: inherit; }
+.k-root :where(a) { color: inherit; text-decoration: none; }
+.k-root :where(button) { cursor: pointer; }
+.k-root :where(:focus-visible) { outline: none; box-shadow: var(--k-focus-ring); border-radius: var(--k-radius-sm); }
+.k-num, .k-root bdi { font-variant-numeric: tabular-nums; }
+
+/* Tone utilities: --tone (solid) and --tone-surface (tint) drive every toned component. */
+.k-tone-gold    { --tone: var(--k-gold-600); --tone-surface: var(--k-gold-100); --tone-strong: var(--k-gold-700); }
+.k-tone-teal    { --tone: var(--k-teal);     --tone-surface: var(--k-teal-surface); --tone-strong: #07706c; }
+.k-tone-green   { --tone: var(--k-green);    --tone-surface: var(--k-green-surface); --tone-strong: var(--k-green-strong); }
+.k-tone-blue    { --tone: var(--k-blue);     --tone-surface: var(--k-blue-surface); --tone-strong: #24569c; }
+.k-tone-sky     { --tone: var(--k-sky);      --tone-surface: var(--k-sky-surface); --tone-strong: #1f7f9f; }
+.k-tone-amber   { --tone: var(--k-amber);    --tone-surface: var(--k-amber-surface); --tone-strong: var(--k-amber-strong); }
+.k-tone-red     { --tone: var(--k-red);      --tone-surface: var(--k-red-surface); --tone-strong: var(--k-red-strong); }
+.k-tone-purple  { --tone: var(--k-purple);   --tone-surface: var(--k-purple-surface); --tone-strong: #5f43b3; }
+.k-tone-neutral { --tone: var(--k-subtle);   --tone-surface: var(--k-sunken); --tone-strong: var(--k-muted); }
+
+.k-text-gold { color: var(--k-gold-600); } .k-text-teal { color: var(--k-teal); }
+.k-text-green { color: var(--k-green); } .k-text-blue { color: var(--k-blue); }
+.k-text-sky { color: var(--k-sky); } .k-text-amber { color: var(--k-amber); }
+.k-text-red { color: var(--k-red); } .k-text-purple { color: var(--k-purple); }
+.k-text-neutral { color: var(--k-muted); }
+.k-bg-gold { background: var(--k-gold-500); } .k-bg-teal { background: var(--k-teal); }
+.k-bg-green { background: var(--k-green); } .k-bg-blue { background: var(--k-blue); }
+.k-bg-sky { background: var(--k-sky); } .k-bg-amber { background: var(--k-amber); }
+.k-bg-red { background: var(--k-red); } .k-bg-purple { background: var(--k-purple); }
+.k-bg-neutral { background: var(--k-subtle); }
+
+/* Layout helpers for app glue */
+.k-stack { display: flex; flex-direction: column; gap: var(--k-space-4); }
+.k-row { display: flex; align-items: center; gap: var(--k-space-3); flex-wrap: wrap; }
+.k-grid { display: grid; gap: var(--k-space-4); }
+.k-grid-2 { display: grid; gap: var(--k-space-4); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.k-grid-3 { display: grid; gap: var(--k-space-4); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.k-grid-4 { display: grid; gap: var(--k-space-4); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.k-grid-5 { display: grid; gap: var(--k-space-4); grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.k-muted { color: var(--k-muted); }
+.k-subtle { color: var(--k-subtle); font-size: var(--k-text-sm); }
+
+@keyframes k-spin { to { transform: rotate(360deg); } }
+.k-spin { display: inline-flex; animation: k-spin 0.9s linear infinite; }

@@ -1,0 +1,100 @@
+{
+  "projectId": "d6072c2c-31d1-454c-805f-34d309a3e63d",
+  "pkg": "@khepri/ds",
+  "globalName": "KhepriDS",
+  "shape": "package",
+  "buildCmd": "npm run build",
+  "cssEntry": "dist/khepri.css",
+  "extraFonts": [
+    "fonts/fonts.css"
+  ],
+  "docsDir": "docs",
+  "provider": {
+    "component": "KhepriProvider"
+  },
+  "componentSrcMap": {
+    "AvatarGroup": "src/components/Avatar.tsx"
+  },
+  "guidelinesGlob": [
+    "guidelines/**/*.md"
+  ],
+  "overrides": {
+    "AppShell": {
+      "cardMode": "single",
+      "viewport": "1300x840"
+    },
+    "PageHeader": {
+      "cardMode": "column"
+    },
+    "TopBar": {
+      "cardMode": "column"
+    },
+    "DataTable": {
+      "cardMode": "column"
+    },
+    "Stepper": {
+      "cardMode": "column"
+    },
+    "Dropzone": {
+      "cardMode": "column"
+    },
+    "Icon": {
+      "cardMode": "column"
+    },
+    "StatTile": {
+      "cardMode": "column"
+    },
+    "AnalysisCard": {
+      "cardMode": "column"
+    },
+    "FindingCard": {
+      "cardMode": "column"
+    },
+    "CategoryTile": {
+      "cardMode": "column"
+    },
+    "SelectableCard": {
+      "cardMode": "column"
+    },
+    "BarChart": {
+      "cardMode": "column"
+    },
+    "LineChart": {
+      "cardMode": "column"
+    },
+    "DonutChart": {
+      "cardMode": "column"
+    },
+    "Card": {
+      "cardMode": "column"
+    },
+    "KeyValueList": {
+      "cardMode": "column"
+    },
+    "SuggestionCard": {
+      "cardMode": "column"
+    },
+    "LogConsole": {
+      "cardMode": "column"
+    },
+    "FileRow": {
+      "cardMode": "column"
+    },
+    "Sidebar": {
+      "cardMode": "column"
+    },
+    "TaskItem": {
+      "cardMode": "column"
+    },
+    "Select": {
+      "cardMode": "column"
+    },
+    "Tabs": {
+      "cardMode": "column"
+    },
+    "KhepriProvider": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}
