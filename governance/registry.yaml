@@ -406,9 +406,12 @@ artifacts:
     depends_on:
       - RRA
       - RRA-001
+      - RRA-002
+      - RRA-007
       - RCA-001
       - KHEPRI-DEC-028
       - KHEPRI-DEC-030
+      - KHEPRI-DEC-033
       - KHEPRI-DEC-035
   - type: specification
     id: RCA-001
