@@ -26,8 +26,21 @@
 > - Every figure, branch and category name, finding statement and next-step question is sample data.
 >   None of it may be carried into a surface. The package itself records that caveat and refusal
 >   patterns do not exist yet, and says not to invent them.
-> - `COMPONENT-CHANGES.md` cites `templates/north-star-flagship/`. The files as supplied, and as
->   imported, sit in this folder.
+>
+> ### Known defects in the supplied files (recorded, not fixed)
+>
+> The imports stay byte-identical, so defects found in review are recorded here rather than
+> corrected. None of them may be copied into an implementation.
+>
+> - `NorthStarFlagship.dc.html`: the next-step band's full-bleed wrapper `div` (line 198) is not
+>   closed before the footer, so the footer renders inside the band's background. README §7 below
+>   places the footer outside the band, at container width. The file has 274 `<div` openings and
+>   273 closings.
+> - `NorthStarSystem.dc.html`: `<html>` has no `lang`, and the Arabic specimens set `dir="rtl"`
+>   without `lang="ar"`. In Khepri, `lang` and `dir` are computed on the server for every surface.
+> - `NorthStarSystem.dc.html` links to `../north-star-flagship/NorthStarFlagship.dc.html`, and
+>   `COMPONENT-CHANGES.md` cites `templates/north-star-flagship/`. Neither path exists. The
+>   flagship sits beside them in this folder.
 >
 > ### The package's status is an open owner question
 >
