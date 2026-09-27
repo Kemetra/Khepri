@@ -72,4 +72,4 @@ The surviving two are redundant on the paths driven here. That is recorded, not 
 ## Status
 
 - [x] Plan and RED tests (`xfail(strict=True, raises=TypeError)`: `journey()` takes no engine)
-- [ ] Implementation: markers removed; `#605` and `#606` filed and pinned as strict `xfail`s
+- [x] Implementation: markers removed; `#605` and `#606` filed and pinned as strict `xfail`s

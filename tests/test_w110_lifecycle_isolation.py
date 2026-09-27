@@ -329,13 +329,13 @@ class TestConcurrent:
     being taken on the wrong row or released too early.
 
     **These are the sequential halves, and they are named as such.** Genuine overlap cannot be
-    driven on this fixture: `w104_support.py:178-181` builds the engine with `StaticPool` and
+    driven on this fixture: `w104_support.sqlite_engine` builds the engine with `StaticPool` and
     `check_same_thread=False`, so threads share one connection and a parallel write raises
     `InterfaceError` rather than racing. `test_w102_workspace_locks.py:142` concedes the same
-    limitation and `test_concurrency_postgres.py` is gated on `KHEPRI_TEST_DATABASE_URL` for it.
-    A genuinely overlapping case needs a PostgreSQL-backed `journey()`, which this fixture does
-    not offer; **that is a real gap in `FR-127`'s concurrent class, recorded in the pull request
-    rather than papered over with a test that could only ever skip.**
+    limitation. **The overlapping halves are `test_w110_concurrent_postgres.py`'s** (`#388`): the
+    same `journey()` over a pooled PostgreSQL engine, each interleaving forced and each lock shown
+    waiting in `pg_stat_activity`, marked `concurrency` so CI fails if they skip. What they found,
+    `#605` and `#606`, is recorded there as strict `xfail`s rather than fixed in a test slice.
 
     What these prove is the property that must hold whatever the engine does: a repeat neither
     succeeds twice nor corrupts the first ending, and a handoff after a recorded ending refuses.

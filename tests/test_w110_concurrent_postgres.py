@@ -50,13 +50,7 @@ from tests.w110_postgres_support import (
 )
 from tests.w110_support import Denials, assert_uniform_denial
 
-pytestmark = [
-    pytest.mark.concurrency,
-    requires_postgres,
-    # RED (`#388`): `journey()` has no PostgreSQL form, so `journey(engine)` raises `TypeError` --
-    # the exact failure the issue predicted for a test written against today's fixture.
-    pytest.mark.xfail(strict=True, raises=TypeError, reason="#388: journey() takes no engine"),
-]
+pytestmark = [pytest.mark.concurrency, requires_postgres]
 
 VERSIONS = "rca_workspace_dataset_versions"
 
@@ -156,6 +150,12 @@ def test_a_late_handoff_does_not_hand_over_ended_content() -> None:
         assert artifact.status_code == 404, "the late handoff's cookie served the ended artifact"
 
 
+@pytest.mark.xfail(
+    raises=AssertionError,
+    strict=True,
+    reason="#605: the handoff re-checks nothing after `_locate`, so it issues a cookie for a "
+    "session whose ending was recorded while it was in flight",
+)
 def test_a_late_handoff_issues_no_cookie_for_an_ended_session() -> None:
     """`FR-127`'s uniform denial, at the handoff itself: no `303`, and no cookie beside it.
 
@@ -251,6 +251,12 @@ def test_two_settlements_of_one_run_complete_it_once() -> None:
         assert _outcomes(j, who, ACTION_RUN_COMPLETED).count(OUTCOME_COMPLETED) == 1
 
 
+@pytest.mark.xfail(
+    raises=AssertionError,
+    strict=True,
+    reason="#606: the locked re-check in `record_completion` reads the run from the session's "
+    "identity map, so the loser passes it and faults on the provenance key",
+)
 def test_the_losing_settlement_is_refused_not_faulted() -> None:
     """The loser's answer: the refusal `perform` records, or nothing -- never a database fault.
 
