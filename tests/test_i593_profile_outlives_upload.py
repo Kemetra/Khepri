@@ -183,10 +183,13 @@ def _stored_upload_id(engine: Engine) -> str | None:
 @pytest.mark.concurrency
 @requires_postgres
 class TestTheMigrationOnPostgres:
-    def test_head_carries_the_set_null_key_over_a_nullable_column(
+    def test_0033_carries_the_set_null_key_over_a_nullable_column(
         self, postgres: tuple[Config, Engine]
     ) -> None:
-        _config, engine = postgres
+        # Measured at `0033`, the revision this describes: on PostgreSQL `0034` (#600) replaces
+        # the key with a composite one (`tests/test_i600_profile_upload_scope.py`).
+        config, engine = postgres
+        command.downgrade(config, "20260926_0033")
         key = _upload_key(engine)
 
         assert key is not None
