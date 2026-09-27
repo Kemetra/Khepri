@@ -342,7 +342,7 @@ _ALL_STATE_CLASSES = (
 )
 
 #: The `--danger` family, which paints a destructive action and never a screen state.
-_DANGER_TOKENS = ("--danger", "--danger-border", "--danger-surface", "--danger-ink")
+_DANGER_TOKENS = ("--danger",)
 
 #: `.invitation-warning` (`shell-components.css:158`, `color: var(--danger)`) is a
 #: warning on a **destructive action**, not a screen state, so it is carved out by
