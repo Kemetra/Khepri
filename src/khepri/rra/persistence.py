@@ -425,7 +425,7 @@ class SqlSessionStore:
         return True
 
     def open_commercial_session_row(self, session: BetaSession) -> None:
-        """Persist a session that no invitation produced (`KHEPRI-DEC-021` §2).
+        """Persist a session no invitation produced (`KHEPRI-DEC-021` §2, via `-023` §1).
 
         Before `R7-07` a `BetaSessionRow` was written in exactly one place -- inside
         `redeem_invitation`, behind its invitation guard -- so the entry point
@@ -453,10 +453,10 @@ class SqlSessionStore:
     def get_session_for_owner(self, owner_id: str, session_id: str) -> BetaSession | None:
         """The resume lookup, keyed on the pair rather than on `session_id` alone.
 
-        **Why the pair.** `KHEPRI-DEC-021` §2 settles what a resume selects, because no merged
-        document did: `owner_id` alone identifies a *set* once `20260817_0017` allowed one scope
-        many sessions, so a caller naming only a scope would be asking for "whichever session you
-        have". The caller names the analysis it is resuming, and the lookup is exactly
+        **Why the pair.** `KHEPRI-DEC-021` §2 (now `-023` §1) settles what a resume selects: no
+        merged document did, and `owner_id` alone identifies a *set* once `20260817_0017` allowed
+        one scope many sessions, so a caller naming only a scope would ask for "whichever session
+        you have". The caller names the analysis it is resuming, and the lookup is exactly
         `uq_session_owner_scope`'s column pair -- which is why §4 could state that no new index is
         required.
 

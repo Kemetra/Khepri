@@ -275,8 +275,9 @@ def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
     """Build the RCA half of the graph and pair it with the bridge.
 
     This is the first place `khepri.rca` is constructed in the production composition root.
-    `KHEPRI-DEC-021` §3 admits the import here deliberately: a composition root exists to know about
-    both sides, and what the boundary forbids is a bridge *inside* either package.
+    `KHEPRI-DEC-021` §3, carried forward by `KHEPRI-DEC-023` §1, admits the import here
+    deliberately: a composition root exists to know about both sides, and what the boundary
+    forbids is a bridge *inside* either package.
 
     **Two session stores are in play and they are not interchangeable.** `SqlRcaSessionStore` holds
     authentication sessions and belongs to `ActorResolver`; `SqlSessionStore` (RRA, imported

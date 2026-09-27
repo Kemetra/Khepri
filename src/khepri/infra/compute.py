@@ -30,12 +30,14 @@ as `sizing.resolve_sizing`: an identity nobody supplied is not one to invent.
 
 **Sizing is injected, never chosen.** Task CPU, memory, and ephemeral storage arrive as a
 `ServiceSizing` that `sizing.resolve_sizing` already refused to invent. No number in this module
-comes from `KHEPRI-DEC-007`, which is still proposed.
+comes from a decision: `KHEPRI-DEC-007` is retired, and its successor `KHEPRI-DEC-028` §Sizing
+fixes no final capacity value, leaving that to `OPS1-09`'s measurement.
 
 **The CPU architecture is CDK's default made explicit.** No approved artifact settles it.
-`KHEPRI-DEC-007` sizes tasks in CPU units and says nothing about architecture, and an ARM64 task
-would require the published image to match. Writing `X86_64` here records what would otherwise be
-an invisible default; changing it needs an artifact that settles it and an image built for it.
+The retired `KHEPRI-DEC-007` sized tasks in CPU units and said nothing about architecture, nor
+does `KHEPRI-DEC-028`, and an ARM64 task would require the published image to match. Writing
+`X86_64` here records what would otherwise be an invisible default; changing it needs an
+artifact that settles it and an image built for it.
 
 **Chromium's launch flag is not set here, because a task definition cannot pass it.**
 `--disable-dev-shm-usage` was required by `KHEPRI-DEC-007` (retired) and is carried forward by
@@ -245,10 +247,10 @@ def _ephemeral_storage(declared_gib: int) -> int | None:
     """Omit the property when the declaration asks for exactly the Fargate default.
 
     A task definition may set 21 to 200 GiB and is refused at 20, so the platform provides no way
-    to *state* its own default. `KHEPRI-DEC-007` records the web service at 20 GiB precisely
-    because that is the default, made explicit so the environment digest covers it. Honouring that
-    means declaring nothing here: the size is what the decision recorded, and the template says so
-    by omission rather than by a number the platform would reject.
+    to *state* its own default. The retired `KHEPRI-DEC-007` recorded the web service at 20 GiB
+    precisely because that is the default, made explicit so the environment digest covers it.
+    Honouring that means declaring nothing here: the size is what the decision recorded, and the
+    template says so by omission rather than by a number the platform would reject.
     """
     if declared_gib == MIN_EPHEMERAL_STORAGE_GIB:
         return None

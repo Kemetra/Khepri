@@ -12,12 +12,11 @@ not the report", so one mode refusing must leave the other standing: `derive`
 returns a `RefusedResult` only when *both* refuse, and `refusals` carries every
 refusal beside whatever facts survived -- per mode, and per metric within a mode.
 
-**One period against one period, because no window length is governed.**
-`RRA-008` says "a prior window of equal length" and never says what that length
-is, and neither `RRA-004` nor the fact package supplies one. So the window is a
-single period: period-over-period compares a period with the one before it, and
-year-over-year with the same period a year earlier. That is what those two terms
-mean, and it is the only reading that invents nothing.
+**One period against one period, as `RRA-008` governs.** "The governed comparison
+window is one period at the package's own day or month granularity", and the fact
+package records it as `COMPARISON_WINDOW_PERIODS`. Period-over-period compares a
+period with the calendar period before it, and year-over-year with the same period
+a year earlier.
 
 An earlier revision took half the available history as the window, which was
 wrong three ways. It invented a boundary; it made the answer depend on how much
@@ -35,14 +34,15 @@ labels still look plausible and every sum is correct, which is what makes it
 dangerous. A missing counterpart refuses rather than substituting a neighbour.
 
 **The final period is excluded, because its completeness is unknowable here.**
-`RRA-008` asks that both windows be truncated "to the same day count when the
-current window is incomplete" -- comparing fifteen days of this month against a
-whole prior month overstates the change. `FactSeries` carries one bucket per
-period and no day count, so nothing here can tell a whole month from a partial
-one. What *is* knowable is that a period with data on both sides of it is whole:
-a later period proves it finished, an earlier one proves it was already running
-when the export began. So the comparison runs over settled periods and leaves out
-the period at each end.
+Comparing fifteen days of this month against a whole prior month overstates the
+change. `RRA-008` takes completeness only from the coverage manifest and the
+separately retained daily bases, never from observed rows. Each bucket's `days`
+counts the distinct dates it observed, and `RRA-004` calls such counts "evidence but
+... not coverage-manifest completeness proof", so nothing in the series alone can
+tell a whole month from a partial one. What *is* knowable is that a period with data
+on both sides of it is whole: a later period proves it finished, an earlier one
+proves it was already running when the export began. So the comparison runs over
+settled periods and leaves out the period at each end.
 
 Both ends, because either can be the period compared. An export beginning on 15
 January holds seventeen days in its first bucket, and a year-over-year comparison
@@ -51,13 +51,13 @@ every month reports +82% growth that is an artifact of where the export started.
 An earlier revision excluded only the final period, which fixed the boundary the
 report was pointed at and left the one it compared against.
 
-That is deliberately not the specification's remedy, which needs a day count the
-aggregate does not carry. It is the nearest derivable thing to the requirement's
-intent, and the alternatives were worse: including an end bucket compares a
-possibly-partial period against a whole one and says nothing, and refusing
-whenever a period *might* be partial refuses always, because completeness is
-equally undetectable in both directions. The cost is that the comparison lags by
-one period and needs one period of run-up.
+That is deliberately not the specification's remedy, the day-`1..k` prefix
+comparison over retained daily bases, which is not built yet. It is the nearest
+derivable thing to the requirement's intent, and the alternatives were worse:
+including an end bucket compares a possibly-partial period against a whole one and
+says nothing, and refusing whenever a period *might* be partial refuses always,
+because completeness is equally undetectable in both directions. The cost is that
+the comparison lags by one period and needs one period of run-up.
 
 **The arithmetic runs in the package's own decimal context.** `build_fact_package`
 computes under `ARITHMETIC_PRECISION`, and Python's default context is 28 digits.
@@ -70,12 +70,11 @@ wrong in one place.
 
 **No truncation caveat, because nothing here can truncate.** A one-period window
 either has its counterpart or does not, so there is no shortened window to
-disclose, and the day-count truncation `RRA-008` describes is not derivable at
-all. A governed caveat with no reachable trigger is worse than an absent one --
-it reads as a guarantee that something is being watched. Two `RRA-004` aggregates
-would change this: a governed window length, and per-period completeness. Both
-belong in the same amendment as the concentration curve and transaction
-membership.
+disclose. A governed caveat with no reachable trigger is worse than an absent one --
+it reads as a guarantee that something is being watched. What would change this is
+the partial-prefix selection `RRA-008` and `RRA-004` describe, which picks the
+terminal bucket and projects the prior window to the same days; the partial-window
+caveat belongs to it (see the note in `_window_for` below).
 
 **The formula version is recorded, not only hashed.** `RRA-008` requires the
 formula version recorded as provenance, and hashing `COMPARISON_FORMULA_VERSION`
