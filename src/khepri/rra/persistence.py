@@ -170,6 +170,9 @@ class DatasetProfileRow(Base):
         ),
         # `#593` (`KHEPRI-DEC-033` §1): the profile outlives its raw upload. Retention's purge of
         # the upload clears this column rather than being refused by it or deleting the profile.
+        # On PostgreSQL, `20260926_0034` (#600) replaces this with `fk_profile_upload_scope`:
+        # `(owner_id, session_id, upload_id)` onto `rra_uploads`, `ON DELETE SET NULL (upload_id)`.
+        # SQLite cannot express that column-list form, so this single-column key is what it keeps.
         ForeignKeyConstraint(
             ["upload_id"], ["rra_uploads.upload_id"], name="fk_profile_upload", ondelete="SET NULL"
         ),
