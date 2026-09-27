@@ -87,7 +87,7 @@ def add_artifact_handoff_route(
             )
         except (PermissionError, UnrenderableRecord):
             return unavailable(environment, language=rendered)
-        if not _still_live(resumed, now):
+        if not _still_live(resumed, clock()):
             return unavailable(environment, language=rendered)
         response = RedirectResponse(
             url=target.format(job=located.job_id, language=rendered), status_code=303

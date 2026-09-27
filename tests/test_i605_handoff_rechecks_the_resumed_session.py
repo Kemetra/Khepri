@@ -52,6 +52,36 @@ def _handoff(**changes: Any):
     )
 
 
+class _ExpiresDuringResume:
+    """The real bridge, whose `resume` returns while the clock reaches the session's expiry."""
+
+    def __init__(self, inner: Any, clock: Any) -> None:
+        self._inner = inner
+        self._clock = clock
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def resume(self, **kwargs: Any) -> Any:
+        resumed = self._inner.resume(**kwargs)
+        self._clock.now = resumed.content_expires_at
+        return resumed
+
+
+def test_a_session_expiring_during_resume_is_refused_without_a_cookie() -> None:
+    """The liveness decision reads the clock after `resume`, not the instant the request began."""
+    j = journey()
+    who = member(j.w)
+    run, _job, _session = completed_run(j, who)
+    bridge = _ExpiresDuringResume(services_over(j, who).bridge, j.clock)
+    answer = shell_with_bridge(j, who, bridge).post(
+        handoff_address(who, run.run_id, "web"), follow_redirects=False
+    )
+
+    assert answer.status_code == 404, "handed off a session that expired while it was resumed"
+    assert "set-cookie" not in answer.headers
+
+
 def test_a_live_resumed_session_is_handed_over() -> None:
     """The control: with nothing changed, the handoff redirects and sets the session's cookie."""
     answer = _handoff()
