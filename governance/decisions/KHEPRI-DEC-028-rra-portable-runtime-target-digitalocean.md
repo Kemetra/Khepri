@@ -223,6 +223,27 @@ the transient presence of customer content, and the seven-day expiry.
 Provider-side encryption at rest, where the target offers it, remains required and is additional to
 this control, never a substitute for it.
 
+Amended on 2026-09-27 (`#535`, implemented in `#609`). Both AES-256-GCM calls bind additional
+authenticated data: the data-key wrap and the content encryption. That data names the envelope
+format version and the object's storage key. Every key is built under its scope
+(`owners/{owner_id}/sessions/{session_id}/`), so an object opens only under the key it was sealed
+for.
+
+- **Format `v2` is written.** Its AAD is `"khepri.envelope" NUL purpose NUL version key`, where the
+  purpose is `wrap` or `content`, the version is one byte, and the key is UTF-8. This is a stored
+  format: changing it is a new format version.
+- **Format `v1`, sealed without AAD, stays readable** until a migration slice rewrites every `v1`
+  object as `v2` and verifies that none remains. Only then is it retired. Expiry is not the end
+  condition.
+- **A new record never attaches to an existing `v1` object.** Until that migration, a write that
+  finds one fails closed.
+- **Every later format version binds at least what `v2` binds.**
+- **The envelope proves an object belongs to its key, not that the key belongs to the caller.**
+  Every read and deletion therefore holds the key to the caller's own scope before it touches the
+  store.
+
+The primitive, the key hierarchy and the read-back digest are unchanged.
+
 #### Job delivery: PostgreSQL claim and redrive
 
 Carried forward unchanged. Job delivery uses PostgreSQL with `SELECT ... FOR UPDATE SKIP LOCKED`,
