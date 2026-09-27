@@ -15,10 +15,14 @@ from khepri.rra.artifact_persistence import (
     ArtifactCorrupted,
     StoredArtifact,
 )
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
+from khepri.rra.envelope import (
+    ALGORITHM_AES_256_GCM,
+    WRITE_ENVELOPE_VERSION,
+)
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
+from khepri.rra.sessions import SessionScope, object_in_scope, object_prefix
 from khepri.rra.storage import ObjectWrite, PutResult, StoredEnvelope
 
 _ATTEMPT_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -229,6 +233,15 @@ class ReportArtifactPublisher:
             )
             if metadata is None:
                 return None
+            # The read carries only the caller's session. Session identifiers are
+            # unique, so the session segment is what a row-only scope edit cannot
+            # satisfy; the owner segment is held to the row it came with. A key
+            # outside it is another scope's object, and this surface answers
+            # another scope's resource as absent -- the same `None` a foreign
+            # session gets -- never as unavailable, which would confirm it exists.
+            caller = SessionScope(owner_id=metadata.owner_id, session_id=session_id)
+            if not object_in_scope(caller, metadata.object_key):
+                return None
             return self._read_document(metadata)
         except ArtifactUnavailable:
             raise
@@ -262,8 +275,9 @@ class ReportArtifactPublisher:
 
 def _object_key(context: PublicationContext, artifact_kind: str) -> str:
     boundary = context.boundary
+    scope = SessionScope(owner_id=boundary.owner_id, session_id=boundary.session_id)
     return (
-        f"owners/{boundary.owner_id}/sessions/{boundary.session_id}/reports/"
+        f"{object_prefix(scope)}reports/"
         f"{context.record.bundle_id}/attempts/{context.attempt_id}/{artifact_kind}"
     )
 
@@ -331,7 +345,6 @@ def _require_proven(
         publication.sha256_hex,
         publication.media_type,
         ALGORITHM_AES_256_GCM,
-        ENVELOPE_VERSION,
     )
     actual = (
         result.stored.key,
@@ -339,10 +352,29 @@ def _require_proven(
         result.stored.sha256_hex,
         result.stored.media_type,
         result.stored.encryption_algorithm,
-        result.stored.envelope_version,
     )
     if actual != expected or len(result.stored.ciphertext_sha256_hex) != 64:
         raise StoragePolicyViolation("Object storage did not prove publication policy.")
+    if result.stored.envelope_version not in _provable_versions(created=result.created):
+        raise StoragePolicyViolation("Object storage did not prove publication policy.")
+
+
+def _provable_versions(*, created: bool) -> frozenset[int]:
+    """What a stored object may carry, by whether this call wrote it.
+
+    A write this call made is the write version, always. An object that already
+    existed, proved by `put_or_verify`, may predate #535 and be `v1`; attaching a
+    new row to it is an owner item on #535 and, until it is ruled on, is refused
+    (Constitution V). Plain reads of rows already recorded as `v1` are unaffected.
+    """
+    if created:
+        return frozenset({WRITE_ENVELOPE_VERSION})
+    return _EXISTING_OBJECT_VERSIONS
+
+
+# Interim, pending the owner's ruling on #535 item (a). Relaxing it to
+# `READABLE_ENVELOPE_VERSIONS` is the one-line change that ruling would make.
+_EXISTING_OBJECT_VERSIONS = frozenset({WRITE_ENVELOPE_VERSION})
 
 
 __all__ = [

@@ -15,11 +15,12 @@ from typing import Protocol
 from xml.etree import ElementTree
 from xml.parsers import expat
 
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, WRITE_ENVELOPE_VERSION
 from khepri.rra.sessions import (
     BetaSession,
     SessionExpired,
     SessionScope,
+    object_prefix,
     require_upload_consent,
 )
 
@@ -223,9 +224,8 @@ class IntakeService:
     ) -> UploadMetadata:
         require_upload_consent(session, now=now)
         upload_id = self._new_upload_id()
-        object_key = (
-            f"owners/{session.owner_id}/sessions/{session.session_id}/inputs/{upload_id}"
-        )
+        scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
+        object_key = f"{object_prefix(scope)}inputs/{upload_id}"
         stored = self._objects.put(
             key=object_key,
             content=validated.content,
@@ -302,7 +302,7 @@ def _storage_response_is_valid(
         and stored.sha256_hex == upload.sha256_hex
         and stored.media_type == upload.media_type
         and stored.encryption_algorithm == ALGORITHM_AES_256_GCM
-        and stored.envelope_version == ENVELOPE_VERSION
+        and stored.envelope_version == WRITE_ENVELOPE_VERSION
         and len(stored.ciphertext_sha256_hex) == 64
     )
 

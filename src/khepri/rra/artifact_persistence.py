@@ -23,7 +23,7 @@ from khepri.rra.delivery_persistence import (
     _commit_delivery,
     _leased_job,
 )
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, READABLE_ENVELOPE_VERSIONS
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.jobs import JOB_RUNNING
 from khepri.rra.persistence import Base, BetaSessionRow, _utc
@@ -380,7 +380,10 @@ def _validate_published_artifact(
 def _validate_storage_metadata(stored: StoredArtifact) -> None:
     _require_storage_value(bool(stored.object_key))
     _require_storage_value(stored.encryption_algorithm == ALGORITHM_AES_256_GCM)
-    _require_storage_value(stored.envelope_version == ENVELOPE_VERSION)
+    # Readable, not written: this sees the recorded artifact, not whether the
+    # store created it, so the write-version rule for new objects is enforced by
+    # the publisher's `_require_proven`, which does see it.
+    _require_storage_value(stored.envelope_version in READABLE_ENVELOPE_VERSIONS)
     _require_storage_value(len(stored.ciphertext_sha256_hex) == 64)
     _require_storage_value(stored.expires_at > stored.created_at)
 

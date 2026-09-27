@@ -34,6 +34,7 @@ from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
 from khepri.rra.coverage_request import CoverageManifestBody
 from khepri.rra.datasets import ProfilingService
+from khepri.rra.envelope import WRITE_ENVELOPE_VERSION
 from khepri.rra.intake import IntakeService, StoredObject
 from khepri.rra.packages import FactPackageRecord, FactPackageService
 from khepri.rra.persistence import Base as RraBase
@@ -100,7 +101,7 @@ class MemoryObjectStore:
             sha256_hex=sha256_hex,
             media_type=media_type,
             encryption_algorithm="AES-256-GCM",
-            envelope_version=1,
+            envelope_version=WRITE_ENVELOPE_VERSION,
             ciphertext_sha256_hex=hashlib.sha256(b"ciphertext:" + content).hexdigest(),
         )
 

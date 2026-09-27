@@ -50,10 +50,11 @@ from botocore.exceptions import ClientError
 
 from khepri.rra.envelope import (
     ALGORITHM_AES_256_GCM,
-    ENVELOPE_VERSION,
     EnvelopeError,
+    ExpectedObject,
     MasterKey,
     assert_supported,
+    envelope_version_of,
     open_envelope,
     seal,
 )
@@ -134,7 +135,7 @@ class S3EncryptedObjectStore:
         if hashlib.sha256(content).hexdigest() != sha256_hex:
             raise StoragePolicyViolation("Content does not match its declared digest.")
 
-        sealed = seal(plaintext=content, master_key=self._master_key)
+        sealed = seal(plaintext=content, master_key=self._master_key, object_key=key)
         checksum = base64.b64encode(bytes.fromhex(sealed.ciphertext_sha256_hex)).decode("ascii")
         response = self._client.put_object(
             Bucket=self._bucket,
@@ -195,11 +196,17 @@ class S3EncryptedObjectStore:
             raise StoragePolicyViolation(str(error)) from error
         body = self._fetch(key)
         try:
+            # The key comes from the caller's row, never from the object, so an
+            # object moved with its row to another scope's key fails the tag.
             return open_envelope(
                 envelope=body,
                 master_key=self._master_key,
-                expected_ciphertext_sha256_hex=envelope.ciphertext_sha256_hex,
-                expected_plaintext_sha256_hex=envelope.sha256_hex,
+                expected=ExpectedObject(
+                    object_key=key,
+                    ciphertext_sha256_hex=envelope.ciphertext_sha256_hex,
+                    plaintext_sha256_hex=envelope.sha256_hex,
+                    envelope_version=envelope.envelope_version,
+                ),
             )
         except EnvelopeError as error:
             # The envelope module's messages carry no key material and no content,
@@ -277,8 +284,14 @@ class S3EncryptedObjectStore:
             plaintext = open_envelope(
                 envelope=body,
                 master_key=self._master_key,
-                expected_ciphertext_sha256_hex=hashlib.sha256(body).hexdigest(),
-                expected_plaintext_sha256_hex=request.sha256_hex,
+                expected=ExpectedObject(
+                    object_key=request.key,
+                    ciphertext_sha256_hex=hashlib.sha256(body).hexdigest(),
+                    plaintext_sha256_hex=request.sha256_hex,
+                    # No record exists on this path, so there is no version to hold
+                    # the object to; the one it carries is reported below.
+                    envelope_version=None,
+                ),
             )
         except EnvelopeError as error:
             raise StoragePolicyViolation(
@@ -294,7 +307,9 @@ class S3EncryptedObjectStore:
             sha256_hex=request.sha256_hex,
             media_type=request.media_type,
             encryption_algorithm=ALGORITHM_AES_256_GCM,
-            envelope_version=ENVELOPE_VERSION,
+            # What is there, not what this build would write: an existing `v1`
+            # object is proved as `v1` and recorded as such.
+            envelope_version=envelope_version_of(body),
             ciphertext_sha256_hex=hashlib.sha256(body).hexdigest(),
         )
 

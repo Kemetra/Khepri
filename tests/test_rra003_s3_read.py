@@ -26,7 +26,7 @@ import pytest
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION, MasterKey, seal
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, WRITE_ENVELOPE_VERSION, MasterKey, seal
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.storage import S3EncryptedObjectStore, StoredEnvelope
 
@@ -64,7 +64,7 @@ def get_parameters() -> dict[str, object]:
 
 
 def sealed() -> tuple[bytes, str]:
-    result = seal(plaintext=CONTENT, master_key=_MASTER_KEY)
+    result = seal(plaintext=CONTENT, master_key=_MASTER_KEY, object_key=KEY)
     return result.envelope, result.ciphertext_sha256_hex
 
 
@@ -77,7 +77,7 @@ def envelope(
     *,
     plaintext_digest: str = SHA256_HEX,
     algorithm: str = ALGORITHM_AES_256_GCM,
-    version: int = ENVELOPE_VERSION,
+    version: int = WRITE_ENVELOPE_VERSION,
 ) -> StoredEnvelope:
     return StoredEnvelope(
         ciphertext_sha256_hex=ciphertext_digest,
@@ -177,7 +177,7 @@ def test_get_refuses_under_the_wrong_master_key() -> None:
 
 @pytest.mark.parametrize(
     ("algorithm", "version"),
-    [("aws:kms", ENVELOPE_VERSION), (ALGORITHM_AES_256_GCM, ENVELOPE_VERSION + 1)],
+    [("aws:kms", WRITE_ENVELOPE_VERSION), (ALGORITHM_AES_256_GCM, WRITE_ENVELOPE_VERSION + 1)],
 )
 def test_get_refuses_metadata_this_build_cannot_honour(algorithm: str, version: int) -> None:
     """A row still claiming `aws:kms` is unreadable rather than quietly trusted."""

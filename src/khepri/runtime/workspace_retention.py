@@ -27,7 +27,7 @@ from khepri.rca.workspace.unit_of_work import unit_of_work, writing
 from khepri.rra.artifact_persistence import ReportArtifactRow
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.persistence import UploadRow, session_scope_for_update_statement
-from khepri.rra.sessions import SessionScope
+from khepri.rra.sessions import SessionScope, object_in_scope
 
 # A storage sentinel for DEC-033's deliberately unbounded active lifetime.  It
 # is not a retention horizon: dataset/run deletion and organization closure are
@@ -52,7 +52,18 @@ class RawUploadPurgeReport:
 class _RawUpload:
     upload_id: str
     owner_id: str
+    session_id: str
     object_key: str
+
+    def names_its_own_object(self) -> bool:
+        """Whether the key lies in the row's own namespace (#535).
+
+        A row whose scope columns were edited still names another scope's object.
+        Purging it would delete that scope's bytes, so such a row is left alone --
+        row and object both -- rather than swept.
+        """
+        scope = SessionScope(owner_id=self.owner_id, session_id=self.session_id)
+        return object_in_scope(scope, self.object_key)
 
 
 def retain_workspace_content(
@@ -155,7 +166,12 @@ class RawUploadRetentionSweeper:
         horizon = now - RAW_UPLOAD_RETENTION
         with self._factory() as database:
             rows = database.execute(
-                select(UploadRow.upload_id, UploadRow.owner_id, UploadRow.object_key)
+                select(
+                    UploadRow.upload_id,
+                    UploadRow.owner_id,
+                    UploadRow.session_id,
+                    UploadRow.object_key,
+                )
                 .join(
                     DatasetVersionRow,
                     (DatasetVersionRow.owner_id == UploadRow.owner_id)
@@ -170,7 +186,8 @@ class RawUploadRetentionSweeper:
                 )
                 .order_by(UploadRow.owner_id, UploadRow.upload_id)
             )
-            return tuple(_RawUpload(*row) for row in rows)
+            due = (_RawUpload(*row) for row in rows)
+            return tuple(upload for upload in due if upload.names_its_own_object())
 
 
 __all__ = [

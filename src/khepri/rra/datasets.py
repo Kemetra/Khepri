@@ -30,6 +30,7 @@ from khepri.rra.profiling import (
 from khepri.rra.sessions import (
     SessionExpired,
     SessionScope,
+    assert_object_in_scope,
     assert_same_scope,
     require_upload_consent,
 )
@@ -208,6 +209,7 @@ class ProfilingService:
         if upload is None:
             raise UploadNotFound("No governed upload is available for this session.")
         assert_same_scope(scope, upload.scope)
+        assert_object_in_scope(scope, upload.object_key)
 
         question = ProfileQuestion(
             request=request,
