@@ -232,12 +232,6 @@ class TestARunFailingWhileEnded:
             assert stone.completed_at is None, "the run was failed after its tombstone was written"
             assert j.w.store.get_analysis_run(run_id, who.owner_id) is None
 
-    @pytest.mark.xfail(
-        raises=DefectStillPresent,
-        strict=True,
-        reason="#611: `complete_analysis_run` guards with `_visible_in`, not `_live_in`, so a "
-        "failure under the cascade reaches the update and the tombstone guard faults",
-    )
     def test_the_failure_under_the_cascade_is_refused_not_faulted(self) -> None:
         """The loser's answer is the refusal `perform` records, not the tombstone guard's fault."""
         with postgres_journey() as j:

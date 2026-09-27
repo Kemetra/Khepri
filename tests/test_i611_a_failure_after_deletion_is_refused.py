@@ -13,8 +13,6 @@ run's lock.
 
 from __future__ import annotations
 
-import pytest
-
 from khepri.rca.workspace.contracts import RUN_FAILED, RunOutcome
 from tests.w104_support import LATER, member
 from tests.w104b_support import journey
@@ -22,9 +20,6 @@ from tests.w106_support import started_run
 from tests.w107_support import NOW, deletion_service
 
 
-@pytest.mark.xfail(
-    strict=True, raises=ValueError, reason="#611: the tombstone guard faults on the write"
-)
 def test_failing_a_run_its_deletion_ended_is_refused() -> None:
     j = journey()
     who = member(j.w)
