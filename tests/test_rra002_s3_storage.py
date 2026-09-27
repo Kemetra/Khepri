@@ -25,7 +25,7 @@ import pytest
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION, MasterKey, seal
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, WRITE_ENVELOPE_VERSION, MasterKey, seal
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.storage import ObjectWrite, S3EncryptedObjectStore, StoredEnvelope
 
@@ -76,7 +76,7 @@ def store_and_stubber(
 
 def sealed_body() -> tuple[bytes, str]:
     """One sealed copy of `CONTENT` and its ciphertext digest."""
-    result = seal(plaintext=CONTENT, master_key=_MASTER_KEY)
+    result = seal(plaintext=CONTENT, master_key=_MASTER_KEY, object_key=KEY)
     return result.envelope, result.ciphertext_sha256_hex
 
 
@@ -85,7 +85,7 @@ def envelope_for(ciphertext_digest: str) -> StoredEnvelope:
         ciphertext_sha256_hex=ciphertext_digest,
         sha256_hex=SHA256_HEX,
         encryption_algorithm=ALGORITHM_AES_256_GCM,
-        envelope_version=ENVELOPE_VERSION,
+        envelope_version=WRITE_ENVELOPE_VERSION,
     )
 
 
@@ -160,7 +160,7 @@ def test_put_writes_ciphertext_and_records_both_digests() -> None:
     assert stored.sha256_hex == SHA256_HEX
     assert stored.size_bytes == len(CONTENT)
     assert stored.encryption_algorithm == ALGORITHM_AES_256_GCM
-    assert stored.envelope_version == ENVELOPE_VERSION
+    assert stored.envelope_version == WRITE_ENVELOPE_VERSION
     assert len(stored.ciphertext_sha256_hex) == 64
     assert stored.ciphertext_sha256_hex != SHA256_HEX
 
@@ -198,7 +198,7 @@ def test_put_or_verify_proves_an_identical_preexisting_object() -> None:
     assert result.created is False
     assert result.stored.sha256_hex == SHA256_HEX
     assert result.stored.encryption_algorithm == ALGORITHM_AES_256_GCM
-    assert result.stored.envelope_version == ENVELOPE_VERSION
+    assert result.stored.envelope_version == WRITE_ENVELOPE_VERSION
 
 
 def test_put_refuses_content_that_does_not_match_its_declared_digest() -> None:
@@ -269,7 +269,7 @@ def test_get_refuses_a_retired_algorithm() -> None:
         ciphertext_sha256_hex="c" * 64,
         sha256_hex=SHA256_HEX,
         encryption_algorithm="aws:kms",
-        envelope_version=ENVELOPE_VERSION,
+        envelope_version=WRITE_ENVELOPE_VERSION,
     )
     with stubber, pytest.raises(StoragePolicyViolation):
         store.get(KEY, envelope=retired)
@@ -288,7 +288,7 @@ def test_get_fails_closed_on_versioned_semantics() -> None:
 
 
 def test_put_or_verify_refuses_an_existing_object_holding_other_content() -> None:
-    other = seal(plaintext=b"not the requested content", master_key=_MASTER_KEY)
+    other = seal(plaintext=b"not the requested content", master_key=_MASTER_KEY, object_key=KEY)
     store, stubber = store_and_stubber()
     stubber.add_client_error(
         "put_object", service_error_code="PreconditionFailed", http_status_code=412

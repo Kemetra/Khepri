@@ -25,10 +25,6 @@ from khepri.rra import envelope as env
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.storage import ObjectWrite, S3EncryptedObjectStore, StoredEnvelope
 
-# Removed with the implementation. The three `v1` adapter tests below carry no marker: they hold
-# before and after, and guard that `v2` does not cost stored data its readability.
-RED = pytest.mark.xfail(strict=True, reason="#535 RED: envelope v2 is not implemented")
-
 MASTER = env.MasterKey(material=bytes([7]) * 32)
 PLAINTEXT = b"store,revenue\nRiyadh,1200.50\n"
 PLAINTEXT_SHA = hashlib.sha256(PLAINTEXT).hexdigest()
@@ -63,9 +59,12 @@ def _open(body: bytes, object_key: str = KEY_A) -> bytes:
     return env.open_envelope(
         envelope=body,
         master_key=MASTER,
-        object_key=object_key,
-        expected_ciphertext_sha256_hex=hashlib.sha256(body).hexdigest(),
-        expected_plaintext_sha256_hex=PLAINTEXT_SHA,
+        expected=env.ExpectedObject(
+            object_key=object_key,
+            ciphertext_sha256_hex=hashlib.sha256(body).hexdigest(),
+            plaintext_sha256_hex=PLAINTEXT_SHA,
+            envelope_version=None,
+        ),
     )
 
 
@@ -73,13 +72,11 @@ def _seal(object_key: str = KEY_A) -> env.SealedObject:
     return env.seal(plaintext=PLAINTEXT, master_key=MASTER, object_key=object_key)
 
 
-@RED
 def test_a_stored_v1_envelope_still_opens() -> None:
     assert hashlib.sha256(GOLDEN_V1).hexdigest() == GOLDEN_V1_SHA
     assert _open(GOLDEN_V1) == PLAINTEXT
 
 
-@RED
 def test_new_writes_are_v2() -> None:
     sealed = _seal()
     assert sealed.envelope_version == env.WRITE_ENVELOPE_VERSION == 2
@@ -87,7 +84,6 @@ def test_new_writes_are_v2() -> None:
     assert env.envelope_version_of(sealed.envelope) == 2
 
 
-@RED
 def test_both_versions_are_readable_and_no_other() -> None:
     assert sorted(env.READABLE_ENVELOPE_VERSIONS) == [1, 2]
     for version in (1, 2):
@@ -96,7 +92,6 @@ def test_both_versions_are_readable_and_no_other() -> None:
         env.assert_supported(algorithm=env.ALGORITHM_AES_256_GCM, envelope_version=3)
 
 
-@RED
 def test_v2_opens_only_under_its_own_object_key() -> None:
     body = _seal(KEY_A).envelope
     assert _open(body, KEY_A) == PLAINTEXT
@@ -104,41 +99,35 @@ def test_v2_opens_only_under_its_own_object_key() -> None:
         _open(body, KEY_B)
 
 
-@RED
 def test_rewriting_a_v2_header_to_v1_refuses() -> None:
     body = bytes([1]) + _seal().envelope[1:]
     with pytest.raises(env.EnvelopeError):
         _open(body)
 
 
-@RED
 def test_the_documented_layout_opens() -> None:
     body = _forge(wrap_aad=_aad(b"wrap", KEY_A), content_aad=_aad(b"content", KEY_A))
     assert _open(body) == PLAINTEXT
 
 
-@RED
 def test_the_wrap_call_must_carry_its_aad() -> None:
     body = _forge(wrap_aad=None, content_aad=_aad(b"content", KEY_A))
     with pytest.raises(env.EnvelopeError):
         _open(body)
 
 
-@RED
 def test_the_content_call_must_carry_its_aad() -> None:
     body = _forge(wrap_aad=_aad(b"wrap", KEY_A), content_aad=None)
     with pytest.raises(env.EnvelopeError):
         _open(body)
 
 
-@RED
 def test_the_two_calls_are_domain_separated() -> None:
     body = _forge(wrap_aad=_aad(b"content", KEY_A), content_aad=_aad(b"wrap", KEY_A))
     with pytest.raises(env.EnvelopeError):
         _open(body)
 
 
-@RED
 def test_an_empty_object_key_cannot_be_sealed() -> None:
     with pytest.raises(env.EnvelopeError):
         _seal("")
@@ -175,7 +164,6 @@ def _serving(stubber: Stubber, body: bytes, key: str) -> None:
     )
 
 
-@RED
 def test_an_object_moved_with_its_row_to_another_scope_refuses() -> None:
     """Both digests hold, so only the bound key can refuse this splice."""
     body = _seal(KEY_A).envelope

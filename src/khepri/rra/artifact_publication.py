@@ -15,7 +15,7 @@ from khepri.rra.artifact_persistence import (
     ArtifactCorrupted,
     StoredArtifact,
 )
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, READABLE_ENVELOPE_VERSIONS
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
@@ -331,7 +331,6 @@ def _require_proven(
         publication.sha256_hex,
         publication.media_type,
         ALGORITHM_AES_256_GCM,
-        ENVELOPE_VERSION,
     )
     actual = (
         result.stored.key,
@@ -339,9 +338,12 @@ def _require_proven(
         result.stored.sha256_hex,
         result.stored.media_type,
         result.stored.encryption_algorithm,
-        result.stored.envelope_version,
     )
     if actual != expected or len(result.stored.ciphertext_sha256_hex) != 64:
+        raise StoragePolicyViolation("Object storage did not prove publication policy.")
+    # Readable, not written: `put_or_verify` may prove an object that already
+    # exists, and one stored before #535 is `v1`.
+    if result.stored.envelope_version not in READABLE_ENVELOPE_VERSIONS:
         raise StoragePolicyViolation("Object storage did not prove publication policy.")
 
 

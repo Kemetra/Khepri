@@ -14,10 +14,11 @@ import pytest
 from khepri.rra.envelope import (
     ALGORITHM_AES_256_GCM,
     DATA_KEY_BYTES,
-    ENVELOPE_VERSION,
     MASTER_KEY_BYTES,
     NONCE_BYTES,
+    WRITE_ENVELOPE_VERSION,
     EnvelopeError,
+    ExpectedObject,
     MasterKey,
     assert_supported,
     open_envelope,
@@ -25,6 +26,7 @@ from khepri.rra.envelope import (
 )
 
 PLAINTEXT = b"store,revenue\nRiyadh,1200.50\nJeddah,980.00\n"
+OBJECT_KEY = "owners/own_alpha/sessions/ses_alpha/inputs/upl_alpha"
 _HEADER_BYTES = 1 + NONCE_BYTES + NONCE_BYTES + DATA_KEY_BYTES + 16
 
 
@@ -33,15 +35,23 @@ def master_key(fill: int = 7) -> MasterKey:
 
 
 def sealed(key: MasterKey | None = None):
-    return seal(plaintext=PLAINTEXT, master_key=key or master_key())
+    return seal(plaintext=PLAINTEXT, master_key=key or master_key(), object_key=OBJECT_KEY)
 
 
 def opened(envelope: bytes, *, key: MasterKey, ciphertext_digest: str) -> bytes:
     return open_envelope(
         envelope=envelope,
         master_key=key,
-        expected_ciphertext_sha256_hex=ciphertext_digest,
-        expected_plaintext_sha256_hex=hashlib.sha256(PLAINTEXT).hexdigest(),
+        expected=expecting(ciphertext_digest, PLAINTEXT),
+    )
+
+
+def expecting(ciphertext_digest: str, plaintext: bytes) -> ExpectedObject:
+    return ExpectedObject(
+        object_key=OBJECT_KEY,
+        ciphertext_sha256_hex=ciphertext_digest,
+        plaintext_sha256_hex=hashlib.sha256(plaintext).hexdigest(),
+        envelope_version=None,
     )
 
 
@@ -81,7 +91,7 @@ def test_ciphertext_is_not_plaintext() -> None:
 
 def test_round_trip_returns_the_original_bytes() -> None:
     key = master_key()
-    result = seal(plaintext=PLAINTEXT, master_key=key)
+    result = seal(plaintext=PLAINTEXT, master_key=key, object_key=OBJECT_KEY)
     assert opened(result.envelope, key=key, ciphertext_digest=result.ciphertext_sha256_hex) == (
         PLAINTEXT
     )
@@ -89,13 +99,12 @@ def test_round_trip_returns_the_original_bytes() -> None:
 
 def test_empty_plaintext_round_trips() -> None:
     key = master_key()
-    result = seal(plaintext=b"", master_key=key)
+    result = seal(plaintext=b"", master_key=key, object_key=OBJECT_KEY)
     assert (
         open_envelope(
             envelope=result.envelope,
             master_key=key,
-            expected_ciphertext_sha256_hex=result.ciphertext_sha256_hex,
-            expected_plaintext_sha256_hex=hashlib.sha256(b"").hexdigest(),
+            expected=expecting(result.ciphertext_sha256_hex, b""),
         )
         == b""
     )
@@ -104,8 +113,8 @@ def test_empty_plaintext_round_trips() -> None:
 def test_sealing_twice_reuses_no_nonce_and_no_ciphertext() -> None:
     """Randomised encryption is why the ciphertext digest cannot be an identity."""
     key = master_key()
-    first = seal(plaintext=PLAINTEXT, master_key=key)
-    second = seal(plaintext=PLAINTEXT, master_key=key)
+    first = seal(plaintext=PLAINTEXT, master_key=key, object_key=OBJECT_KEY)
+    second = seal(plaintext=PLAINTEXT, master_key=key, object_key=OBJECT_KEY)
 
     assert first.envelope != second.envelope
     assert first.ciphertext_sha256_hex != second.ciphertext_sha256_hex
@@ -128,7 +137,7 @@ def test_the_two_nonces_differ_within_one_envelope() -> None:
 def test_seal_records_the_governed_algorithm_and_version() -> None:
     result = sealed()
     assert result.algorithm == ALGORITHM_AES_256_GCM
-    assert result.envelope_version == ENVELOPE_VERSION
+    assert result.envelope_version == WRITE_ENVELOPE_VERSION
     assert result.ciphertext_sha256_hex == hashlib.sha256(result.envelope).hexdigest()
 
 
@@ -178,7 +187,7 @@ def test_truncated_envelope_refuses() -> None:
 
 def test_unknown_envelope_version_refuses() -> None:
     result = sealed()
-    body = bytes([ENVELOPE_VERSION + 1]) + result.envelope[1:]
+    body = bytes([WRITE_ENVELOPE_VERSION + 1]) + result.envelope[1:]
     with pytest.raises(EnvelopeError):
         opened(body, key=master_key(), ciphertext_digest=hashlib.sha256(body).hexdigest())
 
@@ -192,13 +201,12 @@ def test_ciphertext_digest_mismatch_refuses_before_decrypting() -> None:
 def test_plaintext_digest_mismatch_refuses() -> None:
     """A database and object store that no longer describe the same object."""
     key = master_key()
-    result = seal(plaintext=PLAINTEXT, master_key=key)
+    result = seal(plaintext=PLAINTEXT, master_key=key, object_key=OBJECT_KEY)
     with pytest.raises(EnvelopeError):
         open_envelope(
             envelope=result.envelope,
             master_key=key,
-            expected_ciphertext_sha256_hex=result.ciphertext_sha256_hex,
-            expected_plaintext_sha256_hex=hashlib.sha256(b"different").hexdigest(),
+            expected=expecting(result.ciphertext_sha256_hex, b"different"),
         )
 
 
@@ -215,16 +223,16 @@ def test_errors_carry_no_key_material() -> None:
 
 
 def test_assert_supported_accepts_the_governed_pair() -> None:
-    assert_supported(algorithm=ALGORITHM_AES_256_GCM, envelope_version=ENVELOPE_VERSION)
+    assert_supported(algorithm=ALGORITHM_AES_256_GCM, envelope_version=WRITE_ENVELOPE_VERSION)
 
 
 @pytest.mark.parametrize(
     ("algorithm", "version"),
     [
-        ("aws:kms", ENVELOPE_VERSION),
-        ("AES-128-GCM", ENVELOPE_VERSION),
-        ("", ENVELOPE_VERSION),
-        (ALGORITHM_AES_256_GCM, ENVELOPE_VERSION + 1),
+        ("aws:kms", WRITE_ENVELOPE_VERSION),
+        ("AES-128-GCM", WRITE_ENVELOPE_VERSION),
+        ("", WRITE_ENVELOPE_VERSION),
+        (ALGORITHM_AES_256_GCM, WRITE_ENVELOPE_VERSION + 1),
         (ALGORITHM_AES_256_GCM, 0),
     ],
 )

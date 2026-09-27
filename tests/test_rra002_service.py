@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from khepri.rra.envelope import WRITE_ENVELOPE_VERSION
 from khepri.rra.intake import (
     CSV_MEDIA_TYPE,
     EncryptedObjectStore,
@@ -83,7 +84,7 @@ class MemoryEncryptedObjectStore(EncryptedObjectStore):
             sha256_hex=sha256_hex,
             media_type=media_type,
             encryption_algorithm=self.encryption_algorithm,
-            envelope_version=1,
+            envelope_version=WRITE_ENVELOPE_VERSION,
             ciphertext_sha256_hex="c" * 64,
         )
 
@@ -162,7 +163,7 @@ def test_completed_upload_is_bound_to_one_opaque_scope_and_envelope_metadata() -
         created_at=NOW + timedelta(seconds=1),
         expires_at=NOW + timedelta(days=7),
         encryption_algorithm="AES-256-GCM",
-        envelope_version=1,
+        envelope_version=WRITE_ENVELOPE_VERSION,
         ciphertext_sha256_hex="c" * 64,
     )
     assert objects.objects[metadata.object_key] == b"date,revenue\n2026-01,1\n"

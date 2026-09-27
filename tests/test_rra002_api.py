@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra.api import create_app
+from khepri.rra.envelope import WRITE_ENVELOPE_VERSION
 from khepri.rra.intake import (
     IntakeService,
     StoredObject,
@@ -38,7 +39,7 @@ class KmsMemoryObjectStore:
             sha256_hex=sha256_hex,
             media_type=media_type,
             encryption_algorithm="AES-256-GCM",
-            envelope_version=1,
+            envelope_version=WRITE_ENVELOPE_VERSION,
             ciphertext_sha256_hex="c" * 64,
         )
 

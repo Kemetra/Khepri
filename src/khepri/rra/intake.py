@@ -15,7 +15,7 @@ from typing import Protocol
 from xml.etree import ElementTree
 from xml.parsers import expat
 
-from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, WRITE_ENVELOPE_VERSION
 from khepri.rra.sessions import (
     BetaSession,
     SessionExpired,
@@ -302,7 +302,7 @@ def _storage_response_is_valid(
         and stored.sha256_hex == upload.sha256_hex
         and stored.media_type == upload.media_type
         and stored.encryption_algorithm == ALGORITHM_AES_256_GCM
-        and stored.envelope_version == ENVELOPE_VERSION
+        and stored.envelope_version == WRITE_ENVELOPE_VERSION
         and len(stored.ciphertext_sha256_hex) == 64
     )
 

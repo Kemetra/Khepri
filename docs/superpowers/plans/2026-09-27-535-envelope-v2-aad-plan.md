@@ -83,3 +83,24 @@ RED: 11 of the tests above are committed under `xfail(strict=True)`. Three carry
 they hold before and after: a `v1` object reads through the adapter, `put_or_verify` proves an
 existing `v1` object as `v1`, and a row naming another version than its object carries is refused
 (today by `assert_supported`, after this slice by the explicit comparison). Nothing is implemented.
+
+## Status as of 2026-09-27, branch `fix/535-envelope-v2-aad` @ implementation commit
+
+GREEN. Built as planned, with one change of shape: `open_envelope` takes an `ExpectedObject`
+(`object_key`, both digests, `envelope_version`) rather than a fifth keyword. A fifth argument was a
+new CodeScene finding on `envelope.py` (10.00 → 9.68), and the bundle also moved the row-versus-object
+version comparison into the envelope module, so `storage.get` gained no branch. `envelope_version`
+is `None` only on `put_or_verify`'s race-loser path, where no record exists yet; the caller writes
+the `None` out.
+
+The fake object stores in `test_rra002_service.py` now report `WRITE_ENVELOPE_VERSION` from `put`,
+because a real `put` can no longer return `v1`. Persisted-row fixtures elsewhere keep
+`envelope_version=1`: a `v1` row is still a legal row.
+
+Mutation check (15 mutants, each restored byte-for-byte): dropping the AAD from each of the four
+GCM calls, `_aad` returning `None` for `v2`, the version or the purpose left out of the AAD, an
+empty key admitted, the recorded-version comparison disabled, `v1` made unreadable, writes left at
+`v1`, `get` binding a constant key, the race loser reporting the write version, and publication or
+persistence tightened to the write version. All 15 killed.
+
+Still open under #535: rewriting stored `v1` objects as `v2`, its own slice by the owner's decision.

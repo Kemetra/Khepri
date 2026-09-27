@@ -20,6 +20,7 @@ from khepri.rra.datasets import (
     document_digest,
 )
 from khepri.rra.deletion import DeletionService
+from khepri.rra.envelope import WRITE_ENVELOPE_VERSION
 from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
 from khepri.rra.intake import IntakeService, StoredObject
 from khepri.rra.packages import (
@@ -72,7 +73,7 @@ class MemoryObjectStore:
             sha256_hex=sha256_hex,
             media_type=media_type,
             encryption_algorithm="AES-256-GCM",
-            envelope_version=1,
+            envelope_version=WRITE_ENVELOPE_VERSION,
             ciphertext_sha256_hex="c" * 64,
         )
 
