@@ -6,12 +6,26 @@ Describe the smallest independently verifiable change and its exclusions.
 
 List registry and rationale changes. State `None` if no governed artifact changes.
 
+## Claims
+
+One row per claim this PR makes. The reviewer checks this table and the diff; it does not
+re-derive them. A claim with no failing mutant is not evidence (`FR`/issue references required).
+
+| Claim | Governing FR / issue | Test that proves it | Mutant that turns it red |
+|---|---|---|---|
+|  |  |  |  |
+
+Owner items raised (not decided here):
+
+- None
+
 ## Evidence
 
 ```text
 uv run khepri-gov validate
 uv run ruff check .
 uv run pytest
+coderabbit review --agent   # local, before the first push
 ```
 
 ## Owner decision
