@@ -17,8 +17,6 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
-
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "khepri"
 
 #: Every `.with_for_update(...)` call in `src/khepri` at the commit that added this test. A new lock
@@ -70,9 +68,6 @@ def test_the_scan_reads_the_package() -> None:
     assert (SOURCE / "rca" / "workspace" / "locks.py").is_file(), f"not the package: {SOURCE}"
 
 
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="#606: RED until every lock refreshes"
-)
 def test_every_lock_refreshes_the_rows_it_locks() -> None:
     stale = [where for where, _call, refreshes in _lock_calls() if not refreshes]
     assert not stale, f"locks that can return a held row unrefreshed (#606): {stale}"

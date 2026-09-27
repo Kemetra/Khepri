@@ -252,12 +252,6 @@ class TestARunFailingWhileEnded:
             )
             raise DefectStillPresent("the failure passed the liveness guard (#611)")
 
-    @pytest.mark.xfail(
-        raises=DefectStillPresent,
-        strict=True,
-        reason="#610: the settlement's locked re-check reads the run as `started` after the "
-        "failure committed, and completes a failed run",
-    )
     def test_a_settlement_waits_for_a_failing_run_and_does_not_complete_it(self) -> None:
         """The run is failing, its lock held; a settlement of the same run arrives.
 
@@ -325,12 +319,6 @@ class TestOneRunTwoSettlingDoors:
             )
             assert outcomes_of(j, who.owner_id, ACTION_RUN_COMPLETED).count(OUTCOME_COMPLETED) == 1
 
-    @pytest.mark.xfail(
-        raises=DefectStillPresent,
-        strict=True,
-        reason="#606: the locked re-check in `record_completion` reads the run from the session's "
-        "identity map, so the loser passes it and faults on the provenance key",
-    )
     def test_the_losing_settlement_is_refused_not_faulted(self) -> None:
         """The loser's answer: the refusal `perform` records, or nothing -- never a database fault.
 

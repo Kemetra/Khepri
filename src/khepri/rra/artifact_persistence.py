@@ -449,6 +449,7 @@ def _require_live_session(
             BetaSessionRow.session_id == session_id,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if session is None:
         raise ArtifactConflict("Session content is unavailable.")

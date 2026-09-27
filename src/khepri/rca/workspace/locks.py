@@ -11,6 +11,14 @@ it.
 
 Split from `store.py` on `#371` so the store stays the operations, and the locks -- three
 statements whose argument is the same argument -- can be read together.
+
+**Each lock refreshes what it locks (`populate_existing`).** The store writes through the ambient
+unit of work, so a row read earlier in the same `perform` is already in the session's identity map
+when the lock runs, and an ORM `SELECT ... FOR UPDATE` returns that held object *unrefreshed*. The
+lock waited for the other transaction, and the re-check after it still read the state from before
+the wait: `#606`'s second settlement passed `record_completion`'s `started` guard, and `#610`'s
+completed a run that had already failed. `test_i606_every_lock_refreshes.py` holds every lock in
+`src/khepri` to this, not only these three.
 """
 
 from __future__ import annotations
@@ -35,7 +43,7 @@ def run_for_update(run_id: str, owner_id: str | None = None):
     statement = select(AnalysisRunRow).where(AnalysisRunRow.run_id == run_id)
     if owner_id is not None:
         statement = statement.where(AnalysisRunRow.owner_id == owner_id)
-    return statement.with_for_update()
+    return statement.with_for_update().execution_options(populate_existing=True)
 
 
 def version_for_update(version_id: str, owner_id: str | None = None):
@@ -49,7 +57,7 @@ def version_for_update(version_id: str, owner_id: str | None = None):
     statement = select(DatasetVersionRow).where(DatasetVersionRow.version_id == version_id)
     if owner_id is not None:
         statement = statement.where(DatasetVersionRow.owner_id == owner_id)  # see `run_for_update`
-    return statement.with_for_update()
+    return statement.with_for_update().execution_options(populate_existing=True)
 
 
 def live_runs_for_update(version_id: str, owner_id: str):
@@ -76,4 +84,5 @@ def live_runs_for_update(version_id: str, owner_id: str):
         .where(AnalysisRunRow.owner_id == owner_id)
         .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )

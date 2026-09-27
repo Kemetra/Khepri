@@ -318,6 +318,7 @@ def _leased_job(database: Session, record: DeliveryRecord) -> ReportJobRow:
             ReportJobRow.session_id == record.session_id,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if row is None:
         raise CrossSessionAccessDenied("Resource is unavailable.")

@@ -185,6 +185,7 @@ class SqlOperationalEventRepository:
                 ReportJobRow.session_id == event.session_id,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if row is None:
             raise CrossSessionAccessDenied("Resource is unavailable.")

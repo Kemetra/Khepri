@@ -77,7 +77,6 @@ def _locked_after_stale_load(
         return seen
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="#606: RED until the lock refreshes")
 def test_run_for_update_reads_the_run_as_the_lock_found_it(run_world) -> None:
     engine, _j, run, owner_id = run_world
     (row,) = _locked_after_stale_load(
@@ -94,7 +93,6 @@ def test_run_for_update_reads_the_run_as_the_lock_found_it(run_world) -> None:
     assert row.state == RUN_FAILED, "the locked read returned the run as first loaded (#606)"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="#606: RED until the lock refreshes")
 def test_version_for_update_reads_the_version_as_the_lock_found_it(run_world) -> None:
     engine, _j, run, owner_id = run_world
     (row,) = _locked_after_stale_load(
@@ -111,7 +109,6 @@ def test_version_for_update_reads_the_version_as_the_lock_found_it(run_world) ->
     assert row.retention_state == "tombstoned", "the locked read returned the version as loaded"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="#606: RED until the lock refreshes")
 def test_live_runs_for_update_reads_each_run_as_the_lock_found_it(run_world) -> None:
     engine, _j, run, owner_id = run_world
     (row,) = _locked_after_stale_load(
