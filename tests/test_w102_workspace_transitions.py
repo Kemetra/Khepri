@@ -386,17 +386,20 @@ def test_tombstoning_a_version_tombstones_its_live_runs(factory: sessionmaker) -
 
     assert store.get_analysis_run(doomed.run_id, scope) is None
     assert [run.run_id for run in store.analysis_runs_for_scope(scope)] == [spared.run_id]
-    with pytest.raises(ValueError, match="accepts no further update"):
-        store.complete_analysis_run(
-            doomed.run_id,
-            RunOutcome(
-                state="completed",
-                package_digest="sha256:abc",
-                package_version="1.0.0",
-                formula_version="1.0.0",
-                completed_at=LATER,
-            ),
-        )
+    # Refused, not faulted (`#611`): the store answers `False` for a run its deletion ended, as
+    # `record_completion` does, before the tombstone guard is reached. The guard still binds any
+    # write that gets past the store; `test_w102_workspace_completion.py` asserts that directly.
+    completed = store.complete_analysis_run(
+        doomed.run_id,
+        RunOutcome(
+            state="completed",
+            package_digest="sha256:abc",
+            package_version="1.0.0",
+            formula_version="1.0.0",
+            completed_at=LATER,
+        ),
+    )
+    assert completed is False, "a run its version's deletion ended was completed"
     with pytest.raises(ValueError, match="has been deleted"):
         store.add_artifact_binding(
             ArtifactBinding.create(
@@ -408,6 +411,7 @@ def test_tombstoning_a_version_tombstones_its_live_runs(factory: sessionmaker) -
         )
     with factory() as database:
         row = database.get(AnalysisRunRow, doomed.run_id)
+        assert row.state == "started" and row.package_digest is None, "the refusal wrote the run"
         assert row.retention_state == RETENTION_TOMBSTONED
         assert _utc(row.retention_changed_at) == LATER, (
             "a cascaded run's clock is the deletion instant"
