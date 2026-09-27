@@ -88,20 +88,10 @@
   --warning-fill: #FAEEDA;
   --warning-border: #F0E1C2;
 
-  /* The one destructive warning (`invitation-warning`), unchanged from journey.css. Governed
-   * refusals never read this family: `test_r808` admits it in exactly one rule. */
-  --danger: #9a2d26;
-  --danger-border: #d9a49f;
-  --danger-surface: #faece9;
-  --danger-ink: #6d201b;
-
-  /* `--ready` and its two companions, derived at the danger family's saturation and lightness
-   * steps (`R8-01` §3). Kept so the derivation test still has its lineage to prove. */
-  --ready: #1d6b45;
-  --ready-border: #a0d9be;
-  --ready-surface: #eafaf3;
-
-  --track: #e3ded1;
+  /* The one destructive warning (`invitation-warning`): §16.5 error ink. Governed refusals never
+   * read it: `test_r808` admits it in exactly one rule. #572 retired the pre-handoff `--danger`
+   * family, `--ready` and `--track`; nothing in the shell consumed them. */
+  --danger: #B0392F;
 
   /* ---- Elevation: the handoff's system has exactly three shadows, and the shell uses one ------ */
   /* The app frame. Offset and soft blur, derived from `--navy-900` at the handoff's opacity. */

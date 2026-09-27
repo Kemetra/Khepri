@@ -130,6 +130,11 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-di
 .contract-row--claim { align-items: flex-start; min-block-size: 44px; }
 .contract-row--claim input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
 .contract-row input:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: 1px; }
+/* #572: a native date input's last Tab stop is the picker button inside its shadow
+   tree, where neither `:focus-visible` nor `:focus` matches the host, so no ring
+   paints. `:focus-within` matches while any inner part holds focus, so every stop
+   keeps the ring (measured on Chromium 149). */
+.contract-row input[type="date"]:focus-within { outline: 2px solid var(--accent-dark); outline-offset: 1px; }
 /* The declared currency must be uppercase ISO 4217, so the field shows what it
    will send: the operator sees `EGP` while typing `egp`, and the mistake is
    corrected visibly before submit rather than refused after it. */
@@ -141,12 +146,17 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-di
    semantic fit, but it is declared in a shell-owned asset the journey pages do
    not load; `--danger` is the danger token actually in scope here.
 
-   Colour is deliberately not the only signal. `:invalid` also thickens the border,
+   `:user-invalid`, not `:invalid:not(:placeholder-shown)` (#572): the input is
+   `required` with no placeholder, so that selector matched from first paint.
+   `:user-invalid` waits until the operator has edited and left the field, or tried
+   to submit.
+
+   Colour is deliberately not the only signal. The invalid state also thickens the border,
    so the state survives a monochrome display and any form of colour blindness, and
    the rule itself stays legible in `#contract-currency-hint`, which the input
    points at with `aria-describedby` and which is readable before the mistake is
    made rather than only after. */
-#contract-currency-code:invalid:not(:placeholder-shown) { border-color: var(--danger); border-width: 2px; }
+#contract-currency-code:user-invalid { border-color: var(--danger); border-width: 2px; }
 .drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: var(--journey-sunken); text-align: center; cursor: pointer; }
 .drop-zone.is-dragging { border-color: var(--accent); border-style: solid; background: var(--journey-accent-surface); }
 .drop-icon { color: var(--accent-dark); }
