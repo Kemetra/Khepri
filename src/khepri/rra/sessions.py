@@ -227,10 +227,31 @@ class InvitationService:
         return _present(self._store.get_session(session_id))
 
 
+class ContentWindow(Protocol):
+    """What decides whether a session's content is still live: its expiry and its deletion."""
+
+    @property
+    def content_expires_at(self) -> datetime: ...
+
+    @property
+    def deletion_requested_at(self) -> datetime | None: ...
+
+
+def content_is_live(session: ContentWindow, now: datetime) -> bool:
+    """Whether the session's content may still be served: no deletion requested, not expired.
+
+    The one statement of the rule. The journey's reads, upload consent, and the commercial shell's
+    artifact handoff all ask it, so a session one of them ends is ended for all of them. `#605`
+    found the handoff deciding on an earlier read and handing out a cookie for content whose
+    deletion had committed since.
+    """
+    return session.deletion_requested_at is None and now < session.content_expires_at
+
+
 def _live(session: BetaSession | None, now: datetime) -> BetaSession:
     """The session, if it exists, has not expired, and is not being deleted."""
     session = _present(session)
-    if now >= session.content_expires_at or session.deletion_requested_at is not None:
+    if not content_is_live(session, now):
         raise SessionExpired("Session content has expired.")
     return session
 
@@ -242,7 +263,7 @@ def _present(session: BetaSession | None) -> BetaSession:
 
 
 def require_upload_consent(session: BetaSession, *, now: datetime) -> None:
-    if now >= session.content_expires_at or session.deletion_requested_at is not None:
+    if not content_is_live(session, now):
         raise SessionExpired("Session content has expired.")
     if session.consent_version is None or session.consented_at is None:
         raise ConsentRequired("Consent is required before upload.")

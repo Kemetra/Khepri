@@ -155,12 +155,6 @@ def test_a_late_handoff_does_not_hand_over_ended_content() -> None:
         assert artifact.json() == {"detail": NO_ARTIFACT}
 
 
-@pytest.mark.xfail(
-    raises=DefectStillPresent,
-    strict=True,
-    reason="#605: the handoff re-checks nothing after `_locate`, so it issues a cookie for a "
-    "session whose ending was recorded while it was in flight",
-)
 def test_a_late_handoff_issues_no_cookie_for_an_ended_session() -> None:
     """`FR-127`'s uniform denial, at the handoff itself: no `303`, and no cookie beside it.
 

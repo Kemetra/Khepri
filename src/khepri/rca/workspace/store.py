@@ -490,14 +490,16 @@ class SqlWorkspaceRecordStore(PinReads):
         writes as immutable once the run has left `started`.
 
         Returns whether this call completed it, on the same reasoning as `seal_dataset_version`:
-        a run that does not exist, belongs to another scope, or has already finished are the same
-        answer from the caller's side.
+        a run that does not exist, belongs to another scope, has already finished, or was ended by
+        its version's deletion are the same answer from the caller's side. The last is why the
+        re-check is `_live_in`, as `record_completion`'s is: `_visible_in` let a tombstoned run
+        reach the write, where the tombstone guard faulted instead of this refusing (`#611`).
         """
         if outcome.state == RUN_STARTED:
             raise ValueError(RECOMPLETE_FAILURE)
         with writing(self._factory) as database:
             row = database.scalars(run_for_update(run_id, owner_id)).one_or_none()
-            if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
+            if not _live_in(row, owner_id) or row.state != RUN_STARTED:
                 return False
             row.state = outcome.state
             row.package_digest = outcome.package_digest

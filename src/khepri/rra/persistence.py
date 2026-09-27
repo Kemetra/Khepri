@@ -361,11 +361,17 @@ def invitation_for_update_statement(
         select(InvitationRow)
         .where(InvitationRow.invitation_id == invitation_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
 
 def session_for_update_statement(session_id: str) -> Select[tuple[BetaSessionRow]]:
-    return select(BetaSessionRow).where(BetaSessionRow.session_id == session_id).with_for_update()
+    return (
+        select(BetaSessionRow)
+        .where(BetaSessionRow.session_id == session_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
 
 
 def _first[R](
@@ -907,6 +913,7 @@ class SqlDeletionRepository:
             select(DeletionJobRow)
             .where(DeletionJobRow.deletion_id == deletion_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if row is None:
             raise LookupError("Deletion job is unavailable.")
@@ -921,6 +928,7 @@ def session_scope_for_update_statement(
             *_in_scope(BetaSessionRow, scope),
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
 

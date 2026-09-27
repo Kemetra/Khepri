@@ -411,7 +411,8 @@ def account_for_update(account_id: str):
     exclusion rather than one waiting for a partner. §8.4 withdrew the counterpart slice two earlier
     revisions of the design note required.
     """
-    return select(AccountRow).where(AccountRow.account_id == account_id).with_for_update()
+    statement = select(AccountRow).where(AccountRow.account_id == account_id)
+    return statement.with_for_update().execution_options(populate_existing=True)
 
 
 def identity_lock_key(canonical_address: str) -> int:
@@ -866,6 +867,7 @@ def organization_owners_for_update(organization_id: str):
             MembershipRow.role == OWNER_ROLE,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
 
@@ -918,6 +920,7 @@ def owner_memberships_for_update(account_id: str):
         )
         .order_by(MembershipRow.organization_id, MembershipRow.account_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
 

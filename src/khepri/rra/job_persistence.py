@@ -187,6 +187,7 @@ class SqlReportJobRepository:
                 *claimable_at(request.now),
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         with self._factory.begin() as database:
             row = database.scalar(statement)
@@ -208,6 +209,7 @@ class SqlReportJobRepository:
             )
             .order_by(ReportJobRow.lease_expires_at, ReportJobRow.job_id)
             .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
         with self._factory.begin() as database:
             rows = list(database.scalars(statement))
@@ -226,6 +228,7 @@ class SqlReportJobRepository:
             )
             .order_by(ReportJobRow.queued_at, ReportJobRow.job_id)
             .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
         with self._factory.begin() as database:
             candidates = list(database.scalars(statement))
@@ -337,6 +340,7 @@ class SqlReportJobRepository:
                 ReportJobRow.lease_expires_at > request.now,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if row is None:
             raise LeaseLost("Report job lease is unavailable.")

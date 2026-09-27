@@ -44,6 +44,7 @@ def defer_for_publication(
             select(ReportJobRow)
             .where(ReportJobRow.session_id == deletion.session_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
     )
     _settle_unleased(report_jobs, completed_at=deletion.requested_at)
