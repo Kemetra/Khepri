@@ -107,7 +107,9 @@ _STATES = {
     "expired-deletion": ("expired?deletion=requested", (401, None), None),
 }
 
-#: The selector each state must show, so a state that never rendered cannot pass.
+#: The selector each state must show, so a state that never rendered cannot pass. Each one names
+#: something the step's module creates or reveals, never markup present on first paint: the
+#: recovery button renders visible, so the failed state waits for the bar the module hides.
 _RENDERED = {
     "upload": "#upload-form",
     "upload-kept-refused": "#upload-kept:not([hidden]) ~ #upload-recovery:not([hidden])",
@@ -115,7 +117,7 @@ _RENDERED = {
     "review-mapped": "#mapping-table tbody tr",
     "review-refused": "#profile-findings:not([hidden]) li",
     "processing-running": "#processing-status:not(:empty)",
-    "processing-failed": "#processing-recovery:not([hidden])",
+    "processing-failed": ".indeterminate[hidden] ~ #processing-recovery",
     "report-ready": "#report-links:not([hidden]) .report-card",
     "expired": "#page-title",
     "expired-deletion": "#page-title",
@@ -344,16 +346,19 @@ def test_the_navy_paints_the_header_and_nothing_else(language: str) -> None:
 @pytest.mark.browser
 @pytest.mark.parametrize("language", _LANGUAGES)
 def test_the_declarations_share_a_row_only_where_the_width_allows(language: str) -> None:
-    """Side by side at 1440 and 1024, the contract first on the reading side; stacked at 390."""
+    """Side by side from 900px, the contract first on the reading side; stacked below it.
+
+    Both sides of the `max-width: 899px` breakpoint are measured, not only the supported widths
+    either side of it, so a breakpoint that moved would fail here."""
     with sync_playwright() as playwright:
         browser = _launch(playwright)
         try:
-            for viewport in _VIEWPORTS:
+            for viewport in (*_VIEWPORTS, (900, 800), (899, 800)):
                 page = _served_page(browser, language, "upload", viewport)
                 contract = page.locator("#source-contract").bounding_box()
                 manifest = page.locator("#coverage-manifest").bounding_box()
                 assert contract is not None and manifest is not None
-                if viewport[0] >= 1024:
+                if viewport[0] >= 900:
                     assert contract["y"] == manifest["y"], viewport
                     first = contract["x"] < manifest["x"]
                     assert first == (language == "en"), viewport
