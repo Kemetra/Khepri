@@ -289,8 +289,10 @@ th { background: var(--journey-sunken); color: var(--muted); font-size: var(--jo
  * takes no logical direction, so right-to-left states its mirror. */
 .journey-hero__wash { position: absolute; inset: 0; background-image: linear-gradient(90deg, var(--journey-hero-ground) var(--journey-hero-solid), transparent var(--journey-hero-fade)); }
 [dir="rtl"] .journey-hero__wash { background-image: linear-gradient(270deg, var(--journey-hero-ground) var(--journey-hero-solid), transparent var(--journey-hero-fade)); }
-/* 02 Upload: the artwork as the heading's companion card, no copy on it, so no wash. */
-.upload-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 30%); gap: 1.5rem; align-items: stretch; margin-block-end: 1.75rem; }
+/* 02 Upload: the artwork as the heading's companion card, no copy on it, so no wash. The card's
+ * floor is `min(16rem, 30%)`, not `16rem`: at 200% text a fixed 16rem doubles and squeezed the
+ * facts strip past its box at 1024, so the card gives way rather than the text. */
+.upload-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(min(16rem, 30%), 30%); gap: 1.5rem; align-items: stretch; margin-block-end: 1.75rem; }
 .upload-head .intake-facts { margin-block-end: 0; }
 .journey-hero-card { position: relative; min-block-size: 15rem; overflow: hidden; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background-color: var(--journey-hero-ground); }
 .journey-hero-card__image { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 50% 50%; }
