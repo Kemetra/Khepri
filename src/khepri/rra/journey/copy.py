@@ -30,6 +30,8 @@ _EN = {
     "step_review": "Review",
     "step_processing": "Analysing",
     "step_report": "Report",
+    # `RRA-016` `FR-229`: the approved artwork's name. It is decorative and states nothing.
+    "hero_alt": "Khepri monument at sunrise",
     "accepted": "Accepted",
     "size_limit": "Size limit",
     "you_receive": "You receive",
@@ -224,6 +226,7 @@ _AR = {
     "step_review": "المراجعة",
     "step_processing": "التحليل",
     "step_report": "التقرير",
+    "hero_alt": "نُصُب كِبري عند الشروق",
     "accepted": "الملفات المقبولة",
     "size_limit": "الحد الأقصى",
     "you_receive": "ما ستحصل عليه",
