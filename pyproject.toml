@@ -54,7 +54,8 @@ khepri-clerk-hard-stop = "khepri.runtime.clerk_hard_stop:main"
 khepri-retention-sweep = "khepri.runtime.retention_sweep:main"
 # `KHEPRI-DEC-028`, amended in #613: `v1` stays readable until a migration rewrites every `v1`
 # object and verifies none remains. `khepri.runtime` for the reason given above, since the command
-# must run in the image that holds the data. It covers report artifacts. Uploads wait on #535.
+# must run in the image that holds the data. It covers report artifacts. Uploads wait on an
+# `RCA-005` amendment giving dataset versions a stable upload identity (#535).
 khepri-envelope-migrate = "khepri.runtime.envelope_migration:main"
 
 [dependency-groups]

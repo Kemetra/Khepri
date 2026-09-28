@@ -21,7 +21,8 @@ SOURCE = Path(__file__).resolve().parents[1] / "src" / "khepri"
 
 #: Every `.with_for_update(...)` call in `src/khepri` at the commit that added this test. A new lock
 #: changes this number on purpose, so whoever adds one reads why it must refresh.
-LOCK_SITES = 18
+#: 19 since #535's artifact migration, whose row lock (`rra/envelope_migration.py`) refreshes.
+LOCK_SITES = 19
 
 
 def _modules() -> Iterator[tuple[Path, ast.Module]]:
