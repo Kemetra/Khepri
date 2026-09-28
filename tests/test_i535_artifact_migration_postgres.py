@@ -99,14 +99,19 @@ def test_a_deletion_begun_mid_rewrite_waits_and_the_rest_defer_to_it(
     )
 
     migrating.start()
-    assert store.entered.wait(timeout=30)
-    deleting.start()
-    deleting.join(timeout=BLOCKED_FOR)
-    # The mechanism, not a timing: the deletion is parked on the lock the rewrite holds.
-    assert deleting.is_alive(), "a deletion began while an object was being rewritten"
-    store.release.set()
-    migrating.join(timeout=30)
-    deleting.join(timeout=30)
+    try:
+        assert store.entered.wait(timeout=30)
+        deleting.start()
+        deleting.join(timeout=BLOCKED_FOR)
+        # The mechanism, not a timing: the deletion is parked on the lock the rewrite holds.
+        assert deleting.is_alive(), "a deletion began while an object was being rewritten"
+    finally:
+        # Released and joined on every path, so a failure cannot leave a thread running into
+        # the fixture's teardown.
+        store.release.set()
+        migrating.join(timeout=30)
+        if deleting.ident is not None:
+            deleting.join(timeout=30)
 
     # The paused row committed before the deletion took the lock. Whichever rows ran after the
     # deletion committed saw it and left their objects alone, and every one is still counted.

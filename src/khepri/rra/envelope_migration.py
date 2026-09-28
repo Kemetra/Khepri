@@ -77,8 +77,13 @@ class EnvelopeMigrationReport:
 
     @property
     def verified(self) -> bool:
-        """No `v1` artifact remains and nothing faulted. The only reading that means done."""
-        return self.artifacts_remaining == 0 and self.failed == 0
+        """No `v1` artifact remains: `KHEPRI-DEC-028`'s "verifies that none remains".
+
+        `failed` is deliberately not a second condition. A row whose rewrite faulted is still
+        `v1`, so it is already counted in `artifacts_remaining`. A fault on a row that a
+        concurrent deletion then removed leaves nothing to migrate, and that is done.
+        """
+        return self.artifacts_remaining == 0
 
     def as_counts(self) -> dict[str, int]:
         return asdict(self)

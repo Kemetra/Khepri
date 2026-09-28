@@ -68,8 +68,8 @@ reason `pyproject.toml` gives for `khepri-retention-sweep`. It builds through `b
 prints one content-free JSON line with these counts: `resealed`, `adopted`, `deferred`, `refused`,
 `failed`, `artifacts_remaining`, and `uploads_not_migrated`. The last is informational, so an
 operator can see the half this slice does not cover. The command **exits non-zero while any `v1`
-artifact row remains or any row failed**, so "completed and verified" is the exit status, not a
-reading of the output.
+artifact row remains**, so "completed and verified" is the exit status, not a reading of the
+output. A row whose rewrite failed stays `v1` and is one of those rows.
 
 Nothing schedules it, as with the retention sweep. Running it is an operational act.
 
@@ -105,7 +105,8 @@ resolved against the built wheel.
 
 PostgreSQL (`concurrency` marker, 10 repeats):
 - A deletion that begins while a rewrite holds the session lock waits for it.
-- A deletion that began first makes the rewrite defer.
+- A deletion that began first makes the rewrite defer. (This one turned out to be sequential; see
+  the status block below.)
 
 **Mutation check after GREEN**, with each mutant restored by diff:
 - the session lock replaced by a plain `SELECT`;
@@ -116,3 +117,37 @@ PostgreSQL (`concurrency` marker, 10 repeats):
 - the row update dropping the new digest;
 - `remaining` counted from the wrong version;
 - the exit status ignoring `remaining`.
+
+## Status as of 2026-09-28, branch `feat/535-v1-migration`
+
+GREEN, as planned, with two corrections to the text above.
+
+- **The second PostgreSQL case is not a PostgreSQL test.** A deletion that began first is a
+  sequential case: the rewrite reads `deletion_requested_at` under the lock, and SQLite runs that
+  read too. It is `test_a_session_whose_deletion_was_requested_is_deferred_and_left_alone`. The
+  contention case is the only one that needs two connections, and it runs 10 times.
+- **`verified` is `artifacts_remaining == 0` alone.** The draft also required `failed == 0`. A
+  mutant dropping that term survived. The diagnosis was that the mutant, not the test, had the rule
+  right: a row whose rewrite faulted is still `v1` and already counted, and `KHEPRI-DEC-028`'s
+  condition is that none remains.
+
+Added test: adoption refuses a `v2` object that opens under the right key but holds other content.
+Without it, "adoption without the plaintext digest" had no test that could tell the difference.
+
+**Mutation check: 14 mutants, each restored byte-for-byte.** Thirteen were killed. The fourteenth
+is the `verified` term above, which was removed rather than tested.
+
+- the session lock replaced by a plain `SELECT` (killed by the PostgreSQL case's `is_alive`
+  assertion, on PostgreSQL 17);
+- the deletion check removed;
+- the scope check removed;
+- adoption unverified;
+- the overwrite skipping its write;
+- the row keeping its old digest;
+- `remaining` counting the wrong version;
+- `verified` ignoring `remaining`;
+- an unconfirmed overwrite deleting the object;
+- `reseal` accepting a non-`v1` record;
+- the overwrite sealing under another key;
+- adoption reported as a rewrite;
+- the entry point ignoring the verdict.

@@ -5,8 +5,9 @@ from the image that holds the data, for the reason `pyproject.toml` gives for
 `khepri-retention-sweep`.
 
 **The exit status is the verification.** `KHEPRI-DEC-028` retires `v1` only once the migration has
-"verified that none remains". The process exits non-zero while any `v1` artifact row remains or
-any row faulted, so an operator or a script cannot read a partial pass as done. The printed line
+"verified that none remains". The process exits non-zero while any `v1` artifact row remains, and
+a row whose rewrite faulted is one of them, so an operator or a script cannot read a partial pass
+as done. The printed line
 repeats the counts and carries no identifier (`KHEPRI-DEC-015` §7).
 
 **Nothing here schedules it**, as with the retention sweep. Running it is an operational act.
