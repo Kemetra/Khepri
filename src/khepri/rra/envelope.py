@@ -65,8 +65,9 @@ verifies. Every reader holds the key to the caller's own namespace with
 **Version compatibility.** New writes are `WRITE_ENVELOPE_VERSION` (`2`). A reader
 accepts exactly `READABLE_ENVELOPE_VERSIONS`: `v1`, which binds no AAD and stays
 readable because stored objects predate `v2`, and `v2`. Rewriting stored `v1`
-objects as `v2` is not done here; it is its own slice. Any later format version
-must bind at least what `v2` binds.
+objects as `v2` is not done here: `khepri.rra.envelope_migration` does it for
+report artifacts, and `v1` leaves the readable set only once no `v1` row remains.
+Any later format version must bind at least what `v2` binds.
 """
 
 from __future__ import annotations
@@ -84,7 +85,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # means "what this build writes" or "what this build can read".
 WRITE_ENVELOPE_VERSION = 2
 READABLE_ENVELOPE_VERSIONS = frozenset({1, 2})
-_LEGACY_UNBOUND_VERSION = 1
+# The format sealed with no AAD. Public because the migration that retires it has to
+# name it, and a second literal `1` elsewhere would be a pin nothing ties to this one.
+LEGACY_ENVELOPE_VERSION = 1
 
 _AAD_DOMAIN = b"khepri.envelope\x00"
 _WRAP = b"wrap"
@@ -250,7 +253,7 @@ def _aad(purpose: bytes, version: int, object_key: str) -> bytes | None:
     """
     if not isinstance(object_key, str) or not object_key:
         raise EnvelopeError("An envelope is bound to a non-empty object key.")
-    if version == _LEGACY_UNBOUND_VERSION:
+    if version == LEGACY_ENVELOPE_VERSION:
         return None
     return b"".join(
         (
@@ -346,6 +349,7 @@ def assert_supported(*, algorithm: str, envelope_version: int) -> None:
 __all__ = [
     "ALGORITHM_AES_256_GCM",
     "DATA_KEY_BYTES",
+    "LEGACY_ENVELOPE_VERSION",
     "MASTER_KEY_BYTES",
     "NONCE_BYTES",
     "READABLE_ENVELOPE_VERSIONS",
