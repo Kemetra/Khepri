@@ -163,7 +163,9 @@ h1 { max-width: 24ch; margin: 0 0 .65rem; font-size: var(--journey-text-display)
 /* A floated legend sits inside the card rather than notched into its border. */
 .contract-fieldset legend { float: inline-start; inline-size: 100%; margin-block-end: .35rem; padding: 0; font-weight: 600; }
 .contract-fieldset legend + * { clear: both; margin-block-start: 0; }
-.contract-row { display: grid; gap: .35rem; margin-block: 1rem; }
+/* `minmax(0, 1fr)`, not the implicit `auto` track: a native date control's minimum content width
+ * would otherwise set the track, and at 200% text on a narrow viewport it spilled past its card. */
+.contract-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; margin-block: 1rem; }
 .contract-row label { color: var(--muted); font-size: var(--journey-text-sm); }
 .contract-row input[type="text"], .contract-row input[type="date"] { inline-size: 100%; max-inline-size: 100%; min-block-size: 44px; padding: .45rem .7rem; border: 1px solid var(--journey-ink-secondary); border-radius: var(--journey-radius-field); background: var(--surface); font: inherit; }
 .contract-row input[type="date"] { max-inline-size: 16rem; }
@@ -271,7 +273,8 @@ th { background: var(--journey-sunken); color: var(--muted); font-size: var(--jo
   .brand span:last-child { max-width: 18ch; font-size: var(--journey-text-sm); }
   .journey-shell { width: min(100% - 1rem, 1050px); margin-block: 1.5rem 2rem; }
   h1 { font-size: clamp(1.75rem, 8vw, 2.15rem); }
-  .step-nav ol { justify-content: space-between; gap: .35rem; }
+  /* Four steps fit one row at 100% text; at 200% they wrap to a second row rather than spill. */
+  .step-nav ol { flex-wrap: wrap; justify-content: space-between; gap: .25rem .35rem; }
   /* The node rides above its label here, as the handoff's stepper draws it, so each step is as
    * wide as its longer part rather than node plus label: four nodes beside four labels would not
    * fit the 390px viewport the browser tests assert no overflow at. The labels keep
