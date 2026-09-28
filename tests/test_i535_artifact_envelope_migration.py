@@ -183,6 +183,15 @@ def test_reseal_refuses_to_adopt_a_v2_object_sealed_for_another_key() -> None:
     assert client.objects[KEY] == moved
 
 
+def test_reseal_refuses_to_adopt_a_v2_object_holding_other_content() -> None:
+    """Adoption proves the row's content, not merely that the object opens under its key."""
+    other = env.seal(plaintext=b"not the row's content", master_key=MASTER, object_key=KEY)
+    client = DictS3(objects={KEY: other.envelope})
+
+    with pytest.raises(StoragePolicyViolation):
+        _store(client).reseal(KEY, envelope=_v1_record(forge_v1(PLAINTEXT)), media_type=MEDIA)
+
+
 def test_an_unconfirmed_overwrite_raises_and_deletes_nothing() -> None:
     """`put` deletes an object it could not confirm; an overwrite has no other copy to fall back on."""
     client = DictS3(objects={KEY: forge_v1(PLAINTEXT)}, confirm=False)
