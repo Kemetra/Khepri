@@ -110,8 +110,10 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 /* The one navy region (`FR-220`, "a dark navigation or chrome region carries the navy"). The
  * header holds the wordmark and the language control and nothing else: the handoff's search,
  * bell and account chip have no product behind them and are omitted (`FR-223`). Focus on the navy
- * takes `gold-400`, because the canvas ring colour `gold-ink` reads 2.7:1 against it. */
-.site-header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid var(--journey-chrome-edge); background: var(--journey-chrome); color: var(--surface); }
+ * takes `gold-400`, because the canvas ring colour `gold-ink` reads 2.7:1 against it. The two
+ * wrap rather than push past the viewport: at 220% text on 390 the Arabic row ran 9px wide under
+ * Linux Chromium while passing at 200%, a margin too thin to leave to font metrics. */
+.site-header { min-height: 64px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem 1rem; padding-block: .25rem; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid var(--journey-chrome-edge); background: var(--journey-chrome); color: var(--surface); }
 .site-header :focus-visible { outline-color: var(--journey-gold-bright); }
 .brand { display: inline-flex; align-items: center; gap: .75rem; color: var(--journey-gold-bright); font: 700 var(--journey-text-sm)/1 ui-monospace, monospace; letter-spacing: .28em; text-decoration: none; }
 .language-link { min-block-size: 44px; display: inline-flex; align-items: center; padding-inline: 1rem; border: 1px solid var(--journey-chrome-label); border-radius: var(--journey-radius-pill); color: var(--surface); text-decoration: none; }

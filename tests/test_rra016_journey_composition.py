@@ -491,3 +491,51 @@ def test_the_narrow_stepper_is_one_row_at_normal_text_size(language: str) -> Non
                 page.close()
         finally:
             browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("scale", ["250%", "300%"])
+@pytest.mark.parametrize("language", _LANGUAGES)
+def test_the_header_wraps_rather_than_widening_the_page(language: str, scale: str) -> None:
+    """Past the 200% floor the header's two controls take a second row, never the viewport.
+
+    At 220% on 390 the Arabic header ran 9px wide under Linux Chromium while 200% passed, so the
+    200% test alone leaves the header's margin to font metrics."""
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            page = _served_page(browser, language, "upload", (390, 844))
+            page.add_style_tag(content=f"html {{ font-size: {scale}; }}")
+            header = page.evaluate(
+                "(() => { const h = document.querySelector('.site-header');"
+                " return { right: h.getBoundingClientRect().right,"
+                " scroll: h.scrollWidth, box: h.clientWidth }; })()"
+            )
+            assert header["scroll"] <= header["box"] + 1, header
+            assert header["right"] <= 390, header
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", _LANGUAGES)
+def test_the_header_is_one_row_at_normal_text_size(language: str) -> None:
+    """Allowing the header to wrap must not move it at 100%: one row, at the heights `main` had
+    before it could wrap (64px, and 60px at 390, both measured)."""
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            for width, height in ((1440, 64), (390, 60)):
+                page = _served_page(browser, language, "upload", (width, 844))
+                brand = page.locator(".site-header .brand").bounding_box()
+                switch = page.locator(".site-header .language-link").bounding_box()
+                box = page.locator(".site-header").bounding_box()
+                assert brand is not None and switch is not None and box is not None
+                assert (
+                    abs(brand["y"] + brand["height"] / 2 - (switch["y"] + switch["height"] / 2)) < 2
+                )
+                assert round(box["height"]) == height, (width, box["height"])
+                page.close()
+        finally:
+            browser.close()
