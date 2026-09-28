@@ -51,6 +51,14 @@ _ROLES = {
     "--journey-sunken": "surface-sand",
     "--journey-accent-surface": "gold-tint",
     "--journey-ink-secondary": "ink-secondary",
+    # `FR-223`, the composition slice: the header's navy, the gold fills, the card border.
+    "--journey-chrome": "navy-900",
+    "--journey-chrome-edge": "navy-950",
+    "--journey-chrome-label": "nav-label",
+    "--journey-gold": "gold-500",
+    "--journey-gold-bright": "gold-400",
+    "--journey-gold-deep": "gold-600",
+    "--journey-card-line": "border-card",
 }
 
 #: Ink/ground pairs the rules draw, with the floor each must clear (4.5 text, 3.0 non-text).
@@ -68,6 +76,18 @@ _PAIRS = (
     ("--focus", "--surface", 3.0),
     ("--journey-ink-secondary", "--surface", 3.0),
     ("--accent-dark", "--line", 3.0),
+    # On the navy header: the wordmark, the language label and its outline, and the focus ring.
+    ("--journey-gold-bright", "--journey-chrome", 4.5),
+    ("--surface", "--journey-chrome", 4.5),
+    ("--journey-chrome-label", "--journey-chrome", 3.0),
+    # The primary action and the current step's node: ink on the gold fill, and on its hover.
+    ("--ink", "--journey-gold", 4.5),
+    ("--ink", "--journey-gold-bright", 4.5),
+    # An upcoming step's number, and a table header, on their fills.
+    ("--muted", "--journey-line-subtle", 4.5),
+    ("--muted", "--journey-sunken", 4.5),
+    # A disabled primary action's label on its sand fill: exempt from the text floor, held to 3:1.
+    ("--journey-ink-secondary", "--journey-sunken", 3.0),
 )
 
 _HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")

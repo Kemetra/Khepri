@@ -18,8 +18,8 @@
    * than referenced, because no shell value reaches a `/beta` page (`FR-222`). The row each
    * property takes is pinned by `test_rra016_journey_palette.py`; roles were chosen by computed
    * contrast, so the accent, link and focus colour is `gold-ink` (6.0:1 on the canvas) and not
-   * `gold-500` (2.3:1). No region is navy yet: the journey renders no rail, and where its chrome
-   * carries the navy is the composition slice's question (`FR-223`). Not a dark theme. */
+   * `gold-500` (2.3:1). The navy is the site header's alone (`FR-223`): the journey renders no
+   * rail, and the header is the one chrome region it does render. Not a dark theme. */
   --paper: #FBF9F6;                    /* surface-canvas */
   --surface: #FFFFFF;                  /* surface-card */
   --ink: #16212B;                      /* ink */
@@ -37,8 +37,25 @@
   /* ink-secondary: a text input's boundary (4.7:1 on white, over the 3:1 non-text floor that
    * `border-strong` misses at 1.4:1) and a disabled button's label. */
   --journey-ink-secondary: #6B7580;
+  /* `RRA-016` `FR-223`: the handoff's composition values. The navy is chrome only -- the header,
+   * its hairline, and the language control's outline on it. Gold fills paint the one primary
+   * action and the current step; text never takes `gold-400` or `gold-500` except on the navy,
+   * where `gold-400` reads 8.2:1. Cards take `border-card`, lighter than the `border-strong` rules
+   * that separate content. */
+  --journey-chrome: #101C26;           /* navy-900 */
+  --journey-chrome-edge: #0B1017;      /* navy-950 */
+  --journey-chrome-label: #A9B2B9;     /* nav-label */
+  --journey-gold: #C9A45C;             /* gold-500 */
+  --journey-gold-bright: #D5AE63;      /* gold-400 */
+  --journey-gold-deep: #B98C39;        /* gold-600 */
+  --journey-card-line: #EBE5DC;        /* border-card */
   --radius: 3px;
   --shadow: none;
+  /* Handoff §8 radii: card 12, inner row and control 10, field 8. */
+  --journey-radius-card: 12px;
+  --journey-radius-control: 10px;
+  --journey-radius-field: 8px;
+  --journey-radius-pill: 999px;
 
   /* The journey's own type scale, declared here because this is the surface that consumes it.
    *
@@ -87,18 +104,29 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .skip-link { position: fixed; inset-block-start: .75rem; inset-inline-start: .75rem; z-index: 20; padding: .65rem 1rem; background: var(--ink); color: var(--surface); transform: translateY(-180%); }
 .skip-link:focus { transform: none; }
-.site-header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border: 1px solid var(--line); background: var(--surface); }
-.brand { display: inline-flex; align-items: center; gap: .75rem; font: 700 var(--journey-text-sm)/1 ui-monospace, monospace; letter-spacing: .28em; text-decoration: none; }
-.language-link { min-block-size: 44px; display: inline-flex; align-items: center; padding-inline: .8rem; }
-.step-nav { min-height: 44px; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid var(--journey-line-subtle); background: var(--surface); }
-.step-nav ol { display: flex; gap: 1.7rem; margin: 0; padding: 0; list-style: none; }
-.step-nav a { display: block; min-block-size: 44px; padding-block: .75rem .6rem; color: var(--muted); font-size: var(--journey-text-xs); text-decoration: none; }
+/* The one navy region (`FR-220`, "a dark navigation or chrome region carries the navy"). The
+ * header holds the wordmark and the language control and nothing else: the handoff's search,
+ * bell and account chip have no product behind them and are omitted (`FR-223`). Focus on the navy
+ * takes `gold-400`, because the canvas ring colour `gold-ink` reads 2.7:1 against it. */
+.site-header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid var(--journey-chrome-edge); background: var(--journey-chrome); color: var(--surface); }
+.site-header :focus-visible { outline-color: var(--journey-gold-bright); }
+.brand { display: inline-flex; align-items: center; gap: .75rem; color: var(--journey-gold-bright); font: 700 var(--journey-text-sm)/1 ui-monospace, monospace; letter-spacing: .28em; text-decoration: none; }
+.language-link { min-block-size: 44px; display: inline-flex; align-items: center; padding-inline: 1rem; border: 1px solid var(--journey-chrome-label); border-radius: var(--journey-radius-pill); color: var(--surface); text-decoration: none; }
+.language-link:hover { border-color: var(--journey-gold-bright); color: var(--journey-gold-bright); }
+/* The handoff's inline stepper over the four steps the journey already links: a numbered node and
+ * its label. Only the current step is marked -- by weight, a ring and `aria-current`, never by
+ * colour alone (`FR-221`). No step is drawn "complete": the navigation does not know it. */
+.step-nav { min-height: 44px; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid var(--journey-card-line); background: var(--surface); }
+.step-nav ol { display: flex; gap: 2.25rem; margin: 0; padding: 0; list-style: none; }
+.step-nav a { display: flex; align-items: center; gap: .6rem; min-block-size: 44px; padding-block: .6rem; color: var(--muted); font-size: var(--journey-text-xs); text-decoration: none; }
 .step-nav a:hover { color: var(--accent-dark); }
-.step-nav .current a { border-block-end: 2px solid var(--accent); color: var(--ink); font-weight: 600; }
-.step-nav span { font-family: ui-monospace, monospace; }
-.journey-shell { width: min(100% - 2rem, 1068px); margin: clamp(2.8rem, 5vw, 4rem) auto; }
+.step-nav .current a { color: var(--ink); font-weight: 600; }
+.step-nav span { display: inline-grid; flex: none; place-items: center; inline-size: 28px; block-size: 28px; border-radius: var(--journey-radius-pill); background: var(--journey-line-subtle); color: var(--muted); font-family: ui-monospace, monospace; }
+.step-nav .current span { background: var(--journey-gold); color: var(--ink); box-shadow: 0 0 0 4px var(--journey-accent-surface); }
+.journey-shell { width: min(100% - 2rem, 1180px); margin: clamp(2.25rem, 4vw, 3.25rem) auto; }
 /* The journey's page body is a document measure, not a card: one document per
- * page, hierarchy from type alone, nothing drawn around it. It was called
+ * page, drawn on the canvas itself. The cards live inside it -- the facts strip,
+ * the declarations, the table, the stages -- never around it. It was called
  * `.document-card` and the shell's genuine card -- bordered, padded, stacked
  * several to a page -- carried the same name, so one class meant "no card" here
  * and "a card" three URLs away. The sheets never co-load, so nothing broke and
@@ -106,28 +134,43 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
  * change shape. The shell keeps the name it earns and this takes its own. */
 .journey-document { max-width: 860px; background: var(--paper); border: 0; padding: 0; box-shadow: none; }
 .journey-document--wide { max-width: 100%; }
-h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-display); font-weight: 650; line-height: var(--journey-leading-tight); letter-spacing: -.018em; }
+h1 { max-width: 24ch; margin: 0 0 .65rem; font-size: var(--journey-text-display); font-weight: 600; line-height: var(--journey-leading-tight); letter-spacing: -.018em; }
 [dir="rtl"] h1 { letter-spacing: 0; }
 .lede { max-width: 62ch; color: var(--muted); font-size: var(--journey-text-lede); }
-.intake-facts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; margin-block: 1.8rem; padding-block: 1.1rem; border-block: 1px solid var(--line); }
+.intake-facts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; margin-block: 1.75rem; padding: 1rem 1.25rem; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background: var(--surface); }
 .intake-facts div { padding-inline-end: 1rem; }
+.intake-facts div + div { padding-inline-start: 1.25rem; border-inline-start: 1px solid var(--journey-line-subtle); }
 .intake-facts dt { color: var(--muted); font: var(--journey-text-xs)/1.2 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
 /* `.83rem` becomes `--journey-text-sm` (0.82rem): 0.16px smaller at a 16px root, and the unitless
  * `line-height: 1.6` carries 0.26px of leading with it. A deliberate delta, not a side effect --
  * this file held `.82`, `.83`, `.84`, and `.86rem` as four separate values inside 0.04rem, which is
  * four accidents rather than four decisions. Measured on the rendered page, both languages. */
 .intake-facts dd { margin: .45rem 0 0; font-size: var(--journey-text-sm); }
-.consent-row { display: flex; align-items: flex-start; gap: .75rem; margin-block: 1.75rem; padding: 1.1rem; border: 1px solid var(--line); }
+.consent-row { display: flex; align-items: flex-start; gap: .75rem; margin-block: 0 1.25rem; padding: 1rem 1.25rem; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-control); background: var(--surface); }
 .consent-row input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
-/* The source-contract declaration. Inputs are width-capped and wrap rather than
-   sit beside their labels, so the narrow viewport stacks instead of overflowing;
-   the checkbox rows keep a 44px target for the same reason the buttons do. */
-.contract-fieldset { margin-block: 1.75rem; padding: 1.1rem; border: 1px solid var(--line); }
-.contract-fieldset legend { padding-inline: .4rem; font-weight: 650; }
-.contract-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-block: .9rem; }
-.contract-row label { flex: 1 1 18ch; color: var(--muted); font-size: var(--journey-text-sm); }
-.contract-row input[type="text"] { flex: 1 1 16ch; max-inline-size: 100%; min-block-size: 44px; padding: .45rem .6rem; border: 1px solid var(--journey-ink-secondary); background: var(--surface); font: inherit; }
-.contract-row--claim { align-items: flex-start; min-block-size: 44px; }
+/* The upload form's own grid: the two declarations sit side by side where the width allows and
+ * everything else spans both columns, so the page fills its width instead of running one narrow
+ * column (`FR-223`). Source order is visual order in both directions, so Tab order is unchanged. */
+.upload-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.5rem; align-items: start; }
+.upload-form > * { grid-column: 1 / -1; }
+.upload-form > .contract-fieldset { grid-column: auto; }
+.upload-form > button { justify-self: start; }
+/* The source-contract declaration, one card per fieldset. Each label sits above its control:
+   Arabic and English name these fields at very different lengths, and a label beside its control
+   would push it a different distance in each. The checkbox rows keep a 44px target for the same
+   reason the buttons do. */
+.contract-fieldset { min-inline-size: 0; margin-block: 1.5rem 0; padding: 1.25rem 1.5rem 1rem; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background: var(--surface); }
+/* A floated legend sits inside the card rather than notched into its border. */
+.contract-fieldset legend { float: inline-start; inline-size: 100%; margin-block-end: .35rem; padding: 0; font-weight: 600; }
+.contract-fieldset legend + * { clear: both; margin-block-start: 0; }
+.contract-row { display: grid; gap: .35rem; margin-block: 1rem; }
+.contract-row label { color: var(--muted); font-size: var(--journey-text-sm); }
+.contract-row input[type="text"], .contract-row input[type="date"] { inline-size: 100%; max-inline-size: 100%; min-block-size: 44px; padding: .45rem .7rem; border: 1px solid var(--journey-ink-secondary); border-radius: var(--journey-radius-field); background: var(--surface); font: inherit; }
+.contract-row input[type="date"] { max-inline-size: 16rem; }
+#contract-currency-code { max-inline-size: 7rem; }
+.contract-row--claim { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .35rem .75rem; min-block-size: 44px; margin-block: .5rem; }
+.contract-row--claim label { flex: 1 1 0; color: var(--ink); }
+.contract-row--claim .meta { flex-basis: 100%; padding-inline-start: calc(22px + .75rem); }
 .contract-row--claim input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
 .contract-row input:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: 1px; }
 /* #572: a native date input's last Tab stop is the picker button inside its shadow
@@ -157,37 +200,49 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-di
    points at with `aria-describedby` and which is readable before the mistake is
    made rather than only after. */
 #contract-currency-code:user-invalid { border-color: var(--danger); border-width: 2px; }
-.drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: var(--journey-sunken); text-align: center; cursor: pointer; }
+.drop-zone { display: grid; justify-items: center; align-content: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); border-radius: var(--journey-radius-card); background: var(--surface); text-align: center; cursor: pointer; }
 .drop-zone.is-dragging { border-color: var(--accent); border-style: solid; background: var(--journey-accent-surface); }
 .drop-icon { color: var(--accent-dark); }
-.button-like, .primary-button { display: inline-flex; min-block-size: 46px; align-items: center; justify-content: center; padding: .65rem 1.2rem; border: 1px solid var(--accent); border-radius: 0; background: transparent; color: var(--accent); font-weight: 500; cursor: pointer; }
-.primary-button { margin-block-start: 1.25rem; }
-.primary-button:hover:not(:disabled), .button-like:hover { background: var(--accent-dark); color: var(--surface); }
-.primary-button:disabled { border-color: var(--line); color: var(--journey-ink-secondary); cursor: not-allowed; }
+/* Handoff §11 buttons. Secondary is white with a warm border that warms to gold; the one primary
+ * action per step is the gold fill, rendered as the gradient's middle stop because a gradient is a
+ * functional colour: `--ink` on `gold-500` reads 6.9:1, and on the `gold-400` hover 8.1:1. */
+.button-like, .primary-button { display: inline-flex; min-block-size: 46px; align-items: center; justify-content: center; padding: .65rem 1.25rem; border: 1px solid var(--line); border-radius: var(--journey-radius-control); background: var(--surface); color: var(--ink); font-weight: 600; cursor: pointer; }
+.button-like:hover, .drop-zone:hover .button-like { border-color: var(--journey-gold); }
+.primary-button { margin-block-start: 1.25rem; border-color: var(--journey-gold-deep); background: var(--journey-gold); }
+.primary-button:hover:not(:disabled) { background: var(--journey-gold-bright); }
+.primary-button:disabled { border-color: var(--line); background: var(--journey-sunken); color: var(--journey-ink-secondary); cursor: not-allowed; }
 .text-button { min-block-size: 44px; border: 0; background: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: .2em; cursor: pointer; }
 .meta { color: var(--muted); font: var(--journey-text-sm)/1.4 ui-monospace, monospace; }
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .selected-file { min-block-size: 1.5rem; color: var(--muted); }
-.error-summary { margin-block: 1.5rem; padding: 1rem; border: 1px solid var(--journey-danger-border); background: var(--journey-danger-surface); color: var(--danger); }
+.error-summary { margin-block: 1.5rem; padding: 1rem 1.25rem; border: 1px solid var(--journey-danger-border); border-radius: var(--journey-radius-control); background: var(--journey-danger-surface); color: var(--danger); }
 /* A governed refusal is an outcome, not a problem: `border-inline-start: 4px solid var(--muted)`
  * plus italic carry that meaning independently of each other, per
  * `KHEPRI_DESIGN_LANGUAGE.md` §4.6. No fill and no `--danger` family -- refusal and a transport
  * or system error must not share paint. */
 .refusal-summary { margin-block: 1.5rem; padding-inline-start: 1rem; border-inline-start: 4px solid var(--muted); color: var(--muted); font-style: italic; }
-.progress-track, .indeterminate { overflow: hidden; block-size: 6px; margin-block: 1rem; background: var(--line); }
-.progress-track span, .indeterminate span { display: block; block-size: 100%; inline-size: 0; background: var(--accent-dark); }
+.progress-track, .indeterminate { overflow: hidden; block-size: 6px; margin-block: 1rem; border-radius: var(--journey-radius-pill); background: var(--line); }
+.progress-track span, .indeterminate span { display: block; block-size: 100%; inline-size: 0; border-radius: inherit; background: var(--accent-dark); }
 .indeterminate span { inline-size: 35%; animation: journey-progress 1.4s ease-in-out infinite alternate; }
 @keyframes journey-progress { to { transform: translateX(185%); } }
 [dir="rtl"] .indeterminate span { animation-name: journey-progress-rtl; }
 @keyframes journey-progress-rtl { to { transform: translateX(-185%); } }
-.table-region { overflow-x: auto; margin-block: 2rem; border-block: 1px solid var(--line); }
+/* Handoff §11 table, as a card: a sand header row, dividers and no vertical rules. The region
+ * scrolls inside the card rather than widening the page. */
+.table-region { overflow-x: auto; margin-block: 1.75rem; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background: var(--surface); }
 table { width: 100%; min-width: 720px; border-collapse: collapse; text-align: start; }
-caption { padding: 1rem; text-align: start; font-weight: 600; }
-th, td { padding: .75rem 0; border-block-start: 1px solid var(--journey-line-subtle); text-align: start; vertical-align: top; }
-th + th, td + td { padding-inline-start: 1rem; }
-th { color: var(--muted); font-size: var(--journey-text-sm); }
-.actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
-.stages { display: grid; gap: .65rem; padding-inline-start: 1.4rem; }
+caption { padding: 1rem 1.25rem; text-align: start; font-weight: 600; }
+th, td { padding: .65rem 1.25rem; border-block-start: 1px solid var(--journey-line-subtle); text-align: start; vertical-align: top; }
+th + th, td + td { padding-inline-start: .75rem; }
+th { background: var(--journey-sunken); color: var(--muted); font-size: var(--journey-text-sm); font-weight: 600; }
+/* The action row closes a step: its one primary action and its recovery, set off by a hairline. */
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; padding-block-start: 1.25rem; border-block-start: 1px solid var(--journey-line-subtle); }
+.actions .primary-button { margin-block-start: 0; }
+/* The four durable stages as one card of rows. They carry no per-stage status: the page does not
+ * know which stage is running, so none is drawn complete, current or pending (`FR-223`). */
+.stages { display: grid; margin-block: 1.5rem; padding-block: .35rem; padding-inline: 3rem 1.5rem; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background: var(--surface); }
+.stages li { padding-block: .7rem; padding-inline-start: .25rem; }
+.stages li + li { border-block-start: 1px solid var(--journey-line-subtle); }
 .stages li::marker { color: var(--accent-dark); font-family: ui-monospace, monospace; }
 .report-meta { display: flex; flex-wrap: wrap; gap: .6rem 1rem; margin-block: 1rem 2rem; color: var(--muted); font: var(--journey-text-sm)/1.5 ui-monospace, monospace; }
 .report-meta div { display: flex; gap: .4rem; padding: 0; }
@@ -204,28 +259,35 @@ th { color: var(--muted); font-size: var(--journey-text-sm); }
 .report-card--primary { color: var(--accent-dark); font-weight: 650; }
 .site-footer { padding: 1.5rem clamp(1rem, 5vw, 4rem); color: var(--muted); font-size: var(--journey-text-sm); }
 
+@media (max-width: 899px) {
+  .upload-form { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 640px) {
   .site-header { min-height: 60px; }
   /* `.86rem` becomes `--journey-text-sm`: 0.64px smaller, the largest delta in this change and still under a
    * pixel. The `18ch` cap is deliberately unchanged -- a `ch` measure is relative to the font size,
    * so the wordmark's truncation point tracks the text rather than fighting it. */
   .brand span:last-child { max-width: 18ch; font-size: var(--journey-text-sm); }
-  .journey-shell { width: min(100% - 1rem, 1050px); margin-block: 1rem 2rem; }
+  .journey-shell { width: min(100% - 1rem, 1050px); margin-block: 1.5rem 2rem; }
   h1 { font-size: clamp(1.75rem, 8vw, 2.15rem); }
   .step-nav ol { justify-content: space-between; gap: .35rem; }
-  /* `.68rem` becomes `--journey-text-xs` (0.7rem) -- the only *grow* here, and the only change that could
-   * have pushed the step nav past the 390px viewport the browser test asserts no overflow at. So it
-   * was measured rather than reasoned: label content runs 189.7px in English and 159.5px in Arabic
-   * inside a 353px `ol`, on all four steps, and `space-between` absorbs the 4.6px with room to
-   * spare. Arabic is the *narrower* of the two here, contrary to the usual assumption. */
-  .step-nav a { font-size: var(--journey-text-xs); }
+  /* The node rides above its label here, as the handoff's stepper draws it, so each step is as
+   * wide as its longer part rather than node plus label: four nodes beside four labels would not
+   * fit the 390px viewport the browser tests assert no overflow at. The labels keep
+   * `--journey-text-xs` and `space-between` spreads the four steps across the width. */
+  .step-nav a { flex-direction: column; gap: .2rem; padding-block: .5rem; font-size: var(--journey-text-xs); }
   .intake-facts { grid-template-columns: 1fr 1fr; gap: 1rem; }
   .intake-facts div:last-child { grid-column: 1 / -1; }
+  .intake-facts div + div { padding-inline-start: 0; border-inline-start: 0; }
+  .contract-fieldset { padding-inline: 1rem; }
   .drop-zone { min-block-size: 170px; padding: 1.25rem; }
   .report-meta, .report-grid { grid-template-columns: 1fr; }
   .primary-button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .indeterminate span { inline-size: 100%; animation: none; }
+  /* The right-to-left form is named too: `[dir="rtl"] .indeterminate span` sets the mirrored
+   * animation at higher specificity, so a bare `.indeterminate span` left Arabic still moving. */
+  .indeterminate span, [dir="rtl"] .indeterminate span { inline-size: 100%; animation: none; }
 }
