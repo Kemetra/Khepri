@@ -58,7 +58,8 @@ def open_journey_page(
     calls = ApiCalls()
 
     def handle(route: Route) -> None:
-        path = urlparse(route.request.url).path
+        address = urlparse(route.request.url)
+        path = address.path
         if path.startswith("/api/"):
             method = route.request.method
             calls.made.append((method, path))
@@ -72,7 +73,8 @@ def open_journey_page(
                 body="" if body is None else json.dumps(body),
             )
             return
-        served = journey.get(path)
+        # The query travels with the page: `expired?deletion=requested` renders its own variant.
+        served = journey.get(f"{path}?{address.query}" if address.query else path)
         route.fulfill(
             status=served.status_code,
             content_type=served.headers["content-type"],
