@@ -50,6 +50,8 @@ from botocore.exceptions import ClientError
 
 from khepri.rra.envelope import (
     ALGORITHM_AES_256_GCM,
+    LEGACY_ENVELOPE_VERSION,
+    WRITE_ENVELOPE_VERSION,
     EnvelopeError,
     ExpectedObject,
     MasterKey,
@@ -99,6 +101,16 @@ class StoredEnvelope:
     sha256_hex: str
     encryption_algorithm: str
     envelope_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class Resealed:
+    """What a stored `v1` object is now, and so what its row must record (#535)."""
+
+    envelope_version: int
+    ciphertext_sha256_hex: str
+    #: `False` when a previous run had already written the object and this call only proved it.
+    rewritten: bool
 
 
 class S3EncryptedObjectStore:
@@ -213,6 +225,92 @@ class S3EncryptedObjectStore:
             # so the reason is safe to keep. It becomes a storage-policy failure
             # because that is what every caller already handles.
             raise StoragePolicyViolation(str(error)) from error
+
+    def reseal(self, key: str, *, envelope: StoredEnvelope, media_type: str) -> Resealed:
+        """Rewrite a stored `v1` object as the write version, bound to its key (#535).
+
+        `envelope` is the row's record, and it must record `v1`: this verb retires one
+        format and does nothing else. The fetched object is then one of two things.
+
+        - **`v1`:** opened under both of the row's digests, re-sealed, and overwritten
+          in place.
+        - **The write version:** a previous run overwrote it and stopped before its row
+          committed. It is proved by the tag under this key and by the row's plaintext
+          digest, then reported as it stands, without a second write.
+
+        Anything else is refused. The key comes from the caller's row, as it does for
+        `get`, so an object sealed for another key cannot be adopted here.
+        """
+        try:
+            assert_supported(
+                algorithm=envelope.encryption_algorithm,
+                envelope_version=envelope.envelope_version,
+            )
+            if envelope.envelope_version != LEGACY_ENVELOPE_VERSION:
+                raise EnvelopeError("Only a v1 record is resealed.")
+            body = self._fetch(key)
+            if envelope_version_of(body) == WRITE_ENVELOPE_VERSION:
+                return self._adopt(key, body, plaintext_sha256_hex=envelope.sha256_hex)
+            plaintext = open_envelope(
+                envelope=body,
+                master_key=self._master_key,
+                expected=ExpectedObject(
+                    object_key=key,
+                    ciphertext_sha256_hex=envelope.ciphertext_sha256_hex,
+                    plaintext_sha256_hex=envelope.sha256_hex,
+                    envelope_version=LEGACY_ENVELOPE_VERSION,
+                ),
+            )
+        except EnvelopeError as error:
+            raise StoragePolicyViolation(str(error)) from error
+        return self._overwrite(key, plaintext, media_type=media_type)
+
+    def _adopt(self, key: str, body: bytes, *, plaintext_sha256_hex: str) -> Resealed:
+        """Prove an object an earlier run already rewrote. The row has no digest for it yet."""
+        digest = hashlib.sha256(body).hexdigest()
+        open_envelope(
+            envelope=body,
+            master_key=self._master_key,
+            expected=ExpectedObject(
+                object_key=key,
+                ciphertext_sha256_hex=digest,
+                plaintext_sha256_hex=plaintext_sha256_hex,
+                envelope_version=WRITE_ENVELOPE_VERSION,
+            ),
+        )
+        return Resealed(
+            envelope_version=WRITE_ENVELOPE_VERSION,
+            ciphertext_sha256_hex=digest,
+            rewritten=False,
+        )
+
+    def _overwrite(self, key: str, plaintext: bytes, *, media_type: str) -> Resealed:
+        """Replace an object in place. Unconditional, and never followed by a delete.
+
+        `put` sends `IfNoneMatch` because it creates; this replaces an object a row
+        already names, so the condition would refuse the one write it exists to make.
+        `put` also deletes what it could not confirm, which is right for an object it
+        just created and wrong here: the key holds the only copy, and S3 writes are
+        atomic, so what is there is either the old envelope or the new one. The next
+        run reseals the first and adopts the second.
+        """
+        sealed = seal(plaintext=plaintext, master_key=self._master_key, object_key=key)
+        checksum = base64.b64encode(bytes.fromhex(sealed.ciphertext_sha256_hex)).decode("ascii")
+        response = self._client.put_object(
+            Bucket=self._bucket,
+            Key=key,
+            Body=sealed.envelope,
+            ContentLength=len(sealed.envelope),
+            ContentType=media_type,
+            ChecksumSHA256=checksum,
+        )
+        if not _write_is_unversioned(response, checksum):
+            raise StoragePolicyViolation("Object storage did not confirm the rewritten bytes.")
+        return Resealed(
+            envelope_version=sealed.envelope_version,
+            ciphertext_sha256_hex=sealed.ciphertext_sha256_hex,
+            rewritten=True,
+        )
 
     def delete(self, key: str) -> None:
         self._delete_unversioned(key)
@@ -357,6 +455,7 @@ def _write_is_unversioned(response: dict[str, Any], checksum: str) -> bool:
 __all__ = [
     "ObjectWrite",
     "PutResult",
+    "Resealed",
     "S3Client",
     "S3EncryptedObjectStore",
     "StoredEnvelope",

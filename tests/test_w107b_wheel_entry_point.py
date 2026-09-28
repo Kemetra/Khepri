@@ -83,6 +83,28 @@ def test_the_sweep_entry_point_resolves_inside_the_built_wheel(built_wheel: Path
     )
 
 
+def test_the_envelope_migration_ships_and_imports_from_the_wheel(built_wheel: Path) -> None:
+    """#535: the `v1` migration must run in the image that holds the data.
+
+    The same two proofs as the sweep's, applied to `khepri-envelope-migrate`: the target module is
+    packaged, and it imports from the wheel's own contents with the checkout off the path.
+    """
+    target = _declared_target(built_wheel, "khepri-envelope-migrate")
+    module, _, function = target.partition(":")
+    assert (module, function) == ("khepri.runtime.envelope_migration", "main")
+
+    extracted = built_wheel.parent / "extracted-migration"
+    zipfile.ZipFile(built_wheel).extractall(extracted)
+    imported = subprocess.run(
+        [sys.executable, "-c", f"import {module}"],
+        capture_output=True,
+        text=True,
+        cwd=extracted,
+        env={"PYTHONPATH": str(extracted), "SYSTEMROOT": os.environ.get("SYSTEMROOT", "")},
+    )
+    assert imported.returncode == 0, imported.stderr[-600:]
+
+
 def test_the_sweep_module_imports_with_no_excluded_package(built_wheel: Path) -> None:
     """The command must *run*, not merely be declared.
 
