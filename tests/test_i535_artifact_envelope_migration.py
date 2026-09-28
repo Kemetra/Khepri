@@ -193,7 +193,7 @@ def test_reseal_refuses_to_adopt_a_v2_object_holding_other_content() -> None:
 
 
 def test_an_unconfirmed_overwrite_raises_and_deletes_nothing() -> None:
-    """`put` deletes an object it could not confirm; an overwrite has no other copy to fall back on."""
+    """`put` deletes an object it could not confirm; an overwrite has no other copy to lose."""
     client = DictS3(objects={KEY: forge_v1(PLAINTEXT)}, confirm=False)
     record = _v1_record(client.objects[KEY])
 
@@ -218,7 +218,9 @@ class World:
     def rows(self) -> list[ReportArtifactRow]:
         with self.test.factory() as database:
             return list(
-                database.scalars(select(ReportArtifactRow).order_by(ReportArtifactRow.artifact_kind))
+                database.scalars(
+                    select(ReportArtifactRow).order_by(ReportArtifactRow.artifact_kind)
+                )
             )
 
     def versions(self) -> list[int]:
