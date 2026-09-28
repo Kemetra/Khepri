@@ -59,6 +59,8 @@ _ROLES = {
     "--journey-gold-bright": "gold-400",
     "--journey-gold-deep": "gold-600",
     "--journey-card-line": "border-card",
+    # `FR-228`, the hero slice: the ground behind the artwork and under its wash.
+    "--journey-hero-ground": "hero-ground",
 }
 
 #: Ink/ground pairs the rules draw, with the floor each must clear (4.5 text, 3.0 non-text).
@@ -88,6 +90,9 @@ _PAIRS = (
     ("--muted", "--journey-sunken", 4.5),
     # A disabled primary action's label on its sand fill: exempt from the text floor, held to 3:1.
     ("--journey-ink-secondary", "--journey-sunken", 3.0),
+    # The heading and lede on the hero's wash, which is the ground inside its solid stop.
+    ("--ink", "--journey-hero-ground", 4.5),
+    ("--muted", "--journey-hero-ground", 4.5),
 )
 
 _HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
@@ -113,6 +118,10 @@ _ADMITTED_WORDS = frozenset(
         "separate",
         "auto",
         "light",
+        # `FR-228`'s wash: gradient grammar only. Its stops are still `var()` or `transparent`,
+        # so a hex, functional or named colour inside a gradient is still seen (probes below).
+        "linear-gradient",
+        "deg",
     }
 )
 
@@ -250,6 +259,8 @@ def test_a_functional_colour_is_seen_wherever_it_is_declared(probe: str) -> None
         "background: rgb(0 0 0)",
         "border: 1px solid navy",
         "box-shadow: 0 1px 2px black",
+        "background-image: linear-gradient(90deg, navy, transparent)",
+        "background-image: linear-gradient(90deg, #f6eddf 50%, transparent 80%)",
     ),
 )
 def test_a_literal_colour_below_root_is_seen(probe: str) -> None:

@@ -1,14 +1,20 @@
 {% extends "base.html.j2" %}
+{% from "_hero.html.j2" import hero_picture %}
 {% block title %}{{ copy.upload_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
 <section class="journey-document journey-document--wide" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.upload_title }}</h1>
-  <p class="lede">{{ copy.upload_intro }}</p>
-  <dl class="intake-facts">
-    <div><dt>{{ copy.accepted }}</dt><dd>CSV, XLSX</dd></div>
-    <div><dt>{{ copy.size_limit }}</dt><dd dir="ltr">50 MB</dd></div>
-    <div><dt>{{ copy.you_receive }}</dt><dd>{{ copy.outputs }}</dd></div>
-  </dl>
+  <div class="upload-head">
+    <div class="upload-head__text">
+      <h1 id="page-title">{{ copy.upload_title }}</h1>
+      <p class="lede">{{ copy.upload_intro }}</p>
+      <dl class="intake-facts">
+        <div><dt>{{ copy.accepted }}</dt><dd>CSV, XLSX</dd></div>
+        <div><dt>{{ copy.size_limit }}</dt><dd dir="ltr">50 MB</dd></div>
+        <div><dt>{{ copy.you_receive }}</dt><dd>{{ copy.outputs }}</dd></div>
+      </dl>
+    </div>
+    <div class="journey-hero-card">{{ hero_picture(copy, "journey-hero-card__image") }}</div>
+  </div>
   <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden data-invitation="{{ copy.invitation_unavailable }}" data-temporary="{{ copy.temporary_unavailable }}" data-profile-rejected="{{ copy.profile_rejected }}" data-file-invalid="{{ copy.file_invalid }}" data-upload-failed="{{ copy.upload_failed }}"></div>
   <form id="upload-form" class="upload-form">
     <label class="consent-row"><input id="consent" type="checkbox"> <span>{{ copy.consent }}</span></label>

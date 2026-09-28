@@ -49,6 +49,9 @@
   --journey-gold-bright: #D5AE63;      /* gold-400 */
   --journey-gold-deep: #B98C39;        /* gold-600 */
   --journey-card-line: #EBE5DC;        /* border-card */
+  /* `FR-228`: painted behind the artwork, so a step is legible before it decodes or if it never
+   * does, and the wash the copy sits on. */
+  --journey-hero-ground: #F6EDDF;      /* hero-ground */
   --radius: 3px;
   --shadow: none;
   /* Handoff §8 radii: card 12, inner row and control 10, field 8. */
@@ -259,8 +262,47 @@ th { background: var(--journey-sunken); color: var(--muted); font-size: var(--jo
 .report-card--primary { color: var(--accent-dark); font-weight: 650; }
 .site-footer { padding: 1.5rem clamp(1rem, 5vw, 4rem); color: var(--muted); font-size: var(--journey-text-sm); }
 
+/* ---- The hero artwork: `RRA-016` `FR-227`–`FR-229`, handoff §6 ------------------------------
+ *
+ * The approved artwork, cropped and never redrawn: `object-fit` and `object-position` only, no
+ * filter, recolour, rotation or mirroring. Right-to-left mirrors the focal point, not the image.
+ * Placed only where the handoff's table places it on a journey screen: 02 Upload as a card beside
+ * its heading, 03 Review and 04 Processing as bands carrying the heading. The report and the
+ * terminal pages place none.
+ *
+ * The heading sits on an ivory wash that is solid to `--journey-hero-solid`; its column is capped
+ * at `--journey-hero-copy` of the band, which keeps its inline-end edge inside that stop. The band
+ * takes `min-block-size`, so 200% text grows it rather than being clipped. */
+.journey-hero { --journey-hero-solid: 50%; --journey-hero-fade: 80%; --journey-hero-copy: 46%; --journey-hero-image-start: 34%; position: relative; display: flex; align-items: center; min-block-size: 170px; margin-block-end: 1.75rem; padding: 1.5rem 1.75rem; overflow: hidden; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background-color: var(--journey-hero-ground); }
+.journey-hero--processing { --journey-hero-fade: 78%; min-block-size: 186px; }
+.journey-hero__copy { position: relative; z-index: 1; max-inline-size: var(--journey-hero-copy); }
+.journey-hero__copy .lede { margin-block-end: 0; }
+.journey-hero__image { position: absolute; inset-block: 0; inset-inline: var(--journey-hero-image-start) 0; inline-size: calc(100% - var(--journey-hero-image-start)); block-size: 100%; object-fit: cover; object-position: 70% 40%; }
+[dir="rtl"] .journey-hero__image { object-position: 30% 40%; }
+.journey-hero--processing .journey-hero__image { object-position: 66% 44%; }
+[dir="rtl"] .journey-hero--processing .journey-hero__image { object-position: 34% 44%; }
+/* The processing band spans the page; the stages beneath it keep their reading measure. */
+.journey-hero--processing ~ :is(.indeterminate, .stages, #processing-status) { max-inline-size: 860px; }
+/* A legibility overlay from the band's own ground to transparent, never a drawing. A gradient
+ * takes no logical direction, so right-to-left states its mirror. */
+.journey-hero__wash { position: absolute; inset: 0; background-image: linear-gradient(90deg, var(--journey-hero-ground) var(--journey-hero-solid), transparent var(--journey-hero-fade)); }
+[dir="rtl"] .journey-hero__wash { background-image: linear-gradient(270deg, var(--journey-hero-ground) var(--journey-hero-solid), transparent var(--journey-hero-fade)); }
+/* 02 Upload: the artwork as the heading's companion card, no copy on it, so no wash. */
+.upload-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 30%); gap: 1.5rem; align-items: stretch; margin-block-end: 1.75rem; }
+.upload-head .intake-facts { margin-block-end: 0; }
+.journey-hero-card { position: relative; min-block-size: 15rem; overflow: hidden; border: 1px solid var(--journey-card-line); border-radius: var(--journey-radius-card); background-color: var(--journey-hero-ground); }
+.journey-hero-card__image { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 50% 50%; }
+
+/* Tablet (handoff §13): the artwork gives up width before the copy does. */
+@media (max-width: 75rem) {
+  .journey-hero { --journey-hero-solid: 58%; --journey-hero-fade: 86%; --journey-hero-copy: 54%; --journey-hero-image-start: 46%; }
+}
+
 @media (max-width: 899px) {
   .upload-form { grid-template-columns: minmax(0, 1fr); }
+  .upload-head { grid-template-columns: minmax(0, 1fr); }
+  /* Decorative and never a tab stop, so the card may lead visually without changing reading order. */
+  .journey-hero-card { order: -1; min-block-size: 140px; }
 }
 
 @media (max-width: 640px) {
@@ -281,6 +323,12 @@ th { background: var(--journey-sunken); color: var(--muted); font-size: var(--jo
   .intake-facts div:last-child { grid-column: 1 / -1; }
   .intake-facts div + div { padding-inline-start: 0; border-inline-start: 0; }
   .contract-fieldset { padding-inline: 1rem; }
+  /* Handoff §13: the band's image becomes a 140px strip above the copy, which sits on the ground. */
+  .journey-hero { flex-direction: column; align-items: stretch; padding: 0; }
+  .journey-hero picture { order: -1; }
+  .journey-hero__image { position: static; display: block; inline-size: 100%; block-size: 140px; }
+  .journey-hero__wash { display: none; }
+  .journey-hero__copy { max-inline-size: none; padding: 1.25rem 1rem; }
   .drop-zone { min-block-size: 170px; padding: 1.25rem; }
   .report-meta, .report-grid { grid-template-columns: 1fr; }
   .primary-button { width: 100%; }

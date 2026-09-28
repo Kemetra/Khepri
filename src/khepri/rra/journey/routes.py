@@ -12,6 +12,12 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 
 from khepri.rra.journey.copy import JOURNEY_COPY
+from khepri.rra.journey.hero import (
+    HERO_JPEG_FILE,
+    HERO_JPEG_MEDIA_TYPE,
+    HERO_WEBP_FILE,
+    HERO_WEBP_MEDIA_TYPE,
+)
 from khepri.rra.journey.security import SECURITY_HEADERS, require_same_origin
 from khepri.rra.journey.state import JourneyReader
 from khepri.rra.rendering.fonts import load_report_fonts
@@ -23,6 +29,8 @@ class JourneyServices:
     reader: JourneyReader
 
 
+#: The two hero derivatives are `RRA-016` `FR-227`: the names `hero.py` audits, so importing them
+#: has already refused a drifted file at load (`RCA-012` `FR-213`). The supplied PNG has no entry.
 _ASSETS = {
     "journey.css": "text/css; charset=utf-8",
     "common.js": "text/javascript; charset=utf-8",
@@ -30,6 +38,8 @@ _ASSETS = {
     "review.js": "text/javascript; charset=utf-8",
     "processing.js": "text/javascript; charset=utf-8",
     "report.js": "text/javascript; charset=utf-8",
+    HERO_JPEG_FILE: HERO_JPEG_MEDIA_TYPE,
+    HERO_WEBP_FILE: HERO_WEBP_MEDIA_TYPE,
 }
 _TYPEFACE_ASSETS = {face.file_name: face.payload for face in load_report_fonts()}
 _TEMPLATES = {

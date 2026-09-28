@@ -1,0 +1,9 @@
+{#
+  `RRA-016` `FR-227`–`FR-229`: the approved artwork, served by exact name from the journey's own
+  `/beta/assets/` allowlist. Decorative: it carries no figure and no governed word, and its
+  alternative text is `journey/copy.py`'s in both languages. Above the fold on every step that
+  places it, so it loads eagerly. The crop is the stylesheet's (`object-fit`, `object-position`).
+#}
+{% macro hero_picture(copy, class_name) -%}
+<picture><source srcset="/beta/assets/khepri-hero.webp" type="image/webp"><img class="{{ class_name }}" src="/beta/assets/khepri-hero.jpg" alt="{{ copy.hero_alt }}" width="1400" height="900" loading="eager" fetchpriority="high"></picture>
+{%- endmacro %}

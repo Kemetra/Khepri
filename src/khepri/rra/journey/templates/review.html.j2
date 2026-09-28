@@ -1,8 +1,13 @@
 {% extends "base.html.j2" %}
+{% from "_hero.html.j2" import hero_picture %}
 {% block title %}{{ copy.review_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
 <section class="journey-document journey-document--wide" aria-labelledby="page-title">
-  <h1 id="page-title">{{ copy.review_title }}</h1><p class="lede">{{ copy.review_intro }}</p>
+  <div class="journey-hero journey-hero--review">
+    <div class="journey-hero__copy"><h1 id="page-title">{{ copy.review_title }}</h1><p class="lede">{{ copy.review_intro }}</p></div>
+    {{ hero_picture(copy, "journey-hero__image") }}
+    <div class="journey-hero__wash" aria-hidden="true"></div>
+  </div>
   {#
     Both languages of the refusal wording travel on the page, like the value
     vocabulary below, so `review.js` renders a governed refusal without carrying
