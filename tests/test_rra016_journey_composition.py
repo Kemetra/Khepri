@@ -139,6 +139,20 @@ _CLIPPED_SCRIPT = """
   .map((element) => `${element.tagName.toLowerCase()}.${element.getAttribute("class") || ""}`)
 """
 
+#: Elements whose content runs past their own box while nothing clips it. The page-level width
+#: check only fails once a spill also clears the page's inline padding, which is a margin of a few
+#: pixels that font metrics decide: at 200% text on 390 the stepper and two date rows spilled 30px
+#: on Windows unseen and overflowed the page on Linux CI. This fails on either.
+_SPILL_SCRIPT = """
+() => [...document.querySelectorAll("body *")]
+  .filter((element) => !element.closest(".visually-hidden, .table-region"))
+  .filter((element) => getComputedStyle(element).overflowX === "visible")
+  .filter((element) => element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1)
+  .map((element) => `${element.tagName.toLowerCase()}#${element.id}`
+    + `.${element.getAttribute("class") || ""}`
+    + ` ${element.scrollWidth}/${element.clientWidth}`)
+"""
+
 
 def _css() -> str:
     text = _JOURNEY.joinpath("assets", "journey.css").read_text(encoding="utf-8")
@@ -406,6 +420,7 @@ def test_text_scales_to_two_hundred_percent_without_loss(
                 assert scaled > base * 1.5, f"{step}: the heading did not scale"
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), step
                 assert page.evaluate(_CLIPPED_SCRIPT) == [], step
+                assert page.evaluate(_SPILL_SCRIPT) == [], step
                 page.close()
         finally:
             browser.close()
@@ -454,6 +469,25 @@ def test_every_tab_stop_in_every_state_shows_its_focus(language: str, width: int
             for name in _STATES:
                 page = _populated_page(browser, language, name, width)
                 assert _focus_failures(page, 60) == [], name
+                page.close()
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", _LANGUAGES)
+def test_the_narrow_stepper_is_one_row_at_normal_text_size(language: str) -> None:
+    """The stepper may wrap at 200% text (above); at 100% on 390 its four steps share one row."""
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            for step in _STEPS:
+                page = _served_page(browser, language, step, (390, 844))
+                tops = page.evaluate(
+                    "[...document.querySelectorAll('.step-nav li')]"
+                    ".map((item) => Math.round(item.getBoundingClientRect().top))"
+                )
+                assert len(tops) == 4 and len(set(tops)) == 1, (step, tops)
                 page.close()
         finally:
             browser.close()
