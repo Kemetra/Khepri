@@ -125,6 +125,8 @@ def test_audit_context_carries_every_region() -> None:
         # `RRA-013`: the evidence behind each citation, and the package's coverage once.
         "evidence",
         "coverage",
+        # `RRA-018` FR-249: the per-result refusals as raw codes, Audit-tier.
+        "refusals",
     }
 
 

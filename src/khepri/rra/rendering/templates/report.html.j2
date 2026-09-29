@@ -1,5 +1,5 @@
 {% from "_chart.svg.j2" import chart %}
-{% from "_components.html.j2" import figure, status_badge, quality_summary, refusal_panel %}
+{% from "_components.html.j2" import figure, status_badge, quality_summary, refusal_panel, refused_results_region %}
 {#
   The canonical bilingual report page. Rendered once per governed language, so
   the root element states one `lang` and one `dir` and the stylesheet lays both
@@ -41,6 +41,12 @@
 #}
 <p class="disclosure" role="note">{{ disclosure }}</p>
 {#
+  The report reference (`RRA-018` FR-244): the one business-region identifier `RRA-009`
+  permits, stated here as well as in the colophon. The header is a closed set -- title,
+  disclosure, reference, quality summary -- and carries nothing else.
+#}
+<p class="report-reference">{{ chrome.colophon_reference }} {{ report_reference }}</p>
+{#
   The analysis-quality summary (`RRA-012` FR-092): how many of this report's sections
   answered, answered with a caveat, and refused. Grouped with filters over the section
   views the page iterates below, so the summary and the sections cannot disagree: a
@@ -57,11 +63,17 @@
      refused_sections | length,
      chrome) }}
 </header>
+{{ refused_results_region(refused_results, chrome) }}
+{#
+  The index states each section's state (`RRA-018` FR-245): the badge its heading carries,
+  beside the link rather than inside it, so the link's name stays the section's name. In
+  `ORDERED_SECTIONS` order; nothing is selected, promoted or ranked, and no figure is shown.
+#}
 <nav aria-label="{{ chrome.navigation }}">
 <h2>{{ chrome.navigation }}</h2>
 <ul>
 {% for section in sections %}
-<li><a href="#{{ section.section_id }}">{{ chrome.sections[section.section_id] }}</a></li>
+<li><a href="#{{ section.section_id }}">{{ chrome.sections[section.section_id] }}</a> {{ status_badge(section.state, chrome) }}</li>
 {% endfor %}
 <li><a href="#caveats">{{ chrome.caveats }}</a></li>
 {% if passages %}
@@ -184,6 +196,16 @@
 </table>
 </div>
 {% endfor %}
+{#
+  From this section to its evidence (`RRA-018` FR-251). Relative, so the stored page names
+  no job, host or route, and section-level, so it carries no citation identifier. A PDF
+  cannot carry a session, so `report.pdf.html.j2` overrides this block empty (FR-253).
+#}
+{% block section_evidence scoped %}
+<p class="section-evidence"><a data-component="section-evidence-link" class="section-evidence__link"
+   href="../evidence/{{ language }}#evidence-section-{{ section.section_id }}">{{
+  chrome.component.section_evidence }} — {{ chrome.sections[section.section_id] }}</a></p>
+{% endblock %}
 {% endif %}
 {% if section.caveats %}
 <ul class="caveats caveats--section">

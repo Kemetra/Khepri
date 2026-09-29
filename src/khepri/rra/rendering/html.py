@@ -58,6 +58,7 @@ from khepri.rra.narrative import (
 )
 from khepri.rra.renderable import PresentationSection, RenderableBundle
 from khepri.rra.rendering.charts import ChartView, build_chart
+from khepri.rra.rendering.refused_results import refused_result_groups
 from khepri.rra.rendering.wording import (
     AXIS_UNITS,
     CHART_DESCRIPTIONS,
@@ -555,6 +556,9 @@ def _audit_region(
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
         "provenance": provenance,
+        # `RRA-018` FR-249: the bundle's per-result refusals as raw codes, in package
+        # order. Audit-tier, so the business region gets names and prose instead.
+        "refusals": list(bundle.refusals),
         # `RRA-013` FR-106. What the governed records say about each cited figure,
         # with its definition in this document's language, and the package's
         # coverage once -- never copied into an entry (FR-104). Audit-tier both, per
@@ -621,6 +625,8 @@ def build_context(
         # the report -- and short enough to read aloud, which a digest is not. The
         # full identity stays in the audit region, where an auditor needs it.
         "report_reference": _report_reference(bundle),
+        # `RRA-018` FR-246/FR-247: read through `RenderableBundle` only (`#531`).
+        "refused_results": refused_result_groups(bundle.refusals, language),
         "audit": _audit_region(bundle, language, cells, provenance),
         # No `evidence_open` here. `RRA-013` FR-107 has the print surface set it and
         # the web surface not set it, read literally: the key is absent on the web,

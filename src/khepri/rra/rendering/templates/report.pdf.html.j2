@@ -34,6 +34,8 @@
 {% endfor %}
 </style>
 {% endblock %}
+{# `RRA-018` FR-253: a printed page cannot carry a session, so it carries no link to one. #}
+{% block section_evidence %}{% endblock %}
 {% block print_stylesheet %}
 <style>
 {% include print_stylesheet_name %}

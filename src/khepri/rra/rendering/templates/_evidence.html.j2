@@ -96,8 +96,12 @@
 </tr>
 </thead>
 <tbody>
+{#
+  Each row is the target of its section's evidence link on the business page (`RRA-018`
+  FR-251). A navigation anchor is the one identifier in markup `RRA-009` admits.
+#}
 {% for entry in audit.sections %}
-<tr>
+<tr id="evidence-section-{{ entry.section_id }}">
 <th scope="row"><code>{{ entry.section_id }}</code></th>
 <td>{% if entry.reason %}<code>{{ entry.reason }}</code>{% else %}{{ chrome.none }}{% endif %}</td>
 </tr>
@@ -105,6 +109,38 @@
 </tbody>
 </table>
 </section>
+{#
+  The results the package refused on their own, as raw codes in package order (`RRA-018`
+  FR-249). The business region names them; the codes, and the input a refusal recorded,
+  are Audit-tier and appear only here.
+#}
+{% if audit.refusals %}
+<section id="evidence-refusals" aria-labelledby="evidence-refusals-heading">
+<h2 id="evidence-refusals-heading">{{ chrome.component.refused_results }}</h2>
+{# Codes are long and unbreakable, so the table scrolls in its own focusable region rather
+   than widening the page at 200% text (`RRA-015` FR-189), as the figures table does. #}
+<div class="scroller" role="region" tabindex="0" aria-labelledby="evidence-refusals-heading">
+<table>
+<thead>
+<tr>
+<th scope="col">{{ chrome.metric }}</th>
+<th scope="col">{{ chrome.reason_column }}</th>
+<th scope="col">{{ chrome.component.inputs }}</th>
+</tr>
+</thead>
+<tbody>
+{% for refusal in audit.refusals %}
+<tr>
+<th scope="row"><code>{{ refusal.metric }}</code></th>
+<td><code>{{ refusal.reason }}</code></td>
+<td>{% if refusal.input %}<code>{{ refusal.input }}</code>{% else %}{{ chrome.none }}{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endif %}
 <section id="evidence-caveats" aria-labelledby="evidence-caveats-heading">
 <h2 id="evidence-caveats-heading">{{ chrome.caveats }}</h2>
 {% if audit.caveats %}

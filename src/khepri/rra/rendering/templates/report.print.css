@@ -162,6 +162,13 @@
     break-inside: avoid;
   }
 
+  /* `RRA-018` FR-246: the refused results follow the refusal onto paper, rule and no tint. */
+  .refused-results {
+    background: transparent;
+    border-inline-start: 3pt solid var(--report-muted);
+    break-inside: avoid;
+  }
+
   /*
    * Links keep their underline -- it survives being printed, a colour may not
    * -- and take the body ink so a monochrome print does not turn every citation

@@ -137,6 +137,7 @@ from khepri.rra.rendering.excel_rows import (
 from khepri.rra.rendering.excel_rows import (
     write_text as _write_text,
 )
+from khepri.rra.rendering.refused_results import REFUSED_RESULT_NAMES, refused_result_groups
 from khepri.rra.rendering.wording import (
     BUSINESS_SHEET_NAMES,
     CAVEAT_WORDING,
@@ -367,6 +368,9 @@ GOVERNED_LABELS = frozenset(
         for names in table.values()
         for text in names.values()
     }
+    # A refused result's name (`RRA-018` FR-250): composed at import from the governed
+    # names above and a breakdown's label, so it is enumerable where its prose is not.
+    | REFUSED_RESULT_NAMES
     # Refusal and caveat prose is governed wording too, and these are its templates.
     # The limitations sheet writes the *resolved* prose, which is not enumerable at
     # import -- a composite `<result>:<reason>` caveat code is built from a figure's
@@ -600,6 +604,24 @@ def _write_limitations(
     prose = caveat_proses(bundle.caveats, language)
     for code in stated_once(bundle.caveats, language):
         row = _write_row(sheet, row + 1, (prose[code],))
+    _write_refused_results(sheet, row, bundle, language)
+
+
+def _write_refused_results(
+    sheet: Worksheet,
+    row: int,
+    bundle: RenderableBundle,
+    language: str,
+) -> None:
+    """The results refused on their own, as the page states them (`RRA-018` FR-250).
+
+    The same groups the page renders: each reason once, then the refused results it
+    covers, one per row. No sheet is added and the business sheets are untouched.
+    """
+    for group in refused_result_groups(bundle.refusals, language):
+        row = _write_row(sheet, row + 1, (group.prose,))
+        for name in group.names:
+            row = _write_row(sheet, row + 1, (name,))
 
 
 @dataclass(frozen=True, slots=True)

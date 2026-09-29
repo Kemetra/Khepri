@@ -373,9 +373,14 @@ def test_the_refusal_reference_is_measured_rather_than_exempted() -> None:
             "so §16.4 #9 would be measured over nothing"
         )
 
+    # The split is about refused *sections*. `RRA-018` FR-246 adds a region naming results a
+    # package refused on their own, and a published report may still carry those -- the
+    # golden package refuses its cost-based headline results -- so that one region, and only
+    # it, is excluded from the published-fixture check.
+    section_refusal = r'class="(?![^"]*refused-results)[^"]*refus'
     published = _surfaces(published=True)
     for language in _LANGUAGES:
-        assert not re.findall(r'class="[^"]*refus', published[("documents", language)]), (
+        assert not re.findall(section_refusal, published[("documents", language)]), (
             f"documents/{language} renders a refusal on the PUBLISHED fixture too, so the "
             "two-fixture split this module rests on no longer holds"
         )

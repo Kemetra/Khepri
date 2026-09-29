@@ -96,8 +96,43 @@ def test_every_closed_artifact_route_returns_exact_bytes_and_private_headers() -
         assert response.headers["cache-control"] == "private, no-store"
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["content-disposition"] == (
-            f'attachment; filename="{DOWNLOAD_NAMES[kind]}"'
+            f'{DISPOSITIONS[kind]}; filename="{DOWNLOAD_NAMES[kind]}"'
         )
+        _assert_the_wall(response.headers, kind)
+
+
+def _assert_the_wall(headers: object, kind: str) -> None:
+    """FR-241's headers once each on an inline kind, and none of them on a download."""
+    walled = DISPOSITIONS[kind] == "inline"
+    for header, value in INLINE_HEADERS.items():
+        expected = [value] if walled else []
+        assert headers.get_list(header) == expected, (kind, header)  # type: ignore[attr-defined]
+
+
+#: `RRA-018` FR-240: the two pages a reader opens are read in place; the PDF and the
+#: workbook stay downloads. Written out per kind rather than derived from a prefix, so
+#: a kind that changed disposition by accident fails here by name.
+DISPOSITIONS = {
+    "web_business_ar": "inline",
+    "web_business_en": "inline",
+    "web_evidence_ar": "inline",
+    "web_evidence_en": "inline",
+    "pdf_ar": "attachment",
+    "pdf_en": "attachment",
+    "excel": "attachment",
+}
+
+#: `RRA-018` FR-241, exactly. The policy is asserted as one string and asserted once
+#: (`get_list`), so a second policy added elsewhere -- which a browser would intersect
+#: with this one -- fails rather than passing beside it.
+INLINE_HEADERS = {
+    "content-security-policy": (
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
+        "form-action 'none'; frame-ancestors 'none'; sandbox allow-same-origin"
+    ),
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+}
 
 
 #: What each route offers to save as (`#590`). The stored `file_name` is shared by a
@@ -117,6 +152,7 @@ DOWNLOAD_NAMES = {
 
 def test_every_route_offers_a_distinct_download_name() -> None:
     assert set(DOWNLOAD_NAMES) == set(ROUTES.values())
+    assert set(DISPOSITIONS) == set(ROUTES.values())
     assert len(set(DOWNLOAD_NAMES.values())) == len(DOWNLOAD_NAMES)
 
 

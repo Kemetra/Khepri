@@ -1900,6 +1900,11 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         # unproven coverage, and the empty list has to be stated (`#352` review).
         "coverage_signatures": "Coverage signatures",
         "sources_compared": "Sources compared",
+        # `RRA-018` FR-246, FR-251, FR-252: the refused-results region's heading, the
+        # section-to-evidence link, and the evidence page's way back.
+        "refused_results": "Refused results",
+        "section_evidence": "Evidence",
+        "back_to_report": "Back to the report",
     },
     LANGUAGE_ARABIC: {
         "quality_summary": "جودة التحليل",
@@ -1915,6 +1920,9 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "unavailable": "غير مذكور",
         "coverage_signatures": "توقيعات التغطية",
         "sources_compared": "المصادر المقارنة",
+        "refused_results": "النتائج المرفوضة",
+        "section_evidence": "الأدلة",
+        "back_to_report": "العودة إلى التقرير",
     },
 }
 
@@ -1970,3 +1978,13 @@ _assert_component_states_worded()
 def component_chrome(language: str) -> dict[str, str]:
     """The component layer's chrome labels for one language, as `_CHROME` binds them."""
     return COMPONENT_CHROME[language]
+
+
+#: The one breakdown the journey maps no column for (`RRA-018` FR-246: a qualifier, and
+#: nothing else). `column_label` names a comparison dimension by the column a customer mapped;
+#: a period is derived from the transaction date, so it is named here. `refused_results.py`
+#: composes a refused breakdown's name from it.
+BREAKDOWN_QUALIFIERS: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {facts.PERIOD_DIMENSION: "Period"},
+    LANGUAGE_ARABIC: {facts.PERIOD_DIMENSION: "الفترة"},
+}
