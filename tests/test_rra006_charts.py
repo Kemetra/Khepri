@@ -199,8 +199,8 @@ def test_a_category_label_is_customer_text_the_surface_only_escapes() -> None:
     view = chart_of()
     assert view is not None
     assert view.labels == (
-        ChartLabel(value="V1", localize=False, x="160.0000", y="339.0000"),
-        ChartLabel(value="V2", localize=False, x="480.0000", y="339.0000"),
+        ChartLabel(value="V1", localize=False, x="160.0000", y="343.0000"),
+        ChartLabel(value="V2", localize=False, x="480.0000", y="343.0000"),
     )
 
 
@@ -236,10 +236,10 @@ def test_a_scalar_figure_is_named_by_its_metric_not_by_its_own_value() -> None:
     assert view is not None
     assert view.labels == (
         ChartLabel(
-            value="metric.growth_price_effect", localize=True, x="160.0000", y="339.0000"
+            value="metric.growth_price_effect", localize=True, x="160.0000", y="343.0000"
         ),
         ChartLabel(
-            value="metric.growth_volume_effect", localize=True, x="480.0000", y="339.0000"
+            value="metric.growth_volume_effect", localize=True, x="480.0000", y="343.0000"
         ),
     )
 
@@ -445,10 +445,10 @@ def test_the_canvas_is_governed_rather_than_chosen_per_chart() -> None:
     they do not support."""
     assert Decimal(640) == CHART_WIDTH
     assert Decimal(320) == PLOT_HEIGHT
-    # The canvas is the plot, a 24-unit band for the category labels, and a 36-unit
+    # The canvas is the plot, a 28-unit band for the category labels, and a 42-unit
     # row for the axis unit (SCRUM-21 A3). The label's baseline is inside its band.
-    assert PLOT_HEIGHT + Decimal(24) + Decimal(36) == CHART_HEIGHT
-    assert PLOT_HEIGHT < LABEL_BASELINE < PLOT_HEIGHT + Decimal(24)
+    assert PLOT_HEIGHT + Decimal(28) + Decimal(42) == CHART_HEIGHT
+    assert PLOT_HEIGHT < LABEL_BASELINE < PLOT_HEIGHT + Decimal(28)
 
 
 # --- the wording every governed code resolves to ---------------------------

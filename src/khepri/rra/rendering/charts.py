@@ -86,17 +86,19 @@ CHART_WIDTH = Decimal(640)
 # and `report.print.css` give them. The unit's row is the taller of the two: the
 # labels are sized in user units, but the unit is sized in `rem` and doubles with a
 # reader's 200% text (`RRA-015` FR-189), where an 18-unit row put it on the first label.
+# Both carry headroom beyond what Windows Chromium measured (about 8 units under the
+# marks, 6 above the unit at 200%), because font metrics differ on the Linux engine.
 #
 # Stated as literals rather than sums: arithmetic in this module is confined to the
 # geometry functions, and `test_rra006_charts` asserts the canvas is exactly the plot,
-# a 24-unit label band and a 36-unit unit row.
+# a 28-unit label band and a 42-unit unit row.
 PLOT_HEIGHT = Decimal(320)
-CHART_HEIGHT = Decimal(380)
+CHART_HEIGHT = Decimal(390)
 
-# Where a category label's baseline sits, 19 units into its band: far enough under the
+# Where a category label's baseline sits, 23 units into its band: far enough under the
 # plot that its ascenders clear a line's point at zero -- whose mark hangs `POINT_SIZE`
 # below its value -- and far enough above the unit row that its descenders clear it.
-LABEL_BASELINE = Decimal(339)
+LABEL_BASELINE = Decimal(343)
 
 # The extent of a point on a line. A line's marks are drawn as areas like any other,
 # because a surface renders marks uniformly; the mark's *top edge* is the value, the
