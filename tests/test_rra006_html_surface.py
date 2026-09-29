@@ -665,10 +665,10 @@ def test_a_chart_mark_is_filled_from_the_report_palette() -> None:
 
 
 def test_a_chart_label_stays_legible_where_it_is_placed() -> None:
-    # `charts.build_chart` puts every label at `y = CHART_HEIGHT`, which is
-    # inside the plotting area and therefore on top of the marks. Legibility is
-    # the stylesheet's problem: the label needs to be smaller than body text and
-    # separated from whatever it overlaps.
+    # `charts.build_chart` puts every label in a band beneath the plot, so it no
+    # longer sits on the marks (SCRUM-21 A3), but a long name can still reach its
+    # neighbour. Legibility is the stylesheet's problem: the label needs to be
+    # smaller than body text and separated from whatever it comes close to.
     block = declarations_of(".chart__label")
 
     assert "font-size:" in block

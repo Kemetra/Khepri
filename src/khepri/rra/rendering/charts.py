@@ -76,7 +76,27 @@ from khepri.rra.rendering.wording import category_of
 # carries them: a template with the numbers written in literally would keep drawing
 # after this module changed them, and every bar would silently overflow.
 CHART_WIDTH = Decimal(640)
-CHART_HEIGHT = Decimal(320)
+
+# The plot is the part of the canvas the domain scales to: every mark, the baseline
+# and the zero line fall inside it. Beneath it are a band for the category labels and
+# a row for the axis unit. The labels were once placed at the plot's own foot, where
+# every bar rising from a zero line at the foot sat under its own name (SCRUM-21 A3).
+# The glyphs rise from each row's baseline, so a row is sized for the tallest face
+# the report sets in it -- the Arabic one, at the label and unit sizes `report.css`
+# and `report.print.css` give them. The unit's row is the taller of the two: the
+# labels are sized in user units, but the unit is sized in `rem` and doubles with a
+# reader's 200% text (`RRA-015` FR-189), where an 18-unit row put it on the first label.
+#
+# Stated as literals rather than sums: arithmetic in this module is confined to the
+# geometry functions, and `test_rra006_charts` asserts the canvas is exactly the plot,
+# a 24-unit label band and a 36-unit unit row.
+PLOT_HEIGHT = Decimal(320)
+CHART_HEIGHT = Decimal(380)
+
+# Where a category label's baseline sits, 19 units into its band: far enough under the
+# plot that its ascenders clear a line's point at zero -- whose mark hangs `POINT_SIZE`
+# below its value -- and far enough above the unit row that its descenders clear it.
+LABEL_BASELINE = Decimal(339)
 
 # The extent of a point on a line. A line's marks are drawn as areas like any other,
 # because a surface renders marks uniformly; the mark's *top edge* is the value, the
@@ -194,8 +214,8 @@ class _Domain:
         return self.high - self.low
 
     def offset(self, value: Decimal) -> Decimal:
-        """How far below the top of the canvas this value sits."""
-        return CHART_HEIGHT * (self.high - value) / self.span
+        """How far below the top of the canvas this value sits, within the plot."""
+        return PLOT_HEIGHT * (self.high - value) / self.span
 
     @property
     def zero(self) -> Decimal:
@@ -259,16 +279,16 @@ def build_chart(
 def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
     """The figure's governed category, placed under the mark it names.
 
-    At the foot of the canvas, horizontally centred on the mark. The centre is read
-    off the mark, the same derivation `_polyline` uses, so a label and its bar cannot
-    disagree about where they are.
+    In the label band beneath the plot, horizontally centred on the mark. The centre
+    is read off the mark, the same derivation `_polyline` uses, so a label and its bar
+    cannot disagree about where they are.
     """
     category = category_of(figure)
     return ChartLabel(
         value=category.value,
         localize=category.localize,
         x=_coordinate(_centre(mark)),
-        y=_coordinate(CHART_HEIGHT),
+        y=_coordinate(LABEL_BASELINE),
     )
 
 

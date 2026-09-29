@@ -70,6 +70,19 @@
   }
 
   /*
+   * Which is only safe if the table fits the page, because on paper a visible
+   * overflow is still off the paper -- and in right-to-left it runs past the
+   * page's *left* edge. `report.css` keeps header cells on one line, which is
+   * right for a scrolling viewport and wrong for a fixed measure: the longest
+   * Arabic breakdown header alone pushed the table past A4 and its last column
+   * off the page (SCRUM-21 A1, `RRA-006`). A header may wrap on paper; a figure
+   * may not (`td.figure` below).
+   */
+  thead th {
+    white-space: normal;
+  }
+
+  /*
    * A table taller than one page must repeat its header, or every page after
    * the first is a grid of unlabelled numbers. Rows and figures are kept whole;
    * the table itself is allowed to break, because forbidding that on a long
@@ -189,6 +202,29 @@
   code {
     font-family: inherit;
     font-size: 0.95em;
+    /*
+     * The screen sheet's `word-break: break-all` makes every code's narrowest
+     * width a single character, and a table laid out automatically then squeezes
+     * each column below its widest word: seven columns of codes on A4 printed
+     * `valu e` and `monet ary` (SCRUM-21 A2, `RRA-006`). Here a code breaks at its
+     * own `/` first and mid-word only where one segment is wider than its column.
+     */
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * Metric, kind and unit are governed vocabulary, and a split word in one is a
+   * different word. They keep their full width, which the opaque figure and
+   * citation references beside them give up: `overflow-wrap: break-word` on every
+   * code kept every word but printed the table 161px past the page. Positional,
+   * because the template gives these cells no class; the column order is
+   * `_evidence.html.j2`'s header row, which the measured test reads.
+   */
+  .evidence-figure-row > :nth-child(3) code,
+  .evidence-figure-row > :nth-child(4) code,
+  .evidence-figure-row > :nth-child(5) code {
+    overflow-wrap: normal;
   }
 
   /* Figures stay on one line: a wrapped number reads as two numbers. */

@@ -20,6 +20,9 @@ A stylesheet grep cannot see either defect: both are properties of table layout.
 
 from __future__ import annotations
 
+import re
+from importlib import resources
+
 import pytest
 
 from tests.rra_printed_support import LANGUAGES, a4_content_width_px, printed_documents
@@ -101,6 +104,38 @@ def test_no_printed_table_leaves_the_page_in_either_language() -> None:
         assert any(table["columns"] >= 5 for table in tables[language]), language
         past = [table for table in tables[language] if min(table["start"], table["end"]) < 0]
         assert past == [], f"{language}: tables printed past the page edge: {past}"
+
+
+def test_the_vocabulary_columns_are_where_the_print_rule_looks_for_them() -> None:
+    """The print sheet names the metric, kind and unit cells by position, because the
+    template gives them no class. This pins that coupling: a reordered header row, or a
+    row whose cells no longer follow it, fails here rather than moving the protection
+    onto opaque references and back onto `valu e`.
+    """
+    source = (
+        resources.files("khepri.rra.rendering")
+        .joinpath("templates", "_evidence.html.j2")
+        .read_text(encoding="utf-8")
+    )
+    table = source[source.index('id="evidence-figures"') :]
+    headers = re.findall(r'<th scope="col">\{\{ chrome\.(\w+) \}\}</th>', table)[:7]
+    row = table[table.index('<tr class="evidence-figure-row">') :]
+    cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row[: row.index("</tr>")])
+
+    assert headers[2:5] == ["metric", "kind", "unit"], headers
+    assert [cell.strip() for cell in cells[2:5]] == [
+        "<code>{{ cell.metric }}</code>",
+        "<code>{{ cell.kind }}</code>",
+        "<code>{{ cell.unit_kind }}</code>",
+    ], cells
+
+    sheet = (
+        resources.files("khepri.rra.rendering")
+        .joinpath("templates", "report.print.css")
+        .read_text(encoding="utf-8")
+    )
+    for position in (3, 4, 5):
+        assert f".evidence-figure-row > :nth-child({position}) code" in sheet
 
 
 @pytest.mark.browser
