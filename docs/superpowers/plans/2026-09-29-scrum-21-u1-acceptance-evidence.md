@@ -167,12 +167,24 @@ rule.
   served as an attachment, citing `report_api.py:562`. That has been false since `#627`. RRA-018
   §Exclusions bars journey template changes, so this is a comment-only fix under RRA-016.
 
+## Captures
+
+The pages behind A1–A3, kept so a later fix can be compared against them. The PDF pages come
+from the pinned-image render, rasterized at 1.4×.
+
+| Finding | Capture |
+|---|---|
+| A1: Arabic PDF, page 2, last breakdown column clipped | [a1-ar-pdf-page2-clipped-column.png](2026-09-29-scrum-21-captures/a1-ar-pdf-page2-clipped-column.png) |
+| A2: English PDF, page 16, identifiers wrapped mid-word | [a2-en-pdf-page16-identifier-wrap.png](2026-09-29-scrum-21-captures/a2-en-pdf-page16-identifier-wrap.png) |
+| A3: English web report, basket chart labels over bars | [a3-en-web-basket-labels.png](2026-09-29-scrum-21-captures/a3-en-web-basket-labels.png) |
+| A3 and A3b: Arabic PDF, page 10, the same chart, with the English qualifier | [a3-ar-pdf-page10-basket-labels.png](2026-09-29-scrum-21-captures/a3-ar-pdf-page10-basket-labels.png) |
+
 ## What this run does not establish
 
 - **Processing failure** and **display sampling** were not reached (see §Coverage).
 - **Keyboard, focus and reduced motion on the report surfaces** were not exercised.
-- **Nothing was recorded to the Loom runtime-evidence folder.** The screenshots and PDFs were kept
-  outside the repository.
+- **Nothing was recorded to the Loom runtime-evidence folder.** Only the four captures above are
+  in the repository. The full PDFs and the other screenshots were not kept.
 - **No hosted environment was involved.** OPS1 is deferred.
 
 ## Recommendation
