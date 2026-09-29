@@ -420,7 +420,8 @@ article {
    * 1.06:1 against it, which is a surface nobody can see. The rule and the
    * italic already carry the distinction, exactly as they do in print.
    */
-  .refused {
+  .refused,
+  .refused-results {
     background: transparent;
   }
 }

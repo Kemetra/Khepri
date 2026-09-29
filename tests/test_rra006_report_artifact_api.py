@@ -98,11 +98,15 @@ def test_every_closed_artifact_route_returns_exact_bytes_and_private_headers() -
         assert response.headers["content-disposition"] == (
             f'{DISPOSITIONS[kind]}; filename="{DOWNLOAD_NAMES[kind]}"'
         )
-        for header, value in INLINE_HEADERS.items():
-            if DISPOSITIONS[kind] == "inline":
-                assert response.headers.get_list(header) == [value], (kind, header)
-            else:
-                assert header not in response.headers, (kind, header)
+        _assert_the_wall(response.headers, kind)
+
+
+def _assert_the_wall(headers: object, kind: str) -> None:
+    """FR-241's headers once each on an inline kind, and none of them on a download."""
+    walled = DISPOSITIONS[kind] == "inline"
+    for header, value in INLINE_HEADERS.items():
+        expected = [value] if walled else []
+        assert headers.get_list(header) == expected, (kind, header)  # type: ignore[attr-defined]
 
 
 #: `RRA-018` FR-240: the two pages a reader opens are read in place; the PDF and the
