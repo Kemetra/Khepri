@@ -569,42 +569,50 @@ def _download_name(file_name: str, artifact_kind: str) -> str:
     return f"{stem}-{language}.{extension}"
 
 
-#: The two pages a reader opens rather than saves (`RRA-018` FR-240). The PDF and the
-#: workbook are files and stay downloads; a kind absent here keeps `attachment`.
+# `RRA-018` FR-240: the two pages a reader opens rather than saves. The PDF and the
+# workbook are files and stay downloads; a kind absent here keeps `attachment`.
 INLINE_ARTIFACT_KINDS = frozenset(
-    f"{surface}_{language}"
-    for surface in ("web_business", "web_evidence")
-    for language in REQUIRED_LANGUAGES
+    {"web_business_ar", "web_business_en", "web_evidence_ar", "web_evidence_en"}
 )
 
-#: The wall around a stored page served inline (`RRA-018` FR-241), exactly. No script can
-#: run (no `script-src`, and `sandbox` omits `allow-scripts`), nothing is fetched
-#: (`default-src 'none'`), and nothing may frame it. `allow-same-origin` stays because
-#: the session cookie is `SameSite=Strict`: an opaque-origin page's navigation to its own
-#: evidence would not carry it. Widening any part of this is outside the specification.
-INLINE_SECURITY_HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
-        "form-action 'none'; frame-ancestors 'none'; sandbox allow-same-origin"
+# `RRA-018` FR-241, exactly: no script can run (no `script-src`, and `sandbox` omits
+# `allow-scripts`), nothing is fetched (`default-src 'none'`), and nothing may frame it.
+# `allow-same-origin` stays because the session cookie is `SameSite=Strict`, and an
+# opaque-origin page's navigation to its own evidence would not carry it. Widening any
+# part of this is outside the specification.
+INLINE_POLICY = (
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
+    "form-action 'none'; frame-ancestors 'none'; sandbox allow-same-origin"
+)
+
+# Every artifact is private and never sniffed; an inline one is also walled. Keyed by
+# whether the kind is read in place, so the route looks its delivery up rather than
+# branching on it.
+_PRIVATE_HEADERS = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+_DELIVERY = {
+    False: ("attachment", _PRIVATE_HEADERS),
+    True: (
+        "inline",
+        {
+            **_PRIVATE_HEADERS,
+            "Content-Security-Policy": INLINE_POLICY,
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "no-referrer",
+        },
     ),
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
 }
 
 
 def _artifact_response(document: ArtifactDocument, artifact_kind: str) -> Response:
-    """The stored bytes, unchanged, with the disposition their kind is read by (FR-242)."""
+    # The stored bytes, unchanged, with the disposition their kind is read by (FR-242).
+    disposition, headers = _DELIVERY[artifact_kind in INLINE_ARTIFACT_KINDS]
     file_name = _download_name(document.file_name, artifact_kind)
-    inline = artifact_kind in INLINE_ARTIFACT_KINDS
-    disposition = "inline" if inline else "attachment"
     return Response(
         content=document.content,
         media_type=document.media_type,
         headers={
             "Content-Disposition": f'{disposition}; filename="{file_name}"',
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-            **(INLINE_SECURITY_HEADERS if inline else {}),
+            **headers,
         },
     )
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import cache
 
 from khepri.rra import facts, versions
 from khepri.rra.analysis import basket, comparison, concentration, growth
@@ -2003,19 +2004,24 @@ _BREAKDOWN_QUALIFIERS: dict[str, dict[str, str]] = {
     LANGUAGE_ARABIC: {facts.PERIOD_DIMENSION: "الفترة"},
 }
 
-#: Every composed breakdown code and what it was composed from, built from the constants
-#: the builders iterate. Looked up, never parsed: an unknown code fails closed rather than
-#: being split into a measure and a dimension nobody governs.
-_COMPOSED_RESULTS: dict[str, tuple[str, str]] = {
-    f"{measure}_by_{dimension}": (measure, dimension)
-    for measure in facts.SERIES_MEASURES
-    for dimension in facts.SERIES_DIMENSIONS
-}
+
+@cache
+def _composed_results() -> dict[str, tuple[str, str]]:
+    """Every composed breakdown code and what it was composed from.
+
+    Built from the constants the builders iterate, and looked up rather than parsed: an
+    unknown code fails closed instead of being split into a measure and a dimension
+    nobody governs.
+    """
+    return {
+        f"{measure}_by_{dimension}": (measure, dimension)
+        for measure in facts.SERIES_MEASURES
+        for dimension in facts.SERIES_DIMENSIONS
+    }
+
 
 #: Every code a package's `RefusedResult` can carry: a core metric, or a breakdown.
-REFUSABLE_RESULT_CODES: frozenset[str] = frozenset(facts.GOVERNED_METRICS) | frozenset(
-    _COMPOSED_RESULTS
-)
+REFUSABLE_RESULT_CODES: frozenset[str] = facts.GOVERNED_METRICS | frozenset(_composed_results())
 
 
 @dataclass(frozen=True, slots=True)
@@ -2038,7 +2044,7 @@ def refused_result_name(result: str, language: str) -> str:
     if code not in REFUSABLE_RESULT_CODES:
         raise KeyError(result)
     name = _result_business_name(code, language)
-    composed = _COMPOSED_RESULTS.get(code)
+    composed = _composed_results().get(code)
     if composed is None:
         return name
     return f"{name} — {_breakdown_qualifier(composed[1], language)}"
@@ -2080,10 +2086,16 @@ def _assert_refused_result_names_complete() -> None:
 
 _assert_refused_result_names_complete()
 
-#: Every name a refused result can be given, for surfaces that must show a cell holds
-#: governed text (the workbook's cell-provenance discipline).
-REFUSED_RESULT_NAMES: frozenset[str] = frozenset(
-    refused_result_name(code, language)
-    for code in REFUSABLE_RESULT_CODES
-    for language in _GOVERNED_LANGUAGES
-)
+
+
+def _refused_result_names() -> frozenset[str]:
+    """Every name a refused result can be given, in every language."""
+    return frozenset(
+        refused_result_name(code, language)
+        for code in REFUSABLE_RESULT_CODES
+        for language in _GOVERNED_LANGUAGES
+    )
+
+
+#: For surfaces that must show a cell holds governed text (the workbook's cell provenance).
+REFUSED_RESULT_NAMES = _refused_result_names()
