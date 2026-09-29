@@ -29,8 +29,8 @@ from khepri.rra.bundle import CHART_GROUPED_BAR, GOVERNED_CHART_KINDS
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.charts import (
     _GEOMETRY,  # the table under test
-    CHART_HEIGHT,
     CHART_WIDTH,
+    PLOT_HEIGHT,
     ChartView,
 )
 from khepri.rra.rendering.wording import AXIS_UNITS
@@ -82,9 +82,9 @@ def test_the_domain_always_includes_zero_whatever_the_series() -> None:
     rising = chart_of(values=(Decimal(100), Decimal(300)))
     assert rising is not None
     # Zero is the low bound, so the tallest bar reaches the top and both sit on the
-    # canvas foot: y + height == CHART_HEIGHT for every mark.
+    # plot foot: y + height == PLOT_HEIGHT for every mark.
     for mark in rising.marks:
-        assert Decimal(mark.y) + Decimal(mark.height) == CHART_HEIGHT
+        assert Decimal(mark.y) + Decimal(mark.height) == PLOT_HEIGHT
 
     falling = chart_of(values=(Decimal(-300), Decimal(-100)))
     assert falling is not None
@@ -118,15 +118,15 @@ def test_a_chart_carries_the_zero_baseline_the_domain_computes() -> None:
 def test_the_baseline_stays_inside_the_canvas_for_every_drawable_series() -> None:
     """`FR-183`: the line is always drawable, because zero is always in the domain.
 
-    An all-positive series puts zero at the foot and an all-negative one puts it at
-    the head. Neither is outside the canvas, so no consumer has to decide what to do
-    with a baseline it cannot draw.
+    An all-positive series puts zero at the plot's foot and an all-negative one puts
+    it at the head. Neither is outside the canvas, so no consumer has to decide what
+    to do with a baseline it cannot draw.
     """
     rising = chart_of(values=(Decimal(100), Decimal(300)))
     falling = chart_of(values=(Decimal(-300), Decimal(-100)))
     assert rising is not None and falling is not None
 
-    assert Decimal(rising.baseline) == CHART_HEIGHT
+    assert Decimal(rising.baseline) == PLOT_HEIGHT
     assert Decimal(falling.baseline) == Decimal(0)
 
 

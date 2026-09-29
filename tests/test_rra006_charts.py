@@ -35,6 +35,8 @@ from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.charts import (
     CHART_HEIGHT,
     CHART_WIDTH,
+    LABEL_BASELINE,
+    PLOT_HEIGHT,
     POINT_SIZE,
     ChartLabel,
     ChartView,
@@ -197,8 +199,8 @@ def test_a_category_label_is_customer_text_the_surface_only_escapes() -> None:
     view = chart_of()
     assert view is not None
     assert view.labels == (
-        ChartLabel(value="V1", localize=False, x="160.0000", y="320.0000"),
-        ChartLabel(value="V2", localize=False, x="480.0000", y="320.0000"),
+        ChartLabel(value="V1", localize=False, x="160.0000", y="343.0000"),
+        ChartLabel(value="V2", localize=False, x="480.0000", y="343.0000"),
     )
 
 
@@ -234,10 +236,10 @@ def test_a_scalar_figure_is_named_by_its_metric_not_by_its_own_value() -> None:
     assert view is not None
     assert view.labels == (
         ChartLabel(
-            value="metric.growth_price_effect", localize=True, x="160.0000", y="320.0000"
+            value="metric.growth_price_effect", localize=True, x="160.0000", y="343.0000"
         ),
         ChartLabel(
-            value="metric.growth_volume_effect", localize=True, x="480.0000", y="320.0000"
+            value="metric.growth_volume_effect", localize=True, x="480.0000", y="343.0000"
         ),
     )
 
@@ -380,7 +382,7 @@ def test_a_label_is_placed_under_the_mark_it_names() -> None:
 
     for label, mark in zip(view.labels, view.marks, strict=True):
         assert Decimal(label.x) == Decimal(mark.x) + Decimal(mark.width) / 2
-        assert Decimal(label.y) == CHART_HEIGHT
+        assert Decimal(label.y) == LABEL_BASELINE
 
 
 def test_labels_mirror_with_their_marks() -> None:
@@ -442,7 +444,11 @@ def test_the_canvas_is_governed_rather_than_chosen_per_chart() -> None:
     """Two charts on one page must share a scale, or their bars invite comparison
     they do not support."""
     assert Decimal(640) == CHART_WIDTH
-    assert Decimal(320) == CHART_HEIGHT
+    assert Decimal(320) == PLOT_HEIGHT
+    # The canvas is the plot, a 28-unit band for the category labels, and a 42-unit
+    # row for the axis unit (SCRUM-21 A3). The label's baseline is inside its band.
+    assert PLOT_HEIGHT + Decimal(28) + Decimal(42) == CHART_HEIGHT
+    assert PLOT_HEIGHT < LABEL_BASELINE < PLOT_HEIGHT + Decimal(28)
 
 
 # --- the wording every governed code resolves to ---------------------------

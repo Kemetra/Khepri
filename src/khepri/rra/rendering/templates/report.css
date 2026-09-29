@@ -361,9 +361,9 @@ article {
 
 .chart__axis-unit {
   /*
-   * What the value axis is measured in, placed at the canvas foot beside the
-   * category labels. The word arrives from the governed chrome; this rule only
-   * says where it sits and how it reads.
+   * What the value axis is measured in, placed at the canvas foot, in the row
+   * `charts.py` keeps for it beneath the category labels. The word arrives from
+   * the governed chrome; this rule only says how it aligns and reads.
    *
    * `text-anchor: start` names no physical side, which is why this sheet is
    * direction-agnostic. It does NOT place the label: an earlier version of this
@@ -381,13 +381,14 @@ article {
 
 .chart__label {
   /*
-   * `charts._label` places every label at `y = CHART_HEIGHT`, horizontally
-   * centred on its mark -- inside the plotting area, and therefore over the
-   * marks rather than beside them. `paint-order` draws the paper-coloured stroke
-   * before the glyphs, which keeps a halo around each one so it stays readable
-   * against a filled bar.
+   * `charts._label` places every label in the band beneath the plot, horizontally
+   * centred on its mark. It was once placed at the plot's own foot, over the
+   * bottoms of the bars (SCRUM-21 A3). `paint-order` draws the paper-coloured
+   * stroke before the glyphs, a halo that keeps a label readable wherever a mark
+   * or a neighbour comes close. `charts.LABEL_BASELINE` is sized to this rule's
+   * font size, and `test_rra015_chart_label_band` reads it from here.
    *
-   * This makes a label legible where it is drawn. It does not stop a long
+   * None of this stops a long
    * category name from reaching its neighbour: at twelve categories a slot is
    * about 53 user units wide, and no font size makes a product name fit that.
    * Spacing labels out is geometry, and belongs to the module that owns it.
