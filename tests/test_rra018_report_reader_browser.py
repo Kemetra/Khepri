@@ -138,9 +138,12 @@ def test_the_report_opens_in_place_and_its_evidence_link_keeps_the_session() -> 
                 page.locator('[data-component="section-evidence-link"]').first.click()
 
             assert page.url.endswith("/surfaces/evidence/en#evidence-section-overview")
-            assert page.locator("h1").first.inner_text() == "Technical evidence"
+            # The session is checked before the page's heading: without `allow-same-origin`
+            # the navigation arrives with no cookie and the page is the JSON refusal, so the
+            # heading never appears -- measured by mutating the policy, which fails here.
             evidence = [carried for path, carried in log if path.endswith("/evidence/en")]
             assert evidence == [True], f"the evidence request lost the session: {log}"
+            assert page.locator("h1").first.inner_text() == "Technical evidence"
             assert refused == [], f"the policy refused part of the genuine report: {refused}"
         finally:
             browser.close()  # type: ignore[attr-defined]
