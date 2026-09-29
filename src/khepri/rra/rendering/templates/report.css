@@ -594,3 +594,53 @@ article {
 .evidence-drawer-row .drawer {
   margin-block: 0 0.25rem;
 }
+
+/*
+ * Reading the report in place (`RRA-018`). The reference sits quietly under the
+ * disclosure, as the colophon does; it is quoted, not read.
+ */
+.report-reference {
+  font-size: 0.875rem;
+  color: var(--report-muted);
+}
+
+/*
+ * The results the report refused on their own (FR-246). The refusal's own shape -- rule
+ * and tint, never the error palette -- because a refused result is a governed answer.
+ * Each reason is stated once, with the results it covers listed under it.
+ */
+.refused-results {
+  padding-block: 0.75rem;
+  padding-inline: var(--report-space);
+  /* impeccable-disable-next-line side-tab: semantic state rule, not a card tab */
+  border-inline-start: 4px solid var(--report-muted);
+  background: #f7f8fa;
+  margin-block-end: calc(var(--report-space) * 1.5);
+}
+
+.refused-results__group p {
+  margin-block-end: 0.25rem;
+  color: var(--report-muted);
+}
+
+.refused-results__group ul {
+  margin-block: 0 var(--report-space);
+  padding-inline-start: 1.25rem;
+}
+
+/* The index's badge sits beside its link (FR-245) without the margin it takes under a heading. */
+nav .badge {
+  margin-block-end: 0;
+  margin-inline-start: 0.5rem;
+}
+
+/*
+ * The section-to-evidence link and the evidence page's way back (FR-251, FR-252). Both are
+ * pointer targets, so they meet `RRA-015` `FR-189`'s 44px floor as the navigation anchors do.
+ */
+.section-evidence__link,
+.report-return__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+}

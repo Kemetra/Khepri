@@ -112,6 +112,33 @@
 {%- endmacro %}
 
 {#
+  Every result the report was asked for and refused on its own (`RRA-018` FR-246 to
+  FR-248). `groups` is `wording.refused_result_groups`: each reason stated once, above the
+  names it covers, in package order. This layer authors neither -- names are composed from
+  governed words and prose is `RRA-009`'s -- and renders nothing when nothing was refused.
+
+  A landmark named by its own heading (FR-254), and the governed refusal shape rather than
+  error paint: a refusal is an answer, not a failure (`RRA-015` FR-189).
+#}
+{% macro refused_results_region(groups, chrome) -%}
+{% if groups %}
+<section id="refused-results" data-component="refused-results" class="refused-results"
+         aria-labelledby="refused-results-heading">
+<h2 id="refused-results-heading">{{ chrome.component.refused_results }}</h2>
+{% for group in groups %}
+<div class="refused-results__group">
+<p>{{ group.prose }}</p>
+<ul>
+{% for name in group.names %}<li>{{ name }}</li>
+{% endfor %}
+</ul>
+</div>
+{% endfor %}
+</section>
+{% endif %}
+{%- endmacro %}
+
+{#
   The link from a figure to the citation that supports it.
 
   `citation_id` is the identifier the package already published, and the link's text

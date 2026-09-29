@@ -1900,6 +1900,11 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         # unproven coverage, and the empty list has to be stated (`#352` review).
         "coverage_signatures": "Coverage signatures",
         "sources_compared": "Sources compared",
+        # `RRA-018` FR-246, FR-251, FR-252: the refused-results region's heading, the
+        # section-to-evidence link, and the evidence page's way back.
+        "refused_results": "Refused results",
+        "section_evidence": "Evidence",
+        "back_to_report": "Back to the report",
     },
     LANGUAGE_ARABIC: {
         "quality_summary": "جودة التحليل",
@@ -1915,6 +1920,9 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "unavailable": "غير مذكور",
         "coverage_signatures": "توقيعات التغطية",
         "sources_compared": "المصادر المقارنة",
+        "refused_results": "النتائج المرفوضة",
+        "section_evidence": "الأدلة",
+        "back_to_report": "العودة إلى التقرير",
     },
 }
 
@@ -1970,3 +1978,112 @@ _assert_component_states_worded()
 def component_chrome(language: str) -> dict[str, str]:
     """The component layer's chrome labels for one language, as `_CHROME` binds them."""
     return COMPONENT_CHROME[language]
+
+
+# --- Refused results (`RRA-018` FR-246, FR-247) ------------------------------------------
+#
+# A result the package refused on its own reaches the reader as its name and its reason.
+# **The name is composed only from words that already exist.** A core metric is named by
+# its business name. A composed breakdown is named by its measure, which reads "Revenue"
+# because a figure row also carries its own label; a refusal carries none, so "Revenue"
+# alone would tell a reader revenue was refused on a page whose Overview states it. The
+# breakdown therefore adds its dimension, joined as the figure rows join a name and a label.
+#
+# **The reason is `caveat_prose`'s, never authored here.** It is the one resolver the
+# family-scoped refusals already use, with its `#560`/`#575` rules: with no recorded input
+# the result sentence would name the metric as a missing column, which is false, so it
+# falls back to the section sentence. Several refusals then share one sentence, and a
+# reader is told it once, above every name it covers -- `stated_once`'s rule, by sentence.
+
+#: The one breakdown the journey maps no column for. `column_label` names a comparison
+#: dimension by the column a customer mapped; a period is derived from the transaction
+#: date, so it is named here (`RRA-018` FR-246: a qualifier, and nothing else).
+_BREAKDOWN_QUALIFIERS: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {facts.PERIOD_DIMENSION: "Period"},
+    LANGUAGE_ARABIC: {facts.PERIOD_DIMENSION: "الفترة"},
+}
+
+#: Every composed breakdown code and what it was composed from, built from the constants
+#: the builders iterate. Looked up, never parsed: an unknown code fails closed rather than
+#: being split into a measure and a dimension nobody governs.
+_COMPOSED_RESULTS: dict[str, tuple[str, str]] = {
+    f"{measure}_by_{dimension}": (measure, dimension)
+    for measure in facts.SERIES_MEASURES
+    for dimension in facts.SERIES_DIMENSIONS
+}
+
+#: Every code a package's `RefusedResult` can carry: a core metric, or a breakdown.
+REFUSABLE_RESULT_CODES: frozenset[str] = frozenset(facts.GOVERNED_METRICS) | frozenset(
+    _COMPOSED_RESULTS
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RefusedGroup:
+    """One reason, stated once, and the refused results it covers, in package order."""
+
+    prose: str
+    names: tuple[str, ...]
+
+
+def _breakdown_qualifier(dimension: str, language: str) -> str:
+    if dimension in facts.COMPARISON_DIMENSIONS:
+        return column_label(dimension, language)
+    return _BREAKDOWN_QUALIFIERS[language][dimension]
+
+
+def refused_result_name(result: str, language: str) -> str:
+    """A refused result's name on the page, refusing any code outside the governed set."""
+    code = result.split(".", maxsplit=1)[0]
+    if code not in REFUSABLE_RESULT_CODES:
+        raise KeyError(result)
+    name = _result_business_name(code, language)
+    composed = _COMPOSED_RESULTS.get(code)
+    if composed is None:
+        return name
+    return f"{name} — {_breakdown_qualifier(composed[1], language)}"
+
+
+def refused_result_groups(
+    refusals: Iterable[facts.RefusedResult], language: str
+) -> tuple[RefusedGroup, ...]:
+    """The bundle's refusals as the page states them: each sentence once, then its names."""
+    grouped: dict[str, list[str]] = {}
+    for refusal in refusals:
+        prose = caveat_prose(
+            f"{refusal.metric}{RESULT_CAVEAT_SEPARATOR}{refusal.reason}",
+            language,
+            refusing_input=refusal.input,
+        )
+        grouped.setdefault(prose, []).append(refused_result_name(refusal.metric, language))
+    return tuple(RefusedGroup(prose=prose, names=tuple(names)) for prose, names in grouped.items())
+
+
+def _assert_refused_result_names_complete() -> None:
+    """Every refusable code names itself, distinctly, in every language.
+
+    Read from `REFUSABLE_RESULT_CODES` rather than from any table's own keys, for
+    `_assert_dimension_names_complete`'s reason: the failure this catches is a code a
+    package can refuse and no page can name -- which would refuse the whole report at
+    render -- or two codes a reader could not tell apart.
+    """
+    for language in _GOVERNED_LANGUAGES:
+        try:
+            names = [refused_result_name(code, language) for code in sorted(REFUSABLE_RESULT_CODES)]
+        except KeyError as missing:
+            message = f"a refused result has no name in {language}: {missing}"
+            raise RuntimeError(message) from None
+        if len(set(names)) != len(names):
+            message = f"two refused results would read the same in {language}"
+            raise RuntimeError(message)
+
+
+_assert_refused_result_names_complete()
+
+#: Every name a refused result can be given, for surfaces that must show a cell holds
+#: governed text (the workbook's cell-provenance discipline).
+REFUSED_RESULT_NAMES: frozenset[str] = frozenset(
+    refused_result_name(code, language)
+    for code in REFUSABLE_RESULT_CODES
+    for language in _GOVERNED_LANGUAGES
+)

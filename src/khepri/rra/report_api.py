@@ -569,15 +569,42 @@ def _download_name(file_name: str, artifact_kind: str) -> str:
     return f"{stem}-{language}.{extension}"
 
 
+#: The two pages a reader opens rather than saves (`RRA-018` FR-240). The PDF and the
+#: workbook are files and stay downloads; a kind absent here keeps `attachment`.
+INLINE_ARTIFACT_KINDS = frozenset(
+    f"{surface}_{language}"
+    for surface in ("web_business", "web_evidence")
+    for language in REQUIRED_LANGUAGES
+)
+
+#: The wall around a stored page served inline (`RRA-018` FR-241), exactly. No script can
+#: run (no `script-src`, and `sandbox` omits `allow-scripts`), nothing is fetched
+#: (`default-src 'none'`), and nothing may frame it. `allow-same-origin` stays because
+#: the session cookie is `SameSite=Strict`: an opaque-origin page's navigation to its own
+#: evidence would not carry it. Widening any part of this is outside the specification.
+INLINE_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
+        "form-action 'none'; frame-ancestors 'none'; sandbox allow-same-origin"
+    ),
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
+
+
 def _artifact_response(document: ArtifactDocument, artifact_kind: str) -> Response:
+    """The stored bytes, unchanged, with the disposition their kind is read by (FR-242)."""
     file_name = _download_name(document.file_name, artifact_kind)
+    inline = artifact_kind in INLINE_ARTIFACT_KINDS
+    disposition = "inline" if inline else "attachment"
     return Response(
         content=document.content,
         media_type=document.media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{file_name}"',
+            "Content-Disposition": f'{disposition}; filename="{file_name}"',
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
+            **(INLINE_SECURITY_HEADERS if inline else {}),
         },
     )
 
