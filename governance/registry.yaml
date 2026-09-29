@@ -414,6 +414,15 @@ artifacts:
       - KHEPRI-DEC-033
       - KHEPRI-DEC-035
   - type: specification
+    id: RRA-018
+    state: active
+    document: governance/specifications/RRA-018.md
+    depends_on:
+      - RRA
+      - RRA-006
+      - RRA-009
+      - RRA-012
+  - type: specification
     id: RCA-001
     state: active
     document: governance/specifications/RCA-001.md
