@@ -137,6 +137,7 @@ from khepri.rra.rendering.excel_rows import (
 from khepri.rra.rendering.excel_rows import (
     write_text as _write_text,
 )
+from khepri.rra.rendering.refused_results import REFUSED_RESULT_NAMES, refused_result_groups
 from khepri.rra.rendering.wording import (
     BUSINESS_SHEET_NAMES,
     CAVEAT_WORDING,
@@ -146,11 +147,9 @@ from khepri.rra.rendering.wording import (
     LABEL_WORDING,
     METRIC_WORDING,
     REFUSAL_WORDING,
-    REFUSED_RESULT_NAMES,
     SECTION_HEADINGS,
     category_of,
     caveat_proses,
-    refused_result_groups,
     section_refusal_message,
     stated_once,
     worded,

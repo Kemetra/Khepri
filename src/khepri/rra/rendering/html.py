@@ -58,6 +58,7 @@ from khepri.rra.narrative import (
 )
 from khepri.rra.renderable import PresentationSection, RenderableBundle
 from khepri.rra.rendering.charts import ChartView, build_chart
+from khepri.rra.rendering.refused_results import refused_result_groups
 from khepri.rra.rendering.wording import (
     AXIS_UNITS,
     CHART_DESCRIPTIONS,
@@ -69,7 +70,6 @@ from khepri.rra.rendering.wording import (
     caveat_proses,
     component_chrome,
     kind_qualifier,
-    refused_result_groups,
     section_refusal_message,
     stated_once,
     worded,

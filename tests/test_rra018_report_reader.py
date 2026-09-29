@@ -24,7 +24,7 @@ import pytest
 from khepri.rra.bundle import ReportBundle
 from khepri.rra.facts import RefusedResult
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from khepri.rra.rendering import wording
+from khepri.rra.rendering import refused_results, wording
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.pdf import PdfReportRenderer
@@ -293,12 +293,12 @@ def test_the_limitations_sheet_states_the_shared_sentence_once() -> None:
 
 
 def test_every_refusable_code_composes_a_distinct_name_in_every_language() -> None:
-    assert wording.REFUSABLE_RESULT_CODES, "an empty governed set makes this vacuous"
-    assert "revenue_by_period" in wording.REFUSABLE_RESULT_CODES
+    assert refused_results.REFUSABLE_RESULT_CODES, "an empty governed set makes this vacuous"
+    assert "revenue_by_period" in refused_results.REFUSABLE_RESULT_CODES
     for language in LANGUAGES:
         names = [
-            wording.refused_result_name(code, language)
-            for code in sorted(wording.REFUSABLE_RESULT_CODES)
+            refused_results.refused_result_name(code, language)
+            for code in sorted(refused_results.REFUSABLE_RESULT_CODES)
         ]
         assert len(set(names)) == len(names), language
 
@@ -306,11 +306,11 @@ def test_every_refusable_code_composes_a_distinct_name_in_every_language() -> No
 def test_the_guard_fails_when_a_breakdown_has_no_qualifier(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    trimmed = {language: {} for language in wording._BREAKDOWN_QUALIFIERS}
-    monkeypatch.setattr(wording, "_BREAKDOWN_QUALIFIERS", trimmed)
+    trimmed = {language: {} for language in wording.BREAKDOWN_QUALIFIERS}
+    monkeypatch.setattr(wording, "BREAKDOWN_QUALIFIERS", trimmed)
 
     with pytest.raises(RuntimeError, match="refused result"):
-        wording._assert_refused_result_names_complete()
+        refused_results.assert_refused_result_names_complete()
 
 
 def test_the_guard_fails_when_two_codes_would_read_the_same(
@@ -318,17 +318,17 @@ def test_the_guard_fails_when_two_codes_would_read_the_same(
 ) -> None:
     collided = {
         language: {"period": wording.column_label("product", language)}
-        for language in wording._BREAKDOWN_QUALIFIERS
+        for language in wording.BREAKDOWN_QUALIFIERS
     }
-    monkeypatch.setattr(wording, "_BREAKDOWN_QUALIFIERS", collided)
+    monkeypatch.setattr(wording, "BREAKDOWN_QUALIFIERS", collided)
 
     with pytest.raises(RuntimeError, match="refused result"):
-        wording._assert_refused_result_names_complete()
+        refused_results.assert_refused_result_names_complete()
 
 
 def test_an_ungoverned_code_is_refused_rather_than_rendered() -> None:
     with pytest.raises(KeyError):
-        wording.refused_result_name("revenue_by_weather", LANGUAGE_ENGLISH)
+        refused_results.refused_result_name("revenue_by_weather", LANGUAGE_ENGLISH)
 
 
 # --- FR-244: header metadata is a closed set ---------------------------------------------------
