@@ -135,9 +135,11 @@ def _collisions(
 def _assert_no_collisions(charts: dict[str, list]) -> None:
     for language in LANGUAGES:
         kinds = {chart["kind"] for chart in charts[language] if chart["labels"]}
-        # A3 was seen on the basket bar chart and a negative grouped bar; a fixture
-        # that stopped drawing either would pass having measured nothing.
-        assert {"chart chart--bar", "chart chart--grouped_bar"} <= kinds, (language, kinds)
+        # A3 was seen on the basket bar chart and a negative grouped bar, and a line's
+        # points hang `POINT_SIZE` into the label band, where clearance is tightest. A
+        # fixture that stopped drawing any of the three would pass having measured nothing.
+        required = {"chart chart--bar", "chart chart--grouped_bar", "chart chart--line"}
+        assert required <= kinds, (language, kinds)
         faults = [(chart["kind"], fault) for chart in charts[language] for fault in chart["faults"]]
         assert faults == [], f"{language}: {faults}"
 
