@@ -5,8 +5,8 @@
 > The three rendered-report defects from the first run are **not reproduced**. The Arabic PDF
 > prints every column of its widest breakdown. Metric, kind and unit codes stay whole. The
 > basket chart's labels sit in their own band below the bars. The journey, the in-place report
-> and session isolation pass again. Keyboard, focus and reduced motion on the report surfaces,
-> which the first run did not exercise, also pass.
+> and session isolation pass again. Two checks the first run did not exercise also pass: keyboard
+> focus on `web/en`, `web/ar` and `evidence/en`, and reduced motion on `web/en`.
 >
 > What remains is the owner readings the first run left open, plus two newly recorded
 > presentation findings, A11 and A12. #629 introduced neither. This document records what was
@@ -33,8 +33,10 @@ This follows the first run's method, with the differences listed under **Deviati
   were rendered only by a worker in that image: `python -m khepri.local.cli work`, run with
   `--network host` against the same Postgres and MinIO. Inside the image, `khepri.local` imports
   and uses the same `launch_chromium` with `LAUNCH_ARGS ('--disable-dev-shm-usage',)`, and Python
-  is 3.13.12. **Every verdict below is read from the pinned renders.** A fourth job, `normal-local`,
-  was rendered by the Windows-side worker for comparison only.
+  is 3.13.12. **Every PDF verdict below is read from the pinned renders.** A fourth job,
+  `normal-local`, was rendered by the Windows-side worker for comparison only. Results for the
+  journey, headers, isolation, layout, focus and motion come from the Playwright run against the
+  `:8010` app. Causes cited from source come from reading `5bc1565`.
 - **Files.** `tests/rra_printed_support.retail_csv` (seed 21) at 160 rows (normal), 1 row (small)
   and 40,000 rows (large). That is the SCRUM-25 file shape: date, revenue, units, paired
   invoices, category and branch. The profile body is `tests.rra003_contract_fixtures.profile_payload()`.
@@ -45,7 +47,9 @@ This follows the first run's method, with the differences listed under **Deviati
   into glyph runs, so Arabic words cannot be string-matched. The Arabic checks therefore match
   figures, codes and Latin labels, and every Arabic finding was also read from a capture.
 - **200% text** was applied as `html { font-size: 200% }` in a `bypass_csp` context, used for
-  layout measurement only, as in the first run.
+  layout measurement only, as in the first run. This proves reflow of the root-relative text
+  only. It does not show that all text scales: chart text is sized in the SVG (`.chart__label` is
+  a fixed `10px`) and does not follow the root size.
 
 ### Deviations from the first run
 
@@ -84,7 +88,7 @@ This follows the first run's method, with the differences listed under **Deviati
 | Backend / processing failure | Not exercised | Still cannot be triggered without a code change |
 | Arabic and English | Every surface, both languages | **Pass** for A1–A3. See **A11** and **A9** |
 | Desktop and narrow | 1440 and 390, both languages | **Pass.** No page-level horizontal scroll |
-| 200% text | 390, both languages | **Pass.** No page-level horizontal scroll |
+| 200% text | Root font at 200%, 390, both languages | **Pass for reflow.** No page-level horizontal scroll. Chart text is fixed-size and was not measured |
 | Keyboard / focus | 12 Tab stops each on `web/en`, `web/ar` and `evidence/en` at 1440 | **Pass.** Every stop had a visible focus indicator (outline or box-shadow). The stops were links, the focusable table scrollers, and the evidence drawers' `summary` |
 | Reduced motion | `web/en` under `prefers-reduced-motion: reduce` | **Pass.** No element carries a transition or animation longer than 10 ms |
 | Web report | Opened from the journey's report step | **Pass.** See §In place |
