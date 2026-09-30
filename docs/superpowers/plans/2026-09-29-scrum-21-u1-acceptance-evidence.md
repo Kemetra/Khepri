@@ -1,5 +1,10 @@
 # SCRUM-21: U1 end-to-end UX/UI and report acceptance, first run
 
+> **Superseded as the current reading by the re-run on 2026-09-30, on `main` at `5bc1565`:**
+> [`2026-09-30-scrum-21-u1-acceptance-rerun.md`](2026-09-30-scrum-21-u1-acceptance-rerun.md).
+> The re-run does not reproduce A1–A3. Acceptance remains the owner's call. This record is kept
+> unchanged below as the first run's evidence.
+>
 > ## STATUS: NOT YET ACCEPTED. First run on 2026-09-29, `main` at `a2bbf40`
 >
 > The journey, the in-place report and session isolation pass. **The rendered deliverables
