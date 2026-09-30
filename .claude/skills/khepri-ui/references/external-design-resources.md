@@ -40,14 +40,16 @@ Extract principles, map them back to Khepri authority, then implement only the m
 
 1. **Name the unresolved question.** Example: “How should this analytical block separate headline,
    supporting context, and evidence without nesting cards?”
-2. **Check Khepri first.** If the active spec, design language, current handoff, v2 reference, or
-   accepted implementation already answers it, stop researching and use that answer.
+2. **Check Khepri first.** If the active spec, design language, current handoff, or accepted
+   implementation already answers it, stop researching and use that answer. Treat the v2
+   reference as research input only; it cannot supply implementation authority.
 3. **Choose one source by job.** Use a second only when comparison adds value. Do not browse the
    whole library.
 4. **Extract at most three principles.** Record each as:
    `source → observed principle → Khepri mapping → rejected foreign assumptions`.
-5. **Map before code.** Each adopted principle must map to an active Khepri requirement or an
-   admitted presentation decision and to files the governing spec allows.
+5. **Map before code.** Each adopted principle must map to an active Khepri requirement or a
+   presentation decision explicitly recorded in the active spec, design language, or current
+   handoff, and to files the governing spec allows.
 6. **Implement the smallest mapped change.** No new route, fact, wording, token system, icon family,
    dependency, or capability.
 7. **Validate normally.** External inspiration does not replace Khepri browser matrices,
