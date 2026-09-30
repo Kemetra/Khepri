@@ -90,11 +90,15 @@ will sound like a system.
 ### `prior_window_absent` — comparison, growth
 
 > **Comparison with an earlier period — not available**
-> Your file covers a single period, so there is no earlier period inside it to
-> compare against. Everything else in this review is unaffected and describes the
-> period you supplied. To add comparison, export a file that also covers the
-> period you want to compare with — the same months a year earlier, or the months
-> immediately before.
+> Your file does not include the earlier period this comparison needs, so there
+> is nothing inside it to compare against. Everything else in this review is
+> unaffected and describes what you supplied. To add comparison, export a file
+> that also covers the earlier period you want to compare with, such as the same
+> months a year earlier.
+>
+> *The code fires per comparison mode, so a file with several periods can still
+> lack the one a year earlier. The sentence therefore claims no period count
+> (SCRUM-21 A4).*
 
 ### `required_input_unavailable` — comparison, growth, basket
 
