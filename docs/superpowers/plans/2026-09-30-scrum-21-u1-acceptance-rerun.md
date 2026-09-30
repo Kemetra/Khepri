@@ -8,8 +8,8 @@
 > and session isolation pass again. Two checks the first run did not exercise also pass: keyboard
 > focus on `web/en`, `web/ar` and `evidence/en`, and reduced motion on `web/en`.
 >
-> What remains is the owner readings the first run left open, plus two newly recorded
-> presentation findings, A11 and A12. #629 introduced neither. This document records what was
+> What remains is the owner readings the first run left open, one newly recorded finding (A11),
+> and one already tracked on #211 (A12). #629 introduced neither. This document records what was
 > exercised and what it showed. It changes no authority and proposes no fix.
 
 The first run's record is
@@ -150,7 +150,7 @@ Neither served inline HTML or a `Content-Disposition`.
   - Captures: [a3-en-web-basket-labels.png](2026-09-30-scrum-21-rerun-captures/a3-en-web-basket-labels.png)
     and [a3-ar-pdf-page10-basket-labels.png](2026-09-30-scrum-21-rerun-captures/a3-ar-pdf-page10-basket-labels.png).
 
-### Newly recorded. Neither is introduced by #629
+### Not introduced by #629
 
 - **A11: Arabic PDF breakdowns wrap their dates.** In the Arabic PDF's breakdown tables, each
   date row label wraps onto two lines. The English tables keep dates on one line.
@@ -160,18 +160,20 @@ Neither served inline HTML or a `Content-Disposition`.
   - **Impact:** nothing is lost, but each date reads across two lines.
   - Visible in the A1 captures. This needs an owner reading: accept it, or open a follow-up under
     `RRA-006`.
-- **A12: the line chart's end point and its label are cut at the chart's edge.** On the
-  Concentration chart, the last tick label ("3") and its marker sit exactly on the canvas edge,
-  and half of each is clipped. It happens at the start edge in Arabic and the end edge in
-  English. The top marker is likewise halved at the top edge.
-  - **Where:** the Arabic PDF (page 8), the English PDF (page 7) and the Arabic web report.
-  - **Predates #629.** `charts.py` places the *n*-th point at `CHART_WIDTH × (index + 1) / n`,
-    so the last point is at x = 640 on a 640-wide `viewBox`. The SVG's `overflow` is `hidden`.
-    #629 changed only vertical geometry. The first run did not report this.
+- **A12: the line chart's end point and its label are cut at the chart's edge. Already
+  tracked on #211.** PR #629 recorded it and put it on #211: "the concentration curve's last
+  category label is … half clipped sideways". The #211 entry names the fix as `RRA-015` label
+  geometry. `test_rra015_chart_label_band` checks top and bottom clipping only, and says why.
+  This run confirms it and adds two points:
+  - **In Arabic it is the start (left) edge.** #211 names only the right edge.
+  - **The top marker is also halved**, at the canvas's top edge, because the highest value sits
+    at y = 0.
+  - **Where seen:** the Arabic PDF (page 8), the English PDF (page 7) and the Arabic web report.
+  - **Cause:** `charts._rank` places the *n*-th point at `CHART_WIDTH × (index + 1) / n`, so the
+    last point is at x = 640 on a 640-wide `viewBox`, and the SVG's `overflow` is `hidden`.
   - **Impact:** a reader loses half of the "3" and half of the last marker. No figure is lost:
     the section's table beneath states every value.
-  - **Governing spec:** `RRA-015` owns chart geometry (§Scope, "axis and label geometry"). This
-    needs an owner reading: accept it, or open a follow-up.
+  - **No new owner item.** The two additions belong on the existing #211 entry.
   - Captures: [a12-ar-pdf-page8-concentration-edge.png](2026-09-30-scrum-21-rerun-captures/a12-ar-pdf-page8-concentration-edge.png),
     [a12-en-pdf-page7-concentration-edge.png](2026-09-30-scrum-21-rerun-captures/a12-en-pdf-page7-concentration-edge.png)
     and [a12-ar-web-concentration-edge.png](2026-09-30-scrum-21-rerun-captures/a12-ar-web-concentration-edge.png).
@@ -215,7 +217,7 @@ Neither served inline HTML or a `Content-Disposition`.
 - **A1 to A3**, the condition the owner set on 2026-09-29, are met on `5bc1565` in the pinned
   image.
 - **Accepting SCRUM-21** now turns on the open readings: A2b, A3b, A4, A5, A6, A8 and A9, plus
-  the newly recorded A11 and A12. None was introduced by #629. Each can be accepted as governed,
-  or split into its own slice, without blocking the others.
+  the newly recorded A11. A12 is already on #211. None was introduced by #629. Each can be
+  accepted as governed, or split into its own slice, without blocking the others.
 - **Separately:** the unobtainable MinIO image makes both compose stacks unstartable from a clean
   machine. It needs its own issue.
