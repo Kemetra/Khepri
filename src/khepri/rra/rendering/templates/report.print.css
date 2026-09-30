@@ -233,6 +233,22 @@
   }
 
   /*
+   * A row label is never narrower than ten digits, which is an ISO date. Once
+   * headers may wrap (A1 above), the longer Arabic headers took the width the
+   * date column needed, and every Arabic breakdown date printed as `2026-01-` /
+   * `05` (SCRUM-21 A11, `RRA-006`). English fitted by 11px.
+   *
+   * A minimum rather than `nowrap`: a row label is also a product or branch
+   * name, and one that could not wrap would push its table off the page, which
+   * is A1 again. The content box, so the cell's padding is not counted against
+   * the date.
+   */
+  .figures th[scope="row"] {
+    box-sizing: content-box;
+    min-inline-size: 10ch;
+  }
+
+  /*
    * The chart's axis unit, and the one chart rule this sheet needs.
    *
    * Everything else about a chart inherits correctly: `report.css` states the

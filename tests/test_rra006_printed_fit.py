@@ -158,7 +158,8 @@ def test_no_vocabulary_code_in_the_printed_appendix_splits_mid_word() -> None:
 #: and the computed `white-space` of its cell. SCRUM-21 A11: in Arabic, each printed date
 #: broke at its last hyphen (`2026-01-` / `05`), because the longer Arabic headers took
 #: the width the date column needed. English kept every date on one line.
-_ROW_DATES = r"""() => [...document.querySelectorAll('main table.figures--series tbody th[scope=row]')]
+_ROW_DATES = r"""() => [...document.querySelectorAll(
+    'main table.figures--series tbody th[scope=row]')]
   .filter(th => /^\d{4}-\d{2}-\d{2}$/.test(th.textContent.trim()))
   .map(th => {
     const range = document.createRange();
