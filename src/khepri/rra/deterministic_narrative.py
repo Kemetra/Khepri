@@ -62,7 +62,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from khepri.rra.bundle import PERCENTAGE_METRICS
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -73,6 +72,7 @@ from khepri.rra.narrative import (
     NarrativeRequest,
     NarrativeSection,
 )
+from khepri.rra.presentation import PERCENTAGE_METRICS
 from khepri.rra.rendering.wording import business_metric_name
 
 # v2 quotes a proportion in the percentage form the request supplies, where v1
