@@ -73,12 +73,18 @@ from khepri.rra.narrative import (
     NarrativeRequest,
     NarrativeSection,
 )
+from khepri.rra.rendering.wording import business_metric_name
 
 # v2 quotes a proportion in the percentage form the request supplies, where v1
 # quoted the bare ratio and read `0.5589` beside a table stating `55.89%`. The
 # version is recorded on every `NarrativeAttempt`, so a stored run says which of
 # the two unit conventions its prose was written in.
-ADAPTER_VERSION = "rra005.deterministic.v2"
+#
+# v3 states whole-file facts only, each by the name the report gives it. v2 also
+# quoted a breakdown's last bucket under the breakdown's name, so "revenue by
+# category is 6584.93" was one category read as a total (SCRUM-21 A9), and its
+# Arabic named every measure by its English code.
+ADAPTER_VERSION = "rra005.deterministic.v3"
 
 # Kept well inside the section budget a fact package can produce. A narrative is
 # a summary; quoting every fact would be a transcript.
@@ -120,9 +126,11 @@ class DeterministicNarrator:
         """
         plans = _plan(request)
         if not plans:
-            # Every metric was refused, so there is nothing to say. Raising the
-            # governed refusal is the honest answer; inventing a sentence about
-            # an empty package is exactly what a narrator must not do.
+            # No whole-file fact can be cited by a governed name (every metric
+            # was refused, or none is named), so there is nothing to say.
+            # Raising the governed refusal is the honest answer; inventing a
+            # sentence about an empty package is exactly what a narrator must
+            # not do.
             raise NarrativeRefused(REASON_EMPTY_NARRATIVE)
         return NarrativeDraft(
             adapter_version=ADAPTER_VERSION,
@@ -143,59 +151,51 @@ class DeterministicNarrator:
 def _plan(request: NarrativeRequest) -> tuple[SectionPlan, ...]:
     """Decide what both languages will say, from the request alone.
 
-    Facts come first, then series, then comparisons, so the ordering is a
-    property of the request rather than of dictionary iteration. Only entries
-    carrying a citable identifier and a quotable value become sections.
+    **Whole-file facts only.** A series or comparison is one figure per bucket,
+    and a sentence has room for one. Quoting the last bucket under the
+    breakdown's name read "revenue by category is 6584.93" for one category, a
+    change of meaning `RRA-005` does not allow. Every breakdown is stated in full
+    in the report's own tables, so the commentary loses nothing a reader needs.
+
+    The request's order is kept, so it is a property of the request rather than
+    of dictionary iteration.
     """
-    document = request.document
-    plans: list[SectionPlan] = []
-    for kind in ("facts", "series", "comparisons"):
-        for entry in document.get(kind, []):
-            plan = _plan_entry(entry, kind)
-            if plan is not None:
-                plans.append(plan)
-            if len(plans) >= MAX_SECTIONS:
-                return tuple(plans)
-    return tuple(plans)
+    plans = (_plan_entry(entry) for entry in request.document.get("facts", []))
+    return tuple(plan for plan in plans if plan is not None)[:MAX_SECTIONS]
 
 
-def _plan_entry(entry: dict[str, object], kind: str) -> SectionPlan | None:
-    """One entry's plan, or nothing when it carries no quotable figure."""
+def _plan_entry(entry: dict[str, object]) -> SectionPlan | None:
+    """One fact's plan, or nothing when it cannot be cited or named.
+
+    A metric the report has no name for is left out rather than quoted by its
+    code: the code is an internal identifier, never customer text.
+    """
     citation = entry.get("citation_id") or entry.get("fact_id")
     metric = entry.get("metric")
     if not isinstance(citation, str) or not isinstance(metric, str):
         return None
-    figure = _figure(entry, kind)
+    if any(business_metric_name(metric, language) is None for language in _LANGUAGES):
+        return None
     caveats = tuple(str(caveat) for caveat in entry.get("caveats", ()) or ())
     return SectionPlan(
-        section_id=f"{kind}.{citation}",
+        section_id=f"facts.{citation}",
         metric=metric,
         citation=citation,
-        figure=figure,
+        figure=_fact_figure(entry),
         caveats=caveats,
     )
 
 
-def _figure(entry: dict[str, object], kind: str) -> str | None:
-    """The one value this section quotes, exactly as the request supplied it.
-
-    Never computed and never reformatted. A supplied string is quoted verbatim
-    or nothing is quoted at all, because deriving a rendering is how a narrative
-    states a number the package did not carry. Choosing *which* supplied string
-    to quote is not deriving one, which is what `_proportion` does.
-    """
-    if kind == "facts":
-        return _fact_figure(entry)
-    buckets = entry.get("points") or entry.get("buckets") or ()
-    if not isinstance(buckets, list) or not buckets:
-        return None
-    last = buckets[-1]
-    value = last.get("value") if isinstance(last, dict) else None
-    return value if isinstance(value, str) else None
+_LANGUAGES = (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
 
 
 def _fact_figure(entry: dict[str, object]) -> str | None:
     """A fact's quotable figure: its percentage form when it has one.
+
+    Never computed and never reformatted. A supplied string is quoted verbatim
+    or nothing is quoted at all, because deriving a rendering is how a narrative
+    states a number the package did not carry. Choosing *which* supplied string
+    to quote is not deriving one.
 
     **A proportion quoted as a bare ratio contradicted the table beside it.**
     `RRA-006`\'s surfaces render `gross_margin` as `55.89%`; this module quoted
@@ -239,11 +239,15 @@ def _section(plan: SectionPlan, render: object) -> NarrativeSection:
 
 
 def _english(plan: SectionPlan) -> str:
-    """A flat English sentence quoting at most one supplied figure."""
-    label = _readable(plan.metric)
+    """A flat English sentence quoting at most one supplied figure.
+
+    Name first, then the figure, so no verb has to agree with a plural name
+    ("The recorded units is 836" did).
+    """
+    name = business_metric_name(plan.metric, LANGUAGE_ENGLISH)
     if plan.figure is None:
-        return f"The report covers {label} as recorded in the fact package."
-    return f"The recorded {label} is {plan.figure}."
+        return f"The report covers {name} as recorded in the file."
+    return f"{name}: {plan.figure}, as recorded in the file."
 
 
 def _arabic(plan: SectionPlan) -> str:
@@ -253,20 +257,10 @@ def _arabic(plan: SectionPlan) -> str:
     figure sets `validate` compares are equal without either language knowing
     about the other.
     """
-    label = _readable(plan.metric)
+    name = business_metric_name(plan.metric, LANGUAGE_ARABIC)
     if plan.figure is None:
-        return f"يغطي التقرير {label} وفق حزمة الحقائق."
-    return f"القيمة المسجلة لـ {label} هي {plan.figure}."
-
-
-def _readable(metric: str) -> str:
-    """A metric identifier as words, with no character a validator refuses.
-
-    Underscores become spaces so the sentence reads. Nothing else changes: the
-    metric name is a governed identifier, not customer text, and rewriting it
-    further would be inventing a label.
-    """
-    return metric.replace("_", " ")
+        return f"يغطي التقرير {name} وفق ما سُجّل في الملف."
+    return f"{name}: {plan.figure}، وفق ما سُجّل في الملف."
 
 
 __all__ = ["ADAPTER_VERSION", "MAX_SECTIONS", "DeterministicNarrator", "SectionPlan"]
