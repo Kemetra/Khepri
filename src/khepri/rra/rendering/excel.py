@@ -137,6 +137,7 @@ from khepri.rra.rendering.excel_rows import (
 from khepri.rra.rendering.excel_rows import (
     write_text as _write_text,
 )
+from khepri.rra.rendering.qualifiers import qualified
 from khepri.rra.rendering.refusal_basis import section_refusal_prose
 from khepri.rra.rendering.refused_results import REFUSED_RESULT_NAMES, refused_result_groups
 from khepri.rra.rendering.wording import (
@@ -151,7 +152,6 @@ from khepri.rra.rendering.wording import (
     SECTION_HEADINGS,
     category_of,
     caveat_proses,
-    qualified,
     stated_once,
     worded,
 )

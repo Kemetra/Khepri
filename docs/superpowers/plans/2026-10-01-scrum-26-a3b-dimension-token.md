@@ -18,8 +18,8 @@ own slices only. This is an `RRA-006` slice under the amended text.
 - **The label.** `basket.attached_label_of` returns the bare value, and the new
   `attached_dimension_of` returns the token. `_Family.dimension_of` carries the token from the
   family to `_analysis_figure`. Only basket has one.
-- **The qualifier.** The wording is `wording.DIMENSION_QUALIFIERS` (EN `product` / `category`,
-  AR `منتج` / `فئة`), composed by `wording.qualified` as "value (qualifier)". It is asserted at
+- **The qualifier.** The wording is `qualifiers.DIMENSION_QUALIFIERS` (its own module, for cohesion) (EN `product` / `category`,
+  AR `منتج` / `فئة`), composed by `qualifiers.qualified` as "value (qualifier)". It is asserted at
   import over the dimension vocabulary, and it is distinct from `DIMENSION_NAMES`' "each
   category".
 - **The surfaces.**

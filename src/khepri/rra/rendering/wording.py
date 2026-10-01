@@ -53,6 +53,7 @@ from khepri.rra.crossversion_bundle import (
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.rra.mapping import SEMANTIC_RULES
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.rendering import qualifiers
 
 
 @dataclass(frozen=True, slots=True)
@@ -1520,51 +1521,8 @@ def worded(category: ChartCategory, language: str) -> str:
     fallback would ship it quietly.
     """
     if not category.localize:
-        return qualified(category.value, category.dimension, language)
+        return qualifiers.qualified(category.value, category.dimension, language)
     return LABEL_WORDING[language][category.value]
-
-
-#: What a value's dimension is called beside it, so a product and a category sharing one
-#: source value read as two rows (`RRA-006`, SCRUM-26 A3b). Governed wording in both
-#: languages, distinct from `DIMENSION_NAMES`' "each category", which describes a series.
-DIMENSION_QUALIFIERS: dict[str, dict[str, str]] = {
-    LANGUAGE_ENGLISH: {"product": "product", "category": "category"},
-    LANGUAGE_ARABIC: {"product": "منتج", "category": "فئة"},
-}
-
-#: How a value and its qualifier name are composed, per language.
-_QUALIFIED = {
-    LANGUAGE_ENGLISH: "{value} ({qualifier})",
-    LANGUAGE_ARABIC: "{value} ({qualifier})",
-}
-
-
-def _assert_dimension_qualifiers_complete() -> None:
-    """Every dimension a figure can carry is named in every language.
-
-    Read from `basket.GOVERNED_DIMENSIONS`, the vocabulary the token is drawn from,
-    rather than from this table's own keys: a token with no name would raise during a
-    customer's render.
-    """
-    languages = {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}
-    covered = set(DIMENSION_QUALIFIERS) == languages == set(_QUALIFIED)
-    named = all(
-        set(names) == set(basket.GOVERNED_DIMENSIONS) for names in DIMENSION_QUALIFIERS.values()
-    )
-    if not (covered and named):
-        raise RuntimeError("every governed dimension needs a qualifier name in every language")
-
-
-_assert_dimension_qualifiers_complete()
-
-
-def qualified(value: str, dimension: str | None, language: str) -> str:
-    """A customer value with its dimension's qualifier name, or unchanged without one."""
-    if dimension is None:
-        return value
-    return _QUALIFIED[language].format(
-        value=value, qualifier=DIMENSION_QUALIFIERS[language][dimension]
-    )
 
 
 #: What each metric means, in a sentence a reader who is not an analyst can use.
