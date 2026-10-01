@@ -453,7 +453,9 @@ def test_composite_section_reason_reuses_section_prose_without_identifiers() -> 
 
     message = wording.caveat_prose(code, LANGUAGE_ENGLISH)
 
-    assert message == wording.refusal_message(
+    # The section sentence, led by the basis the result was computed against
+    # (`RRA-009` §Refusals, SCRUM-26 A4(b)).
+    assert message == "Against the same period last year: " + wording.refusal_message(
         "prior_window_absent",
         context="section",
         language=LANGUAGE_ENGLISH,

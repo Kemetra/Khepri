@@ -302,6 +302,26 @@ the union of the three source modules, because the failure mode without it is
 Refusals are **never** collapsed into a footnote and never rendered as a bare
 code on any customer surface.
 
+### D.5b The comparison basis is named first (`RRA-009` §Refusals, SCRUM-26 A4(b))
+
+A refusal whose cause belongs to one comparison basis opens with that basis's
+governed label, then the unchanged sentence: "Against the previous period: …" /
+"مقابل الفترة السابقة: …", and "Against the same period last year: …" /
+"مقابل الفترة نفسها من العام الماضي: …". It adds no reason code and no message.
+
+- **Result tier:** a comparison result names the basis in its own scope
+  (`revenue_delta_absolute.year_over_year`). Other results are unchanged.
+- **Section tier:** Period comparison names each basis with its own cause when
+  the bases were refused for different causes. When every basis was refused for
+  the same cause, the cause belongs to neither alone, so the sentence is stated
+  once with no basis. Growth names the previous period when its refusal is that
+  window's (`prior_window_absent`, `coverage_structurally_incompatible`).
+- Two refusals that differ only in basis are both printed.
+
+The resolvers are `wording.caveat_prose` (result tier) and
+`refusal_basis.section_refusal_prose` (section tier). The web page, the PDF, the
+workbook and the analysis-quality API all print through them.
+
 ---
 
 ## D.5a What a parity check can and cannot enforce

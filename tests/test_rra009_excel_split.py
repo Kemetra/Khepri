@@ -367,7 +367,7 @@ def test_the_limitations_sheet_states_caveats_as_prose(tmp_path: Path) -> None:
 
 
 def test_the_limitations_sheet_states_refusals_as_prose(tmp_path: Path) -> None:
-    from khepri.rra.rendering.wording import section_refusal_message
+    from khepri.rra.rendering.refusal_basis import section_refusal_prose
 
     bundle = ReportBundle.of(package_for(ROWS[:2]))
     strings = _shared_strings(bundle, tmp_path)
@@ -375,15 +375,15 @@ def test_the_limitations_sheet_states_refusals_as_prose(tmp_path: Path) -> None:
 
     assert refused
     for section in refused:
-        # `section_refusal_message`, which is what the renderer writes. One
+        # `section_refusal_prose`, which is what the renderer writes. One
         # reason is shared by all four families, so its prose is a template
         # naming the section it refers to -- comparing the bare `refusal_message`
         # template was only ever true of the reasons that name themselves, and
         # held until a fixture could reach the shared one.
         assert (
-            section_refusal_message(
-                section.section_id, section.reason, LANGUAGE_ENGLISH
-            )
+            section_refusal_prose(
+            section.section_id, section.reason, bundle.caveats, LANGUAGE_ENGLISH
+        )
             in strings
         ), section.section_id
 

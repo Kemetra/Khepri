@@ -41,8 +41,6 @@ from khepri.rra import definitions
 from khepri.rra.bundle import (
     KIND_VALUE,
     LANGUAGE_DIRECTION,
-    ORDERED_SECTIONS,
-    SECTION_REASONS,
     SECTION_REFUSED,
     SURFACE_WEB,
     CitedFigure,
@@ -58,6 +56,7 @@ from khepri.rra.narrative import (
 )
 from khepri.rra.renderable import PresentationSection, RenderableBundle
 from khepri.rra.rendering.charts import ChartView, build_chart
+from khepri.rra.rendering.refusal_basis import section_refusal_prose
 from khepri.rra.rendering.refused_results import refused_result_groups
 from khepri.rra.rendering.wording import (
     AXIS_UNITS,
@@ -70,7 +69,6 @@ from khepri.rra.rendering.wording import (
     caveat_proses,
     component_chrome,
     kind_qualifier,
-    section_refusal_message,
     stated_once,
     worded,
 )
@@ -102,28 +100,6 @@ REPORT_REFERENCE_WIDTH = 8
 # are held here rather than in the template so that the two languages are one
 # table with one key set, and a heading added to one cannot silently be missing
 # from the other.
-def _section_refusal_prose(language: str) -> dict[str, dict[str, str]]:
-    """Refusal prose per section, already filled.
-
-    The template used to index `REFUSAL_WORDING["section"]` by reason and print
-    the value, which was fine while every section reason named its own family.
-    The version pairing reason is shared by all four and carries a `{section}`
-    placeholder, so the raw mapping put a literal brace on the page and in the
-    PDF that extends the same template.
-
-    Nested by section then reason rather than filled once, because the same
-    reason renders differently per section -- which is the whole point of naming
-    the analysis a reader has lost.
-    """
-    return {
-        section: {
-            reason: section_refusal_message(section, reason, language)
-            for reason in SECTION_REASONS[section]
-        }
-        for section in ORDERED_SECTIONS
-    }
-
-
 _CHROME: dict[str, dict[str, str]] = {
     LANGUAGE_ENGLISH: {
         "title": "Retail report",
@@ -173,7 +149,6 @@ _CHROME: dict[str, dict[str, str]] = {
         "state_column": "State",
         "reason_column": "Reason",
         "commentary_citations": "Commentary citations",
-        "refusal_prose": _section_refusal_prose(LANGUAGE_ENGLISH),
         # Shared customer wording is read from `wording` rather than copied here.
         # Every duplicate would be a place for surfaces or languages to drift into
         # naming the same section, chart, label, or refusal differently.
@@ -225,7 +200,6 @@ _CHROME: dict[str, dict[str, str]] = {
         "state_column": "الحالة",
         "reason_column": "السبب",
         "commentary_citations": "إسنادات التعليق",
-        "refusal_prose": _section_refusal_prose(LANGUAGE_ARABIC),
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "axis_units": AXIS_UNITS[LANGUAGE_ARABIC],
@@ -746,6 +720,9 @@ class _SectionView:
     section_id: str
     state: str
     reason: str | None
+    #: The refusal panel's prose (`RRA-009` §Refusals). Per bundle rather than per reason,
+    #: because a section refused per comparison basis names each basis by its own cause.
+    refusal: str | None
     cells: tuple[FigureCell, ...]
     series: tuple[_SeriesTable, ...]
     caveats: tuple[str, ...]
@@ -770,6 +747,13 @@ def _section_views(
             section_id=section.section_id,
             state=section.state,
             reason=section.reason,
+            refusal=(
+                None
+                if section.reason is None
+                else section_refusal_prose(
+                    section.section_id, section.reason, bundle.caveats, language
+                )
+            ),
             # Every figure this section states, provenance included: a bucket's
             # row count is a Business-tier value per the visibility matrix, and
             # `_series_tables` gives it a column beside the value it explains

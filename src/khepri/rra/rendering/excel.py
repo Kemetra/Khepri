@@ -137,6 +137,7 @@ from khepri.rra.rendering.excel_rows import (
 from khepri.rra.rendering.excel_rows import (
     write_text as _write_text,
 )
+from khepri.rra.rendering.refusal_basis import section_refusal_prose
 from khepri.rra.rendering.refused_results import REFUSED_RESULT_NAMES, refused_result_groups
 from khepri.rra.rendering.wording import (
     BUSINESS_SHEET_NAMES,
@@ -150,7 +151,6 @@ from khepri.rra.rendering.wording import (
     SECTION_HEADINGS,
     category_of,
     caveat_proses,
-    section_refusal_message,
     stated_once,
     worded,
 )
@@ -376,7 +376,7 @@ GOVERNED_LABELS = frozenset(
     # import -- a composite `<result>:<reason>` caveat code is built from a figure's
     # own identity, and a section refusal names its section -- so no resolved
     # sentence is a member of this set. It reaches a cell only through
-    # `caveat_prose` and `section_refusal_message`, and the cell-provenance test
+    # `caveat_prose` and `section_refusal_prose`, and the cell-provenance test
     # admits a bundle's refused-section prose per bundle (`refusal_prose` in
     # `tests/rra003_contract_fixtures.py`).
     | {
@@ -591,9 +591,10 @@ def _write_limitations(
             sheet,
             row + 1,
             (
-                section_refusal_message(
+                section_refusal_prose(
                     section.section_id,
                     section.reason,
+                    bundle.caveats,
                     language,
                 ),
             ),

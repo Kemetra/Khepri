@@ -1096,6 +1096,16 @@ def caveat_prose(code: str, language: str, *, refusing_input: str | None = None)
     if RESULT_CAVEAT_SEPARATOR not in code:
         return caveat_message(code, language)
     result, reason = code.rsplit(RESULT_CAVEAT_SEPARATOR, 1)
+    return with_basis(
+        _result_sentence(result, reason, refusing_input, language),
+        basis_of(result),
+        language,
+    )
+
+
+def _result_sentence(
+    result: str, reason: str, refusing_input: str | None, language: str
+) -> str:
     if _takes_section_sentence(result, reason, refusing_input):
         return refusal_message(reason, context="section", language=language).format(
             section=_UNNAMED_SECTION[language],
@@ -1107,6 +1117,30 @@ def caveat_prose(code: str, language: str, *, refusing_input: str | None = None)
         column=column,
         field=column,
     )
+
+
+def basis_of(result: str) -> str | None:
+    """The comparison basis a refused result was computed against, read from its own scope.
+
+    `RRA-009` §Refusals (A4(b)): the basis comes from the refusal's own result and never from
+    another refusal on the page. A comparison result is mode-qualified --
+    `revenue_delta_percent.year_over_year` -- and any other result names no basis.
+    """
+    scope = result.partition(".")[2]
+    return scope if scope in comparison.GOVERNED_MODES else None
+
+
+def with_basis(sentence: str, basis: str | None, language: str) -> str:
+    """A refusal sentence with its comparison basis named first, or unchanged without one.
+
+    Worded from the governed basis labels, so naming the basis adds no reason code and no
+    message: the label leads the existing sentence, which is otherwise untouched. A label
+    rather than an inserted phrase because the sentences open differently -- a result's with
+    its metric, a section's with its analysis -- and a lead-in reads the same before both.
+    """
+    if basis is None:
+        return sentence
+    return f"{LABEL_WORDING[language][f'label.{basis}']}: {sentence}"
 
 
 def _column_of(refusing_input: str | None, metric: str, language: str) -> str:

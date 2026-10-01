@@ -175,7 +175,7 @@ def test_a_refused_analysis_is_stated_where_a_reader_will_find_it() -> None:
     customer prose on the limitations sheet, and keeps the raw code on the audit
     trail -- so both halves are asserted, in the places they now live.
     """
-    from khepri.rra.rendering.wording import section_refusal_message
+    from khepri.rra.rendering.refusal_basis import section_refusal_prose
 
     # Two days settle no prior period, so the comparison and growth families refuse.
     rows = ROWS[:2]
@@ -197,8 +197,8 @@ def test_a_refused_analysis_is_stated_where_a_reader_will_find_it() -> None:
         if cell
     }
     for section in refused:
-        message = section_refusal_message(
-            section.section_id, section.reason, LANGUAGE_ENGLISH
+        message = section_refusal_prose(
+            section.section_id, section.reason, bundle.caveats, LANGUAGE_ENGLISH
         )
         assert message in limitations, section.section_id
         assert section.reason in audit, section.section_id
