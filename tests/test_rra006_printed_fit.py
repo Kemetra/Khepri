@@ -152,3 +152,40 @@ def test_no_vocabulary_code_in_the_printed_appendix_splits_mid_word() -> None:
             {f"{run['run']} in {run['code']}" for run in runs[language] if run["lines"] > 1}
         )
         assert split == [], f"{language}: vocabulary split across lines: {split}"
+
+
+#: Every ISO date that labels a breakdown row, with the number of line boxes it takes,
+#: and the computed `white-space` of its cell. SCRUM-21 A11: in Arabic, each printed date
+#: broke at its last hyphen (`2026-01-` / `05`), because the longer Arabic headers took
+#: the width the date column needed. English kept every date on one line.
+_ROW_DATES = r"""() => [...document.querySelectorAll(
+    'main table.figures--series tbody th[scope=row]')]
+  .filter(th => /^\d{4}-\d{2}-\d{2}$/.test(th.textContent.trim()))
+  .map(th => {
+    const range = document.createRange();
+    range.selectNodeContents(th);
+    const tops = new Set([...range.getClientRects()].map(box => Math.round(box.top)));
+    return {date: th.textContent.trim(), lines: tops.size,
+            whiteSpace: getComputedStyle(th).whiteSpace};
+  })"""
+
+
+@pytest.mark.browser
+@needs_chromium
+def test_no_printed_breakdown_date_wraps_in_either_language() -> None:
+    """A11: a date is one reading, so it prints on one line in both languages.
+
+    The fix is a minimum width, not `nowrap`. A row label is also a product or branch
+    name, which may be longer than the page allows, and a label that could not wrap
+    would bring back A1. So this also requires that the cells still wrap.
+    """
+    dates = _measure(_ROW_DATES)
+
+    for language in LANGUAGES:
+        # The by-period breakdown is where the dates are; a fixture that stopped
+        # publishing it would pass having measured nothing.
+        assert len(dates[language]) >= 5, f"{language}: measured {dates[language]}"
+        wrapped = sorted({row["date"] for row in dates[language] if row["lines"] > 1})
+        assert wrapped == [], f"{language}: dates printed on two lines: {wrapped[:5]}"
+        unbreakable = {row["whiteSpace"] for row in dates[language]} - {"normal"}
+        assert unbreakable == set(), f"{language}: row labels may no longer wrap"
