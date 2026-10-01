@@ -126,9 +126,11 @@ class DeterministicNarrator:
         """
         plans = _plan(request)
         if not plans:
-            # Every metric was refused, so there is nothing to say. Raising the
-            # governed refusal is the honest answer; inventing a sentence about
-            # an empty package is exactly what a narrator must not do.
+            # No whole-file fact can be cited by a governed name (every metric
+            # was refused, or none is named), so there is nothing to say.
+            # Raising the governed refusal is the honest answer; inventing a
+            # sentence about an empty package is exactly what a narrator must
+            # not do.
             raise NarrativeRefused(REASON_EMPTY_NARRATIVE)
         return NarrativeDraft(
             adapter_version=ADAPTER_VERSION,
