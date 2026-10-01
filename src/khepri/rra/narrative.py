@@ -65,6 +65,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
+from khepri.rra import presentation
 from khepri.rra.facts import FactPackage
 from khepri.rra.profiling import canonical_json
 
@@ -181,6 +182,7 @@ _REQUEST_SCHEMA: dict[str, Any] = {
         "metric",
         "value",
         "value_percent",
+        "display",
         "precision",
         "unit_kind",
         "inputs",
@@ -194,7 +196,7 @@ _REQUEST_SCHEMA: dict[str, Any] = {
         "precision",
         "unit_kind",
         "granularity",
-        {"points": ("label", "value", "rows")},
+        {"points": ("label", "value", "rows", "display", "rows_display")},
         "caveats",
     ),
     "comparisons": (
@@ -208,7 +210,7 @@ _REQUEST_SCHEMA: dict[str, Any] = {
         "distinct_values",
         "truncated_values",
         "redacted_values",
-        {"buckets": ("label", "value", "rows")},
+        {"buckets": ("label", "value", "rows", "display", "rows_display")},
         "caveats",
     ),
     "refusals": ("metric", "reason"),
@@ -281,9 +283,12 @@ class NarrativeRequest:
             "languages": list(requested),
             "monetary_precision": source["monetary_precision"],
             "facts": [_stated(entry) for entry in source["facts"]],
-            "series": [_project(entry, _REQUEST_SCHEMA["series"]) for entry in source["series"]],
+            "series": [
+                _with_displays(entry, _REQUEST_SCHEMA["series"], "points")
+                for entry in source["series"]
+            ],
             "comparisons": [
-                _project(entry, _REQUEST_SCHEMA["comparisons"])
+                _with_displays(entry, _REQUEST_SCHEMA["comparisons"], "buckets")
                 for entry in source["comparisons"]
             ],
             "refusals": [
@@ -1119,6 +1124,8 @@ def _stated(entry: dict[str, Any]) -> dict[str, Any]:
     """
     projected = _project(entry, _REQUEST_SCHEMA["facts"])
     value = entry.get("value")
+    if isinstance(value, str):
+        projected["display"] = _displayed(value, entry)
     if entry.get("unit_kind") == _UNIT_RATIO and isinstance(value, str):
         try:
             scaled = Decimal(value) * 100
@@ -1128,6 +1135,33 @@ def _stated(entry: dict[str, Any]) -> dict[str, Any]:
             scaled.quantize(Decimal(1).scaleb(-int(entry["precision"]))),
             "f",
         )
+    return projected
+
+
+def _displayed(text: str, owner: dict[str, Any], *, counts_rows: bool = False) -> dict[str, str]:
+    """A figure as the report's own tables write it, in each language (`RRA-005`, A9(b)).
+
+    Supplied rather than left to the provider, exactly as `value_percent` is: prose
+    quoting `٢٣٬٥٢٠٫٠٦` is quoting a string it was given. The form is
+    `presentation.forms`, the one the bundle renders every table cell with, so the
+    commentary and the table cannot write one figure two ways.
+    """
+    english, arabic = presentation.forms(
+        text,
+        unit_kind=owner.get("unit_kind"),
+        counts_rows=counts_rows,
+        metric=owner.get("metric"),
+    )
+    return {LANGUAGE_ENGLISH: english, LANGUAGE_ARABIC: arabic}
+
+
+def _with_displays(entry: dict[str, Any], schema: tuple[Any, ...], key: str) -> dict[str, Any]:
+    """A series or comparison, each point or bucket carrying its value's and its count's form."""
+    projected = _project(entry, schema)
+    for item in projected.get(key, ()):
+        if isinstance(item.get("value"), str):
+            item["display"] = _displayed(item["value"], entry)
+        item["rows_display"] = _displayed(str(item["rows"]), entry, counts_rows=True)
     return projected
 
 

@@ -113,4 +113,4 @@ def test_no_english_sentence_misagrees(request_and_draft) -> None:
 
 def test_the_prose_change_is_a_new_adapter_version() -> None:
     """A stored run records which prose it was written in."""
-    assert ADAPTER_VERSION == "rra005.deterministic.v3"
+    assert ADAPTER_VERSION == "rra005.deterministic.v4"

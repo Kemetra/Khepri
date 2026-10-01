@@ -19,29 +19,15 @@ construction — the same relationship `khepri.infra.app` relies on when it hand
 `EnvironmentProps` to both stacks rather than building two that happen to agree.
 Only the surrounding words differ.
 
-**Why the figures are written in Western digits in both languages.**
-`_normalize_digits` maps Arabic-Indic digits onto ASCII before comparing, so
-`٥٠٠٫٠٠` and `500.00` ground identically — but the *stated figure set* is compared
-after normalization too, so either choice would pass. Western digits are used in
-both because they are what the package supplies and what the workbook surface
-renders; converting them would be a rendering decision this module has no mandate
-to make.
-
-**Why a proportion is quoted as a percentage.** `RRA-006`'s surfaces render a
-ratio fact as `55.89%`, and prose quoting the bare `0.5589` beside that table
-states the same fact in a second unit. The percentage form is *supplied* --
-`narrative._stated` attaches `value_percent` to every ratio fact so that a
-narrative saying `66.67%` is quoting rather than converting -- so choosing it
-costs this module none of its "never computed" rule.
-
-Which ratios are proportions is read from `bundle.PERCENTAGE_METRICS`, because
-`unit_kind` cannot tell one from a rate: `basket_items_per_transaction` is
-`ratio`-kind too, and quoting its supplied `value_percent` would say a basket
-holds `382500.0000%` items. That import points from `RRA-005` at an `RRA-006`
-module, which is the wrong direction; the set describes what a metric *is*
-rather than how it is drawn, so `facts` is its likelier home. Moving it is a
-separate change and is deliberately not made here, where the defect to fix is
-the unit a customer reads.
+**Why each language quotes the tables' form.** `RRA-005` as amended by `#637` requires prose
+to state every figure in the display form the report's own tables give it in that language:
+digit grouping and a proportion's percentage form in both, and Arabic-Indic digits, the Arabic
+separators and the Arabic percent sign in Arabic. The request supplies that form per language
+(`narrative._displayed`, built by `presentation.forms`, the function every table cell is
+rendered with), so this module chooses a supplied string and converts nothing. `validate`
+normalizes digits, separators and the percent sign before it grounds a figure or compares the
+two languages' figure sets, so `٢٣٬٥٢٠٫٠٦` and `23,520.06` are one figure, and a changed
+significant digit is still refused.
 
 **What is deliberately never declared.** `direction` and `labels` are left unset.
 `_assert_declared_direction` requires the cited facts to exhibit exactly one
@@ -72,7 +58,6 @@ from khepri.rra.narrative import (
     NarrativeRequest,
     NarrativeSection,
 )
-from khepri.rra.presentation import PERCENTAGE_METRICS
 from khepri.rra.rendering.wording import business_metric_name
 
 # v2 quotes a proportion in the percentage form the request supplies, where v1
@@ -84,7 +69,11 @@ from khepri.rra.rendering.wording import business_metric_name
 # quoted a breakdown's last bucket under the breakdown's name, so "revenue by
 # category is 6584.93" was one category read as a total (SCRUM-21 A9), and its
 # Arabic named every measure by its English code.
-ADAPTER_VERSION = "rra005.deterministic.v3"
+#
+# v4 quotes each figure in the form the tables print it in that language, supplied by
+# the request: `23,520.06`, and `٢٣٬٥٢٠٫٠٦` in Arabic. v3 quoted the package's bare
+# `23520.06` in both (SCRUM-26 A9(b)).
+ADAPTER_VERSION = "rra005.deterministic.v4"
 
 # Kept well inside the section budget a fact package can produce. A narrative is
 # a summary; quoting every fact would be a transcript.
@@ -95,14 +84,15 @@ MAX_SECTIONS = 12
 class SectionPlan:
     """One section's claims, before either language has been written.
 
-    Language-neutral on purpose. Everything `validate` compares across languages
-    is decided here, once, so the two renderings cannot disagree about it.
+    Everything `validate` compares across languages is decided here, once, so the two
+    renderings cannot disagree about it. `figures` is the one figure in each language's
+    form: two strings, one value.
     """
 
     section_id: str
     metric: str
     citation: str
-    figure: str | None
+    figures: dict[str, str] | None
     caveats: tuple[str, ...]
 
 
@@ -181,7 +171,7 @@ def _plan_entry(entry: dict[str, object]) -> SectionPlan | None:
         section_id=f"facts.{citation}",
         metric=metric,
         citation=citation,
-        figure=_fact_figure(entry),
+        figures=_fact_figures(entry),
         caveats=caveats,
     )
 
@@ -189,37 +179,25 @@ def _plan_entry(entry: dict[str, object]) -> SectionPlan | None:
 _LANGUAGES = (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
 
 
-def _fact_figure(entry: dict[str, object]) -> str | None:
-    """A fact's quotable figure: its percentage form when it has one.
+def _fact_figures(entry: dict[str, object]) -> dict[str, str] | None:
+    """A fact's quotable figure in each language: the form the request supplied.
 
-    Never computed and never reformatted. A supplied string is quoted verbatim
-    or nothing is quoted at all, because deriving a rendering is how a narrative
-    states a number the package did not carry. Choosing *which* supplied string
-    to quote is not deriving one.
+    Never computed and never reformatted. A supplied string is quoted verbatim or
+    nothing is quoted at all, because deriving a rendering is how a narrative states a
+    number the package did not carry. Choosing *which* supplied string to quote is not
+    deriving one.
 
-    **A proportion quoted as a bare ratio contradicted the table beside it.**
-    `RRA-006`\'s surfaces render `gross_margin` as `55.89%`; this module quoted
-    the package value and the same report read "The recorded gross margin is
-    0.5589" in its commentary. Both numbers are correct and they are not in the
-    same unit, so a reader comparing prose against table sees two figures.
-
-    Nothing is converted here. `narrative._stated` attaches `value_percent` to
-    the request precisely so a narrative can say `66.67%` without calculating,
-    and this quotes that string with the sign appended -- which
-    `_assert_grounded_numbers` grounds against `percents` rather than `numbers`,
-    so a percentage claim is checked as a percentage.
-
-    The digits are the request\'s, not the table\'s: `value_percent` carries the
-    fact\'s own precision, so a margin reads `55.8900%` in prose where the table
-    states `55.89%`. Same unit and same value; quantizing to match would be this
-    module reformatting a supplied figure, which is the rule it does not break.
+    The form is the table's (`narrative._displayed`): a proportion already reads as a
+    percentage (`55.89%`) and every figure is grouped, so prose and table state one figure
+    one way. A fact supplying no form in every language quotes no figure.
     """
-    if entry.get("metric") in PERCENTAGE_METRICS:
-        percent = entry.get("value_percent")
-        if isinstance(percent, str):
-            return f"{percent}%"
-    value = entry.get("value")
-    return value if isinstance(value, str) else None
+    display = entry.get("display")
+    if not isinstance(display, dict):
+        return None
+    forms = {language: display.get(language) for language in _LANGUAGES}
+    if not all(isinstance(form, str) for form in forms.values()):
+        return None
+    return forms  # type: ignore[return-value]
 
 
 def _section(plan: SectionPlan, render: object) -> NarrativeSection:
@@ -245,22 +223,22 @@ def _english(plan: SectionPlan) -> str:
     ("The recorded units is 836" did).
     """
     name = business_metric_name(plan.metric, LANGUAGE_ENGLISH)
-    if plan.figure is None:
+    if plan.figures is None:
         return f"The report covers {name} as recorded in the file."
-    return f"{name}: {plan.figure}, as recorded in the file."
+    return f"{name}: {plan.figures[LANGUAGE_ENGLISH]}, as recorded in the file."
 
 
 def _arabic(plan: SectionPlan) -> str:
-    """The Arabic counterpart, quoting the identical figure token.
+    """The Arabic counterpart, quoting the same figure in its Arabic form.
 
-    Different words, same claim. The figure is the same string, so the stated
-    figure sets `validate` compares are equal without either language knowing
-    about the other.
+    Different words, same claim. The two forms are one value, so the stated figure sets
+    `validate` compares after normalizing digits are equal without either language
+    knowing about the other.
     """
     name = business_metric_name(plan.metric, LANGUAGE_ARABIC)
-    if plan.figure is None:
+    if plan.figures is None:
         return f"يغطي التقرير {name} وفق ما سُجّل في الملف."
-    return f"{name}: {plan.figure}، وفق ما سُجّل في الملف."
+    return f"{name}: {plan.figures[LANGUAGE_ARABIC]}، وفق ما سُجّل في الملف."
 
 
 __all__ = ["ADAPTER_VERSION", "MAX_SECTIONS", "DeterministicNarrator", "SectionPlan"]
