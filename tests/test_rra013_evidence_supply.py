@@ -283,7 +283,7 @@ def test_the_bundle_version_advanced_with_the_identity_shape(bundle: ReportBundl
     that `rra006.bundle.v8` silently absorbed. The document's extent is
     knowable, so it is stated.
     """
-    assert BUNDLE_VERSION == "rra006.bundle.v8"
+    assert BUNDLE_VERSION == "rra006.bundle.v9"
     document = bundle.identity.as_document()
     assert set(document) == {
         "bundle_version",

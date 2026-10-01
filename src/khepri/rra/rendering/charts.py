@@ -134,6 +134,10 @@ class ChartLabel:
     localize: bool
     x: str
     y: str
+    #: The governed dimension token a customer value belongs to (`RRA-006`, SCRUM-26
+    #: A3b). Carried, not composed: the qualifier name is per language, and the page
+    #: composes it with `wording.qualified` once it knows which language it renders.
+    dimension: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +295,7 @@ def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
         localize=category.localize,
         x=_coordinate(_centre(mark)),
         y=_coordinate(LABEL_BASELINE),
+        dimension=category.dimension,
     )
 
 

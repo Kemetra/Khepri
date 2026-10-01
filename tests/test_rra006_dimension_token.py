@@ -180,3 +180,16 @@ def test_the_projection_reads_the_token_not_the_label() -> None:
 
     for dimension, figure in water.items():
         assert projection._dimension(figure, None) == dimension
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_chart_names_each_bar_with_its_qualifier(language: str) -> None:
+    page = HtmlReportRenderer().render_html(_bundle()).documents[language]
+    start = page.index('<section id="basket"')
+    end = page.find('<section id="', start + 1)
+    block = page[start:] if end == -1 else page[start:end]
+    labels = re.findall(r'<text class="chart__label"[^>]*>(.*?)</text>', block, re.S)
+
+    assert labels, "the basket chart draws no labelled mark"
+    for name in _QUALIFIED[language]:
+        assert name in labels, f"{language}: {labels}"

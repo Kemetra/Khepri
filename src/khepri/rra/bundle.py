@@ -106,12 +106,15 @@ from khepri.rra.versions import admits_family
 #   v7  every figure's `renderings` carry presentation -- digit grouping, a
 #       percentage form for proportions, the Arabic percent sign -- where they
 #       reproduced the package's bare string
+#   v8  the identity carries coverage provenance (`RRA-013` FR-105)
+#   v9  a figure whose label must name its dimension carries it as a governed
+#       token, and its label is the bare value (SCRUM-26 A3b)
 #
 # The section model ships as several independently verifiable slices, and each
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
 # more than a tidy sequence.
-BUNDLE_VERSION = "rra006.bundle.v8"
+BUNDLE_VERSION = "rra006.bundle.v9"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -856,6 +859,12 @@ class CitedFigure:
     label: str | None
     value: Decimal | None
     renderings: dict[str, str]
+    #: The dimension `label` belongs to, as a governed token (`product`, `category`),
+    #: where a label must say which dimension its value belongs to -- today the basket
+    #: attach rates, where a product and a category can share one source value
+    #: (`RRA-006`, SCRUM-26 A3b). `None` for every other figure. A surface composes
+    #: its own qualifier name from it; none recovers it by parsing the label.
+    dimension: str | None = None
 
     def __post_init__(self) -> None:
         _require_section(self.section)
@@ -870,6 +879,7 @@ class CitedFigure:
             "kind": self.kind,
             "section": self.section,
             "label": self.label,
+            "dimension": self.dimension,
             "value": None if self.value is None else str(self.value),
             "renderings": dict(sorted(self.renderings.items())),
         }
@@ -1729,6 +1739,9 @@ class _Family:
     refusals: object
     names: object
     plots: frozenset[str]
+    # The governed dimension token `names`' label belongs to, where that label must
+    # say which dimension its value belongs to (`RRA-006`). Only basket has one.
+    dimension_of: object
     # Read through a callable rather than captured as a value, because a family's
     # version is a module constant and capturing it here would freeze the
     # pairing at import time -- exactly what the gate exists to detect.
@@ -1757,6 +1770,7 @@ _FAMILIES = {
         # comparison restated as a ratio, and charting both puts a fraction on the
         # money axis.
         plots=frozenset({comparison.METRIC_DELTA_ABSOLUTE}),
+        dimension_of=lambda fact, package: None,
     ),
     SECTION_CONCENTRATION: _Family(
         derive=concentration.derive,
@@ -1770,6 +1784,7 @@ _FAMILIES = {
         # The curve, which is what `RRA-008` requires drawn. The four scalars are read
         # from the table beside it.
         plots=frozenset({concentration.METRIC_CURVE}),
+        dimension_of=lambda fact, package: None,
     ),
     SECTION_GROWTH: _Family(
         derive=growth.derive,
@@ -1783,6 +1798,7 @@ _FAMILIES = {
         # All three, because the point of the chart is that two effects sum to the
         # change beside them. They share a unit, so they share an axis honestly.
         plots=frozenset(growth.GOVERNED_METRICS),
+        dimension_of=lambda fact, package: None,
     ),
     SECTION_BASKET: _Family(
         derive=basket.derive,
@@ -1793,6 +1809,7 @@ _FAMILIES = {
         # The attach rates, one bar per value. Items per transaction is a different
         # statement about the whole dataset and is not one of the bars.
         plots=frozenset({basket.METRIC_ATTACH_RATE}),
+        dimension_of=basket.attached_dimension_of,
     ),
 }
 
@@ -1841,7 +1858,12 @@ def _analysed(package: FactPackage) -> _Analysed:
             caveats.extend(_scoped(section_id, (), refused))
             continue
         figures.extend(
-            _analysis_figure(fact, section_id, family.names(fact, package))
+            _analysis_figure(
+                fact,
+                section_id,
+                family.names(fact, package),
+                family.dimension_of(fact, package),
+            )
             for fact in stated
         )
         caveats.extend(_scoped(section_id, stated, refused))
@@ -1977,7 +1999,9 @@ def _sampled(points: list[object]) -> list[object]:
     return [point for index, point in enumerate(points) if index in kept]
 
 
-def _analysis_figure(fact: Fact, section_id: str, label: str | None) -> CitedFigure:
+def _analysis_figure(
+    fact: Fact, section_id: str, label: str | None, dimension: str | None
+) -> CitedFigure:
     """One derived fact as a figure in the section that derived it.
 
     Positioned by nothing: an analysis fact is a scalar, and its citation names
@@ -1998,6 +2022,7 @@ def _analysis_figure(fact: Fact, section_id: str, label: str | None) -> CitedFig
         renderings=_renderings(
             fact.value, unit_kind=fact.unit_kind, kind=KIND_VALUE, metric=fact.metric
         ),
+        dimension=dimension,
     )
 
 
