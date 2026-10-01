@@ -462,11 +462,12 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
             ),
             "prior_window_absent": (
                 "Comparison with an earlier period — not available. Your file "
-                "covers a single period, so there is no earlier period inside it "
-                "to compare against. Everything else in this review is unaffected "
-                "and describes the period you supplied. To add comparison, export "
-                "a file that also covers the period you want to compare with — "
-                "the same months a year earlier, or the months immediately before."
+                "does not include the earlier period this comparison needs, so "
+                "there is nothing inside it to compare against. Everything else "
+                "in this review is unaffected and describes what you supplied. "
+                "To add comparison, export a file that also covers the earlier "
+                "period you want to compare with, such as the same months a year "
+                "earlier."
             ),
             "coverage_structurally_incompatible": (
                 "Comparison with an earlier period — not available. Your file "
@@ -569,11 +570,11 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "تحتوي فترتاه المقارنتان على مرتجعات."
             ),
             "prior_window_absent": (
-                "المقارنة بفترة سابقة — غير متاحة. يغطي ملفك فترة واحدة، فلا "
-                "توجد داخله فترة أسبق للمقارنة بها. وما عدا ذلك في هذا التقرير "
-                "غير متأثر، وهو يوصف الفترة التي قدّمتها. ولإتاحة المقارنة، "
-                "صدِّر ملفاً يغطي أيضاً الفترة التي تريد المقارنة بها — الأشهر "
-                "نفسها من العام السابق، أو الأشهر التي تسبقها مباشرة."
+                "المقارنة بفترة سابقة — غير متاحة. لا يتضمن ملفك الفترة السابقة "
+                "التي تحتاجها هذه المقارنة، فلا توجد داخله فترة للمقارنة بها. "
+                "وما عدا ذلك في هذا التقرير غير متأثر، وهو يصف ما قدّمته. "
+                "ولإتاحة المقارنة، صدِّر ملفاً يغطي أيضاً الفترة السابقة التي "
+                "تريد المقارنة بها، مثل الأشهر نفسها من العام السابق."
             ),
             "coverage_structurally_incompatible": (
                 "المقارنة بفترة سابقة — غير متاحة. يغطي ملفك الفترتين، لكن ليس "
