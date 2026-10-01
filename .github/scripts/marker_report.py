@@ -11,12 +11,14 @@ Loaded only in CI, as `-p marker_report` with this directory on `PYTHONPATH`, an
 when `KHEPRI_MARKER_REPORT` names the file to write. Without that variable it registers
 nothing, so a local run is unaffected.
 
-The outcome recorded per test, from its own reports:
+The outcome recorded per test is the worst of its phases:
 
 * `failed` if any phase failed, which already fails the suite;
-* `skipped` if it was skipped at setup or in its body, which an `xfail` is not;
-* `xfailed` for an expected failure, which the old guards also accepted;
-* `passed` when its call phase passed;
+* `skipped` if it was skipped in any phase, setup, body or teardown, which an `xfail`
+  is not;
+* `xfailed` for an expected failure, in whichever phase pytest reports it, which the
+  old guards also accepted;
+* `passed` when its call phase passed and nothing worse followed;
 * `not run` when it was collected but never reported, for example after `-x`.
 
 A test counts as marked when the marker applies to it from any level: function, class,
@@ -55,15 +57,13 @@ class _Recorder:
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
         if report.nodeid not in self._marked:
             return
-        expected_failure = hasattr(report, "wasxfail")
-        if report.failed:
-            self._outcomes[report.nodeid] = "failed"
-        elif report.skipped and not expected_failure:
-            self._outcomes.setdefault(report.nodeid, "skipped")
-        elif report.when == "call":
-            self._outcomes.setdefault(
-                report.nodeid, "xfailed" if expected_failure else "passed"
-            )
+        outcome = _phase_outcome(report)
+        if outcome is None:
+            return
+        # The worst phase wins: a teardown skip after a passed call is a skip, and a
+        # failure in any phase is a failure whatever came before it.
+        current = self._outcomes.get(report.nodeid, outcome)
+        self._outcomes[report.nodeid] = max(current, outcome, key=_SEVERITY.__getitem__)
 
     def pytest_sessionfinish(self, session: pytest.Session) -> None:
         document = {
@@ -75,6 +75,24 @@ class _Recorder:
             for marker in MARKERS
         }
         self._path.write_text(json.dumps(document, indent=1, sort_keys=True), encoding="utf-8")
+
+
+#: Which outcome a later phase may replace. Higher replaces lower.
+_SEVERITY = {"passed": 0, "xfailed": 1, "skipped": 2, "failed": 3}
+
+
+def _phase_outcome(report: pytest.TestReport) -> str | None:
+    """One phase's outcome, or `None` for a setup or teardown phase that passed.
+
+    An expected failure is a skipped report carrying `wasxfail`, in whichever phase
+    pytest reports it: the call for a plain `xfail`, setup for `pytest.xfail()` in a
+    fixture or `xfail(run=False)`.
+    """
+    if report.failed:
+        return "failed"
+    if report.skipped:
+        return "xfailed" if hasattr(report, "wasxfail") else "skipped"
+    return "passed" if report.when == "call" else None
 
 
 def pytest_configure(config: pytest.Config) -> None:
