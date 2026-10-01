@@ -29,6 +29,7 @@ from decimal import Decimal, Inexact
 import pytest
 
 from khepri.rra import bundle as bundle_module
+from khepri.rra import presentation
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
     KIND_ROWS,
@@ -234,7 +235,7 @@ class TestRatioFigures:
         # The direct consequence: `_percentage` is exact on a four-place ratio, so
         # no rounding mode is chosen here and none has to agree with the mode the
         # fact boundary already applied.
-        assert bundle_module._percentage("0.8665") == "86.65%"
+        assert presentation.percentage("0.8665") == "86.65%"
 
     def test_a_high_magnitude_ratio_renders_rather_than_aborting(self) -> None:
         # The precision half of the exactness context, and the reason it is not
@@ -252,7 +253,7 @@ class TestRatioFigures:
         assert len(Decimal(enormous).as_tuple().digits) > 28, (
             "this input must exceed the default context to be the case at issue"
         )
-        assert bundle_module._percentage(enormous).endswith("%")
+        assert presentation.percentage(enormous).endswith("%")
 
     def test_a_negative_with_a_zero_whole_part_keeps_its_sign(self) -> None:
         # `int("-0")` is `0`, so grouping through the integer dropped the sign of
@@ -260,18 +261,18 @@ class TestRatioFigures:
         # published as an increase, on every surface, because they all copy this
         # string. Governed figures reach this range routinely: an absolute revenue
         # delta, a growth effect, a negative gross profit.
-        assert bundle_module._grouped("-0.50") == "-0.50"
-        assert bundle_module._grouped("-0.0001") == "-0.0001"
+        assert presentation.grouped("-0.50") == "-0.50"
+        assert presentation.grouped("-0.0001") == "-0.0001"
         # And the sign survives grouping proper, which was never broken.
-        assert bundle_module._grouped("-1234.56") == "-1,234.56"
+        assert presentation.grouped("-1234.56") == "-1,234.56"
         # A positive is unchanged, so the fix is not a blanket prefix.
-        assert bundle_module._grouped("0.50") == "0.50"
+        assert presentation.grouped("0.50") == "0.50"
 
     def test_a_small_negative_ratio_is_not_published_as_a_gain(self) -> None:
         # The consequence at the percentage path, which scales before grouping:
         # `-0.0001` is a tenth of a percent down and was printed as `0.01%` up.
-        assert bundle_module._percentage("-0.0001") == "-0.01%"
-        assert bundle_module._percentage("-0.5000") == "-50.00%"
+        assert presentation.percentage("-0.0001") == "-0.01%"
+        assert presentation.percentage("-0.5000") == "-50.00%"
 
     def test_the_arabic_rendering_uses_the_arabic_percent_sign(self) -> None:
         # The rest of the Arabic string already leaves ASCII behind -- Arabic-Indic
@@ -296,7 +297,7 @@ class TestRatioFigures:
         # `0.000003` produces -- every input admissible, the ratio quantized to
         # `RATIO_PRECISION` as every producer quantizes it.
         governed = "1333333333333333330666665.6667"
-        rendered = bundle_module._percentage(governed)
+        rendered = presentation.percentage(governed)
 
         # Scaling by a hundred moves the point two places and nothing else.
         assert rendered == "133,333,333,333,333,333,066,666,566.67%"
@@ -315,9 +316,9 @@ class TestRatioFigures:
         # half-even and printed with no signal. That silent path is the defect
         # this asserts is closed.
         with pytest.raises(Inexact):
-            bundle_module._percentage("0.86655")
-        assert bundle_module._percentage("1.0000") == "100.00%"
-        assert bundle_module._percentage("0.0001") == "0.01%"
+            presentation.percentage("0.86655")
+        assert presentation.percentage("1.0000") == "100.00%"
+        assert presentation.percentage("0.0001") == "0.01%"
 
 
 class TestTheRatioClassificationIsComplete:

@@ -35,12 +35,12 @@ from khepri.rra.bundle import (
 from khepri.rra.deterministic_narrative import (
     ADAPTER_VERSION,
     DeterministicNarrator,
-    _fact_figure,
+    _fact_figures,
 )
 from khepri.rra.facts import AdmittedInput, FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
-from khepri.rra.narrative import NarrativeRequest, validate
+from khepri.rra.narrative import NarrativeRequest, _stated, validate
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
@@ -125,9 +125,9 @@ class TestAProportionIsQuotedInTheUnitTheTablesState:
             )
             rendered = figure.renderings[LANGUAGE_ENGLISH]
             assert rendered.endswith("%"), rendered
-            quoted = f"{entry['value_percent']}%"
-            assert quoted in text, (quoted, text)
-            assert Decimal(quoted.rstrip("%")) == Decimal(rendered.rstrip("%"))
+            # Since `rra005.deterministic.v4` (SCRUM-26 A9(b)) the commentary quotes the
+            # table's own form, so the two are one string rather than one value.
+            assert rendered in text, (rendered, text)
 
     def test_the_bare_ratio_is_no_longer_stated(self) -> None:
         # The old sentence, gone rather than merely joined by a new one.
@@ -138,14 +138,14 @@ class TestAProportionIsQuotedInTheUnitTheTablesState:
             assert f"is {entry['value']}." not in text, entry["value"]
 
     def test_both_languages_quote_the_same_percentage(self) -> None:
-        # `validate` compares stated figures across languages; this states the
-        # same property directly, so a divergence is named rather than inferred.
+        # `validate` compares stated figures across languages after normalizing
+        # digits; this states the property directly: one percentage, each language
+        # in its own table's form.
         _, draft = drafted()
 
         for entry in ratio_facts():
-            quoted = f"{entry['value_percent']}%"
-            assert quoted in prose(draft, LANGUAGE_ENGLISH)
-            assert quoted in prose(draft, LANGUAGE_ARABIC)
+            assert entry["display"][LANGUAGE_ENGLISH] in prose(draft, LANGUAGE_ENGLISH)
+            assert entry["display"][LANGUAGE_ARABIC] in prose(draft, LANGUAGE_ARABIC)
 
 
 class TestTheRealValidatorStillAcceptsIt:
@@ -169,35 +169,39 @@ class TestARateIsNotAPercentage:
     """
 
     def _entry(self, metric: str) -> dict:
-        # Shaped as `narrative._stated` leaves a ratio fact: both renderings
-        # present, because the request computes the percentage for every
-        # ratio-kind fact whether or not the metric is a proportion.
-        return {
-            "metric": metric,
-            "unit_kind": "ratio",
-            "value": "3825.0000",
-            "value_percent": "382500.0000",
-        }
+        # A ratio fact as the package carries it, run through the request's own
+        # projection, so the display form is the one a provider is handed.
+        return _stated(
+            {
+                "fact_id": "f",
+                "citation_id": "c",
+                "metric": metric,
+                "unit_kind": "ratio",
+                "value": "3825.0000",
+                "precision": 4,
+            }
+        )
 
     def test_the_sets_are_populated(self) -> None:
         assert RATE_METRICS and PERCENTAGE_METRICS
 
     def test_a_rate_is_quoted_as_the_rate_it_is(self) -> None:
         for metric in RATE_METRICS:
-            assert _fact_figure(self._entry(metric)) == "3825.0000"
+            assert _fact_figures(self._entry(metric))[LANGUAGE_ENGLISH] == "3,825.0000"
 
     def test_a_proportion_is_quoted_as_a_percentage(self) -> None:
         for metric in PERCENTAGE_METRICS:
-            assert _fact_figure(self._entry(metric)) == "382500.0000%"
+            assert _fact_figures(self._entry(metric))[LANGUAGE_ENGLISH] == "382,500.00%"
 
     def test_an_unclassified_ratio_keeps_its_supplied_value(self) -> None:
         # Neither set names it, so nothing here knows it is a proportion. The
-        # bare value is the honest answer; inventing a unit is not.
-        assert _fact_figure(self._entry("some_unclassified_ratio")) == "3825.0000"
+        # grouped value is the honest answer; inventing a unit is not.
+        figures = _fact_figures(self._entry("some_unclassified_ratio"))
+        assert figures[LANGUAGE_ENGLISH] == "3,825.0000"
 
-    def test_a_proportion_with_no_supplied_percentage_falls_back(self) -> None:
-        # `_stated` skips `value_percent` when the value will not parse. The
-        # narrator must not synthesize one to fill the gap.
+    def test_a_fact_with_no_supplied_form_quotes_no_figure(self) -> None:
+        # `_stated` supplies no form when there is no value. The narrator must not
+        # synthesize one to fill the gap.
         entry = {"metric": next(iter(PERCENTAGE_METRICS)), "value": "0.5589"}
 
-        assert _fact_figure(entry) == "0.5589"
+        assert _fact_figures(entry) is None
