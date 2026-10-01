@@ -137,6 +137,7 @@ from khepri.rra.rendering.excel_rows import (
 from khepri.rra.rendering.excel_rows import (
     write_text as _write_text,
 )
+from khepri.rra.rendering.qualifiers import qualified
 from khepri.rra.rendering.refusal_basis import section_refusal_prose
 from khepri.rra.rendering.refused_results import REFUSED_RESULT_NAMES, refused_result_groups
 from khepri.rra.rendering.wording import (
@@ -957,14 +958,20 @@ def _cited(bundle: RenderableBundle) -> tuple[CitedFigure, ...]:
 
 
 def _figure_cells(figure: CitedFigure, language: str) -> tuple[str | None, ...]:
-    """One figure as its row. A figure without a label leaves the cell empty."""
+    """One figure as its row. A figure without a label leaves the cell empty.
+
+    A label whose figure carries a dimension token is qualified in the sheet's language
+    (`RRA-006`, SCRUM-26 A3b), so a product and a category sharing one value are two
+    distinguishable rows here too.
+    """
+    label = None if figure.label is None else qualified(figure.label, figure.dimension, language)
     return (
         figure.figure_id,
         figure.citation_id,
         figure.section,
         figure.metric,
         figure.unit_kind,
-        figure.label,
+        label,
         figure.renderings[language],
     )
 

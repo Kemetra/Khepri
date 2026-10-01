@@ -53,6 +53,7 @@ from khepri.rra.crossversion_bundle import (
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.rra.mapping import SEMANTIC_RULES
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.rendering import qualifiers
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,9 @@ class ChartCategory:
 
     value: str
     localize: bool
+    #: The governed dimension token a customer value belongs to, where the figure
+    #: carries one (`RRA-006`, SCRUM-26 A3b). `worded` composes its qualifier name.
+    dimension: str | None = None
 
 
 # Every governed code `category_of` can return, in both languages. One table with one
@@ -1503,7 +1507,7 @@ def category_of(figure: CitedFigure) -> ChartCategory:
     if sibling_label:
         return ChartCategory(value=f"label.{figure.label}", localize=True)
     if figure.label is not None:
-        return ChartCategory(value=figure.label, localize=False)
+        return ChartCategory(value=figure.label, localize=False, dimension=figure.dimension)
     return ChartCategory(value=f"metric.{figure.metric}", localize=True)
 
 
@@ -1517,8 +1521,9 @@ def worded(category: ChartCategory, language: str) -> str:
     fallback would ship it quietly.
     """
     if not category.localize:
-        return category.value
+        return qualifiers.qualified(category.value, category.dimension, language)
     return LABEL_WORDING[language][category.value]
+
 
 #: What each metric means, in a sentence a reader who is not an analyst can use.
 #:

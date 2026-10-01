@@ -331,7 +331,16 @@ def _label(figure: CitedFigure, _source: _Source) -> object:
 
 def _dimension(figure: CitedFigure, _source: _Source) -> object:
     """The dimension the figure's metric is keyed by, not its member (`A-27`)."""
-    return _SERIES_DIMENSION.get(figure.metric)
+    return _dimension_of(figure)
+
+
+def _dimension_of(figure: CitedFigure) -> str | None:
+    """The figure's own dimension token where it carries one, else its metric's.
+
+    An attach rate is one metric over two dimensions, so its metric cannot say which;
+    the token does (`RRA-006`, SCRUM-26 A3b), and its label is the bare value.
+    """
+    return figure.dimension or _SERIES_DIMENSION.get(figure.metric)
 
 
 def _figure_id(figure: CitedFigure, _source: _Source) -> object:

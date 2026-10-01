@@ -33,7 +33,7 @@ satisfy a navigable report.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
@@ -55,7 +55,8 @@ from khepri.rra.narrative import (
     NarrativeDraft,
 )
 from khepri.rra.renderable import PresentationSection, RenderableBundle
-from khepri.rra.rendering.charts import ChartView, build_chart
+from khepri.rra.rendering.charts import ChartLabel, ChartView, build_chart
+from khepri.rra.rendering.qualifiers import qualified
 from khepri.rra.rendering.refusal_basis import section_refusal_prose
 from khepri.rra.rendering.refused_results import refused_result_groups
 from khepri.rra.rendering.wording import (
@@ -825,9 +826,10 @@ def _dimension(cell: FigureCell) -> str:
     by-period and by-product series into one table with `Revenue` and `Units sold`
     appearing twice, and a product row sitting under period columns.
 
-    `CitedFigure` carries no dimension, and adding one is a governed change --
-    `as_document` feeds the bundle digest -- so the dimension is read from the
-    metric identifier, which already states it: everything after `_by_`. A metric
+    A breakdown's dimension is read from the metric identifier, which already states
+    it: everything after `_by_`. (`CitedFigure.dimension` is a different thing: the
+    token an attach rate's label belongs to, which `worded` composes into `cell.label`,
+    so two attach rates sharing a value never share a key here.) A metric
     that names no breakdown falls back to its section, which keeps the comparison
     deltas (`revenue_delta_absolute` and `revenue_delta_percent`, one row per
     mode) in one series as they were.
@@ -1040,11 +1042,26 @@ def _chart_of(
     """The geometry for one section's chart, if the bundle declared one."""
     if section.chart is None:
         return None
-    return build_chart(
+    view = build_chart(
         section.chart,
         tuple(figures[figure_id] for figure_id in section.figure_ids),
         direction=LANGUAGE_DIRECTION[language],
     )
+    if view is None:
+        return None
+    return replace(view, labels=tuple(_qualified_label(label, language) for label in view.labels))
+
+
+def _qualified_label(label: ChartLabel, language: str) -> ChartLabel:
+    """A customer value under its mark, with its dimension's qualifier in this language.
+
+    `RRA-006` (SCRUM-26 A3b): a product and a category sharing one value are two bars,
+    and only the qualifier tells them apart. A governed code is the template's to
+    resolve and is left as it is.
+    """
+    if label.localize:
+        return label
+    return replace(label, value=qualified(label.value, label.dimension, language))
 
 
 def _require_text(value: str, name: str) -> None:

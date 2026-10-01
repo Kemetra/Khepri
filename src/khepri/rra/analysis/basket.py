@@ -222,18 +222,32 @@ def attached_value_of(fact: Fact, package: FactPackage) -> str | None:
 
 
 def attached_label_of(fact: Fact, package: FactPackage) -> str | None:
-    """The display label for an attach rate, naming the dimension it belongs to.
+    """The display label for an attach rate: the bare source value.
 
     Distinct from `attached_value_of`, which answers *which value* a rate is
-    about and is what a caller resolving a bucket needs. This is what a surface
-    shows: once product and category families both publish, two buckets can carry
-    the same source value -- a product `Water` and a category `Water` -- and a
-    bare label renders them as indistinguishable rows and bars.
+    about and is what a caller resolving a bucket needs. Once product and category
+    families both publish, two buckets can carry the same source value -- a product
+    `Water` and a category `Water` -- and a bare label alone renders them as
+    indistinguishable rows and bars.
 
-    Qualified rather than deduplicated, because both rates are real and a reader
-    needs to see which is which.
+    So the dimension travels beside the label as its own token
+    (`attached_dimension_of`), and each surface composes it into a governed
+    qualifier in its own language (`RRA-006`, SCRUM-26 A3b). Composing the English
+    key into the label here printed "Dairy (category)" on the Arabic report.
     """
-    found = next(
+    found = _attached(fact, package)
+    return None if found is None else found[1]
+
+
+def attached_dimension_of(fact: Fact, package: FactPackage) -> str | None:
+    """The governed dimension token an attach rate belongs to: `product` or `category`."""
+    found = _attached(fact, package)
+    return None if found is None else found[0]
+
+
+def _attached(fact: Fact, package: FactPackage) -> tuple[str, str] | None:
+    """The `(dimension, value)` an attach rate was derived under, recovered from its identity."""
+    return next(
         (
             (dimension, bucket.label)
             for dimension, entry in _dimensions(package)
@@ -242,10 +256,6 @@ def attached_label_of(fact: Fact, package: FactPackage) -> str | None:
         ),
         None,
     )
-    if found is None:
-        return None
-    dimension, label = found
-    return f"{label} ({dimension})"
 
 def _facts(package: FactPackage) -> tuple[Fact, ...]:
     """Each metric stands or falls on its own inputs.

@@ -694,7 +694,11 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # identical figures while their evidence differs, and before v8 they shared one
     # bundle id. A consumer that selected its reader from `v7` would find two fields
     # it does not know, so the version moves.
-    assert BUNDLE_VERSION == "rra006.bundle.v8"
+    #
+    # v9 gives a figure whose label must name its dimension a governed `dimension`
+    # token, and leaves its label the bare value (SCRUM-26 A3b). Every figure's
+    # document gains the field, so every bundle id moves.
+    assert BUNDLE_VERSION == "rra006.bundle.v9"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION
 
 

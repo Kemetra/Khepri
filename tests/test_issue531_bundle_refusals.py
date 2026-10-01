@@ -121,4 +121,4 @@ def test_refusals_leave_both_documents_and_the_bundle_version_unchanged() -> Non
     """The identity already digests what the refusals derive from (`evidence`'s precedent)."""
     assert "refusals" not in _real().as_document()
     assert "refusals" not in _real_crossversion().as_document()
-    assert BUNDLE_VERSION == "rra006.bundle.v8"
+    assert BUNDLE_VERSION == "rra006.bundle.v9"

@@ -736,13 +736,14 @@ def test_attach_labels_name_the_dimension_they_belong_to() -> None:
     """Two families publishing means two buckets can carry the same value.
 
     A product `Water` and a category `Water` are different rates about different
-    things. `ReportBundle._analysis_figure` stores the resolved name as the sole
-    row and chart label, so a bare bucket label rendered them as indistinguishable
-    bars. Found in review.
+    things. A bare bucket label once rendered them as indistinguishable bars.
+    Found in review.
 
-    `attached_value_of` is unchanged: it answers *which value* a rate is about,
-    which is what a caller resolving a bucket needs. The qualification belongs at
-    the display boundary.
+    Since SCRUM-26 A3b (`RRA-006`, `#637`) the label is the bare value and the
+    dimension is its own governed token, so the *pair* tells them apart; each
+    surface composes the qualifier in its own language
+    (`tests/test_rra006_dimension_token.py`). Composing the English key into the
+    label here printed "Water (category)" on the Arabic report.
     """
     content = (
         b"date,revenue,units,invoice_no,product,category\n"
@@ -754,11 +755,14 @@ def test_attach_labels_name_the_dimension_they_belong_to() -> None:
         fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
     ]
 
-    labels = {basket.attached_label_of(fact, package) for fact in attach}
+    named = {
+        (basket.attached_dimension_of(fact, package), basket.attached_label_of(fact, package))
+        for fact in attach
+    }
     values = [basket.attached_value_of(fact, package) for fact in attach]
 
     # The premise: a value really is shared across the two dimensions.
     assert values.count('Water') == 2, values
-    # And the display labels tell them apart.
-    assert len(labels) == len(attach), labels
-    assert 'Water (product)' in labels and 'Water (category)' in labels, labels
+    # And the token beside the bare label tells them apart.
+    assert len(named) == len(attach), named
+    assert ('product', 'Water') in named and ('category', 'Water') in named, named
