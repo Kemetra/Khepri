@@ -68,7 +68,10 @@ jobs:
           push: false
           tags: khepri-rra:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Written from `main` only. A pull request reads `main`'s layers but writes none:
+          # each one wrote about 300 MB scoped to its own ref, which no later run could
+          # read, and together they filled the repository's 10 GB cache.
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
 
       # `KHEPRI-DEC-007` requires the worker to launch Chromium with --disable-dev-shm-usage,
       # because Fargate fixes /dev/shm at 64 MiB and does not support sharedMemorySize. A browser
