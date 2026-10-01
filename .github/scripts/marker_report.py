@@ -89,27 +89,20 @@ def require(marker: str, *, unavailable: str) -> int:
     `unavailable` says what a skip means for this marker, so the failure names the
     missing service rather than only the symptom.
     """
-    path = os.environ.get(REPORT_ENV)
-    if not path or not Path(path).is_file():
-        print(
-            f"FAIL: no marker report at {REPORT_ENV}={path!r}. The suite must run with "
-            "`-p marker_report` and that variable set, or nothing proves the "
-            f"'{marker}' contracts ran.",
-            file=sys.stderr,
+    report = _recorded_report()
+    if report is None:
+        return _fail(
+            f"no marker report at {REPORT_ENV}. The suite must run with `-p marker_report` "
+            f"and that variable set, or nothing proves the '{marker}' contracts ran."
         )
-        return 1
-    outcomes: dict[str, str] = json.loads(Path(path).read_text(encoding="utf-8")).get(marker, {})
+    outcomes: dict[str, str] = report.get(marker, {})
     if not outcomes:
-        print(
-            f"FAIL: no test carries the '{marker}' marker. Either those contracts were "
-            "never written, or the marker was renamed and they are no longer selected. "
-            "Both are refused: a suite that proves nothing must not report green.",
-            file=sys.stderr,
+        return _fail(
+            f"no test carries the '{marker}' marker. Either those contracts were never "
+            "written, or the marker was renamed and they are no longer selected. Both are "
+            "refused: a suite that proves nothing must not report green."
         )
-        return 1
-    counts = Counter(outcomes.values())
-    summary = ", ".join(f"{count} {outcome}" for outcome, count in sorted(counts.items()))
-    print(f"'{marker}': {len(outcomes)} tests; {summary}")
+    _print_summary(marker, outcomes)
     refused = sorted(
         (nodeid, outcome) for nodeid, outcome in outcomes.items() if outcome not in ACCEPTED
     )
@@ -117,12 +110,33 @@ def require(marker: str, *, unavailable: str) -> int:
         return 0
     for nodeid, outcome in refused[:20]:
         print(f"  {outcome}: {nodeid}", file=sys.stderr)
+    return _fail(_refusal(marker, refused, unavailable))
+
+
+def _recorded_report() -> dict[str, dict[str, str]] | None:
+    """The suite's record, or `None` when it was never written."""
+    path = Path(os.environ.get(REPORT_ENV) or "")
+    if not path.name or not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _print_summary(marker: str, outcomes: dict[str, str]) -> None:
+    counts = Counter(outcomes.values())
+    summary = ", ".join(f"{count} {outcome}" for outcome, count in sorted(counts.items()))
+    print(f"'{marker}': {len(outcomes)} tests; {summary}")
+
+
+def _refusal(marker: str, refused: list[tuple[str, str]], unavailable: str) -> str:
+    """Name the service a skip points at; any other refusal is a failed contract."""
     if any(outcome == "skipped" for _, outcome in refused):
-        print(
-            f"FAIL: at least one test marked '{marker}' was skipped, which means "
-            f"{unavailable} A skipped test reports green and reads as a passing one.",
-            file=sys.stderr,
+        return (
+            f"at least one test marked '{marker}' was skipped, which means {unavailable} "
+            "A skipped test reports green and reads as a passing one."
         )
-    else:
-        print(f"FAIL: tests marked '{marker}' did not all pass.", file=sys.stderr)
+    return f"tests marked '{marker}' did not all pass."
+
+
+def _fail(message: str) -> int:
+    print(f"FAIL: {message}", file=sys.stderr)
     return 1
