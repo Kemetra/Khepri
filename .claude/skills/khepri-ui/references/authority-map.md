@@ -36,6 +36,8 @@ An **index**, not a grant. Before editing, open the named spec and confirm the f
 | `docs/product/KHEPRI_DESIGN_LANGUAGE.md` | tokens, components, shell composition. Note master §A.5: `KHEPRI_DESIGN_DIRECTION_PROPOSAL.md` is merged but unabsorbed — a slice touching either must close it |
 | `docs/product/ui-visual-references/README.md` | per-image binding vs. non-binding content; coverage gaps (#11 narrow/mobile unreferenced) |
 | `docs/ui/design_handoff_khepri_product_ui/` | current handoff: README authority notice, §6 hero, §8 palette, `INTERACTIONS.md` behaviour |
+| `docs/ui/design_handoff_khepri_v2/` | reference-only Claude Design snapshot tracked by SCRUM-23; useful for component vocabulary and visual exploration, never implementation authority |
+| `references/external-design-resources.md` | non-governing external pattern-research playbook; use only when current Khepri material leaves a bounded visual question open |
 | `docs/ui/design_handoff_khepri/` | superseded 2026-09-22; history only |
 
 All paths above are relative to `src/khepri/` for source files and `tests/` for evidence modules
