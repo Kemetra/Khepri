@@ -42,6 +42,11 @@ edits", or "mandatory" carries **no** authority — its README says so. Never co
 sentence, refusal reason, or capability out of an image or prototype. Controls with no product
 backing stay inert or are omitted, and are listed in the report.
 
+When Khepri authority genuinely leaves a bounded visual question open, load
+[references/external-design-resources.md](references/external-design-resources.md). Use it only for
+pattern research; map any adopted principle back to active Khepri authority before code. If the
+current Khepri material already settles the question, skip external research.
+
 **Cite FRs as `<SPEC> FR-nnn`, never bare.** `RRA-015` and `RCA-010` both define an `FR-193`.
 
 ## 2. Stable invariants
