@@ -25,6 +25,9 @@ jobs:
           version: "0.10.11"
           python-version: "3.13"
           enable-cache: true
+          # Keep downloaded wheels. The default prune saves an empty cache, so every job
+          # downloaded every dependency again, and two 10-minute jobs timed out doing it.
+          prune-cache: false
       - run: uv sync --frozen
       - run: uv run khepri-gov validate
 
@@ -39,6 +42,9 @@ jobs:
           version: "0.10.11"
           python-version: "3.13"
           enable-cache: true
+          # Keep downloaded wheels. The default prune saves an empty cache, so every job
+          # downloaded every dependency again, and two 10-minute jobs timed out doing it.
+          prune-cache: false
       - run: uv sync --frozen
       - run: uv run ruff check .
 
@@ -57,18 +63,17 @@ jobs:
   pytest:
     name: pytest
     runs-on: ubuntu-latest
-    # 25, not 10. `FND-005` puts the 236 `browser`-marked tests on this job. The
-    # arithmetic, because it is not obvious: the marked subset runs TWICE -- once inside
-    # `uv run pytest` and again when the guard below re-runs it to prove none skipped.
+    # 25, not 10. `FND-005` puts the `browser`-marked tests on this job. Measured on
+    # 2026-10-01 (run 36828729461), before the guards stopped re-running their subsets:
     #
-    #   suite without any browser test running   7m56s  (measured, run 35450552863)
-    # + the marked subset, inside the suite     ~4m24s  (measured locally)
-    # + the marked subset again, in the guard   ~4m24s
-    # + `playwright install --with-deps`        ~1-3m   (cold runner, apt included)
-    #                                          ~=  18m
+    #   the full suite, 7171 tests                        13m20s
+    # + the concurrency guard re-running 163 tests         1m33s
+    # + the browser guard re-running 370 tests             6m08s
+    # + `uv sync` and `playwright install --with-deps`     2-5m
+    #                                                  ~= 23-25m, and #635 was cancelled at 25
     #
-    # At 10 the job would be killed mid-suite and the guard would never run -- a gate
-    # that cannot pass is worse than no gate. 25 leaves margin without hiding a hang.
+    # The guards now read the suite's own record (`marker_report.py`), which removes the
+    # two re-runs. 25 stays, so the job keeps its margin as the suite grows.
     timeout-minutes: 25
     services:
       postgres:
@@ -88,6 +93,8 @@ jobs:
           --health-retries 5
     env:
       KHEPRI_TEST_DATABASE_URL: postgresql+psycopg://khepri:khepri@localhost:5432/khepri_test
+      # Where the suite records each marked test's outcome for the two guards below.
+      KHEPRI_MARKER_REPORT: marker-report.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
@@ -95,6 +102,9 @@ jobs:
           version: "0.10.11"
           python-version: "3.13"
           enable-cache: true
+          # Keep downloaded wheels. The default prune saves an empty cache, so every job
+          # downloaded every dependency again, and two 10-minute jobs timed out doing it.
+          prune-cache: false
       - run: uv sync --frozen
       # `FND-005`: without this the 236 `browser`-marked tests skip and the job reports
       # green. The lockfile is the pin -- `uv.lock` constrains playwright to >=1.61,<2 and
@@ -102,7 +112,12 @@ jobs:
       # is transcribed here; `image.yml` remains the only place one is read out.
       - name: install the pinned Chromium
         run: uv run playwright install --with-deps chromium
-      - run: uv run pytest
+      # `marker_report` records every `browser` and `concurrency` test's outcome, so the
+      # guards below read this run instead of running those tests a second time.
+      - name: run the suite
+        env:
+          PYTHONPATH: .github/scripts
+        run: uv run pytest -p marker_report
       # The point of attaching the service is that concurrency contracts get
       # proved rather than skipped, and a skipped test reports green. This
       # step fails if any test marked `concurrency` was skipped, and also
@@ -151,6 +166,9 @@ jobs:
           version: "0.10.11"
           python-version: "3.13"
           enable-cache: true
+          # Keep downloaded wheels. The default prune saves an empty cache, so every job
+          # downloaded every dependency again, and two 10-minute jobs timed out doing it.
+          prune-cache: false
       - run: uv sync --frozen
       - name: enforce the approved completion objective, or certify nothing
         run: uv run python -m khepri.rra.benchmark_gate
