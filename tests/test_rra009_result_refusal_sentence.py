@@ -128,6 +128,25 @@ def _shared(code: str) -> bool:
     )
 
 
+#: The basis a comparison result names first (`RRA-009` §Refusals, SCRUM-26 A4(b)), written out.
+_BASIS = {
+    "period_over_period": {
+        LANGUAGE_ENGLISH: "Against the previous period: ",
+        LANGUAGE_ARABIC: "مقابل الفترة السابقة: ",
+    },
+    "year_over_year": {
+        LANGUAGE_ENGLISH: "Against the same period last year: ",
+        LANGUAGE_ARABIC: "مقابل الفترة نفسها من العام الماضي: ",
+    },
+}
+
+
+def _basis(code: str, language: str) -> str:
+    """The lead-in a comparison result opens with, or nothing for any other result."""
+    scope = code.rpartition(":")[0].partition(".")[2]
+    return _BASIS[scope][language] if scope in _BASIS else ""
+
+
 def _name(code: str, language: str) -> str:
     metric = code.rpartition(":")[0].split(".", maxsplit=1)[0]
     name = business_metric_name(metric, language)
@@ -154,7 +173,7 @@ def test_a_refused_result_opens_with_its_own_name(
 
     prose = caveat_prose(code, language)
 
-    assert prose.startswith(f"{_name(code, language)} {opening}"), prose
+    assert prose.startswith(f"{_basis(code, language)}{_name(code, language)} {opening}"), prose
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -163,7 +182,9 @@ def test_no_shared_code_result_reads_as_a_section_sentence(fixture: str, languag
     """Swept over every joined code the bundle carries, not only the pinned ones."""
     headings = set(SECTION_HEADINGS[language].values())
     for code in filter(_routed, _joined_codes(fixture)):
-        prose = caveat_prose(code, language)
+        # The basis lead-in is stripped first, or a section sentence led by one would
+        # never match its own head and the sweep would pass having checked nothing.
+        prose = caveat_prose(code, language).removeprefix(_basis(code, language))
         assert prose.split(" — ", maxsplit=1)[0] not in _section_sentences(language), code
         assert not any(heading in prose for heading in headings), code
         assert "{" not in prose, code
@@ -244,5 +265,5 @@ def test_an_unavailable_input_keeps_the_section_sentence_until_its_input_is_know
 
     for code in held:
         prose = caveat_prose(code, language)
-        assert prose.startswith(_HELD_SECTION[language]), prose
+        assert prose.startswith(f"{_basis(code, language)}{_HELD_SECTION[language]}"), prose
         assert f"{_name(code, language)} {false_claim}" not in prose, prose

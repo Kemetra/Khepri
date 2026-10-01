@@ -193,7 +193,7 @@ def test_a_refusal_renders_through_the_refusal_panel() -> None:
     """FR-092.
 
     Was RED because the template rendered a bare `<p class="refused">`. The panel
-    consumes `chrome.refusal_prose`, which `html.py` already supplies -- so this
+    consumes the section's governed `refusal` prose, which `html.py` supplies -- so this
     component authors no refusal wording and FR-095 holds by construction.
 
     The precondition is asserted, not skipped (`#529` T-09): a fixture that stopped refusing

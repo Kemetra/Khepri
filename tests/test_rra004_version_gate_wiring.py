@@ -508,43 +508,44 @@ def test_no_surface_renders_the_section_placeholder_literally() -> None:
         assert "{" not in caveat_prose(code, language)
 
 
-def test_no_chrome_hands_a_template_an_unfilled_placeholder() -> None:
+def test_no_refusal_panel_is_handed_an_unfilled_placeholder() -> None:
     """The web and print surfaces are a third rendering path, and it leaked.
 
-    `html` passes `REFUSAL_WORDING["section"]` into the template as
-    `chrome.refusal_prose`, and `report.html.j2` indexes it by reason and prints
-    the value. Filling the placeholder in `wording` and in the workbook left this
-    one untouched, so a refused family put a literal `{section}` on the page and
-    in the PDF that extends the same template.
+    `html` once passed `REFUSAL_WORDING["section"]` into the template as
+    `chrome.refusal_prose`, and `report.html.j2` printed it by reason. Filling the
+    placeholder in `wording` and in the workbook left this one untouched, so a refused
+    family put a literal `{section}` on the page and in the PDF that extends the same
+    template.
 
-    Asserted over the chrome mapping rather than a rendered page because that
-    mapping is what the template is handed: any entry still carrying a brace is
-    a token one section's refusal will print verbatim. A page assertion would
+    Since SCRUM-26 A4(b) the panel prints `refusal_basis.section_refusal_prose`, the
+    resolver the workbook writes too, so it is asserted over every governed section and
+    reason that resolver can be asked for rather than over a rendered page, which would
     only cover whichever section the fixture happened to refuse.
 
-    **Descends to the messages, and that is the whole point of the case.** The
-    first version stopped one level short. Once the mapping gained its section
-    level, `prose` was a `dict`, so `"{" not in prose` was no longer a substring
-    search -- it was a key lookup for a key named `{`, which no mapping has. The
-    test written to catch the placeholder leak could not catch it: replacing
-    every message with a literal `LEAK {section} LEAK` left it green.
+    **Descends to the messages, and that is the whole point of the case.** An earlier
+    version iterated a nested mapping one level short, so `"{" not in prose` was a key
+    lookup rather than a substring search, and replacing every message with a literal
+    `LEAK {section} LEAK` left it green.
     """
-    from khepri.rra.rendering.html import _CHROME
+    from khepri.rra.bundle import ORDERED_SECTIONS, SECTION_REASONS
+    from khepri.rra.rendering.refusal_basis import section_refusal_prose
+    from khepri.rra.rendering.wording import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 
     checked = 0
-    for language, chrome in _CHROME.items():
-        for section, by_reason in chrome["refusal_prose"].items():
-            for reason, prose in by_reason.items():
+    for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH):
+        for section in ORDERED_SECTIONS:
+            for reason in SECTION_REASONS[section]:
+                prose = section_refusal_prose(section, reason, (), language)
+                assert isinstance(prose, str)
                 assert "{" not in prose, (
-                    f"{language}/{section}/{reason} reaches the template with an "
+                    f"{language}/{section}/{reason} reaches the panel with an "
                     "unfilled placeholder"
                 )
                 checked += 1
 
-    # The mapping is built by comprehension over `ORDERED_SECTIONS`, so an empty or renamed
-    # source would make every loop body above unreachable and pass this case a second, different
-    # vacuous way.
-    assert checked, "the chrome mapping handed the template no refusal prose at all"
+    # Built over `ORDERED_SECTIONS`, so an empty or renamed source would make every loop body
+    # above unreachable and pass this case a second, different vacuous way.
+    assert checked, "no refusal panel prose was resolved at all"
 
 
 class TestTheInternalPackageRefusalStaysInternal:

@@ -517,10 +517,10 @@ def refusal_prose(bundle, language: str) -> frozenset[str]:
     edit per surface. Pairs with `landed_sections`: that one answers *which*
     sections publish, this one answers *what a refused one says*.
     """
-    from khepri.rra.rendering.wording import section_refusal_message
+    from khepri.rra.rendering.refusal_basis import section_refusal_prose
 
     return frozenset(
-        section_refusal_message(section.section_id, section.reason, language)
+        section_refusal_prose(section.section_id, section.reason, bundle.caveats, language)
         for section in bundle.sections
         if section.reason
     )
