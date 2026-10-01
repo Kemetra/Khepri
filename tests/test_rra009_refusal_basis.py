@@ -200,3 +200,30 @@ def test_a_refusal_with_no_basis_is_unchanged(language: str) -> None:
     prose = caveat_prose("basket_attach_rate:incomplete_transaction_identifiers", language)
 
     assert not prose.startswith((_PREVIOUS[language], _LAST_YEAR[language])), prose
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_quality_response_words_a_section_as_its_panel_does(language: str) -> None:
+    """The `report_api` analysis-quality surface names each basis exactly as the page does."""
+    from khepri.rra.report_api import _quality_response
+
+    stated = {
+        entry.section_id: entry.wording
+        for entry in _quality_response(_bundle("split"), language).refusals
+    }
+
+    assert stated["comparison"] == _panel("split", "comparison", language)
+    assert stated["growth"] == _panel("split", "growth", language)
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_basis_recorded_alone_names_itself(language: str) -> None:
+    """One basis's record and no other: its cause belongs to that basis, so it is named."""
+    from khepri.rra.bundle import StatedCaveat
+    from khepri.rra.rendering.refusal_basis import section_refusal_prose
+
+    caveats = (StatedCaveat(code=_YOY_ABSENT, section="comparison"),)
+
+    prose = section_refusal_prose("comparison", "prior_window_absent", caveats, language)
+
+    assert prose.startswith(f"{_LAST_YEAR[language]}{_HEAD[language]}{_ABSENT[language]}"), prose

@@ -35,12 +35,11 @@ adds no reason code and no message, so the catalogue counts do not move.
    `chrome.refusal_prose[section][reason]` table. Each section view now carries its own
    `refusal`, resolved by `refusal_basis.section_refusal_prose`, which the workbook writes too.
 
-## Not in this slice
-
-`report_api`'s analysis-quality `SectionStatement.wording` explains a section reason code from
-the catalogue (`definitions.explain_reason`). It is a code explanation, not the section's
-refusal sentence, and it is left as it is. Its `CaveatStatement` and `ResultStatement` read
-`caveat_prose`, so they name the basis.
+6. **The analysis-quality JSON states the panel's sentence.** `report_api`'s
+   `SectionStatement.wording` used the catalogue's code explanation
+   (`definitions.explain_reason`), so it still stated one basis's cause as the section's. It now
+   reads `section_refusal_prose`, as the page does. The independent review found this in round 1.
+   Its `ResultStatement` and `CaveatStatement` already read `caveat_prose`.
 
 ## Tests (RED at `533183a`)
 

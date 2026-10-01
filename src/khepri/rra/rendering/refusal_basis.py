@@ -15,7 +15,7 @@ takes from that basis's window are named here because `growth.derive` takes them
 basis was refused for the same cause -- a file with no revenue, or a single day -- states that
 cause once and names none, because it is true of both. Bases refused for different causes are
 each named with their own cause, in governed mode order, and within each basis the family's
-own order has already chosen one cause.
+own order has already chosen one cause. A basis recorded alone names itself.
 
 A module of its own for `refused_results`' reason: it reads bundle records, not wording tables,
 and `wording.py` keeps only the composition (`with_basis`).
@@ -58,9 +58,14 @@ def _causes(
         basis = comparison.MODE_PERIOD_OVER_PERIOD if reason in _GROWTH_WINDOW_REASONS else None
         return ((basis, reason),)
     per_basis = _per_basis(section_id, caveats)
-    if len(set(per_basis.values())) < 2:
+    if not per_basis or _shared_by_every_basis(per_basis):
         return ((None, reason),)
     return tuple(per_basis.items())
+
+
+def _shared_by_every_basis(per_basis: dict[str, str]) -> bool:
+    """One cause recorded for every governed basis: it belongs to neither alone."""
+    return len(per_basis) == len(comparison.GOVERNED_MODES) and len(set(per_basis.values())) == 1
 
 
 def _per_basis(section_id: str, caveats: Iterable[StatedCaveat]) -> dict[str, str]:

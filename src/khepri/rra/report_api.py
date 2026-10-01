@@ -52,6 +52,7 @@ from khepri.rra.narrative import REQUIRED_LANGUAGES
 from khepri.rra.package_source import SessionPackageReader, rebuild_fact_package
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted, PackageRefused
 from khepri.rra.rendering.html import build_cells, build_context
+from khepri.rra.rendering.refusal_basis import section_refusal_prose
 from khepri.rra.rendering.wording import (
     RESULT_CAVEAT_SEPARATOR,
     business_metric_name,
@@ -930,7 +931,7 @@ def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityRes
         caveated=summary.caveated,
         refused=summary.refused,
         refusals=[
-            _section_statement(entry, reason, language)
+            _section_statement(entry, reason, language, bundle)
             for entry, reason in summary.refusals
         ],
         refused_results=[
@@ -971,12 +972,19 @@ def _quality_caveats(bundle: ReportBundle, language: str) -> list[CaveatStatemen
     ]
 
 
-def _section_statement(section_id: str, reason: str, language: str) -> SectionStatement:
-    """One refused analysis, said in the reader's language rather than only coded."""
+def _section_statement(
+    section_id: str, reason: str, language: str, bundle: ReportBundle
+) -> SectionStatement:
+    """One refused analysis, said in the reader's language rather than only coded.
+
+    The sentence the report's own refusal panel prints (`refusal_basis`), so a section
+    refused per comparison basis names each basis here as it does on the page
+    (`RRA-009` §Refusals, SCRUM-26 A4(b)).
+    """
     return SectionStatement(
         section_id=section_id,
         reason=reason,
-        wording=definitions.explain_reason(reason, language, "section"),
+        wording=section_refusal_prose(section_id, reason, bundle.caveats, language),
     )
 
 

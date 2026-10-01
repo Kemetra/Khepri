@@ -319,8 +319,8 @@ governed label, then the unchanged sentence: "Against the previous period: …" 
 - Two refusals that differ only in basis are both printed.
 
 The resolvers are `wording.caveat_prose` (result tier) and
-`refusal_basis.section_refusal_prose` (section tier). The web page, the PDF and
-the workbook all print through them.
+`refusal_basis.section_refusal_prose` (section tier). The web page, the PDF, the
+workbook and the analysis-quality API all print through them.
 
 ---
 
