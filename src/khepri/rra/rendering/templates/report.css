@@ -401,6 +401,15 @@ article {
   stroke-width: 3;
 }
 
+/*
+ * A label on the inline-end edge of the canvas ends there rather than centring on it
+ * (`ChartLabel.anchor_end`, #211). `end` is relative to the text's direction, so it is
+ * the right edge in English and the left in Arabic without a physical property.
+ */
+.chart__label--end {
+  text-anchor: end;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --report-ink: #eef1f5;

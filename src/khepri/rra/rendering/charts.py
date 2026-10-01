@@ -138,6 +138,12 @@ class ChartLabel:
     #: A3b). Carried, not composed: the qualifier name is per language, and the page
     #: composes it with `qualifiers.qualified` once it knows which language it renders.
     dimension: str | None = None
+    #: The label sits on the inline-end edge of the canvas: the concentration curve's last
+    #: point, which `_rank` places on the boundary by design. Centred there, half the word
+    #: would leave the canvas (#211, SCRUM-21 A12), so the template anchors it at its end.
+    #: `text-anchor: end` follows the text's own direction, so one flag serves both
+    #: languages: the right edge in English, the left once the Arabic axis mirrors.
+    anchor_end: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,7 +275,8 @@ def build_chart(
         height=_coordinate(CHART_HEIGHT),
         marks=marks,
         labels=tuple(
-            _label(figure, mark) for figure, mark in zip(resolved, marks, strict=True)
+            _label(figure, mark, plot.mirrored)
+            for figure, mark in zip(resolved, marks, strict=True)
         ),
         polyline=_polyline(spec.kind, marks),
         # One unit per chart is `_resolve`'s guarantee, so the first figure's kind is
@@ -282,7 +289,7 @@ def build_chart(
     )
 
 
-def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
+def _label(figure: CitedFigure, mark: ChartMark, mirrored: bool) -> ChartLabel:
     """The figure's governed category, placed under the mark it names.
 
     In the label band beneath the plot, horizontally centred on the mark. The centre
@@ -296,6 +303,7 @@ def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
         x=_coordinate(_centre(mark)),
         y=_coordinate(LABEL_BASELINE),
         dimension=category.dimension,
+        anchor_end=_centre(mark) == (Decimal(0) if mirrored else CHART_WIDTH),
     )
 
 
