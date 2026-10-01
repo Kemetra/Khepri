@@ -826,9 +826,10 @@ def _dimension(cell: FigureCell) -> str:
     by-period and by-product series into one table with `Revenue` and `Units sold`
     appearing twice, and a product row sitting under period columns.
 
-    `CitedFigure` carries no dimension, and adding one is a governed change --
-    `as_document` feeds the bundle digest -- so the dimension is read from the
-    metric identifier, which already states it: everything after `_by_`. A metric
+    A breakdown's dimension is read from the metric identifier, which already states
+    it: everything after `_by_`. (`CitedFigure.dimension` is a different thing: the
+    token an attach rate's label belongs to, which `worded` composes into `cell.label`,
+    so two attach rates sharing a value never share a key here.) A metric
     that names no breakdown falls back to its section, which keeps the comparison
     deltas (`revenue_delta_absolute` and `revenue_delta_percent`, one row per
     mode) in one series as they were.

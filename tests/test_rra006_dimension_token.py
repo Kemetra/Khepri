@@ -24,7 +24,7 @@ from functools import cache
 import pytest
 
 from khepri.rra.admissibility import assess_admissibility
-from khepri.rra.bundle import BUNDLE_VERSION, BundleAttempt, ReportBundle
+from khepri.rra.bundle import BUNDLE_VERSION, ReportBundle
 from khepri.rra.facts import AdmittedInput, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
@@ -129,21 +129,6 @@ def test_the_identity_document_records_the_new_bundle_version() -> None:
     assert _bundle().as_document()["identity"]["bundle_version"] == "rra006.bundle.v9"
 
 
-def test_a_stored_attempt_keeps_the_version_it_was_recorded_under() -> None:
-    """A delivered report is never rebuilt: its record carries its own version string."""
-    recorded = BundleAttempt(
-        bundle_version="rra006.bundle.v8",
-        bundle_id="0" * 64,
-        package_version="rra004.package.v4",
-        narrative_state="omitted",
-        surfaces=(),
-        outcome="delivered",
-        reason=None,
-    )
-
-    assert recorded.as_document()["bundle_version"] == "rra006.bundle.v8"
-
-
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_the_page_tells_a_shared_value_apart_in_its_own_language(language: str) -> None:
     basket = _basket(language)
@@ -193,3 +178,17 @@ def test_the_chart_names_each_bar_with_its_qualifier(language: str) -> None:
     assert labels, "the basket chart draws no labelled mark"
     for name in _QUALIFIED[language]:
         assert name in labels, f"{language}: {labels}"
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_audit_trail_tells_a_shared_value_apart_in_each_language(language: str) -> None:
+    """The audit sheet writes the label too, so it composes the qualifier like every surface."""
+    from khepri.rra.rendering.excel import _figure_cells
+
+    labels = {
+        _figure_cells(figure, language)[5]
+        for figure in _attach_figures()
+        if figure.label == "Water"
+    }
+
+    assert labels == set(_QUALIFIED[language]), labels

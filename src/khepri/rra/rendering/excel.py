@@ -151,6 +151,7 @@ from khepri.rra.rendering.wording import (
     SECTION_HEADINGS,
     category_of,
     caveat_proses,
+    qualified,
     stated_once,
     worded,
 )
@@ -957,14 +958,20 @@ def _cited(bundle: RenderableBundle) -> tuple[CitedFigure, ...]:
 
 
 def _figure_cells(figure: CitedFigure, language: str) -> tuple[str | None, ...]:
-    """One figure as its row. A figure without a label leaves the cell empty."""
+    """One figure as its row. A figure without a label leaves the cell empty.
+
+    A label whose figure carries a dimension token is qualified in the sheet's language
+    (`RRA-006`, SCRUM-26 A3b), so a product and a category sharing one value are two
+    distinguishable rows here too.
+    """
+    label = None if figure.label is None else qualified(figure.label, figure.dimension, language)
     return (
         figure.figure_id,
         figure.citation_id,
         figure.section,
         figure.metric,
         figure.unit_kind,
-        figure.label,
+        label,
         figure.renderings[language],
     )
 
