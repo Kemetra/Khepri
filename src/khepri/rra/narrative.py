@@ -411,6 +411,9 @@ class NarrativeGround:
                 numbers.update(_numbers_within(label))
                 numbers.update(_as_numbers(bucket.get("value")))
                 numbers.add(Decimal(int(bucket["rows"])))
+                # A bucket of a proportion is supplied in its percentage form
+                # (`display`), so quoting that form is quoting, not converting.
+                percents.update(_display_percents(bucket.get("display")))
 
             grounded = GroundedEntry(
                 numbers=frozenset(numbers),
@@ -1237,6 +1240,16 @@ def _movement(points: Sequence[Any]) -> frozenset[str]:
     if values[-1] < values[0]:
         return frozenset({DIRECTION_FELL})
     return frozenset({DIRECTION_UNCHANGED})
+
+
+def _display_percents(display: object) -> tuple[Decimal, ...]:
+    """The percentage a supplied display form states, if it is one (`RRA-005`, A9(b))."""
+    if not isinstance(display, dict):
+        return ()
+    english = display.get(LANGUAGE_ENGLISH)
+    if not isinstance(english, str) or not english.endswith("%"):
+        return ()
+    return _as_numbers(english.removesuffix("%"))
 
 
 def _as_numbers(value: object) -> tuple[Decimal, ...]:

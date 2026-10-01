@@ -30,6 +30,8 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
+    REASON_UNGROUNDED_NUMBER,
+    NarrativeGround,
     NarrativeRefused,
     NarrativeRequest,
     validate,
@@ -127,6 +129,14 @@ def test_the_display_forms_ground() -> None:
     validate(_draft(), request=_request())
 
 
+def _changed_last_digit(form: str, language: str) -> str:
+    """The form with its last digit replaced in place, any trailing sign kept."""
+    digits = "0123456789" if language == LANGUAGE_ENGLISH else "٠١٢٣٤٥٦٧٨٩"
+    position = max(index for index, character in enumerate(form) if character in digits)
+    current = digits.index(form[position])
+    return form[:position] + digits[(current + 1) % 10] + form[position + 1 :]
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_a_changed_significant_digit_is_still_refused(language: str) -> None:
     """Normalizing the form does not admit a different number."""
@@ -139,15 +149,62 @@ def test_a_changed_significant_digit_is_still_refused(language: str) -> None:
             continue
         first, *rest = entry.sections
         form = tables[first.cited_fact_ids[0]][language]
-        changed = form[:-1] + ("1" if language == LANGUAGE_ENGLISH else "١")
-        if changed == form:
-            changed = form[:-1] + ("2" if language == LANGUAGE_ENGLISH else "٢")
+        changed = _changed_last_digit(form, language)
+        assert changed != form and changed in first.text.replace(form, changed)
         mutated.append(
             replace(entry, sections=(replace(first, text=first.text.replace(form, changed)), *rest))
         )
 
-    with pytest.raises(NarrativeRefused):
+    with pytest.raises(NarrativeRefused) as refused:
         validate(replace(draft, languages=tuple(mutated)), request=_request())
+    assert str(refused.value) == REASON_UNGROUNDED_NUMBER
+
+
+def test_every_bucket_and_point_form_is_its_table_cell() -> None:
+    """Values, not only keys: each supplied form is the bundle's rendering of that cell."""
+    bundle = ReportBundle.of(_package())
+    cells = {
+        (figure.citation_id, figure.label, figure.kind): figure.renderings
+        for figure in bundle.figures
+        if figure.label is not None
+    }
+    document = _request().document
+    checked = 0
+    for entry in (*document["series"], *document["comparisons"]):
+        for item in (*entry.get("points", ()), *entry.get("buckets", ())):
+            key = (entry["citation_id"], str(item["label"]))
+            assert item["rows_display"] == cells[(*key, "rows")]
+            if "display" in item:
+                assert item["display"] == cells[(*key, "value")]
+            checked += 1
+    assert checked
+
+
+def test_a_supplied_percentage_form_on_a_bucket_grounds() -> None:
+    """A bucket of a proportion is supplied as `12.50%`, so quoting it must ground."""
+    request = NarrativeRequest(
+        document={
+            "facts": [],
+            "series": [],
+            "comparisons": [
+                {
+                    "fact_id": "f",
+                    "citation_id": "c",
+                    "buckets": [
+                        {
+                            "label": "A",
+                            "value": "0.1250",
+                            "rows": 3,
+                            "display": {LANGUAGE_ENGLISH: "12.50%", LANGUAGE_ARABIC: "١٢٫٥٠٪"},
+                        }
+                    ],
+                }
+            ],
+            "caveats": [],
+        }
+    )
+
+    assert Decimal("12.50") in NarrativeGround.of(request).stateable(("c",)).percents
 
 
 def test_the_adapter_version_names_the_new_convention() -> None:
