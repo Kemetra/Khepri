@@ -220,6 +220,8 @@ class FactPackageRow(Base):
             name="uq_package_profile_versions",
         ),
         Index("ix_package_session", "session_id"),
+        # `get_owned_package` filters on both columns; measured in #555 D-01.
+        Index("ix_package_owner_digest", "owner_id", "package_digest"),
         # Composite, so the package's scope and its profile's scope are one fact (`RRA-001`,
         # #432). Two independent keys let a package in scope A cite scope B's profile.
         ForeignKeyConstraint(
