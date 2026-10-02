@@ -460,6 +460,7 @@ artifacts:
     depends_on:
       - RCA
       - RCA-002
+      - KHEPRI-DEC-028
       - RRA-008
       - RRA-009
       - RRA-011
