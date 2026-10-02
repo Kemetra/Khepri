@@ -461,6 +461,7 @@ artifacts:
       - RCA
       - RCA-002
       - KHEPRI-DEC-028
+      - KHEPRI-DEC-033
       - RRA-008
       - RRA-009
       - RRA-011
