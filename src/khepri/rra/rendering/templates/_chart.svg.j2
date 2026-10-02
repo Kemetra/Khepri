@@ -43,7 +43,7 @@
   <polyline class="chart__curve" fill="none" points="{{ view.polyline }}" />
   {% endif %}
   {% for label in view.labels %}
-  <text class="chart__label" x="{{ label.x }}" y="{{ label.y }}">{#
+  <text class="chart__label{% if label.anchor_end %} chart__label--end{% endif %}" x="{{ label.x }}" y="{{ label.y }}">{#
     #}{% if label.localize %}{{ chrome.labels[label.value] }}{#
     #}{% else %}{{ label.value }}{% endif %}</text>
   {% endfor %}

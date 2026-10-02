@@ -90,12 +90,16 @@ _CHART_COLLISIONS = """() => {
       const box = word.getBoundingClientRect();
       const name = word.textContent.trim();
       if (marks.some(mark => meets(box, mark))) faults.push(`over a mark: ${name}`);
-      // Top and bottom only. The concentration curve's last point sits on the right
-      // edge by design (`charts._rank`), so its label is centred there and half of it
-      // leaves the canvas sideways. That is a separate, recorded finding, not A3.
       if (box.top < canvas.top - 0.5 || box.bottom > canvas.bottom + 0.5) {
         faults.push(`clipped by the canvas: ${name}`);
       }
+      // The inline edges, for category labels. The concentration curve's last point
+      // sits on the inline-end edge by design (`charts._rank`); its label is
+      // end-anchored there rather than centred, so it stays inside (#211, A12). The
+      // axis unit is anchored at the start edge, where an Arabic glyph's ink reaches
+      // 0.6px past the boundary in print; that is recorded on #211, not measured here.
+      const sideways = box.left < canvas.left - 0.5 || box.right > canvas.right + 0.5;
+      if (word !== unit && sideways) faults.push(`clipped sideways: ${name}`);
     }
     const unitBox = unit.getBoundingClientRect();
     for (const label of labels) {
@@ -158,3 +162,33 @@ def test_no_chart_word_meets_a_mark_on_the_web_report(width: int, text: str) -> 
 def test_no_chart_word_meets_a_mark_on_the_printed_report() -> None:
     documents = printed_documents()
     _assert_no_collisions(_collisions(documents, width=a4_content_width_px(), media="print"))
+
+
+@pytest.mark.parametrize("language", [LANGUAGE_ENGLISH, LANGUAGE_ARABIC])
+def test_only_the_label_on_the_inline_end_edge_is_end_anchored(language: str) -> None:
+    """#211 (A12): a label centred on the canvas edge would leave half of itself outside.
+
+    The curve's last point sits on the inline-end edge, the right in English and the
+    left once the Arabic axis mirrors. `text-anchor: end` follows the text's own
+    direction, so one rule keeps that label inside in both languages.
+    """
+    view = chart_of(
+        kind=CHART_LINE,
+        figure_ids=("F-1", "F-2", "F-3"),
+        values=(Decimal(40), Decimal(70), Decimal(100)),
+        language=language,
+    )
+    assert view is not None
+    edge = Decimal(0) if language == LANGUAGE_ARABIC else charts.CHART_WIDTH
+
+    flagged = [label for label in view.labels if label.anchor_end]
+    assert [Decimal(label.x) for label in flagged] == [edge]
+    assert all(Decimal(label.x) != edge for label in view.labels if not label.anchor_end)
+
+
+@pytest.mark.parametrize("kind", [CHART_BAR, CHART_GROUPED_BAR])
+def test_a_bar_label_is_never_end_anchored(kind: str) -> None:
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        view = chart_of(kind=kind, values=(Decimal(40), Decimal(70)), language=language)
+        assert view is not None
+        assert not any(label.anchor_end for label in view.labels)
