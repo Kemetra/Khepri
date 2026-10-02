@@ -53,7 +53,6 @@ evidence `FR-030` wants is `R7-03`'s. No endpoint exists yet -- that is `R7-05`.
 
 from __future__ import annotations
 
-import ast
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -70,6 +69,14 @@ from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.sessions import BetaSession, SessionStore, open_commercial_session
 from khepri.runtime.bridge import CommercialBridge
 from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
+from tests.test_rca001_boundary import (
+    RCA_DIR,
+    RCA_TARGET,
+    RRA_DIR,
+    RRA_TARGET,
+    package_import_offenses,
+    package_modules,
+)
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
 OWNER = "own_organization_scope"
@@ -474,10 +481,14 @@ class TestThePackageBoundaryHolds:
     Both packages stay ignorant of each other and `khepri.runtime` knows both, which is what a
     composition root is for. §3 chose the stricter of the two readings deliberately, so that it
     "needs no maintenance as the bridge grows".
+
+    Both directions run the one scanner `test_rca001_boundary.py` defines, with its target
+    named rather than hard-coded (#226, `#211`): it resolves relative imports and catches
+    `from khepri import rra`, which a prefix match on the module name does not.
     """
 
     def test_khepri_rca_imports_no_khepri_rra_module(self) -> None:
-        offenders = _cross_imports("rca", "khepri.rra")
+        offenders = package_import_offenses(RCA_DIR, RRA_TARGET)
 
         assert offenders == [], (
             f"{offenders} import khepri.rra; a bridge inside khepri.rca would make every RCA test "
@@ -485,7 +496,7 @@ class TestThePackageBoundaryHolds:
         )
 
     def test_khepri_rra_imports_no_khepri_rca_module(self) -> None:
-        offenders = _cross_imports("rra", "khepri.rca")
+        offenders = package_import_offenses(RRA_DIR, RCA_TARGET)
 
         assert offenders == [], (
             f"{offenders} import khepri.rca; RRA must not depend on commercial identity concepts "
@@ -496,11 +507,12 @@ class TestThePackageBoundaryHolds:
         """The emptiness assertion. A scan over zero files passes while proving nothing.
 
         This repo has recorded that shape twice: a guard scoped so narrowly it self-disarms. Both
-        prohibitions above return `[]` on an empty file list, so the population is asserted here.
+        prohibitions above return `[]` on an empty file list, so the population is asserted here,
+        on the same `package_modules` list the scan visits rather than a second listing of its own.
         """
-        for package in ("rca", "rra"):
-            modules = list((_source_root() / package).glob("*.py"))
-            assert len(modules) > 5, f"khepri.{package} scan found only {len(modules)} modules"
+        for package_dir in (RCA_DIR, RRA_DIR):
+            modules = package_modules(package_dir)
+            assert len(modules) > 5, f"{package_dir.name} scan found only {len(modules)} modules"
 
     def test_the_bridge_lives_in_the_packaged_composition_layer(self) -> None:
         """§3: `khepri.local` is excluded from the wheel, so a bridge there is undeployable.
@@ -520,26 +532,6 @@ class TestThePackageBoundaryHolds:
 
 def _source_root() -> Path:
     return Path(__file__).resolve().parents[1] / "src" / "khepri"
-
-
-def _imports_from(node: ast.AST, forbidden: str) -> bool:
-    """Whether one AST node imports anything under `forbidden`, in either import form."""
-    if isinstance(node, ast.ImportFrom):
-        return (node.module or "").startswith(forbidden)
-    if isinstance(node, ast.Import):
-        return any(alias.name.startswith(forbidden) for alias in node.names)
-    return False
-
-
-def _cross_imports(package: str, forbidden: str) -> list[str]:
-    """Modules under `khepri.<package>` that import `forbidden`. Empty is the passing state."""
-    offenders = [
-        module.name
-        for module in sorted((_source_root() / package).rglob("*.py"))
-        for node in ast.walk(ast.parse(module.read_text(encoding="utf-8")))
-        if _imports_from(node, forbidden)
-    ]
-    return sorted(set(offenders))
 
 
 def _session_count(store: SqlSessionStore) -> int:

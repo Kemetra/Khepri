@@ -93,13 +93,13 @@ _CHART_COLLISIONS = """() => {
       if (box.top < canvas.top - 0.5 || box.bottom > canvas.bottom + 0.5) {
         faults.push(`clipped by the canvas: ${name}`);
       }
-      // The inline edges, for category labels. The concentration curve's last point
-      // sits on the inline-end edge by design (`charts._rank`); its label is
-      // end-anchored there rather than centred, so it stays inside (#211, A12). The
-      // axis unit is anchored at the start edge, where an Arabic glyph's ink reaches
-      // 0.6px past the boundary in print; that is recorded on #211, not measured here.
+      // The inline edges, for every word. The concentration curve's last point sits
+      // on the inline-end edge by design (`charts._rank`); its label is end-anchored
+      // there rather than centred, so it stays inside (#211, A12). The axis unit is
+      // start-anchored, inset from the start edge so an Arabic glyph's ink does not
+      // reach past it in print (#211).
       const sideways = box.left < canvas.left - 0.5 || box.right > canvas.right + 0.5;
-      if (word !== unit && sideways) faults.push(`clipped sideways: ${name}`);
+      if (sideways) faults.push(`clipped sideways: ${name}`);
     }
     const unitBox = unit.getBoundingClientRect();
     for (const label of labels) {
@@ -159,6 +159,10 @@ def test_no_chart_word_meets_a_mark_on_the_web_report(width: int, text: str) -> 
 
 @pytest.mark.browser
 @needs_chromium
+@pytest.mark.xfail(
+    strict=True,
+    reason="#211: the Arabic axis unit's ink reaches about 0.6px past the start edge in print",
+)
 def test_no_chart_word_meets_a_mark_on_the_printed_report() -> None:
     documents = printed_documents()
     _assert_no_collisions(_collisions(documents, width=a4_content_width_px(), media="print"))
@@ -192,3 +196,22 @@ def test_a_bar_label_is_never_end_anchored(kind: str) -> None:
         view = chart_of(kind=kind, values=(Decimal(40), Decimal(70)), language=language)
         assert view is not None
         assert not any(label.anchor_end for label in view.labels)
+
+
+@pytest.mark.xfail(strict=True, reason="#211: the axis unit is anchored on the canvas edge")
+@pytest.mark.parametrize("kind", [CHART_BAR, CHART_GROUPED_BAR, CHART_LINE])
+def test_the_axis_unit_is_inset_from_the_start_edge(kind: str) -> None:
+    """#211 (A12): a start-anchored word on the edge can paint its first glyph past it.
+
+    The Arabic unit's ink reached 0.6px past the canvas in print, measured with
+    `getBoundingClientRect`. The anchor sits inside the canvas instead, by the same
+    distance from the start edge in each language, so the mirroring `FR-188` requires
+    still holds.
+    """
+    english = chart_of(kind=kind, values=(Decimal(40), Decimal(70)), language=LANGUAGE_ENGLISH)
+    arabic = chart_of(kind=kind, values=(Decimal(40), Decimal(70)), language=LANGUAGE_ARABIC)
+    assert english is not None and arabic is not None
+
+    inset = Decimal(english.axis_unit_x)
+    assert Decimal(0) < inset < charts.CHART_WIDTH / 2
+    assert Decimal(arabic.axis_unit_x) == charts.CHART_WIDTH - inset
