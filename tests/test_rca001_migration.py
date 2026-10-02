@@ -124,12 +124,17 @@ RCA_REVISIONS = (
 #:
 #: `20261002_0035` (#555 D-01) joins it as well: it indexes `rra_fact_packages`, which the RCA-only
 #: chain never creates. It is proved at `tests/test_i555_package_owner_digest_index.py`.
+#:
+#: `20261002_0036` (#595, RRA-017) joins it too: it is PostgreSQL-only (roles, row-level security
+#: and definer functions over the RRA tables) and a no-op on SQLite. It is proved at
+#: `tests/test_rra017_catalogue_postgres.py` and `tests/test_rra017_policy_postgres.py`.
 RCA_UNREPLAYED = (
     ("20260915_0030", "workspace_content_retention", "20260906_0029"),
     ("20260925_0031", "rra_package_profile_scope", "20260915_0030"),
     ("20260926_0033", "rra_profile_upload_set_null", "20260925_0032"),
     ("20260926_0034", "rra_profile_upload_scope", "20260926_0033"),
     ("20261002_0035", "rra_package_owner_digest_index", "20260926_0034"),
+    ("20261002_0036", "rra_row_level_security", "20261002_0035"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running

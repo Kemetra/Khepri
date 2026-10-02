@@ -6,7 +6,7 @@ or fails here. The grant test is the rule that keeps later migrations covered: e
 derived from the catalogue, and each runtime role must hold exactly the privileges its row of the
 matrix names. A table whose migration granted nothing fails it.
 
-RED at `0c1475f`: `rls_database()` raises `Rra017Absent` before any query.
+Pinned RED at `f1639c1`, before `20261002_0036` existed; green from that revision.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from tests.rra017_support import (
     DEFINER,
     PARENT_WALLED,
     POSTGRES,
-    RED,
     RUNTIME_ROLES,
     SCOPED_ROLES,
     SWEEP,
@@ -27,7 +26,7 @@ from tests.rra017_support import (
     rls_fixture,  # noqa: F401 -- the `rls` fixture
 )
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 DML = frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"})
 TABLE_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")

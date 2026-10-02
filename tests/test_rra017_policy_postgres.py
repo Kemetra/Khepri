@@ -5,8 +5,7 @@ through their parents, whose rows are seeded beneath A's and B's parents. "Refus
 SQLSTATE `42501` for a write the policy rejects, never `23503`: every parent the refused row names
 exists when the write is attempted, so a foreign-key failure cannot stand in for the policy.
 
-RED at `0c1475f`: the migration, its roles and its policies do not exist, so `rls_database()`
-raises `Rra017Absent` before any statement runs.
+Pinned RED at `f1639c1`, before `20261002_0036` existed; green from that revision.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ from tests.rra017_support import (
     INSUFFICIENT_PRIVILEGE,
     OWNER_SETTING,
     POSTGRES,
-    RED,
     SCOPED_ROLES,
     RlsDatabase,
     attempt,
@@ -33,7 +31,7 @@ from tests.rra017_support import (
     visible_keys,
 )
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 A = Scope("own_a", "a")
 B = Scope("own_b", "b")
