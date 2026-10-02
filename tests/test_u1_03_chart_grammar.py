@@ -29,6 +29,7 @@ from khepri.rra.bundle import CHART_GROUPED_BAR, GOVERNED_CHART_KINDS
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.charts import (
     _GEOMETRY,  # the table under test
+    AXIS_UNIT_INSET,
     CHART_WIDTH,
     PLOT_HEIGHT,
     ChartView,
@@ -438,8 +439,9 @@ def test_the_axis_unit_anchor_mirrors_with_the_category_axis() -> None:
     rtl = chart_of(language=LANGUAGE_ARABIC)
     assert ltr is not None and rtl is not None
 
-    assert ltr.axis_unit_x == "0.0000"
-    assert rtl.axis_unit_x == str(CHART_WIDTH.quantize(Decimal("0.0001")))
+    # Inset from the start edge in each direction (#211), so mirrored about the centre.
+    assert ltr.axis_unit_x == str(AXIS_UNIT_INSET.quantize(Decimal("0.0001")))
+    assert rtl.axis_unit_x == str((CHART_WIDTH - AXIS_UNIT_INSET).quantize(Decimal("0.0001")))
     assert ltr.axis_unit_x != rtl.axis_unit_x
 
     # Inside the canvas in both directions, which is the property a reader depends on.

@@ -100,6 +100,12 @@ CHART_HEIGHT = Decimal(390)
 # below its value -- and far enough above the unit row that its descenders clear it.
 LABEL_BASELINE = Decimal(343)
 
+# How far inside the start edge the axis unit's anchor sits. A start-anchored word on
+# the edge itself can paint its first glyph past it: the printed Arabic unit's ink
+# reached 0.6 px beyond the canvas in Windows Chromium (#211). Two units carries
+# headroom for the Linux engine's metrics, as the label band does.
+AXIS_UNIT_INSET = Decimal(2)
+
 # The extent of a point on a line. A line's marks are drawn as areas like any other,
 # because a surface renders marks uniformly; the mark's *top edge* is the value, the
 # same convention a bar follows.
@@ -183,7 +189,8 @@ class ChartView:
     axis mirrors and this label sits on it: a hardcoded `x="0"` in the template would
     anchor the text's start edge at canvas zero and paint it off the canvas under
     `direction: rtl`, leaving the Arabic page with no axis unit at all while the
-    English one reads correctly. Mirroring is geometry, so it is decided here.
+    English one reads correctly. Mirroring is geometry, so it is decided here. The
+    anchor sits `AXIS_UNIT_INSET` inside the start edge rather than on it.
 
     `baseline` is where zero falls from the top of the canvas, as an exact decimal
     string. The domain always includes zero, so it is always inside the canvas; a
@@ -284,7 +291,7 @@ def build_chart(
         # parameter keeps `build_chart`'s signature at four, which the code-health
         # gate on argument count requires.
         axis_unit_kind=resolved[0].unit_kind,
-        axis_unit_x=_coordinate(_mirror(plot, Decimal(0), Decimal(0))),
+        axis_unit_x=_coordinate(_mirror(plot, AXIS_UNIT_INSET, Decimal(0))),
         baseline=_coordinate(plot.domain.zero),
     )
 

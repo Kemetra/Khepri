@@ -159,10 +159,6 @@ def test_no_chart_word_meets_a_mark_on_the_web_report(width: int, text: str) -> 
 
 @pytest.mark.browser
 @needs_chromium
-@pytest.mark.xfail(
-    strict=True,
-    reason="#211: the Arabic axis unit's ink reaches about 0.6px past the start edge in print",
-)
 def test_no_chart_word_meets_a_mark_on_the_printed_report() -> None:
     documents = printed_documents()
     _assert_no_collisions(_collisions(documents, width=a4_content_width_px(), media="print"))
@@ -198,7 +194,6 @@ def test_a_bar_label_is_never_end_anchored(kind: str) -> None:
         assert not any(label.anchor_end for label in view.labels)
 
 
-@pytest.mark.xfail(strict=True, reason="#211: the axis unit is anchored on the canvas edge")
 @pytest.mark.parametrize("kind", [CHART_BAR, CHART_GROUPED_BAR, CHART_LINE])
 def test_the_axis_unit_is_inset_from_the_start_edge(kind: str) -> None:
     """#211 (A12): a start-anchored word on the edge can paint its first glyph past it.
