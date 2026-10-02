@@ -19,8 +19,10 @@ It is not unique: two profiles with identical facts can publish the same digest 
 
 **Online.** `CREATE INDEX CONCURRENTLY` cannot run inside a transaction, so on PostgreSQL both
 directions run in `autocommit_block()`. Other dialects (the SQLite test chain) create it plainly.
-`if_not_exists` / `if_exists` make a retry after an interrupted concurrent build safe, since an
-interrupted build leaves an invalid index of the same name behind.
+An interrupted `CREATE INDEX CONCURRENTLY` leaves an INVALID index of the same name behind, which
+the planner never uses. `IF NOT EXISTS` alone would skip it silently on a retry, so the upgrade
+first looks the index up in `pg_index`: an invalid one is dropped concurrently and rebuilt, a
+valid one is left alone.
 
 The index name is spelled literally rather than imported from the model, so a later edit to the
 model cannot rewrite what this revision did.
@@ -33,6 +35,7 @@ The migration head is pinned in three places and this revision moves all of them
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261002_0035"
@@ -49,11 +52,19 @@ def _on_postgres() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
+_INVALID = sa.text(
+    "SELECT 1 FROM pg_index AS i JOIN pg_class AS c ON c.oid = i.indexrelid "
+    "WHERE c.relname = :name AND NOT i.indisvalid"
+)
+
+
 def upgrade() -> None:
     if not _on_postgres():
         op.create_index(_INDEX, _TABLE, _COLUMNS, if_not_exists=True)
         return
     with op.get_context().autocommit_block():
+        if op.get_bind().execute(_INVALID, {"name": _INDEX}).first() is not None:
+            op.drop_index(_INDEX, table_name=_TABLE, postgresql_concurrently=True, if_exists=True)
         op.create_index(_INDEX, _TABLE, _COLUMNS, postgresql_concurrently=True, if_not_exists=True)
 
 

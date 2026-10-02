@@ -33,6 +33,16 @@ def _index(engine: Engine) -> dict | None:
     return next((entry for entry in indexes if entry["name"] == INDEX), None)
 
 
+def _is_valid(engine: Engine) -> bool:
+    with engine.connect() as connection:
+        return connection.execute(
+            text(
+                "select i.indisvalid from pg_index i join pg_class c on c.oid = i.indexrelid "
+                f"where c.relname = '{INDEX}'"
+            )
+        ).scalar_one()
+
+
 def test_the_model_declares_the_index_the_migration_creates() -> None:
     indexes = FactPackageRow.__table__.indexes
     declared = {index.name: [column.name for column in index.columns] for index in indexes}
@@ -64,20 +74,48 @@ class TestTheIndexOnPostgres:
         command.upgrade(config, "head")
         assert _index(engine) is not None
 
-    def test_upgrade_is_safe_to_repeat_after_an_interrupted_build(
+    def test_upgrade_rebuilds_the_invalid_index_an_interrupted_build_leaves(
         self, postgres: tuple[Config, Engine]
     ) -> None:
-        """`if_not_exists`: a retry over an index that is already there does not fail."""
+        """An interrupted CONCURRENTLY build leaves an INVALID index the planner ignores.
+
+        `IF NOT EXISTS` alone would skip it on a retry and leave it unusable with nothing
+        failing, so the assertion is on `indisvalid`, not on the index merely existing. The
+        interruption is simulated by clearing `indisvalid` (the CI role is a superuser).
+        """
         config, engine = postgres
         command.downgrade(config, PARENT_REVISION)
         with engine.begin() as connection:
             connection.execute(
                 text(f"create index {INDEX} on rra_fact_packages (owner_id, package_digest)")
             )
+            connection.execute(
+                text(
+                    "update pg_index set indisvalid = false "
+                    f"where indexrelid = '{INDEX}'::regclass"
+                )
+            )
+        assert not _is_valid(engine)
 
         command.upgrade(config, "head")
 
         assert _index(engine) is not None
+        assert _is_valid(engine)
+
+    def test_upgrade_leaves_a_valid_index_alone(self, postgres: tuple[Config, Engine]) -> None:
+        config, engine = postgres
+        command.downgrade(config, PARENT_REVISION)
+        with engine.begin() as connection:
+            connection.execute(
+                text(f"create index {INDEX} on rra_fact_packages (owner_id, package_digest)")
+            )
+            before = connection.execute(text(f"select '{INDEX}'::regclass::oid")).scalar_one()
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            after = connection.execute(text(f"select '{INDEX}'::regclass::oid")).scalar_one()
+        assert after == before and _is_valid(engine)
 
     def test_the_owned_package_statement_can_use_it(
         self, postgres: tuple[Config, Engine]
