@@ -58,6 +58,7 @@ from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base, BetaSessionRow, _utc
 from khepri.rra.pipeline import DeliveryRecord, ReportDelivery
 from khepri.rra.profiling import canonical_json
+from khepri.rra.scope import scoped_begin, scoped_read
 from khepri.rra.sessions import CrossSessionAccessDenied, SessionExpired
 
 
@@ -158,7 +159,7 @@ class SqlDeliveryStore:
 
     def find_delivery(self, job_id: str) -> DeliveryRecord | None:
         """The record of this job's delivery, if it already has one."""
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             row = database.get(ReportDeliveryRow, job_id)
             if row is None:
                 return None
@@ -166,7 +167,7 @@ class SqlDeliveryStore:
 
     def find_surfaces(self, job_id: str) -> tuple[DeliveredSurface, ...]:
         """Every surface this job delivered, by digest rather than by content."""
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             return self._surfaces(database, job_id)
 
     def deliver(self, delivery: ReportDelivery) -> DeliveryRecord:
@@ -180,7 +181,7 @@ class SqlDeliveryStore:
         try:
             return self._insert_or_get(delivery)
         except IntegrityError:
-            with self._factory() as database:
+            with scoped_read(self._factory) as database:
                 row = database.get(ReportDeliveryRow, delivery.record.job_id)
                 if row is None:
                     raise
@@ -188,7 +189,7 @@ class SqlDeliveryStore:
 
     def _insert_or_get(self, delivery: ReportDelivery) -> DeliveryRecord:
         record = delivery.record
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory) as database:
             job = _leased_job(database, record)
             generated_at = self._now()
             expires_at = _boundary(database, job, generated_at=generated_at)

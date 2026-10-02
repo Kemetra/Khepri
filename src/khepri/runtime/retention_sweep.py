@@ -49,6 +49,7 @@ from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.persistence import BetaSessionRow
+from khepri.rra.scope import acting_for
 from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 REASON_EXPIRED = "expiry"
@@ -259,10 +260,13 @@ class RetentionSweeper:
         deletion: DeletionService,
         factory: sessionmaker[Session],
         retention: RetentionPasses | None = None,
+        lister: ExpiredSessionLister | None = None,
     ) -> None:
         self._jobs = jobs
         self._deletion = deletion
-        self._factory = factory
+        # `RRA-017` `FR-271`: the listing reads across scopes, on the sweep engine when one is
+        # composed; each session is then deleted on the scoped engine, in its own scope.
+        self._lister = lister or ExpiredSessionLister(factory)
         # Optional so a stack with no RCA tables can still sweep RRA content. When present,
         # KHEPRI-DEC-015's retention passes run here rather than nowhere: a retention rule whose
         # only caller does not exist is indefinite retention with a policy comment on top.
@@ -326,13 +330,14 @@ class RetentionSweeper:
         swept = 0
         deferred = 0
         faulted = 0
-        for session_id in self._expired_session_ids(now=now):
+        for session_id, owner_id in self._lister.due(now=now):
             try:
-                self._deletion.delete_session_content(
-                    session_id=session_id,
-                    reason=REASON_EXPIRED,
-                    now=now,
-                )
+                with acting_for(owner_id):
+                    self._deletion.delete_session_content(
+                        session_id=session_id,
+                        reason=REASON_EXPIRED,
+                        now=now,
+                    )
             except DeletionRetryRequired:
                 deferred += 1
             except Exception as fault:
@@ -342,17 +347,26 @@ class RetentionSweeper:
                 swept += 1
         return swept, deferred, faulted
 
-    def _expired_session_ids(self, *, now: datetime) -> Sequence[str]:
+
+
+class ExpiredSessionLister:
+    """Sessions past expiry, with their owners, across every scope (`RRA-017` `FR-271`)."""
+
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+
+    def due(self, *, now: datetime) -> Sequence[tuple[str, str]]:
         """Sessions past expiry whose content has not already been deleted."""
         with self._factory() as database:
-            return list(
-                database.execute(
-                    select(BetaSessionRow.session_id).where(
+            return [
+                (row.session_id, row.owner_id)
+                for row in database.execute(
+                    select(BetaSessionRow.session_id, BetaSessionRow.owner_id).where(
                         BetaSessionRow.content_expires_at <= now,
                         BetaSessionRow.content_deleted_at.is_(None),
                     )
-                ).scalars()
-            )
+                )
+            ]
 
 
 def build_retention_sweeper(
@@ -361,8 +375,13 @@ def build_retention_sweeper(
     deletion: DeletionService,
     factory: sessionmaker[Session],
     retention: RetentionPasses | None = None,
+    sweep_factory: sessionmaker[Session] | None = None,
 ) -> RetentionSweeper:
-    return RetentionSweeper(jobs=jobs, deletion=deletion, factory=factory, retention=retention)
+    """`sweep_factory` is the sweep role's engine; without one the listing uses `factory`."""
+    lister = ExpiredSessionLister(sweep_factory or factory)
+    return RetentionSweeper(
+        jobs=jobs, deletion=deletion, factory=factory, retention=retention, lister=lister
+    )
 
 
 def main() -> None:
@@ -378,10 +397,17 @@ def main() -> None:
     """
     import json
 
-    from khepri.runtime.config import RuntimeSettings
+    from sqlalchemy.orm import sessionmaker
+
+    from khepri.runtime.config import RuntimeSettings, role_database_url
+    from khepri.runtime.db_roles import DatabaseRole, engine_for
     from khepri.runtime.wiring import build_retention_sweep, build_stack
 
-    stack = build_stack(RuntimeSettings.from_environment())
+    # `RRA-017` `FR-271`: the scoped work runs as the application role, and only the four
+    # cross-scope components get the sweep role's engine.
+    stack = build_stack(RuntimeSettings.from_environment(role=DatabaseRole.APPLICATION))
+    sweep_engine = engine_for(role_database_url(DatabaseRole.SWEEP), DatabaseRole.SWEEP)
+    sweep_factory = sessionmaker(bind=sweep_engine, future=True)
     # `stack.clock`, not a second wall clock -- the rule `wiring.py` states for
     # the comparison path: "a composition root that minted its own would put the
     # comparison path on a different time from the stores it reads -- invisible
@@ -394,7 +420,7 @@ def main() -> None:
     # `DeletionService` and `SqlReportJobRepository` from this single call, and
     # nothing here would fail. Read from the stack so that cannot arise.
     now = stack.clock()
-    report = build_retention_sweep(stack).sweep(now=now)
+    report = build_retention_sweep(stack, sweep_factory=sweep_factory).sweep(now=now)
     print(
         json.dumps(
             {"event": "retention_sweep", "occurred_at": now.isoformat()}

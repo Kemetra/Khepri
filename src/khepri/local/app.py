@@ -8,7 +8,8 @@ else, so nothing in the package imports it — the tests build their own stack.
 from __future__ import annotations
 
 from khepri.local.wiring import build_stack, build_web_app
+from khepri.runtime.db_roles import DatabaseRole
 
-app = build_web_app(build_stack())
+app = build_web_app(build_stack(role=DatabaseRole.APPLICATION))
 
 __all__ = ["app"]

@@ -36,6 +36,7 @@ from khepri.rra.job_persistence import ReportJobRow, SqlReportJobRepository
 from khepri.rra.jobs import JOB_SUCCEEDED, EnqueueJob, ReportJob
 from khepri.rra.packages import FactPackageRecord
 from khepri.rra.reports import DeliveredBundle, ReportJobView, ReportPackageMissing
+from khepri.rra.scope import scoped_read
 from khepri.rra.sessions import SessionScope
 
 MAX_ATTEMPTS = 3
@@ -64,7 +65,7 @@ class JobReader:
         self._factory = factory
 
     def find(self, job_id: str) -> ReportJob | None:
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             row = database.execute(
                 select(ReportJobRow).where(ReportJobRow.job_id == job_id)
             ).scalar_one_or_none()

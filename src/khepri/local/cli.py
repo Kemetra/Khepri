@@ -18,8 +18,17 @@ from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 
+from sqlalchemy.orm import sessionmaker
+
 from khepri.local.config import LocalSettings
-from khepri.local.wiring import build_stack, build_worker_stack, local_page_printer
+from khepri.local.wiring import (
+    build_engine,
+    build_stack,
+    build_sweeper,
+    build_worker_stack,
+    local_page_printer,
+)
+from khepri.runtime.db_roles import DatabaseRole
 
 DEFAULT_INVITATION_DAYS = 7
 
@@ -61,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _invite(settings: LocalSettings, *, days: int) -> int:
-    stack = build_stack(settings)
+    stack = build_stack(settings, role=DatabaseRole.APPLICATION)
     token = stack.invitations.issue_invitation(
         expires_at=stack.clock() + timedelta(days=days)
     )
@@ -70,8 +79,11 @@ def _invite(settings: LocalSettings, *, days: int) -> int:
 
 
 def _sweep(settings: LocalSettings) -> int:
-    stack = build_stack(settings)
-    report = build_worker_stack(stack).sweeper.sweep(now=stack.clock())
+    # `RRA-017` `FR-271`: scoped work as the application role; the four cross-scope reads alone
+    # get the sweep role's engine.
+    stack = build_stack(settings, role=DatabaseRole.APPLICATION)
+    sweep_factory = sessionmaker(bind=build_engine(settings, DatabaseRole.SWEEP), future=True)
+    report = build_sweeper(stack, sweep_factory=sweep_factory).sweep(now=stack.clock())
     print(
         f"expired_leases={report.expired_leases} "
         f"orphaned_jobs={report.orphaned_jobs} "
@@ -88,7 +100,7 @@ def _work(settings: LocalSettings, *, limit: int) -> int:
     Chromium costs far more than one render, and the deployed worker holds a
     browser for its lifetime too.
     """
-    stack = build_stack(settings)
+    stack = build_stack(settings, role=DatabaseRole.WORKER)
     with local_page_printer() as printer:
         worker = build_worker_stack(stack, printer=printer).worker
         processed = worker.drain(limit=limit)

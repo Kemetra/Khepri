@@ -6,7 +6,7 @@ equal to its Python counterpart (`claimable_at`, and the two recovery predicates
 statement of the predicate and not a second authority (`#518`): a clause added in Python fails the
 seeding count here until the function is replaced in the same slice.
 
-RED at `0c1475f`: `rls_database()` raises `Rra017Absent` before any call.
+Green from the RRA-017 migration (`20261002_0036`) and `khepri.rra.definer_calls`.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from tests.rra017_support import (
     APPLICATION,
     INSUFFICIENT_PRIVILEGE,
     POSTGRES,
-    RED,
     SCOPED_ROLES,
     SWEEP,
     WORKER,
@@ -36,7 +35,7 @@ from tests.rra017_support import (
     scoped,
 )
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 A = Scope("own_a", "a")
 B = Scope("own_b", "b")

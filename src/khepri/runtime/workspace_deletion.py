@@ -34,6 +34,7 @@ from khepri.rca.workspace.audit import (
 )
 from khepri.rca.workspace.revocation import RevokedObject
 from khepri.rca.workspace.unit_of_work import unit_of_work
+from khepri.rra.scope import acting_for, scoped_read
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +110,9 @@ class WorkspaceDeletion:
         # So this line stays where it is. It is also the only step that cannot join the unit of
         # work: it deletes from the object store, which no database transaction can roll back, and
         # it raises `DeletionRetryRequired` as ordinary control flow.
-        self._end_derived_content(version, now)
+        # `RRA-017` `FR-233`: the session content is deleted in the version's own scope.
+        with acting_for(version.owner_id):
+            self._end_derived_content(version, now)
         # The three record writes commit together or not at all (`FR-123`, `FR-125`). Review on
         # `#382` found them in three transactions, and tombstone-then-fault was unrepairable: the
         # version reads back `None`, so the guard above answers the next attempt `deleted=False`
@@ -160,7 +163,7 @@ class WorkspaceDeletion:
         from khepri.rra.job_persistence import ReportJobRow
         from khepri.rra.persistence import UploadRow
 
-        with self._sources.factory() as database:
+        with scoped_read(self._sources.factory, version.owner_id) as database:
             upload_session = database.scalar(
                 select(UploadRow.session_id).where(
                     UploadRow.owner_id == version.owner_id,

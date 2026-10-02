@@ -282,7 +282,8 @@ class RlsDatabase:
 
     def as_owner(self, sql: str, **params: Any) -> list[Any]:
         with self.owner.begin() as connection:
-            return list(connection.execute(text(sql), params))
+            result = connection.execute(text(sql), params)
+            return list(result) if result.returns_rows else []
 
     def dispose(self) -> None:
         for engine in self._engines.values():

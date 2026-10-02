@@ -32,6 +32,13 @@ from khepri.rra.deletion import (
 )
 from khepri.rra.intake import UploadMetadata
 from khepri.rra.packages import FactPackageRecord, PackageVersions
+from khepri.rra.scope import (
+    apply_scope,
+    first_by_session,
+    require_session_in_scope,
+    scoped_begin,
+    scoped_read,
+)
 from khepri.rra.sessions import (
     BetaSession,
     CrossSessionAccessDenied,
@@ -377,12 +384,27 @@ def session_for_update_statement(session_id: str) -> Select[tuple[BetaSessionRow
 
 
 def _first[R](
-    factory: sessionmaker[Session], statement: Select, convert: Callable[[Any], R]
+    factory: sessionmaker[Session],
+    statement: Select,
+    convert: Callable[[Any], R],
+    owner_id: str | None = None,
 ) -> R | None:
-    """The first row the statement selects, converted, or `None`."""
-    with factory() as database:
+    """The first row the statement selects under `owner_id`'s scope, converted, or `None`."""
+    with scoped_read(factory, owner_id) as database:
         row = database.scalar(statement)
         return None if row is None else convert(row)
+
+
+def _first_by_session[R](
+    factory: sessionmaker[Session], session_id: str, statement: Select, convert: Callable[[Any], R]
+) -> R | None:
+    """A read by `session_id` alone, under the scope `FR-265`'s lookup resolves it to."""
+
+    def _read(database: Session) -> R | None:
+        row = database.scalar(statement)
+        return None if row is None else convert(row)
+
+    return first_by_session(factory, session_id, _read)
 
 
 def _in_scope(row_type: Any, scope: SessionScope) -> tuple[ColumnElement[bool], ...]:
@@ -434,6 +456,8 @@ class SqlSessionStore:
             ):
                 return False
             invitation.redeemed_at = redeemed_at
+            # `FR-233`: the minted scope is set before the session row is inserted.
+            apply_scope(database, session.owner_id)
             database.add(
                 BetaSessionRow(
                     owner_id=session.owner_id,
@@ -460,7 +484,7 @@ class SqlSessionStore:
         obligation guards the surface a Protocol change touches: RRA's existing tests must still
         pass unmodified. They do -- no invitation path reads or writes through here.
         """
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, session.owner_id) as database:
             database.add(
                 BetaSessionRow(
                     owner_id=session.owner_id,
@@ -496,11 +520,12 @@ class SqlSessionStore:
         """
         scope = SessionScope(owner_id=owner_id, session_id=session_id)
         statement = select(BetaSessionRow).where(*_in_scope(BetaSessionRow, scope))
-        return _first(self._factory, statement, _session_from_row)
+        return _first(self._factory, statement, _session_from_row, owner_id)
 
     def get_session(self, session_id: str) -> BetaSession | None:
+        """By `session_id` alone, so its scope comes from `rra_session_owner` (`FR-265`)."""
         statement = select(BetaSessionRow).where(BetaSessionRow.session_id == session_id)
-        return _first(self._factory, statement, _session_from_row)
+        return _first_by_session(self._factory, session_id, statement, _session_from_row)
 
     def update_session(self, session: BetaSession) -> None:
         """Persist a session's consent, never undoing a deletion the row already records.
@@ -514,7 +539,8 @@ class SqlSessionStore:
         recorded. This mirrors `begin`'s own `or` and the `save_invitation` hardening from
         `#217`. The row is locked so that fill-if-empty check cannot interleave with `begin`.
         """
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, session.owner_id) as database:
+            require_session_in_scope(database, session.session_id)
             row = database.scalar(session_for_update_statement(session.session_id))
             if row is None:
                 raise LookupError("Session is unavailable.")
@@ -530,7 +556,7 @@ class SqlUploadRepository:
 
     def add_upload(self, upload: UploadMetadata) -> bool:
         try:
-            with self._factory.begin() as database:
+            with scoped_begin(self._factory, upload.owner_id) as database:
                 database.add(
                     UploadRow(
                         upload_id=upload.upload_id,
@@ -555,12 +581,12 @@ class SqlUploadRepository:
 
     def get_upload_for_session(self, session_id: str) -> UploadMetadata | None:
         statement = select(UploadRow).where(UploadRow.session_id == session_id)
-        return _first(self._factory, statement, _upload_from_row)
+        return _first_by_session(self._factory, session_id, statement, _upload_from_row)
 
     def get_upload_for_scope(self, scope: SessionScope) -> UploadMetadata | None:
         # #596: the owner is in the statement, not checked after.
         statement = select(UploadRow).where(*_in_scope(UploadRow, scope))
-        return _first(self._factory, statement, _upload_from_row)
+        return _first(self._factory, statement, _upload_from_row, scope.owner_id)
 
     def get_upload_in_scope(
         self,
@@ -571,7 +597,7 @@ class SqlUploadRepository:
             UploadRow.upload_id == upload_id,
             *_in_scope(UploadRow, scope),
         )
-        return _first(self._factory, statement, _upload_from_row)
+        return _first(self._factory, statement, _upload_from_row, scope.owner_id)
 
 
 class SqlProfileRepository:
@@ -580,7 +606,7 @@ class SqlProfileRepository:
 
     def add_profile(self, record: DatasetProfileRecord) -> DatasetProfileRecord:
         try:
-            with self._factory.begin() as database:
+            with scoped_begin(self._factory, record.owner_id) as database:
                 database.add(
                     DatasetProfileRow(
                         profile_id=record.profile_id,
@@ -614,16 +640,16 @@ class SqlProfileRepository:
             DatasetProfileRow.upload_id == upload_id,
             *_in_scope(DatasetProfileRow, scope),
         )
-        return _first(self._factory, statement, _profile_from_row)
+        return _first(self._factory, statement, _profile_from_row, scope.owner_id)
 
     def get_profile_for_session(self, session_id: str) -> DatasetProfileRecord | None:
         statement = select(DatasetProfileRow).where(DatasetProfileRow.session_id == session_id)
-        return _first(self._factory, statement, _profile_from_row)
+        return _first_by_session(self._factory, session_id, statement, _profile_from_row)
 
     def get_profile_for_scope(self, scope: SessionScope) -> DatasetProfileRecord | None:
         # #596: the owner is in the statement, not checked after.
         statement = select(DatasetProfileRow).where(*_in_scope(DatasetProfileRow, scope))
-        return _first(self._factory, statement, _profile_from_row)
+        return _first(self._factory, statement, _profile_from_row, scope.owner_id)
 
 
 class SqlFactPackageRepository:
@@ -632,7 +658,7 @@ class SqlFactPackageRepository:
 
     def add_package(self, record: FactPackageRecord) -> FactPackageRecord:
         try:
-            with self._factory.begin() as database:
+            with scoped_begin(self._factory, record.owner_id) as database:
                 database.add(
                     FactPackageRow(
                         package_id=record.package_id,
@@ -678,7 +704,7 @@ class SqlFactPackageRepository:
             FactPackageRow.mapping_version == versions.mapping_version,
             *_in_scope(FactPackageRow, scope),
         )
-        return _first(self._factory, statement, _package_from_row)
+        return _first(self._factory, statement, _package_from_row, scope.owner_id)
 
     def get_owned_package(
         self,
@@ -701,7 +727,7 @@ class SqlFactPackageRepository:
             FactPackageRow.package_digest == package_digest,
             FactPackageRow.owner_id == owner_id,
         )
-        return _first(self._factory, statement, _package_from_row)
+        return _first(self._factory, statement, _package_from_row, owner_id)
 
     def get_package_for_session(
         self,
@@ -709,31 +735,32 @@ class SqlFactPackageRepository:
         versions: PackageVersions,
     ) -> FactPackageRecord | None:
         """The session's package under the given governed versions, latest first."""
-        return self._latest_package(FactPackageRow.session_id == session_id, versions=versions)
+        statement = _latest_package(FactPackageRow.session_id == session_id, versions=versions)
+        return _first_by_session(self._factory, session_id, statement, _package_from_row)
 
     def get_package_for_scope(
         self, scope: SessionScope, versions: PackageVersions
     ) -> FactPackageRecord | None:
         # #596: the owner is in the statement, not checked after.
-        return self._latest_package(*_in_scope(FactPackageRow, scope), versions=versions)
+        statement = _latest_package(*_in_scope(FactPackageRow, scope), versions=versions)
+        return _first(self._factory, statement, _package_from_row, scope.owner_id)
 
-    def _latest_package(
-        self, *where: ColumnElement[bool], versions: PackageVersions
-    ) -> FactPackageRecord | None:
-        statement = (
-            select(FactPackageRow)
-            .where(
-                *where,
-                FactPackageRow.package_version == versions.package_version,
-                FactPackageRow.formula_version == versions.formula_version,
-                FactPackageRow.mapping_version == versions.mapping_version,
-            )
-            .order_by(
-                FactPackageRow.created_at.desc(),
-                FactPackageRow.package_id.desc(),
-            )
+
+def _latest_package(*where: ColumnElement[bool], versions: PackageVersions) -> Select:
+    """The package under the given governed versions, latest first."""
+    return (
+        select(FactPackageRow)
+        .where(
+            *where,
+            FactPackageRow.package_version == versions.package_version,
+            FactPackageRow.formula_version == versions.formula_version,
+            FactPackageRow.mapping_version == versions.mapping_version,
         )
-        return _first(self._factory, statement, _package_from_row)
+        .order_by(
+            FactPackageRow.created_at.desc(),
+            FactPackageRow.package_id.desc(),
+        )
+    )
 
 
 class SqlDeletionRepository:
@@ -748,7 +775,7 @@ class SqlDeletionRepository:
         reason: str,
         requested_at: datetime,
     ) -> DeletionJob:
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, scope.owner_id) as database:
             session_row = database.scalar(session_scope_for_update_statement(scope))
             if session_row is None:
                 raise CrossSessionAccessDenied("Resource is unavailable.")
@@ -783,12 +810,12 @@ class SqlDeletionRepository:
             UploadRow.owner_id == job.owner_id,
             UploadRow.session_id == job.session_id,
         )
-        return _first(self._factory, statement, _upload_from_row)
+        return _first(self._factory, statement, _upload_from_row, job.owner_id)
 
     def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]:
         from khepri.rra.deletion_persistence import deletion_targets  # noqa: PLC0415
 
-        with self._factory() as database:
+        with scoped_read(self._factory, job.owner_id) as database:
             return deletion_targets(database, job.owner_id, job.session_id)
 
     def defer_for_publication(
@@ -802,7 +829,7 @@ class SqlDeletionRepository:
             defer_for_publication,
         )
 
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, job.owner_id) as database:
             deletion = self._locked_job(database, job.deletion_id)
             return defer_for_publication(
                 database,
@@ -826,11 +853,12 @@ class SqlDeletionRepository:
         )
 
         evidences = evidence_tuple(evidence)
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, job.owner_id) as database:
             row = self._locked_job(database, job.deletion_id)
             # A racing fail() moved the attempt: answer the job unchanged, before any write (#576).
             if row.state == "complete" or row.attempt_count != job.attempt_count:
                 return _deletion_from_row(row)
+            require_session_in_scope(database, row.session_id)
             targets = deletion_targets(database, row.owner_id, row.session_id)
             validate_completed_evidence(evidences, targets)
             delete_derived_content(database, row.owner_id, row.session_id)
@@ -861,7 +889,7 @@ class SqlDeletionRepository:
         evidences = evidence_tuple(evidence)
         if not evidences:
             raise ValueError("Failed deletion evidence is required.")
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, job.owner_id) as database:
             row = self._locked_job(database, job.deletion_id)
             # A racing fail() moved the attempt: answer the job unchanged, before any write (#576).
             if row.state == "complete" or row.attempt_count != job.attempt_count:
@@ -885,7 +913,7 @@ class SqlDeletionRepository:
                 DeletionEvidenceRow.target_id,
             )
         )
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             return [_evidence_from_row(row) for row in database.scalars(statement)]
 
     def purge_evidence_before(self, horizon: datetime) -> int:

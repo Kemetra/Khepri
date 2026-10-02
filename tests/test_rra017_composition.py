@@ -31,9 +31,7 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 import khepri
-from tests.rra017_support import RED_STATIC, Rra017Absent, future, require
-
-pytestmark = RED_STATIC
+from tests.rra017_support import Rra017Absent, future, require
 
 PACKAGE = Path(khepri.__file__).resolve().parent
 REPO = PACKAGE.parents[1]
@@ -59,6 +57,8 @@ UNSCOPED = {
     ("persistence.py", "add_invitation"): "FR-231: rra_invitations is pre-scope",
     ("persistence.py", "get_invitation"): "FR-231: rra_invitations is pre-scope",
     ("persistence.py", "purge_evidence_before"): "FR-271: the sweep engine's admitted purge",
+    ("persistence.py", "redeem_invitation"): "FR-233: mints the owner, apply_scope before insert",
+    ("claim_queue.py", "_next_claimable"): "FR-267: the definer picker is the scope's source",
     ("envelope_migration.py", "_candidates"): "FR-272: refused before it runs under a policy",
     ("envelope_migration.py", "_legacy_count"): "FR-272: refused before it runs under a policy",
 }

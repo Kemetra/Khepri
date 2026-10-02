@@ -25,11 +25,8 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from khepri.rra.job_persistence import (
-    CLAIMABLE_STATES,
-    SqlReportJobRepository,
-    next_claimable_statement,
-)
+from khepri.rra.definer_calls import Candidate, next_claimable
+from khepri.rra.job_persistence import CLAIMABLE_STATES, SqlReportJobRepository
 from khepri.rra.jobs import (
     FailureRequest,
     LeaseAction,
@@ -102,15 +99,16 @@ class ClaimingReportQueue:
 
     def receive(self, *, now: datetime) -> ClaimedDelivery | None:
         """Claim the job that has been due longest, or return nothing."""
-        job_id = self._next_claimable(now=now)
-        if job_id is None:
+        candidate = self._next_claimable(now=now)
+        if candidate is None:
             return None
         leased = self._jobs.lease(
             LeaseRequest(
-                job_id=job_id,
+                job_id=candidate.job_id,
                 worker_id=self._policy.worker_id,
                 now=now,
                 lease_for=self._policy.lease_for,
+                owner_id=candidate.owner_id,
             )
         )
         if leased is None:
@@ -128,6 +126,7 @@ class ClaimingReportQueue:
                 worker_id=self._policy.worker_id,
                 now=now,
                 lease_for=self._policy.lease_for,
+                owner_id=delivery.job.owner_id,
             )
         )
 
@@ -164,17 +163,20 @@ class ClaimingReportQueue:
             job_id=delivery.message.job_id,
             worker_id=self._policy.worker_id,
             now=now,
+            owner_id=delivery.job.owner_id,
         )
 
-    def _next_claimable(self, *, now: datetime) -> str | None:
-        """Name the job that has been due longest, without transitioning it.
+    def _next_claimable(self, *, now: datetime) -> Candidate | None:
+        """Name the job that has been due longest, and its scope, without transitioning it.
 
         Claiming stays `lease`'s job, so two callers racing here are resolved by the
         lease rather than by whichever read first. The pick filters on the lease's own
-        predicate, so it never names a job the lease would refuse.
+        predicate, so it never names a job the lease would refuse. It crosses scopes only
+        through `RRA-017`'s `rra_next_claimable_job`, which returns the scope the lease
+        then runs in (`FR-268`).
         """
         with self._factory() as database:
-            return database.execute(next_claimable_statement(now)).scalar_one_or_none()
+            return next_claimable(database, now)
 
 
 def _named_worker(worker_id: str) -> str:

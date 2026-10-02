@@ -12,6 +12,7 @@ from khepri.rra.jobs import (
     LeaseRequest,
     ReportJob,
 )
+from khepri.rra.scope import acting_for
 
 
 class ReportExecutionFailed(RuntimeError):
@@ -102,8 +103,11 @@ class ReportWorker:
         The one execution path: `process` claims and delegates here, so a job runs
         and settles identically whichever caller claimed it.
         """
-        self._execute(job, heartbeat=heartbeat)
-        return self._jobs.complete(self._lease_action(job))
+        # `RRA-017` `FR-268`: from the lease until it settles, every transaction the job opens
+        # runs in the job's own scope.
+        with acting_for(job.owner_id):
+            self._execute(job, heartbeat=heartbeat)
+            return self._jobs.complete(self._lease_action(job))
 
     def _execute(
         self,
@@ -147,6 +151,7 @@ class ReportWorker:
                 worker_id=self._policy.worker_id,
                 now=self._clock(),
                 lease_for=self._policy.lease_for,
+                owner_id=job.owner_id,
             )
         )
 
@@ -169,6 +174,7 @@ class ReportWorker:
             job_id=job.job_id,
             worker_id=self._policy.worker_id,
             now=self._clock() if now is None else now,
+            owner_id=job.owner_id,
         )
 
 

@@ -101,6 +101,7 @@ from khepri.rra.jobs import (
     ReportJob,
 )
 from khepri.rra.reports import ReportJobView, ReportRequestService
+from khepri.rra.scope import acting_for
 from khepri.rra.sessions import BetaSession
 from khepri.runtime.workspace_recording import (
     Attempt,
@@ -113,6 +114,19 @@ from khepri.runtime.workspace_recording import (
 
 class SessionReader(Protocol):
     def get_session(self, session_id: str) -> BetaSession | None: ...
+
+    def get_session_for_owner(self, owner_id: str, session_id: str) -> BetaSession | None: ...
+
+
+class SessionOwners(Protocol):
+    def owner_of(self, session_id: str | None) -> str | None: ...
+
+
+class SessionScopeUnresolved(LookupError):
+    """A session's scope did not resolve, so the recorder cannot place what it produced.
+
+    `RRA-017` `FR-266`: under the policies an empty bootstrap read is never "not a workspace".
+    """
 
 
 class JobReaderPort(Protocol):
@@ -154,6 +168,8 @@ class RecorderReads:
     scopes: SqlIsolationScopes
     reports: SqlRunReportStore
     jobs: JobReaderPort
+    #: `RRA-017` `FR-265`'s lookup. Absent only where no policy exists (the SQLite journey).
+    owners: SessionOwners | None = None
 
 
 class PipelineRecorder:
@@ -162,6 +178,7 @@ class PipelineRecorder:
     def __init__(self, *, recording: WorkspaceRecording, reads: RecorderReads) -> None:
         self._recording = recording
         self._sessions = reads.sessions
+        self._owners = reads.owners
         self._scopes = reads.scopes
         self._reports = reads.reports
         self._jobs = reads.jobs
@@ -265,7 +282,9 @@ class PipelineRecorder:
         moved = 0
         for link in self._reports.links_of_started_runs():
             try:
-                reconciled = self.reconcile_job(link.job_id, now=now)
+                # `RRA-017` `FR-268`: each link's job is read in that link's own scope.
+                with acting_for(link.owner_id):
+                    reconciled = self.reconcile_job(link.job_id, now=now)
             except Exception as fault:
                 _log_link_fault(link, fault)
                 continue
@@ -309,11 +328,21 @@ class PipelineRecorder:
     # --- helpers --------------------------------------------------------------------------------
 
     def _workspace_of(self, session_id: str) -> str | None:
-        """The session's scope, when that scope is a workspace; else `None`."""
-        session = self._sessions.get_session(session_id)
-        if session is None or not self._scopes.exists(session.owner_id):
-            return None
-        return session.owner_id
+        """The session's scope, when that scope is a workspace; else `None`.
+
+        `RRA-017` `FR-266`: with the lookup composed, an empty lookup or an empty scoped read after
+        it raises `SessionScopeUnresolved`. `None` means only a resolved scope that is not a
+        workspace.
+        """
+        if self._owners is None:
+            session = self._sessions.get_session(session_id)
+            if session is None or not self._scopes.exists(session.owner_id):
+                return None
+            return session.owner_id
+        owner_id = self._owners.owner_of(session_id)
+        if owner_id is None or self._sessions.get_session_for_owner(owner_id, session_id) is None:
+            raise SessionScopeUnresolved("The session's scope did not resolve.")
+        return owner_id if self._scopes.exists(owner_id) else None
 
     def _linked_run(self, job: ReportJob) -> tuple[AuditActor, AnalysisRun | None]:
         """The run this job settles, or `None` for a job no run was started for -- a session no

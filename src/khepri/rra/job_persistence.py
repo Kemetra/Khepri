@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from sqlalchemy import (
@@ -16,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.sql import ColumnElement, Select
 
+from khepri.rra.definer_calls import Candidate, RecoveryCandidates
 from khepri.rra.jobs import (
     ATTEMPT_LEASE_RECLAIMED,
     ATTEMPT_RETRIES_EXHAUSTED,
@@ -42,9 +45,11 @@ from khepri.rra.persistence import (
     _utc,
     session_scope_for_update_statement,
 )
+from khepri.rra.scope import scoped_begin, scoped_read
 from khepri.rra.sessions import CrossSessionAccessDenied, SessionExpired, SessionScope
 
 CLAIMABLE_STATES = (JOB_QUEUED, JOB_RETRYABLE)
+_LOG = logging.getLogger(__name__)
 
 
 class ReportJobRow(Base):
@@ -164,15 +169,25 @@ class ReportJobAttemptRow(Base):
 
 
 class SqlReportJobRepository:
-    def __init__(self, factory: sessionmaker[Session]) -> None:
+    """Report jobs, each transaction in its job's scope (`RRA-017` `FR-268`).
+
+    `candidates` names the jobs a recovery pass may act on, across scopes, through `FR-267`'s
+    definer functions. It defaults to a source over this repository's own engine, which is the
+    worker's case; the sweep hands it one over the sweep engine instead (`FR-271`).
+    """
+
+    def __init__(
+        self, factory: sessionmaker[Session], candidates: RecoveryCandidates | None = None
+    ) -> None:
         self._factory = factory
+        self._candidates = candidates or RecoveryCandidates(factory)
 
     def enqueue(self, request: EnqueueJob) -> ReportJob:
         self._validate_enqueue(request)
         try:
             return self._insert_or_get(request)
         except IntegrityError:
-            with self._factory() as database:
+            with scoped_read(self._factory, request.scope.owner_id) as database:
                 row = self._existing(database, request)
                 if row is None:
                     raise
@@ -189,7 +204,7 @@ class SqlReportJobRepository:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, request.owner_id) as database:
             row = database.scalar(statement)
             if row is None:
                 return None
@@ -201,42 +216,56 @@ class SqlReportJobRepository:
             return _report_job_from_row(row)
 
     def recover_expired(self, *, now: datetime) -> tuple[ReportJob, ...]:
-        statement = (
-            select(ReportJobRow)
-            .where(
-                ReportJobRow.state == JOB_RUNNING,
-                ReportJobRow.lease_expires_at <= now,
-            )
-            .order_by(ReportJobRow.lease_expires_at, ReportJobRow.job_id)
-            .with_for_update(skip_locked=True)
-            .execution_options(populate_existing=True)
-        )
-        with self._factory.begin() as database:
-            rows = list(database.scalars(statement))
-            for row in rows:
-                self._reclaim(database, row, now=now)
-            database.flush()
-            return tuple(_report_job_from_row(row) for row in rows)
+        """Reclaim every expired lease, each candidate in its own scoped transaction."""
+
+        def reclaim(database: Session, row: ReportJobRow) -> bool:
+            self._reclaim(database, row, now=now)
+            return True
+
+        return self._recover(self._candidates.expired(now), expired_lease_at(now), reclaim)
 
     def recover_orphans(self, *, now: datetime) -> tuple[ReportJob, ...]:
         """Dead-letter unfinished jobs whose session content is already deleted."""
-        statement = (
-            select(ReportJobRow)
-            .where(
-                ReportJobRow.session_id.in_(_deleted_content_sessions()),
-                ReportJobRow.state.not_in((JOB_SUCCEEDED, JOB_DEAD_LETTERED)),
-            )
-            .order_by(ReportJobRow.queued_at, ReportJobRow.job_id)
-            .with_for_update(skip_locked=True)
-            .execution_options(populate_existing=True)
-        )
-        with self._factory.begin() as database:
-            candidates = list(database.scalars(statement))
-            orphans = [row for row in candidates if orphanable(row.state)]
-            for row in orphans:
-                self._orphan(row, now=now)
+
+        def orphan(_database: Session, row: ReportJobRow) -> bool:
+            if not orphanable(row.state):
+                return False
+            self._orphan(row, now=now)
+            return True
+
+        return self._recover(self._candidates.orphaned(now), orphaned_at(), orphan)
+
+    def _recover(
+        self,
+        candidates: tuple[Candidate, ...],
+        where: tuple[ColumnElement[bool], ...],
+        transition: Callable[[Session, ReportJobRow], bool],
+    ) -> tuple[ReportJob, ...]:
+        """One transaction per candidate; a fault on one is isolated to it (`#523`)."""
+        recovered = []
+        for candidate in candidates:
+            try:
+                job = self._recover_one(candidate, where, transition)
+            except Exception as fault:  # noqa: BLE001 -- logged, and the next candidate runs
+                _LOG.error("job recovery faulted on one candidate: error=%s", type(fault).__name__)
+                continue
+            if job is not None:
+                recovered.append(job)
+        return tuple(recovered)
+
+    def _recover_one(
+        self,
+        candidate: Candidate,
+        where: tuple[ColumnElement[bool], ...],
+        transition: Callable[[Session, ReportJobRow], bool],
+    ) -> ReportJob | None:
+        """Re-read the candidate under the same predicate, locked; skip it if it moved on."""
+        with scoped_begin(self._factory, candidate.owner_id) as database:
+            row = database.scalar(_candidate_reread(candidate.job_id, where))
+            if row is None or not transition(database, row):
+                return None
             database.flush()
-            return tuple(_report_job_from_row(row) for row in orphans)
+            return _report_job_from_row(row)
 
     def list_attempts(
         self,
@@ -249,7 +278,7 @@ class SqlReportJobRepository:
             .where(ReportJobAttemptRow.job_id == job_id)
             .order_by(ReportJobAttemptRow.attempt_number)
         )
-        with self._factory() as database:
+        with scoped_read(self._factory, scope.owner_id) as database:
             job = database.scalar(
                 select(ReportJobRow).where(
                     ReportJobRow.job_id == job_id,
@@ -264,7 +293,7 @@ class SqlReportJobRepository:
             )
 
     def fail(self, request: FailureRequest) -> ReportJob:
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, request.lease.owner_id) as database:
             row = self._active_lease(database, request.lease)
             released_at = request.lease.now
             if row.attempt_count >= row.max_attempts:
@@ -283,7 +312,7 @@ class SqlReportJobRepository:
             return _report_job_from_row(row)
 
     def complete(self, request: LeaseAction) -> ReportJob:
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, request.owner_id) as database:
             row = self._active_lease(database, request)
             row.state = JOB_SUCCEEDED
             row.completed_at = request.now
@@ -298,14 +327,14 @@ class SqlReportJobRepository:
             worker_id=request.worker_id,
             now=request.now,
         )
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, request.owner_id) as database:
             row = self._active_lease(database, action)
             row.lease_expires_at = request.now + request.lease_for
             database.flush()
             return _report_job_from_row(row)
 
     def _insert_or_get(self, request: EnqueueJob) -> ReportJob:
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, request.scope.owner_id) as database:
             session_row = database.scalar(
                 session_scope_for_update_statement(request.scope)
             )
@@ -434,6 +463,54 @@ def claimable_at(now: datetime) -> tuple[ColumnElement[bool], ...]:
         ReportJobRow.available_at <= now,
         ReportJobRow.attempt_count < ReportJobRow.max_attempts,
         ReportJobRow.session_id.in_(_live_content_sessions()),
+    )
+
+
+def expired_lease_at(now: datetime) -> tuple[ColumnElement[bool], ...]:
+    """The jobs `recover_expired` reclaims: running, with a lease that has run out.
+
+    `rra_expired_lease_jobs` is the second statement of these clauses, not a second authority:
+    a change here ships a migration replacing that function (`RRA-017` `FR-267`).
+    """
+    return (ReportJobRow.state == JOB_RUNNING, ReportJobRow.lease_expires_at <= now)
+
+
+def orphaned_at() -> tuple[ColumnElement[bool], ...]:
+    """The jobs `recover_orphans` considers: unfinished, over a session whose content is gone.
+
+    `orphanable` stays in the per-job transition. `rra_orphaned_jobs` mirrors these clauses.
+    """
+    return (
+        ReportJobRow.session_id.in_(_deleted_content_sessions()),
+        ReportJobRow.state.not_in((JOB_SUCCEEDED, JOB_DEAD_LETTERED)),
+    )
+
+
+def expired_lease_statement(now: datetime) -> Select[tuple[str, str]]:
+    """The SQLite form of `rra_expired_lease_jobs`."""
+    return (
+        select(ReportJobRow.job_id, ReportJobRow.owner_id)
+        .where(*expired_lease_at(now))
+        .order_by(ReportJobRow.lease_expires_at, ReportJobRow.job_id)
+    )
+
+
+def orphaned_statement() -> Select[tuple[str, str]]:
+    """The SQLite form of `rra_orphaned_jobs`."""
+    return (
+        select(ReportJobRow.job_id, ReportJobRow.owner_id)
+        .where(*orphaned_at())
+        .order_by(ReportJobRow.queued_at, ReportJobRow.job_id)
+    )
+
+
+def _candidate_reread(job_id: str, where: tuple[ColumnElement[bool], ...]) -> Select:
+    """One candidate, still matching its predicate, locked unless another worker holds it."""
+    return (
+        select(ReportJobRow)
+        .where(ReportJobRow.job_id == job_id, *where)
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
     )
 
 

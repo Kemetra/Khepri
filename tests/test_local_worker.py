@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import pytest
 
 from khepri.local.worker import LEASE_FOR, RETRY_DELAY, LocalReportWorker
+from khepri.rra.definer_calls import Candidate
 from khepri.rra.worker import ReportJobMessage
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
@@ -28,6 +29,11 @@ class FakePoller:
     def next_job_id(self, *, now: datetime) -> str | None:
         self.calls += 1
         return self.job_ids.pop(0) if self.job_ids else None
+
+    def next_candidate(self, *, now: datetime) -> Candidate | None:
+        """`RRA-017` `FR-267`: the job and its scope; these jobs share one."""
+        job_id = self.next_job_id(now=now)
+        return None if job_id is None else Candidate(job_id=job_id, owner_id="own_local")
 
 
 class RecordingWorker:

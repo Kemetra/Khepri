@@ -22,6 +22,7 @@ from khepri.rra.persistence import (
 )
 from khepri.rra.pipeline import GOVERNED_REASONS
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
+from khepri.rra.scope import first_by_session
 
 JOURNEY_STEPS = frozenset({"upload", "review", "processing", "report"})
 JOURNEY_REASONS = GOVERNED_REASONS | DEAD_LETTER_REASONS
@@ -104,32 +105,36 @@ class SqlJourneyReader:
         self._factory = factory
 
     def read(self, session_id: str, now: datetime) -> JourneySnapshot | None:
-        with self._factory() as database:
-            live = _live_session(database, session_id, now)
-            if live is None:
-                return None
-            session, expires_at = live
-            profile = _profile(database, session_id)
-            job = _latest_job(database, session_id)
-            delivery = _delivery(database, job)
-            return snapshot(
-                content_expires_at=expires_at,
-                resources=JourneyResources(
-                    consent_recorded=session.consented_at is not None,
-                    upload_present=_exists(database, UploadRow, session_id),
-                    profile_present=profile is not None,
-                    profile_admissible=None if profile is None else profile.admissible,
-                    package_present=_exists(database, FactPackageRow, session_id),
-                    job_id=None if job is None else job.job_id,
-                    job_state=None if job is None else job.state,
-                    job_reason=None if job is None else job.dead_letter_reason,
-                    row_count=None if profile is None else profile.row_count,
-                    generated_at=(
-                        None if delivery is None else _utc(delivery.generated_at)
-                    ),
-                    bundle_complete=_bundle_complete(database, job, delivery),
-                ),
-            )
+        """By `session_id` alone, so its scope comes from `rra_session_owner` (`FR-265`)."""
+        return first_by_session(
+            self._factory, session_id, lambda database: _read(database, session_id, now)
+        )
+
+
+def _read(database: Session, session_id: str, now: datetime) -> JourneySnapshot | None:
+    live = _live_session(database, session_id, now)
+    if live is None:
+        return None
+    session, expires_at = live
+    profile = _profile(database, session_id)
+    job = _latest_job(database, session_id)
+    delivery = _delivery(database, job)
+    return snapshot(
+        content_expires_at=expires_at,
+        resources=JourneyResources(
+            consent_recorded=session.consented_at is not None,
+            upload_present=_exists(database, UploadRow, session_id),
+            profile_present=profile is not None,
+            profile_admissible=None if profile is None else profile.admissible,
+            package_present=_exists(database, FactPackageRow, session_id),
+            job_id=None if job is None else job.job_id,
+            job_state=None if job is None else job.state,
+            job_reason=None if job is None else job.dead_letter_reason,
+            row_count=None if profile is None else profile.row_count,
+            generated_at=(None if delivery is None else _utc(delivery.generated_at)),
+            bundle_complete=_bundle_complete(database, job, delivery),
+        ),
+    )
 
 
 def _validate_governed_state(state: JourneySnapshot) -> None:
