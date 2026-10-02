@@ -37,7 +37,7 @@
 # stops the distribution once its last process exits. Keep a long-lived WSL process
 # open, or start the stack from a shell that stays open.
 #
-#   docker compose -f docker-compose.local.yml up -d
+#   docker compose -f docker-compose.local.yml up -d   # the first run builds MinIO
 #   uv run alembic upgrade head
 #   uv run python -m khepri.local.cli invite
 #   uv run uvicorn khepri.local.app:app --reload
@@ -74,8 +74,21 @@ services:
 
   # S3 only. There is no KMS service here and no key: encryption is the
   # application's own work under `KHEPRI-DEC-008`.
+  #
+  # **Built from source, not pulled (#631).** Open-source MinIO is archived: the
+  # `minio/minio` image this service used to pin is gone from Docker Hub, and upstream
+  # now ships source only. `ops/minio/minio-from-source.Dockerfile` builds the same
+  # release from its tag and fails unless the checkout is the pinned commit. The first
+  # `up` builds it, which takes a few minutes. **It carries no security updates**,
+  # because an archived project publishes none, so it is a local substitute and
+  # nothing more. The tag below must name the release the Dockerfile clones;
+  # `tests/test_minio_from_source.py` holds the two together.
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    build:
+      context: ./ops/minio
+      dockerfile: minio-from-source.Dockerfile
+      target: server
+    image: khepri-minio:RELEASE.2025-09-07T16-13-09Z
     container_name: khepri-local-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -113,8 +126,11 @@ services:
       - "127.0.0.1:19001:9001"
     volumes:
       - khepri-local-miniodata:/data
+    # The upstream image bundled `mc`, and this probe used to be `mc ready local`.
+    # The built image has no `mc`, so it asks the server directly instead.
+    # `/minio/health/live` is unauthenticated, and `curl` is in the image for this.
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 30
