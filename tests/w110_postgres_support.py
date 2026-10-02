@@ -113,6 +113,32 @@ def postgres_journey() -> Iterator[Journey]:
         engine.dispose()
 
 
+@contextmanager
+def postgres_journeys(*roles: str) -> Iterator[tuple[Journey, ...]]:
+    """`journey()` once per runtime role, over RRA-017's migrated database under `FORCE` (`#595`).
+
+    `FR-239` makes route-level RLS tests reuse this harness rather than build a second one, so the
+    role-aware form lives here. The schema is the migration's, not `create_all`'s: the policies,
+    roles and definer functions exist only there. Each journey connects through
+    `tests/rra017_support.py`'s guarded engine for its role, so a superuser connection fails the
+    test instead of passing it. Every journey reads and writes one object store, as the deployed web
+    and worker roles share one bucket. `Rra017Absent` while the slice is absent.
+    """
+    from tests.rra017_support import rls_database  # noqa: PLC0415 -- that harness imports this one
+
+    with rls_database() as database:
+        journeys = tuple(journey(database.engine(role)) for role in roles)
+        for other in journeys[1:]:
+            _share_objects(journeys[0], other)
+        yield journeys
+
+
+def _share_objects(source: Journey, target: Journey) -> None:
+    """Point `target`'s upload and artifact stores at `source`'s bytes."""
+    target.w.objects.objects = source.w.objects.objects
+    target.publisher._objects.objects = source.publisher._objects.objects  # noqa: SLF001
+
+
 class LockPause:
     """Holds the first request that runs a locking statement on `table`, lock held, until released.
 
@@ -370,6 +396,7 @@ __all__ = [
     "postgres_engine",
     "tombstones_of",
     "postgres_journey",
+    "postgres_journeys",
     "requires_postgres",
     "shell_with_bridge",
 ]
