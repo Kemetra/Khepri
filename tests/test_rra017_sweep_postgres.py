@@ -30,7 +30,6 @@ from tests.rra017_rows import BUILDERS, HOUR, NOW, Scope, chain, row
 from tests.rra017_support import (
     APPLICATION,
     INSUFFICIENT_PRIVILEGE,
-    OWNER_SETTING,
     POSTGRES,
     RED,
     SWEEP,
@@ -42,6 +41,7 @@ from tests.rra017_support import (
     remove,
     rls_fixture,  # noqa: F401 -- the `rls` fixture
     rra_tables,
+    scope_set_by,
     touch,
 )
 from tests.w104_support import MemoryObjectStore
@@ -153,9 +153,10 @@ def test_one_sweep_deletes_both_scopes_expired_sessions_each_under_its_own_owner
     sweeper = _sweeper(rls)
     owners: list[str] = []
 
-    def _record(_conn: Any, _cursor: Any, statement: str, parameters: Any, *_: Any) -> None:
-        if "set_config" in statement and OWNER_SETTING in str(parameters):
-            owners.extend(value for value in dict(parameters).values() if value != OWNER_SETTING)
+    def _record(*event_arguments: Any) -> None:
+        owner = scope_set_by(event_arguments[2], event_arguments[3])
+        if owner is not None:
+            owners.append(owner)
 
     event.listen(rls.engine(APPLICATION), "before_cursor_execute", _record)
     assert sweeper.sweep(now=NOW).expired_sessions == 2

@@ -122,13 +122,14 @@ def test_a_pooled_connection_with_no_setting_sees_and_writes_nothing(
     """Verification 4, on one physical connection, with an empty-owner row present."""
     rls.seed(chain(A) + chain(EMPTY))
     engine = rls.engine(role, pool_size=1, max_overflow=0)
+    backend = "SELECT pg_backend_pid()"
     with engine.connect() as connection:
-        backend = connection.scalar(text("SELECT pg_backend_pid()"))
         with connection.begin():
+            before_pid = connection.scalar(text(backend))
             scoped(connection, A.owner_id)
             assert visible_keys(connection, table) == {key_of(A, table)}
-        assert connection.scalar(text("SELECT pg_backend_pid()")) == backend
         with connection.begin():
+            assert connection.scalar(text(backend)) == before_pid
             # The pooled-connection case `FR-232` names: the missing setting reads as `''`.
             assert connection.scalar(text(f"SELECT current_setting('{OWNER_SETTING}', true)")) == ""
             assert visible_keys(connection, table) == set()

@@ -53,7 +53,7 @@ pytestmark = [*POSTGRES, RED]
 
 PROBE = "/api/v1/beta/probe"
 _COVERED = re.compile(r"\b(" + "|".join(COVERED_TABLES) + r")\b")
-_SETS_SCOPE = re.compile(r"set_config\(.*true\)", re.IGNORECASE | re.DOTALL)
+_SETS_SCOPE = re.compile(r"set_config\(", re.IGNORECASE)
 
 
 class _NoResolver:

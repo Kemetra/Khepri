@@ -24,6 +24,7 @@ import ast
 import inspect
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -163,11 +164,12 @@ def _runtime_sweep(sweep: sessionmaker[Session]) -> Any:
 
 
 def _local_sweep(sweep: sessionmaker[Session]) -> Any:
-    from khepri.local.config import LocalSettings  # noqa: PLC0415
-    from khepri.local.wiring import build_stack  # noqa: PLC0415
+    """Over a stand-in stack: the local `build_stack` reaches the object store at construction.
 
+    The sweep composition reads the stack's scoped factory and object store, and nothing else.
+    """
     build = future("khepri.local.wiring", "build_sweeper")
-    return build(build_stack(LocalSettings()), sweep_factory=sweep)
+    return build(SimpleNamespace(factory=sessionmaker(), objects=object()), sweep_factory=sweep)
 
 
 @pytest.mark.parametrize("compose", [_runtime_sweep, _local_sweep], ids=["runtime", "local"])

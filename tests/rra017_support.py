@@ -320,6 +320,21 @@ def scoped(connection: Connection, owner_id: str) -> None:
     )
 
 
+def scope_set_by(statement: str, parameters: Any) -> str | None:
+    """The owner a `set_config` of `OWNER_SETTING` sets, or `None` for any other statement.
+
+    Accepts the setting's name in the SQL text or bound, so the detector does not depend on
+    which of the two forms the helper emits.
+    """
+    if "set_config" not in statement:
+        return None
+    values = list(parameters.values()) if isinstance(parameters, dict) else list(parameters or ())
+    if OWNER_SETTING not in statement and OWNER_SETTING not in values:
+        return None
+    owners = [value for value in values if isinstance(value, str) and value != OWNER_SETTING]
+    return owners[0] if owners else None
+
+
 def sqlstate_of(action: Callable[[], Any]) -> str | None:
     """The SQLSTATE `action` raised, or `None` when it did not raise."""
     try:
@@ -422,6 +437,7 @@ __all__ = [
     "rls_database",
     "rls_fixture",
     "rra_tables",
+    "scope_set_by",
     "scoped",
     "sqlstate_of",
     "touch",
