@@ -69,3 +69,43 @@ legitimately name the withdrawn images. Each test is listed with a mutant that t
    `up -d minio minio-init`. Check that `minio-init` exits 0 with `[OK]`, then run a boto3
    put/get over TLS against the local CA.
 6. Run `down` on both stacks, and keep any volume that existed before this run.
+
+## Status 2026-10-02 -- implemented on `fix/631-minio-from-source`
+
+The markers are removed and all eight tests pass. Nine mutants were each run against their test,
+and all nine turned it red. The Docker checks ran in WSL (Docker 29.4.2):
+
+- **Clean cache.** The two withdrawn images were already absent. `docker image rm` answered
+  `No such image` for both, and `docker pull minio/minio:RELEASE.2025-09-07T16-13-09Z` was
+  refused with `repository does not exist`. Nothing below could have come from a cached
+  upstream image.
+- **Builds.** Both targets built. `minio --version` reports
+  `RELEASE.2025-09-07T16-13-09Z (commit-id=07c3a429bfed433e49018cb0f78a52145d4bedeb)`, and
+  `mc --version` reports
+  `RELEASE.2025-08-13T08-35-41Z (commit-id=7394ce0dd2a80935aded936b09fa12cbb3cb8096)`. Both
+  run on go1.24.13.
+  - A build with `MINIO_COMMIT` set to the annotated tag object's SHA cloned `07c3a42`. It then
+    failed at the check, before any module was downloaded.
+  - One `mc` build failed first with a transient `tls: bad record MAC` from proxy.golang.org.
+    It had already passed the SHA check, and the retry built.
+- **Local stack.** `up -d` brought both services to `healthy`, and the curl probe exits 0. The
+  server image contains no `mc`. Run against the stack after `alembic upgrade head`, the
+  stack-gated tests (`test_local_storage`, `test_local_journey`, `test_local_sweeper`,
+  `test_rca001_migration`) gave `39 passed, 1 skipped`. The skip is `KHEPRI_DATABASE_URL is not
+  set`, which does not depend on the stack. A boto3 round trip from `LocalSettings` also passed:
+  - `put` returned 200 with no `VersionId`;
+  - a second `IfNoneMatch` put was refused with `PreconditionFailed`;
+  - `get` returned the bytes that were put;
+  - after `delete`, `KeyCount` was 0.
+- **Staging stack.** `generate-certs.sh` ran, and a random master key was supplied.
+  - MinIO served `https://` and became `healthy` through the unchanged TLS probe.
+  - `minio-init`, on the built `mc`, exited 0. It printed `[OK] bucket private, lifecycle
+    configured`, and it exited 0 again when re-run.
+  - A boto3 put/get/delete over TLS, verified against `certs/ca.crt`, passed.
+  - The whole stack then ran with `--no-build`: `migrate` exited 0, and web and worker started.
+    From inside `khepri-staging-web`, a round trip that used only the runtime's own environment
+    (`KHEPRI_STORAGE_ENDPOINT=https://minio:9000`, `AWS_CA_BUNDLE`) passed.
+  - The runtime image was the cached `khepri-runtime:staging`, which was not rebuilt from this
+    branch. This change touches nothing in that image.
+- Both stacks were taken down with `down -v`. Every volume removed was created by this run. None
+  existed before it.

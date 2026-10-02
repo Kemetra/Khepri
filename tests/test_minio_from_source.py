@@ -35,10 +35,6 @@ BUILT_SERVICES = (
     ("docker-compose.staging.yml", "minio-init", "client", "MC_TAG"),
 )
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="#631: the stacks still pull the withdrawn MinIO images"
-)
-
 
 def _services(name: str) -> dict:
     return yaml.safe_load((REPOSITORY_ROOT / name).read_text(encoding="utf-8"))["services"]
