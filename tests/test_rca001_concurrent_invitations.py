@@ -26,16 +26,20 @@ blocked" alone could be any lock, `test_a_different_address_does_not_block` is i
 sequence at a *different* address, where the keys differ and B must **not** block. The pair is what
 identifies the key as identity-derived rather than incidental.
 
-## These were not run locally, and that is stated rather than implied
+**The lock held is the one issuance takes in production** (#211, from `#210`). An earlier version
+held a hand-written `pg_advisory_xact_lock` on the test's own connection and inserted the row
+beside it, so issuance's acquisition in `add_invitation` was never exercised at run time: removing
+it left both tests green. Now `InvitationService.issue` runs unmodified and is paused inside
+`add_invitation`'s own transaction, after its insert flushes, by a session event on a factory only
+the issuer uses (`_paused_issuer`). Whatever that transaction holds is what the purge meets.
 
-The Windows-to-WSL PostgreSQL path on the development machine stalls inside psycopg's connection
-handshake (`psycopg.waiting.wait_conn`) even though the TCP socket opens, so the container that is
-reachable for a single query is not reachable for the repeated connections these tests need.
-Investigated to root cause with `faulthandler` rather than guessed at, and it is environmental: no
-DDL ever reaches the server, and `pg_stat_activity` shows zero sessions during the stall.
+## Where these run
 
-The consequence for the reader: **CI is the first place these execute.** Two things compensate, and
-neither is "trust the timing". Each blocking assertion carries a **control** that must behave
+They were first written without a local run, because the Windows-to-WSL PostgreSQL path on the
+development machine stalls inside psycopg's connection handshake (`psycopg.waiting.wait_conn`).
+They now also run locally against a throwaway native PostgreSQL cluster, and CI runs them against
+its service. Two things keep a failure readable, and neither is "trust the timing". Each blocking
+assertion carries a **control** that must behave
 differently -- see `test_a_different_address_does_not_block` -- so a green run tells a real
 identity-keyed lock from any lock at all. And every assertion message states what its failure
 means, because whoever reads a CI failure will not have the local reproduction that explains it.
@@ -60,7 +64,7 @@ from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
@@ -168,83 +172,27 @@ class _Gate(NamedTuple):
     release: threading.Event
 
 
-class _Row(NamedTuple):
-    """What `_insert_invitation_row` needs, grouped so the helper stays under five parameters."""
+def _paused_issuer(factory, gate: _Gate) -> InvitationService:
+    """The production issuer, paused inside `add_invitation`'s own transaction.
 
-    invitation_id: str
-    organization_id: str
-    issued_by: str
-    address: str
+    `add_invitation` takes the identity lock, inserts the row and flushes, all in one transaction.
+    An `after_flush` listener on a factory **only the issuer uses** pauses that transaction there,
+    so the purge, the `pg_locks` poller and the fixtures never trip it. Nothing is substituted: the
+    lock the purge meets is whatever `take_identity_lock` took in production code, and if it took
+    nothing, `_holds` sees nothing.
 
-
-def _insert_invitation_row(database, row: _Row) -> None:
-    """Write an open invitation row on the caller's connection, bypassing `issue`.
-
-    **Raw SQL on a supplied connection, deliberately.** `InvitationService.issue` opens its own
-    transaction and takes the identity advisory lock, so calling it from inside a transaction that
-    already holds that key deadlocks the caller against itself -- which cost two CI runs before it
-    was found. This writes the same row the service would, on the connection that holds the lock, so
-    the row commits with it.
-
-    The verifier columns are filler: nothing in the blocking test verifies a secret, and
-    `ck_rca_invitation_verifier_whole` only requires the five to be present or absent together.
-
-    Takes the `_Row` record rather than its four fields: the flat form was five parameters, which
-    CodeScene scores as Excess Number of Function Arguments. **The threshold is four, not five** --
-    measured here after three earlier PRs in this program each assumed five and each lost a CI
-    cycle to it.
+    It pauses once. A later flush in the same thread passes straight through, so a release that
+    arrives late cannot strand a second wait.
     """
-    database.execute(
-        text(
-            "INSERT INTO rca_invitations (invitation_id, organization_id, intended_role, "
-            "target_identity, secret_salt, secret_digest, kdf_n, kdf_r, kdf_p, "
-            "expires_at, issued_by, issued_at) "
-            "VALUES (:iid, :org, :role, :target, :salt, :digest, :n, :r, :p, "
-            ":expires, :issued_by, :issued_at)"
-        ),
-        {
-            "iid": row.invitation_id,
-            "org": row.organization_id,
-            "role": MEMBER_ROLE,
-            "target": row.address,
-            "salt": b"0" * 16,
-            "digest": b"0" * 32,
-            "n": 2**14,
-            "r": 8,
-            "p": 1,
-            "expires": LATER,
-            "issued_by": row.issued_by,
-            "issued_at": NOW,
-        },
-    )
+    issuing = sessionmaker(factory.kw["bind"], expire_on_commit=False)
 
+    @event.listens_for(issuing, "after_flush")
+    def _pause(_session, _context) -> None:
+        if not gate.holding.is_set():
+            gate.holding.set()
+            gate.release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
 
-def _hold_lock_and_write(
-    factory,
-    gate: _Gate,
-    key: int,
-    row: _Row,
-) -> None:
-    """Hold the identity lock, then write an invitation row on the *same* connection.
-
-    **`InvitationService.issue` cannot be called from in here, and the first version's attempt to
-    deadlocked the whole run.** `issue` writes through `add_invitation`, which opens its own
-    transaction on its own connection and takes this same advisory key -- so calling it while this
-    transaction holds the key means waiting on a lock this thread already holds, forever, with no
-    SQL error and no output. Two rounds of CI cancellation traced to this.
-
-    What that gives up is exercising `issue`'s own acquisition, and that is the right division
-    rather than a gap: this file proves the lock **serializes**, and
-    `test_rca001_identity_advisory_lock.py`'s source assertion proves **both paths take it**.
-
-    Module-level rather than a closure inside the test, so the test body stays small enough for
-    CodeScene's Large Method rule -- a nested function counts toward the enclosing method's size.
-    """
-    with factory.begin() as database:
-        database.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
-        gate.holding.set()
-        gate.release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
-        _insert_invitation_row(database, row)
+    return InvitationService(SqlInvitationStore(issuing))
 
 
 def _advisory_rows(factory, key: int) -> list[tuple[bool, int]]:
@@ -318,16 +266,15 @@ def test_the_purge_blocks_on_a_held_issuance_lock(factory, attempt: int) -> None
 
     Sequence, made deterministic rather than hoped for:
 
-    1. Connection A opens `issue`'s transaction, takes the advisory lock, and **holds it**
-       uncommitted. Done by taking the lock directly on A's session, which is what `add_invitation`
-       does inside its own transaction -- the invitation row is then inserted on the same
-       connection, so both are held together.
+    1. `InvitationService.issue` runs on connection A, and `add_invitation`'s transaction takes
+       the advisory lock, inserts the row, and is **paused** there uncommitted (`_paused_issuer`).
     2. Connection B starts the purge and must **block**, evidenced by `pg_locks` showing a
        backend waiting on the same key.
     3. A commits; B proceeds, and its cascade catches the row: no invitation open afterwards.
 
     Step 2 is the one that fails without the lock -- the purge would complete immediately and the
-    test's own timing, not the implementation, would decide the result.
+    test's own timing, not the implementation, would decide the result. Without issuance's own
+    acquisition the precondition before it fails instead: nothing holds the key.
     """
     organization_id, owner_id = _organization(factory, f"block{attempt}")
     addressee_id, address = _account(factory, f"blocked{attempt}")
@@ -336,25 +283,23 @@ def test_the_purge_blocks_on_a_held_issuance_lock(factory, attempt: int) -> None
 
     gate = _Gate(threading.Event(), threading.Event())
     holding, release = gate.holding, gate.release
+    issuer = _paused_issuer(factory, gate)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         holder = pool.submit(
-            _hold_lock_and_write,
-            factory,
-            gate,
-            key,
-            _Row(f"inv_held{attempt}", organization_id, owner_id, address),
+            issuer.issue, _offer(organization_id, owner_id, address), expires_at=LATER, now=NOW
         )
         try:
-            assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS), "the holder never took the lock"
+            assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS), "issuance never flushed its row"
 
             # Before asserting anything about *waiting*, prove the query can see the lock at all.
             # A `pg_locks` predicate that matches nothing would otherwise report "not blocked" for
             # every implementation, sound or broken -- the unfalsifiable direction.
             assert _holds(factory, key), (
-                "the held lock is not visible in `pg_locks` for this key, so the blocking "
-                "assertion below would be vacuous: either the holder did not acquire it, or "
-                "the key reconstruction in `_advisory_rows` is wrong"
+                "issuance's own transaction holds no advisory lock for this key while its row is "
+                "uncommitted: either `add_invitation` did not take the identity lock, or the key "
+                "reconstruction in `_advisory_rows` is wrong. Either way the blocking assertion "
+                "below would be vacuous"
             )
 
             purge = pool.submit(
@@ -399,26 +344,24 @@ def test_a_different_address_does_not_block(factory, attempt: int) -> None:
     Without this control the sibling test would pass against an implementation that locked a
     constant, which would serialize every purge against every issuance and still look correct.
     """
-    _, _ = _organization(factory, f"control{attempt}")
+    organization_id, owner_id = _organization(factory, f"control{attempt}")
     addressee_id, _ = _account(factory, f"controlled{attempt}")
     _disable(factory, addressee_id)
-    unrelated_key = identity_lock_key(f"someone-else-{attempt}@example.test")
+    unrelated = f"someone-else-{attempt}@example.test"
 
-    holding = threading.Event()
-    release = threading.Event()
-
-    def hold_unrelated() -> None:
-        with factory.begin() as database:
-            database.execute(
-                text("SELECT pg_advisory_xact_lock(:key)"), {"key": unrelated_key}
-            )
-            holding.set()
-            release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
+    gate = _Gate(threading.Event(), threading.Event())
+    issuer = _paused_issuer(factory, gate)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        holder = pool.submit(hold_unrelated)
+        holder = pool.submit(
+            issuer.issue, _offer(organization_id, owner_id, unrelated), expires_at=LATER, now=NOW
+        )
         try:
-            assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS)
+            assert gate.holding.wait(timeout=BLOCK_TIMEOUT_SECONDS)
+            assert _holds(factory, identity_lock_key(unrelated)), (
+                "the paused issuance holds no lock for its own address, so this control would "
+                "pass against an implementation with no lock at all"
+            )
 
             purge = pool.submit(
                 lambda: SqlAccountStore(factory).purge_if_still_eligible(
@@ -431,7 +374,7 @@ def test_a_different_address_does_not_block(factory, attempt: int) -> None:
                 "key is not derived from the identity and the lock serializes unrelated work"
             )
         finally:
-            release.set()
+            gate.release.set()
         holder.result(timeout=BLOCK_TIMEOUT_SECONDS * 2)
 
 
