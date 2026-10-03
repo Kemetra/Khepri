@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# SCRUM-36 stage 3b: database-side checks, expected refusals, migration and backup rehearsals.
+set -u
+cd /mnt/c/Users/user/Documents/GitHub/Khepri/.claude/worktrees/scrum-36 || exit 2
+SCR=/mnt/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Documents-GitHub-Khepri/77f87dc7-a75c-4ade-b18a-df9e38021f51/scratchpad/s36
+export KHEPRI_STORAGE_MASTER_KEY="$(cat "$SCR/master.key")"
+F=docker-compose.staging.yml
+psqlq() { docker exec khepri-staging-postgres psql -U khepri -d "${2:-khepri}" -Atc "$1"; }
+V1S="$1"; V2S="$2"; DELETED="$3"; KEPT="$4"
+
+echo "== 1. deletion, in the database"
+echo "uploads for v1 session: $(psqlq "select count(*) from rra_uploads where session_id='$V1S'")"
+echo "uploads for v2 session: $(psqlq "select count(*) from rra_uploads where session_id='$V2S'")"
+echo "v2 session content_deleted_at set: $(psqlq "select content_deleted_at is not null from rra_beta_sessions where session_id='$V2S'")"
+echo "deletion jobs for v2 session: $(psqlq "select state from rra_deletion_jobs where session_id='$V2S'")"
+echo "version tombstone for deleted: $(psqlq "select count(*) from rca_workspace_tombstones where subject_id='$DELETED'")"
+echo "deleted version retention_state: $(psqlq "select retention_state from rca_workspace_dataset_versions where version_id='$DELETED'")"
+echo "upload_id kept/deleted: $(psqlq "select version_id, coalesce(upload_id,'NULL') from rca_workspace_dataset_versions where version_id in ('$KEPT','$DELETED') order by 1")"
+
+echo "== 2. khepri-envelope-migrate under the policies (expected: refused, RRA-017 FR-272)"
+docker compose -f "$F" run --rm --no-deps web khepri-envelope-migrate 2>&1 | tail -2
+echo "exit=${PIPESTATUS[0]}"
+
+echo "== 3. khepri-retention-sweep, scoped engine + sweep role (FR-271)"
+docker compose -f "$F" run --rm --no-deps \
+  -e KHEPRI_SWEEP_DATABASE_SECRET='{"username":"khepri_sweep","password":"khepri_sweep","engine":"postgres","host":"postgres","port":5432,"dbname":"khepri"}' \
+  web khepri-retention-sweep 2>&1 | tail -2
+echo "exit=${PIPESTATUS[0]}"
+
+echo "== 4a. migration downgrade while web and worker run (expected: refused, 20261003_0037)"
+docker compose -f "$F" run --rm --no-deps migrate alembic downgrade 20261002_0036 2>&1 | grep -E "RuntimeError|stop web|Error" | tail -2
+echo "current: $(docker compose -f "$F" run --rm --no-deps migrate alembic current 2>/dev/null | tail -1)"
+
+echo "== 4b. stop web and worker, downgrade, upgrade (populated data)"
+docker compose -f "$F" stop web worker 2>&1 | tail -1
+t0=$(date +%s)
+docker compose -f "$F" run --rm --no-deps migrate alembic downgrade 20261002_0036 2>&1 | tail -1
+echo "after_downgrade: $(docker compose -f "$F" run --rm --no-deps migrate alembic current 2>/dev/null | tail -1)"
+echo "upload_id column present: $(psqlq "select count(*) from information_schema.columns where table_name='rca_workspace_dataset_versions' and column_name='upload_id'")"
+docker compose -f "$F" run --rm --no-deps migrate alembic upgrade head 2>&1 | tail -1
+echo "after_upgrade: $(docker compose -f "$F" run --rm --no-deps migrate alembic current 2>/dev/null | tail -1) seconds=$(( $(date +%s) - t0 ))"
+echo "backfilled upload_id kept/deleted: $(psqlq "select version_id, coalesce(upload_id,'NULL') from rca_workspace_dataset_versions where version_id in ('$KEPT','$DELETED') order by 1")"
+echo "sweep grant on versions: $(psqlq "select string_agg(column_name, ',' order by column_name) from information_schema.column_privileges where grantee='khepri_sweep' and table_name='rca_workspace_dataset_versions'")"
+docker compose -f "$F" start web worker 2>&1 | tail -1
+
+echo "== 5. backup and restore rehearsal (disposable synthetic data)"
+t0=$(date +%s)
+docker exec khepri-staging-postgres sh -c 'pg_dump -U khepri -Fc khepri > /tmp/khepri.dump && ls -l /tmp/khepri.dump'
+docker exec khepri-staging-postgres sh -c 'dropdb -U khepri --if-exists khepri_restore; createdb -U khepri khepri_restore && pg_restore -U khepri -d khepri_restore /tmp/khepri.dump; echo restore_exit=$?'
+echo "backup_restore_seconds=$(( $(date +%s) - t0 ))"
+for t in alembic_version rca_organizations rca_workspace_dataset_versions rca_workspace_analysis_runs rca_workspace_tombstones rra_beta_sessions rra_uploads rra_report_jobs rra_report_artifacts rra_deletion_evidence; do
+  a=$(psqlq "select count(*) from $t"); b=$(psqlq "select count(*) from $t" khepri_restore); echo "$t source=$a restored=$b"
+done
+echo "restored head: $(psqlq "select version_num from alembic_version" khepri_restore)"
+echo "restored policies: $(psqlq "select count(*) from pg_policies where schemaname='public'" khepri_restore) source: $(psqlq "select count(*) from pg_policies where schemaname='public'")"
+echo "restored forced RLS tables: $(psqlq "select count(*) from pg_class where relforcerowsecurity" khepri_restore) source: $(psqlq "select count(*) from pg_class where relforcerowsecurity")"
+docker exec khepri-staging-postgres sh -c 'dropdb -U khepri khepri_restore; rm -f /tmp/khepri.dump'
+echo "done_utc=$(date -u +%FT%TZ)"

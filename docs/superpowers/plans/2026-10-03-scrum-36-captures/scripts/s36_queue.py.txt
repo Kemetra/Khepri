@@ -1,0 +1,34 @@
+"""Queue one report job through an invitation session and stop: no polling (worker is stopped)."""
+
+from __future__ import annotations
+
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+import httpx
+
+from tests.rra003_contract_fixtures import profile_payload
+from tests.rra_printed_support import retail_csv
+from tests.w104_support import attestation
+
+BASE = "http://127.0.0.1:8000"
+SETUP = json.loads(Path(sys.argv[1]).read_text())
+token = SETUP["invitations"][int(sys.argv[2])]
+headers = {"origin": BASE, "sec-fetch-site": "same-origin"}
+content = retail_csv(160, seed=36)
+with httpx.Client(base_url=BASE, headers=headers, timeout=60) as http:
+    r = http.post("/api/v1/beta/sessions/redeem", json={"token": token})
+    cookie = next(h.split(";")[0].split("=", 1)[1] for h in r.headers.get_list("set-cookie") if h.startswith("khepri_beta_session="))
+    c = {"khepri_beta_session": cookie}
+    steps = [http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies=c).status_code]
+    steps.append(http.post("/api/v1/beta/uploads", content=content, headers={"content-type": "text/csv"}, cookies=c).status_code)
+    body = profile_payload()
+    days = [date.fromisoformat(l.split(b",")[0].decode()) for l in content.strip().split(b"\n")[1:]]
+    body["coverage_manifest"] = attestation(min(days), max(days)).model_dump(mode="json")
+    steps.append(http.post("/api/v1/beta/profile", json=body, cookies=c).status_code)
+    steps.append(http.post("/api/v1/beta/facts", cookies=c).status_code)
+    rq = http.post("/api/v1/beta/reports", json={}, cookies=c)
+    steps.append(rq.status_code)
+    print(json.dumps({"steps": steps, "job_id": rq.json().get("job_id"), "cookie": cookie}))

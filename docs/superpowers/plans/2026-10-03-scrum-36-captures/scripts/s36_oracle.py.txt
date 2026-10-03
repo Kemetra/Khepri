@@ -1,0 +1,162 @@
+"""Run the oracle's CLEAN_ROWS through the staging journey and compare the bundle to CLEAN_HEADLINE.
+
+`tests/rra_calculation_oracle.py` is the governed, independent oracle: hand-derived literals over
+fixed rows, computed by no production code. The image computes; the oracle states; this compares.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from datetime import date, timedelta
+from decimal import Decimal
+from pathlib import Path
+
+import httpx
+
+from khepri.rra.coverage_request import CoverageManifestBody
+from khepri.rra.source_contract import SourceContractBody
+from tests.rra003_contract_fixtures import oracle_contract
+from tests.rra_calculation_oracle import CLEAN_HEADLINE, CLEAN_MANIFEST_WINDOWS, CLEAN_ROWS, to_csv
+
+BASE = "http://127.0.0.1:8000"
+OUT = Path(sys.argv[1])
+SETUP = json.loads(Path(sys.argv[2]).read_text())
+token = SETUP["invitations"][int(sys.argv[3])]
+H = {"origin": BASE, "sec-fetch-site": "same-origin"}
+
+
+def contract_body() -> dict:
+    c = oracle_contract()
+    e, i, b = c.events, c.identity, c.basis
+    return SourceContractBody(
+        contract_id=c.contract_id,
+        evidence=c.evidence,
+        event_kind_column=e.event_kind_column,
+        sale_only=e.sale_only,
+        status_column=e.status_column,
+        posted_only=e.posted_only,
+        currency_column=e.currency_column,
+        currency_code=e.currency_code,
+        event_key_columns=list(i.event_key_columns),
+        unique_line_grain_attested=i.unique_line_grain_attested,
+        transaction_id_column=i.transaction_id_column,
+        transaction_key_components=list(i.transaction_key_components),
+        transaction_id_unique_package_wide=i.transaction_id_unique_package_wide,
+        revenue_vat_exclusive=b.revenue_vat_exclusive,
+        revenue_is_net_of_returns=b.revenue_is_net_of_returns,
+        units_are_integral=b.units_are_integral,
+        cost_is_extended=b.cost_is_extended,
+        discount_is_additive=b.discount_is_additive,
+    ).model_dump()
+
+
+def manifest() -> dict:
+    # A manifest attests every day it spans (the route refuses a gap), so the operator attests
+    # the whole span from the first window's start to the last window's end.
+    first, last = CLEAN_MANIFEST_WINDOWS[0][0], CLEAN_MANIFEST_WINDOWS[-1][1]
+    days = [date.fromordinal(d) for d in range(first.toordinal(), last.toordinal() + 1)]
+    return CoverageManifestBody(
+        timezone="Africa/Cairo",
+        attested_by="SCRUM-36 oracle reconciliation: operator attestation.",
+        covered_start=min(days),
+        covered_end=max(days),
+        aggregate_scope="all-stores",
+        covered_days=days,
+        event_kinds=["sale"],
+        statuses=["posted"],
+    ).model_dump(mode="json")
+
+
+def find_metrics(node, wanted: set, found: dict) -> None:
+    """Every {"metric"/"code": name, "value": v} pair anywhere in the bundle JSON."""
+    if isinstance(node, dict):
+        name = node.get("metric") or node.get("code") or node.get("metric_code")
+        if name in wanted and "value" in node and name not in found:
+            found[name] = node["value"]
+        for v in node.values():
+            find_metrics(v, wanted, found)
+    elif isinstance(node, list):
+        for v in node:
+            find_metrics(v, wanted, found)
+
+
+#: The Executive Summary's English labels for the oracle's headline keys.
+LABELS = {
+    "revenue": "Revenue",
+    "units": "Units sold",
+    "transactions": "Number of sales",
+    "cost": "Cost",
+    "gross_profit": "Gross profit",
+    "gross_margin": "Gross margin",
+    "discount": "Discounts",
+}
+
+
+def summary_pairs(xlsx: bytes) -> dict:
+    """(label -> value) from the first sheet's two-column rows, read from the raw XML."""
+    import io
+    import re
+    import zipfile
+
+    z = zipfile.ZipFile(io.BytesIO(xlsx))
+    sst = re.findall(r"<si>(.*?)</si>", z.read("xl/sharedStrings.xml").decode(), flags=re.S)
+    strings = ["".join(re.findall(r"<t[^>]*>([^<]*)</t>", si)) for si in sst]
+    sheet = z.read("xl/worksheets/sheet1.xml").decode()
+    out = {}
+    for row in re.findall(r"<row[^>]*>(.*?)</row>", sheet, flags=re.S):
+        cells = []
+        for attrs, body in re.findall(r"<c([^>]*)>(.*?)</c>", row, flags=re.S):
+            v = re.search(r"<v>([^<]*)</v>", body)
+            t = re.search(r"<t[^>]*>([^<]*)</t>", body)
+            if 't="s"' in attrs and v:
+                cells.append(strings[int(v.group(1))])
+            elif v:
+                cells.append(v.group(1))
+            elif t:
+                cells.append(t.group(1))
+        if len(cells) == 2:
+            out.setdefault(cells[0], cells[1])
+    return out
+
+
+content = to_csv(CLEAN_ROWS)
+log: dict = {}
+with httpx.Client(base_url=BASE, headers=H, timeout=120) as http:
+    r = http.post("/api/v1/beta/sessions/redeem", json={"token": token})
+    cookie = next(h.split(";")[0].split("=", 1)[1] for h in r.headers.get_list("set-cookie") if h.startswith("khepri_beta_session="))
+    c = {"khepri_beta_session": cookie}
+    log["consent"] = http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies=c).status_code
+    log["upload"] = http.post("/api/v1/beta/uploads", content=content, headers={"content-type": "text/csv"}, cookies=c).status_code
+    pr = http.post(
+        "/api/v1/beta/profile",
+        json={"requested_semantics": [], "source_contract": contract_body(), "coverage_manifest": manifest()},
+        cookies=c,
+    )
+    log["profile"] = [pr.status_code, pr.text[:300] if pr.status_code >= 300 else "admissible=" + str(pr.json().get("admissible"))]
+    log["facts"] = http.post("/api/v1/beta/facts", cookies=c).status_code
+    rq = http.post("/api/v1/beta/reports", json={}, cookies=c)
+    log["report"] = rq.status_code
+    job = rq.json().get("job_id")
+    for _ in range(120):
+        st = http.get(f"/api/v1/beta/reports/{job}", cookies=c).json().get("state")
+        if st in ("succeeded", "failed", "dead_lettered"):
+            break
+        time.sleep(1)
+    log["state"] = st
+    xlsx = http.get(f"/api/v1/beta/reports/{job}/surfaces/excel", cookies=c)
+    (OUT / "files" / "oracle-excel.xlsx").write_bytes(xlsx.content)
+    for lang in ("en", "ar"):
+        w = http.get(f"/api/v1/beta/reports/{job}/surfaces/web/{lang}", cookies=c)
+        (OUT / "files" / f"oracle-web-{lang}.html").write_bytes(w.content)
+    pairs = summary_pairs(xlsx.content)
+    log["summary_labels"] = list(pairs)
+    found = {key: pairs.get(label) for key, label in LABELS.items()}
+    log["reconciliation"] = {
+        name: {"oracle": str(expected), "published": found.get(name),
+               "agree": found.get(name) is not None and Decimal(str(found[name]).replace(",", "")) == expected}
+        for name, expected in CLEAN_HEADLINE.items()
+    }
+print(json.dumps(log, indent=1))
+(OUT / "stage3-oracle.json").write_text(json.dumps(log, indent=2))
