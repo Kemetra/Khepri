@@ -4,6 +4,10 @@
 recommends how to unblock it. It amends no specification. The amendment it recommends is the
 owner's to choose, and it governs only once merged (Constitution II).
 
+**Owner decision, 2026-10-03.** The owner chose **variant B** ("option b", in the Claude Code
+session; recorded on #535). The amendment that records it is #652 (`RRA-017` `FR-273`). It governs
+only once the owner merges it.
+
 **Snapshot.** `main` at `93f242a7` (#650 merged). Every line reference and claim below is about that
 tree. Re-verify them before acting on this document after later merges.
 
