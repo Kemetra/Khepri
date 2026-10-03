@@ -60,21 +60,19 @@ jobs:
   # still runs locally on SQLite alone -- but see the guard job below: a skip
   # in CI is treated as a failure, because a skipped concurrency test reports
   # green and reads as a passing one.
-  pytest:
-    name: pytest
+  pytest-shard:
+    name: pytest (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    # 25, not 10. `FND-005` puts the `browser`-marked tests on this job. Measured on
-    # 2026-10-01 (run 36828729461), before the guards stopped re-running their subsets:
-    #
-    #   the full suite, 7171 tests                        13m20s
-    # + the concurrency guard re-running 163 tests         1m33s
-    # + the browser guard re-running 370 tests             6m08s
-    # + `uv sync` and `playwright install --with-deps`     2-5m
-    #                                                  ~= 23-25m, and #635 was cancelled at 25
-    #
-    # The guards now read the suite's own record (`marker_report.py`), which removes the
-    # two re-runs. 25 stays, so the job keeps its margin as the suite grows.
+    # SCRUM-43. One process ran the whole suite in 956 s of a 17-minute check (run
+    # 37146726775): 7,832 tests, 662 of them `concurrency` and 370 `browser`. Four shards
+    # of whole test files, balanced by `.github/scripts/test-weights.json`, run it in
+    # parallel. Each shard has its own PostgreSQL service, so no database, role or
+    # temporary directory is shared between them. 25 stays as the margin it was.
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         # Pinned by digest, matching how every action in this file is pinned.
@@ -93,8 +91,11 @@ jobs:
           --health-retries 5
     env:
       KHEPRI_TEST_DATABASE_URL: postgresql+psycopg://khepri:khepri@localhost:5432/khepri_test
-      # Where the suite records each marked test's outcome for the two guards below.
-      KHEPRI_MARKER_REPORT: marker-report.json
+      KHEPRI_SHARD: ${{ matrix.shard }}/4
+      # What this shard collected and kept, for `merge_shards.py` to check the split.
+      KHEPRI_SHARD_REPORT: shard-report-${{ matrix.shard }}.json
+      # Each marked test's outcome in this shard, merged for the guards in `pytest`.
+      KHEPRI_MARKER_REPORT: marker-report-${{ matrix.shard }}.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
@@ -106,18 +107,63 @@ jobs:
           # downloaded every dependency again, and two 10-minute jobs timed out doing it.
           prune-cache: false
       - run: uv sync --frozen
-      # `FND-005`: without this the 236 `browser`-marked tests skip and the job reports
-      # green. The lockfile is the pin -- `uv.lock` constrains playwright to >=1.61,<2 and
+      # `FND-005`: without this the `browser`-marked tests skip and the job reports green.
+      # The lockfile is the pin -- `uv.lock` constrains playwright to >=1.61,<2 and
       # `playwright install` resolves the Chromium revision that version fixes. No revision
       # is transcribed here; `image.yml` remains the only place one is read out.
       - name: install the pinned Chromium
         run: uv run playwright install --with-deps chromium
-      # `marker_report` records every `browser` and `concurrency` test's outcome, so the
-      # guards below read this run instead of running those tests a second time.
-      - name: run the suite
+      # `shard` keeps this shard's test files; `marker_report` records every `browser` and
+      # `concurrency` test's outcome among them.
+      - name: run this shard of the suite
         env:
           PYTHONPATH: .github/scripts
-        run: uv run pytest -p marker_report
+        run: uv run pytest -p shard -p marker_report
+      - name: keep this shard's reports for the merge
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shard-${{ matrix.shard }}
+          path: |
+            shard-report-${{ matrix.shard }}.json
+            marker-report-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # The required `pytest` check. It passes only if every shard passed, the shards together
+  # ran every collected test exactly once, and both guards hold over the merged record of the
+  # full suite -- `FND-001`'s pytest and `FND-005`'s guards, unchanged in what they prove.
+  pytest:
+    name: pytest
+    needs: pytest-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KHEPRI_MARKER_REPORT: marker-report.json
+    steps:
+      - name: every shard passed
+        run: |
+          if [ "${{ needs.pytest-shard.result }}" != "success" ]; then
+            echo "FAIL: a shard did not pass (${{ needs.pytest-shard.result }})" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.10.11"
+          python-version: "3.13"
+          enable-cache: true
+          prune-cache: false
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: shard-*
+          path: shards
+      # Refuses a missing shard, a test run twice or in no shard, and shards that collected
+      # different suites. Writes the merged marker report only when the split adds up.
+      - name: prove the shards ran the whole suite, once
+        run: uv run python .github/scripts/merge_shards.py shards 4 marker-report.json
       # The point of attaching the service is that concurrency contracts get
       # proved rather than skipped, and a skipped test reports green. This
       # step fails if any test marked `concurrency` was skipped, and also
@@ -127,8 +173,8 @@ jobs:
       - name: prove the concurrency contracts actually ran
         run: uv run python .github/scripts/require_concurrency_tests.py
       # The same reading for the browser contracts, which `FND-005` governs. This step
-      # fails if any test marked `browser` was skipped -- meaning the Chromium install
-      # above did not take -- and fails if the marker matches nothing at all, because a
+      # fails if any test marked `browser` was skipped -- meaning a shard's Chromium install
+      # did not take -- and fails if the marker matches nothing at all, because a
       # renamed marker and an unwritten test are indistinguishable from outside.
       - name: prove the browser contracts actually ran
         run: uv run python .github/scripts/require_browser_tests.py
