@@ -9,7 +9,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.artifact_persistence import SqlArtifactRepository, StoredArtifact
@@ -50,7 +49,7 @@ from khepri.rra.package_source import (
     rebuild_fact_package,
 )
 from khepri.rra.packages import FactPackageRecord, FactPackageService, PackageCorrupted
-from khepri.rra.persistence import Base, SqlSessionStore
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.pipeline import (
     DeliveryRecord,
     ReportDelivery,
@@ -65,6 +64,7 @@ from khepri.rra.report_artifacts import (
     ArtifactPayload,
     MaterializedSurface,
 )
+from khepri.rra.scope import acting_for, scoped_begin, scoped_read
 from khepri.rra.sessions import (
     BetaSession,
     CrossSessionAccessDenied,
@@ -76,6 +76,14 @@ from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     published_mapping_identity,
 )
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    InUnit,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 7, 30, 16, 0, tzinfo=UTC)
 ADAPTER_VERSION = "test.adapter.v1"
@@ -356,6 +364,7 @@ class Harness:
         leased = self.jobs.lease(
             LeaseRequest(
                 job_id=job_id,
+                owner_id=self.session.owner_id,
                 worker_id="worker_alpha",
                 now=NOW,
                 lease_for=timedelta(minutes=5),
@@ -385,11 +394,11 @@ class Harness:
         return ReportDelivery(record=record, bundle=bundle, surfaces=surfaces)
 
     def rows(self) -> list[ReportDeliveryRow]:
-        with self.factory() as database:
+        with scoped_read(self.factory, self.session.owner_id) as database:
             return list(database.scalars(select(ReportDeliveryRow)))
 
     def surface_rows(self) -> list[ReportDeliverySurfaceRow]:
-        with self.factory() as database:
+        with scoped_read(self.factory, self.session.owner_id) as database:
             return list(database.scalars(select(ReportDeliverySurfaceRow)))
 
 
@@ -401,12 +410,7 @@ def _narrative_for(built: FactPackage) -> NarrativeDraft:
 
 
 def harness(*, now: datetime = NOW) -> Harness:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     sessions = SqlSessionStore(factory)
     invitations = InvitationService(sessions)
@@ -418,7 +422,7 @@ def harness(*, now: datetime = NOW) -> Harness:
         factory=factory,
         session=beta_session,
         jobs=SqlReportJobRepository(factory),
-        store=SqlDeliveryStore(factory, now=lambda: now),
+        store=InUnit(SqlDeliveryStore(factory, now=lambda: now), beta_session.owner_id),  # type: ignore[arg-type]
     )
 
 
@@ -634,7 +638,7 @@ def test_a_failure_between_surfaces_leaves_no_delivery_observable() -> None:
         now=lambda: NOW,
     )
 
-    with pytest.raises(RuntimeError, match="part-way"):
+    with pytest.raises(RuntimeError, match="part-way"), acting_for(test.session.owner_id):
         trapped.deliver(test.delivery(leased))
 
     assert test.store.find_delivery(leased.job_id) is None
@@ -678,7 +682,7 @@ def test_a_delivery_missing_a_surface_row_is_refused_on_read() -> None:
     test = harness()
     leased = test.leased()
     test.store.deliver(test.delivery(leased))
-    with test.factory.begin() as database:
+    with scoped_begin(test.factory, test.session.owner_id) as database:
         database.execute(
             delete(ReportDeliverySurfaceRow).where(
                 ReportDeliverySurfaceRow.surface == SURFACE_WEB
@@ -730,16 +734,16 @@ def test_two_runs_over_the_same_report_record_the_same_surface_digests() -> None
     # Deterministic regeneration reaches the evidence too: the same package and
     # narrative produce the same surfaces, so a retry is recognizable as the
     # same report rather than a new one.
-    first = harness()
-    second = harness()
-    original = first.delivery(first.leased())
-    repeat = second.delivery(second.leased())
+    # Two jobs over one package in one store: the suite also runs on one PostgreSQL database.
+    test = harness()
+    original = test.delivery(test.leased())
+    repeat = test.delivery(test.leased("job_beta", key=hashlib.sha256(b"retry").hexdigest()))
 
-    first.store.deliver(original)
-    second.store.deliver(repeat)
+    test.store.deliver(original)
+    test.store.deliver(repeat)
 
-    assert [entry.content_digest for entry in first.store.find_surfaces("job_alpha")] == [
-        entry.content_digest for entry in second.store.find_surfaces("job_alpha")
+    assert [entry.content_digest for entry in test.store.find_surfaces("job_alpha")] == [
+        entry.content_digest for entry in test.store.find_surfaces("job_beta")
     ]
 
 
@@ -797,8 +801,10 @@ def test_the_pipeline_runs_one_leased_job_against_the_stored_ports() -> None:
         monotonic_ms=lambda: 0,
     )
 
-    outcome = pipeline.run(Execution(leased))
-    repeated = pipeline.run(Execution(leased))
+    # The worker runs the pipeline inside the job's unit (`ReportWorker.execute`, `FR-268`).
+    with acting_for(leased.owner_id):
+        outcome = pipeline.run(Execution(leased))
+        repeated = pipeline.run(Execution(leased))
 
     assert outcome.delivered is True
     assert outcome.record.surfaces == REQUIRED_SURFACES

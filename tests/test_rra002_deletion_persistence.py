@@ -4,17 +4,15 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import Select, create_engine, inspect
+from sqlalchemy import Select, inspect
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from khepri.rra import persistence
 from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: F401
 from khepri.rra.deletion import DeletionEvidence, DeletionJob
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
 from khepri.rra.persistence import (
-    Base,
     BetaSessionRow,
     DeletionEvidenceRow,
     SqlDeletionRepository,
@@ -23,6 +21,7 @@ from khepri.rra.persistence import (
     session_for_update_statement,
     session_scope_for_update_statement,
 )
+from khepri.rra.scope import acting_for
 from khepri.rra.sessions import (
     BetaSession,
     InvitationService,
@@ -30,6 +29,13 @@ from khepri.rra.sessions import (
     SessionScope,
     require_upload_consent,
 )
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 CONTENT_DIGEST = "492d5ea496056f1a6a6592241032fab764c321596317930b4fa0e1e8bc3b7470"
@@ -41,18 +47,22 @@ def repositories() -> tuple[
     SqlUploadRepository,
     SqlDeletionRepository,
 ]:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     return (
         SqlSessionStore(factory),
         SqlUploadRepository(factory),
         SqlDeletionRepository(factory),
     )
+
+
+def _evidence_of(
+    deletions: SqlDeletionRepository, scope: SessionScope, deletion_id: str
+) -> list[DeletionEvidence]:
+    """`list_evidence` names only the deletion, so it reads in the unit its caller binds
+    (`RRA-017` `FR-233`)."""
+    with acting_for(scope.owner_id):
+        return deletions.list_evidence(deletion_id)
 
 
 def session_and_upload(
@@ -135,7 +145,7 @@ def test_sql_deletion_success_is_atomic_and_content_free() -> None:
     deleted_session = sessions.get_session(scope.session_id)
     assert deleted_session is not None
     assert deleted_session.content_deleted_at == NOW
-    assert deletions.list_evidence("del_alpha") == [
+    assert _evidence_of(deletions, scope, "del_alpha") == [
         evidence(outcome="deleted", attempt=1, evidence_id="dev_success")
     ]
     columns = inspect(DeletionEvidenceRow).columns
@@ -164,7 +174,7 @@ def test_sql_deletion_failure_is_retryable_without_removing_metadata() -> None:
     assert retryable.state == "retryable"
     assert retryable.attempt_count == 1
     assert uploads.get_upload_for_session(scope.session_id) is not None
-    assert deletions.list_evidence("del_alpha") == [
+    assert _evidence_of(deletions, scope, "del_alpha") == [
         evidence(outcome="failed", attempt=1, evidence_id="dev_failed")
     ]
 
@@ -212,7 +222,7 @@ def test_late_failed_attempt_cannot_downgrade_completed_deletion() -> None:
     )
 
     assert result == completed
-    assert deletions.list_evidence(job.deletion_id) == [deleted]
+    assert _evidence_of(deletions, scope, job.deletion_id) == [deleted]
 
 
 def test_deletion_request_locks_the_exact_session_scope_on_postgresql() -> None:
@@ -340,12 +350,7 @@ class _DeletesAfterRead(SqlSessionStore):
 
 
 def test_consent_racing_a_deletion_request_keeps_the_request() -> None:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     sessions = _DeletesAfterRead(factory, SqlDeletionRepository(factory))
     invitations = InvitationService(sessions)

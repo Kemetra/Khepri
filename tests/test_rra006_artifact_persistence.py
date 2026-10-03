@@ -22,7 +22,11 @@ from khepri.rra.report_artifacts import (
     ArtifactPayload,
 )
 from khepri.rra.report_services import DeliveredBundleAdapter, JobReader
+from khepri.rra.scope import acting_for, scoped_begin, scoped_read
+from tests.rra017_suite_engine import STORE_BACKENDS, store_backend  # noqa: F401
 from tests.test_rra006_delivery_persistence import NOW, Harness, harness
+
+pytestmark = STORE_BACKENDS
 
 
 def _payload(kind: str) -> ArtifactPayload:
@@ -80,14 +84,19 @@ def _commit(
     repository: SqlArtifactRepository,
     publication: ReportPublication,
     artifacts: tuple[StoredArtifact, ...],
+    *,
+    owner_id: str,
 ):
-    boundary = repository.boundary(publication, created_at=NOW)
-    return repository.commit(
-        publication,
-        artifacts,
-        boundary=boundary,
-        committed_at=NOW,
-    )
+    """`boundary` and `commit` name only the delivery, so they run in the job's unit, as the
+    worker binds it around publication (`RRA-017` `FR-268`)."""
+    with acting_for(owner_id):
+        boundary = repository.boundary(publication, created_at=NOW)
+        return repository.commit(
+            publication,
+            artifacts,
+            boundary=boundary,
+            committed_at=NOW,
+        )
 
 
 def test_commit_writes_delivery_and_exact_artifact_set_atomically() -> None:
@@ -95,7 +104,9 @@ def test_commit_writes_delivery_and_exact_artifact_set_atomically() -> None:
     publication = _publication(test)
     repository = SqlArtifactRepository(test.factory)
 
-    record = _commit(repository, publication, _stored(test, publication))
+    record = _commit(
+        repository, publication, _stored(test, publication), owner_id=test.session.owner_id
+    )
 
     assert record == publication.delivery.record
     assert tuple(
@@ -106,7 +117,7 @@ def test_commit_writes_delivery_and_exact_artifact_set_atomically() -> None:
             now=NOW,
         )
     ) == REQUIRED_ARTIFACT_KINDS
-    with test.factory() as database:
+    with scoped_read(test.factory, test.session.owner_id) as database:
         assert len(list(database.scalars(select(ReportDeliveryRow)))) == 1
         assert len(list(database.scalars(select(ReportArtifactRow)))) == 7
 
@@ -117,11 +128,11 @@ def test_identical_retry_returns_the_existing_complete_delivery() -> None:
     stored = _stored(test, publication)
     repository = SqlArtifactRepository(test.factory)
 
-    first = _commit(repository, publication, stored)
-    second = _commit(repository, publication, stored)
+    first = _commit(repository, publication, stored, owner_id=test.session.owner_id)
+    second = _commit(repository, publication, stored, owner_id=test.session.owner_id)
 
     assert second == first
-    with test.factory() as database:
+    with scoped_read(test.factory, test.session.owner_id) as database:
         assert len(list(database.scalars(select(ReportArtifactRow)))) == 7
 
 
@@ -153,9 +164,14 @@ def test_commit_rejects_any_set_that_cannot_prove_the_publication(malformed) -> 
     repository = SqlArtifactRepository(test.factory)
 
     with pytest.raises(ArtifactConflict):
-        _commit(repository, publication, tuple(malformed(_stored(test, publication))))
+        _commit(
+            repository,
+            publication,
+            tuple(malformed(_stored(test, publication))),
+            owner_id=test.session.owner_id,
+        )
 
-    with test.factory() as database:
+    with scoped_read(test.factory, test.session.owner_id) as database:
         assert list(database.scalars(select(ReportDeliveryRow))) == []
         assert list(database.scalars(select(ReportArtifactRow))) == []
 
@@ -164,7 +180,7 @@ def test_session_scoped_read_hides_foreign_expired_and_deleted_content() -> None
     test = harness()
     publication = _publication(test)
     repository = SqlArtifactRepository(test.factory)
-    _commit(repository, publication, _stored(test, publication))
+    _commit(repository, publication, _stored(test, publication), owner_id=test.session.owner_id)
     job_id = publication.delivery.record.job_id
 
     assert repository.find_in_session(
@@ -182,8 +198,8 @@ def test_read_fails_closed_when_the_stored_set_is_incomplete() -> None:
     test = harness()
     publication = _publication(test)
     repository = SqlArtifactRepository(test.factory)
-    _commit(repository, publication, _stored(test, publication))
-    with test.factory.begin() as database:
+    _commit(repository, publication, _stored(test, publication), owner_id=test.session.owner_id)
+    with scoped_begin(test.factory, test.session.owner_id) as database:
         database.execute(
             delete(ReportArtifactRow).where(ReportArtifactRow.artifact_kind == "excel")
         )

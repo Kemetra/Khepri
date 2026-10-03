@@ -4,9 +4,7 @@ from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.jobs import (
@@ -20,12 +18,20 @@ from khepri.rra.jobs import (
     UnknownJobState,
     orphanable,
 )
-from khepri.rra.persistence import Base, SqlSessionStore
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.sessions import (
     CrossSessionAccessDenied,
     InvitationService,
     SessionScope,
 )
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    WORKER,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 IDEMPOTENCY_KEY = "8f99c79c1c79c892c1a30a74fcc1b536b04e409ee4562acfb82d8d76fb750d7d"
@@ -65,6 +71,7 @@ class Harness:
         return self.jobs.lease(
             LeaseRequest(
                 job_id=job_id,
+                owner_id=self.scope.owner_id,
                 worker_id=worker_id,
                 now=now,
                 lease_for=timedelta(minutes=2),
@@ -83,6 +90,7 @@ class Harness:
             FailureRequest(
                 lease=LeaseAction(
                     job_id=job.job_id,
+                    owner_id=self.scope.owner_id,
                     worker_id=worker_id,
                     now=now,
                 ),
@@ -102,13 +110,7 @@ class Harness:
 
 
 def harness() -> Harness:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(engine, expire_on_commit=False)
+    factory = sessionmaker(store_engine(), expire_on_commit=False)
     sessions = SqlSessionStore(factory)
     invitations = InvitationService(sessions)
     beta_session = invitations.redeem(
@@ -120,7 +122,7 @@ def harness() -> Harness:
         session_id=beta_session.session_id,
     )
     return Harness(
-        jobs=SqlReportJobRepository(factory),
+        jobs=SqlReportJobRepository(sessionmaker(store_engine(WORKER), expire_on_commit=False)),
         sessions=sessions,
         scope=scope,
         factory=factory,
@@ -169,7 +171,7 @@ def test_a_restarted_worker_recovers_and_releases_an_expired_lease() -> None:
     test.lease(queued.job_id, "worker_stopped")
 
     restarted = Harness(
-        jobs=SqlReportJobRepository(test.factory),
+        jobs=SqlReportJobRepository(sessionmaker(store_engine(WORKER), expire_on_commit=False)),
         sessions=test.sessions,
         scope=test.scope,
         factory=test.factory,
@@ -201,6 +203,7 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
         FailureRequest(
             lease=LeaseAction(
                 job_id=first.job_id,
+                owner_id=test.scope.owner_id,
                 worker_id="worker_alpha",
                 now=NOW + timedelta(seconds=30),
             ),
@@ -217,6 +220,7 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
         FailureRequest(
             lease=LeaseAction(
                 job_id=second.job_id,
+                owner_id=test.scope.owner_id,
                 worker_id="worker_beta",
                 now=NOW + timedelta(minutes=1, seconds=30),
             ),
@@ -249,6 +253,7 @@ def test_only_the_current_lease_holder_can_complete_a_job() -> None:
         test.jobs.complete(
             LeaseAction(
                 job_id=leased.job_id,
+                owner_id=test.scope.owner_id,
                 worker_id="worker_stale",
                 now=NOW + timedelta(minutes=1),
             )
@@ -256,6 +261,7 @@ def test_only_the_current_lease_holder_can_complete_a_job() -> None:
     completed = test.jobs.complete(
         LeaseAction(
             job_id=leased.job_id,
+            owner_id=test.scope.owner_id,
             worker_id="worker_alpha",
             now=NOW + timedelta(minutes=1),
         )
@@ -276,6 +282,7 @@ def test_a_heartbeat_keeps_an_active_job_out_of_orphan_recovery() -> None:
     extended = test.jobs.heartbeat(
         LeaseRequest(
             job_id=leased.job_id,
+            owner_id=test.scope.owner_id,
             worker_id="worker_alpha",
             now=NOW + timedelta(minutes=1),
             lease_for=timedelta(minutes=3),
@@ -484,6 +491,7 @@ def test_settled_jobs_are_never_orphaned() -> None:
     test.jobs.complete(
         LeaseAction(
             job_id=leased.job_id,
+            owner_id=test.scope.owner_id,
             worker_id="worker_alpha",
             now=NOW + timedelta(minutes=1),
         )

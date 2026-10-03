@@ -33,6 +33,7 @@ from khepri.rra.rendering.wording import COMPONENT_CHROME, SECTION_HEADINGS
 from khepri.rra.session_cookie import SESSION_COOKIE as BETA_COOKIE
 from khepri.runtime.shell_api import SHELL_PREFIX
 from khepri.runtime.shell_copy import SHELL_COPY
+from tests.rra017_suite_engine import STORE_BACKENDS, store_backend  # noqa: F401
 from tests.w104_support import member
 from tests.w104b_support import journey
 from tests.w106_support import (
@@ -44,6 +45,8 @@ from tests.w106_support import (
     shell_over,
     started_run,
 )
+
+pytestmark = STORE_BACKENDS
 
 EN = SHELL_COPY["en"]
 AR = SHELL_COPY["ar"]

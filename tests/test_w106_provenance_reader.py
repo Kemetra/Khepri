@@ -31,13 +31,17 @@ from khepri.rca.workspace.run_reports import RunReport, SqlRunReportStore
 from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rra.bundle import FAMILY_VERSIONS
+from khepri.rra.scope import scoped_begin
 from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.run_quality import PackageDoesNotVerify, section_states_of
 from khepri.runtime.shell_provenance import Provenance, ProvenanceReader, ProvenanceSources
 from khepri.runtime.shell_workspace import UnrenderableRecord
+from tests.rra017_suite_engine import STORE_BACKENDS, store_backend  # noqa: F401
 from tests.w104_support import OTHER_CSV, member
 from tests.w104b_support import commercial_client, journey, request_report, submit
 from tests.w106_support import completed_run, provenance, started_run
+
+pytestmark = STORE_BACKENDS
 
 #: The run identifiers `_LinkTo` answers a link for; appended by the test that uses it.
 _RUNS_ASKED: list[str] = []
@@ -269,7 +273,7 @@ def test_a_run_whose_session_deletion_was_requested_keeps_its_passport_but_is_no
     who = member(j.w)
     _run, _job, session_id = completed_run(j, who)
     run, version = _run_and_version(j, who)
-    with j.w.factory.begin() as database:
+    with scoped_begin(j.w.factory, who.owner_id) as database:
         database.get(BetaSessionRow, session_id).deletion_requested_at = j.clock()
 
     found = provenance(j).for_run(who.owner_id, run, version)

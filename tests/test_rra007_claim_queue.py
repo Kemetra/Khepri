@@ -12,9 +12,7 @@ from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from khepri.rra.claim_queue import ClaimedDelivery, ClaimingReportQueue
 from khepri.rra.job_persistence import SqlReportJobRepository
@@ -26,10 +24,19 @@ from khepri.rra.jobs import (
     EnqueueJob,
     ReportJob,
 )
-from khepri.rra.persistence import Base, SqlSessionStore
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.report_services import JobReader
 from khepri.rra.sessions import InvitationService, SessionScope
 from khepri.rra.worker import ReportJobMessage
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    WORKER,
+    InUnit,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 LEASE_FOR = timedelta(seconds=300)
@@ -67,12 +74,7 @@ class Harness:
 
 
 def harness(worker_id: str = "worker-alpha") -> Harness:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     sessions = SqlSessionStore(factory)
     invitations = InvitationService(sessions)
@@ -84,15 +86,17 @@ def harness(worker_id: str = "worker-alpha") -> Harness:
         owner_id=beta_session.owner_id,
         session_id=beta_session.session_id,
     )
-    jobs = SqlReportJobRepository(factory)
+    # The queue is the worker's: only its role may call `rra_next_claimable_job` (`FR-267`).
+    worker = sessionmaker(store_engine(WORKER), expire_on_commit=False)
+    jobs = SqlReportJobRepository(worker)
     return Harness(
         queue=ClaimingReportQueue(
             jobs=jobs,
-            factory=factory,
+            factory=worker,
             policy=_policy(worker_id),
         ),
         jobs=jobs,
-        reader=JobReader(factory),
+        reader=InUnit(JobReader(worker), scope.owner_id),  # type: ignore[arg-type]
         scope=scope,
     )
 

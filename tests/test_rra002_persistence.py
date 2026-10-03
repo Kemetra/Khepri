@@ -2,29 +2,29 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import inspect
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
 from khepri.rra.persistence import (
-    Base,
     SqlSessionStore,
     SqlUploadRepository,
     UploadRow,
 )
 from khepri.rra.sessions import InvitationService, SessionScope
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 
 
 def repositories() -> tuple[SqlSessionStore, SqlUploadRepository]:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     return SqlSessionStore(factory), SqlUploadRepository(factory)
 
