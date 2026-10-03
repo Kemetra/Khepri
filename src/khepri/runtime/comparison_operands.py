@@ -36,6 +36,7 @@ from khepri.rra.packages import (
     PackageCorrupted,
     PackageRefused,
 )
+from khepri.rra.scope import acting_for
 from khepri.runtime.job_sessions import JobSession
 from khepri.runtime.run_quality import PACKAGE_MISMATCH_FAILURE, PackageDoesNotVerify
 
@@ -113,6 +114,12 @@ def derive_operand(request: OperandRequest) -> OperandLoad:
     completed run for a version identifier; `SemanticQueryActions` supplies a
     run it already read under the caller's scope. Both arrive holding a run.
     """
+    # `RRA-017` `FR-233`: every RRA read below runs in the caller's RCA-resolved scope.
+    with acting_for(request.owner_id):
+        return _derive(request)
+
+
+def _derive(request: OperandRequest) -> OperandLoad:
     run = request.run
     if run.package_digest is None:
         return OperandLoad(None, False)

@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from khepri.rca.authorization_resolution import AuthorizationResolver
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.rra.scope import acting_for
 from khepri.rra.sessions import InvitationService
 from khepri.runtime.bridge import CommercialBridge
 
@@ -184,11 +185,13 @@ def add_commercial_routes(
             )
             if scoped is None:
                 return _not_found()
-            services.consent.record_consent(
-                scoped.session_id,
-                consent_version=payload.consent_version,
-                now=now,
-            )
+            # `RRA-017` `FR-233`: the consent is written in the resumed session's own scope.
+            with acting_for(scoped.owner_id):
+                services.consent.record_consent(
+                    scoped.session_id,
+                    consent_version=payload.consent_version,
+                    now=now,
+                )
         except PermissionError:
             return _not_found()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
