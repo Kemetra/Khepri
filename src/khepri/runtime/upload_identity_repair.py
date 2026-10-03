@@ -7,9 +7,12 @@ its upload still exists. No purge, deletion or retry lookup could then find that
 
 - it sets a null `upload_id` from the one upload row in the version's scope whose ciphertext digest
   equals the version's recorded `upload_ciphertext_digest`;
-- it refuses, and leaves null, a version whose digest matches more than one upload row, or one
-  upload another version already names (`uq_rca_workspace_version_upload_id` would refuse the
-  write, and the whole scope's repair with it);
+- it refuses, and leaves null, a version whose digest matches more than one upload row, and a
+  *contested* one: another version in its scope already names the matched upload, or records the
+  same digest. Old code arbitrated retries on the digest index this revision drops, so two of its
+  inserts for one upload can both land null. Filling either would hand the
+  `uq_rca_workspace_version_upload_id` clash to the whole scope's transaction, and which version
+  owns the upload is not the repair's to decide;
 - it never overwrites a value.
 
 **Why the digest match is still valid here.** A digest names one stored copy of one upload until
@@ -42,7 +45,7 @@ from khepri.rra.scope import scoped_begin
 
 _VERSIONS = DatasetVersionRow.__table__
 _UPLOADS = UploadRow.__table__
-_NAMED = _VERSIONS.alias("named")
+_OTHER = _VERSIONS.alias("other")
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,13 +77,20 @@ def _identity() -> ColumnElement[str]:
     )
 
 
-def _already_named() -> ColumnElement[bool]:
-    """Another version in the scope already names the one upload the digest matches."""
-    return (
-        exists()
-        .where(_NAMED.c.owner_id == _VERSIONS.c.owner_id, _NAMED.c.upload_id == _identity())
-        .correlate(_VERSIONS)
+def _contested() -> ColumnElement[bool]:
+    """Another version in the scope names the matched upload, or records the same digest."""
+    claims = or_(
+        _OTHER.c.upload_id == _identity(),
+        _OTHER.c.upload_ciphertext_digest == _VERSIONS.c.upload_ciphertext_digest,
     )
+    same_scope = and_(
+        _OTHER.c.owner_id == _VERSIONS.c.owner_id, _OTHER.c.version_id != _VERSIONS.c.version_id
+    )
+    return exists().where(same_scope, claims).correlate(_VERSIONS)
+
+
+def _safe() -> ColumnElement[bool]:
+    return and_(_matches() == 1, ~_contested())
 
 
 def _unfilled(owner_id: str) -> tuple[ColumnElement[bool], ...]:
@@ -88,14 +98,14 @@ def _unfilled(owner_id: str) -> tuple[ColumnElement[bool], ...]:
 
 
 def _refused(owner_id: str) -> Select[tuple[int]]:
-    unsafe = or_(_matches() > 1, and_(_matches() == 1, _already_named()))
+    """Unfilled versions that match an upload and were not filled: ambiguous or contested."""
+    unsafe = and_(_matches() >= 1, ~_safe())
     return select(func.count()).select_from(_VERSIONS).where(*_unfilled(owner_id), unsafe)
 
 
 def _repair_in(database: Session, owner_id: str) -> RepairOutcome:
-    safe = and_(_matches() == 1, ~_already_named())
     filled = database.execute(
-        update(_VERSIONS).where(*_unfilled(owner_id), safe).values(upload_id=_identity())
+        update(_VERSIONS).where(*_unfilled(owner_id), _safe()).values(upload_id=_identity())
     )
     refused = database.execute(_refused(owner_id)).scalar_one()
     return RepairOutcome(filled=filled.rowcount or 0, refused=refused)

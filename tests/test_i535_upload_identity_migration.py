@@ -510,3 +510,32 @@ def test_the_repair_refuses_a_version_whose_upload_another_already_names(rls: Rl
     identities = _identities(rls.owner)
     assert (identities["ver_named"], identities["ver_second"]) == ("upl_shared", None)
     assert identities["ver_late"] == "upl_late"
+
+
+def test_the_repair_refuses_two_old_writes_of_one_upload_and_goes_on(rls: RlsDatabase) -> None:
+    """Old code arbitrated retries on the dropped digest index, so it can leave two null versions
+    for one upload. Filling both would clash; filling one would pick an owner. Both are refused,
+    and the next scope is still repaired."""
+    from khepri.runtime.upload_identity_repair import RepairOutcome, repair_upload_identity
+
+    rls.seed([*_uploaded(A, "twice", "w" * 64), *_uploaded(B, "late_b", "q" * 64)])
+    _seed(
+        rls.owner,
+        rca=_scope_rows(A)
+        + _scope_rows(B)
+        + [
+            _version(A, "first_write", "w" * 64),
+            _version(A, "second_write", "w" * 64),
+            _version(B, "late_b", "q" * 64),
+        ],
+        rra=[],
+    )
+
+    outcome = repair_upload_identity(rls.factory(APPLICATION))
+
+    assert outcome == RepairOutcome(filled=1, refused=2)
+    assert _identities(rls.owner) == {
+        "ver_first_write": None,
+        "ver_second_write": None,
+        "ver_late_b": "upl_late_b",
+    }
