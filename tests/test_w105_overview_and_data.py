@@ -52,6 +52,7 @@ from khepri.rca.workspace.contracts import (
     DatasetVersion,
     RunOutcome,
     RunSubject,
+    VersionKeys,
     VersionLifecycle,
 )
 from khepri.rca.workspace.persistence import WorkspaceHistory
@@ -143,8 +144,7 @@ def _version(
     version_id: str, *, created_at: datetime, sealed_at: datetime | None = None
 ) -> DatasetVersion:
     return DatasetVersion._from_storage(
-        version_id=version_id,
-        owner_id=ORGANIZATION,
+        subject=VersionKeys(version_id=version_id, owner_id=ORGANIZATION, upload_id=None),
         source=AdmittedSource(
             plaintext_digest=DIGEST,
             ciphertext_digest=DIGEST,
@@ -645,8 +645,7 @@ class TestScopeComesFromTheSession:
         record did not say (review on `#373`) -- and not as a blank: the surface refuses, the way
         `RRA-012` `FR-094` has a component refuse a code it cannot word."""
         odd = DatasetVersion._from_storage(
-            version_id="ver-r",
-            owner_id=ORGANIZATION,
+            subject=VersionKeys(version_id="ver-r", owner_id=ORGANIZATION, upload_id=None),
             source=AdmittedSource(
                 plaintext_digest=DIGEST,
                 ciphertext_digest=DIGEST,

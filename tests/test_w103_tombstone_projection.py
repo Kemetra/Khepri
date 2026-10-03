@@ -65,6 +65,7 @@ from khepri.rca.workspace.tombstones import (
     VersionTombstone,
 )
 from khepri.rra.bundle import GOVERNED_SECTION_STATES, SECTION_PRESENT, SECTION_REFUSED
+from tests.i535_support import upload_for
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -121,7 +122,9 @@ def _field_names(record_type: type) -> set[str]:
 
 
 def _version() -> DatasetVersion:
-    return DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
+    return DatasetVersion.create(
+        owner_id=SCOPE, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW
+    )
 
 
 def _completed_run(version: DatasetVersion) -> AnalysisRun:
@@ -338,7 +341,9 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
 
 
 def _stored_version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
-    return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
+    return store.add_dataset_version(
+        DatasetVersion.create(owner_id=scope, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
 
 def _stored_run(

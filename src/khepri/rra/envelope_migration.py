@@ -7,8 +7,9 @@ split that slice on 2026-09-28. This module is the report-artifact half.
 **Why uploads are not here.** A re-seal produces a new ciphertext digest. An artifact's digest is
 read by nothing outside `rra_report_artifacts`: its workspace binding records the *plaintext*
 digest. An upload's ciphertext digest is recorded in `DatasetVersion.upload_ciphertext_digest`,
-which `RCA-005` `FR-112` fixes, and three joins match on it. The owner chose to give versions a
-stable upload identity before uploads are rewritten, so they are counted here and left alone.
+which `RCA-005` `FR-112` fixes. Three joins matched on it until `FR-259`-`FR-261` re-keyed them onto
+the version's stable `upload_id`. Re-sealing uploads is a later, separately gated slice (`FR-263`),
+so they are counted here and left alone.
 
 **One row per transaction, session locked first.** `session_scope_for_update_statement` is the
 lock `SqlDeletionRepository.begin` takes before it sets `deletion_requested_at`. So a deletion

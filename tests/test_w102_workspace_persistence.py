@@ -41,6 +41,7 @@ from khepri.rca.workspace.persistence import (
     SqlWorkspaceRecordStore,
     WorkspaceTombstoneRow,
 )
+from tests.i535_support import upload_for
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -96,7 +97,9 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
 
 
 def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
-    return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
+    return store.add_dataset_version(
+        DatasetVersion.create(owner_id=scope, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
 
 # --- FR-109: the schema is keyed by the opaque scope and names no customer -------------------
@@ -162,7 +165,12 @@ def test_a_row_cannot_name_a_scope_that_does_not_exist(factory: sessionmaker) ->
     store = SqlWorkspaceRecordStore(factory)
     with pytest.raises(IntegrityError):
         store.add_dataset_version(
-            DatasetVersion.create(owner_id="own_never_provisioned", source=SOURCE, now=NOW)
+            DatasetVersion.create(
+                owner_id="own_never_provisioned",
+                upload_id=upload_for(SOURCE),
+                source=SOURCE,
+                now=NOW,
+            )
         )
 
 
@@ -296,14 +304,19 @@ def test_listing_is_scoped_and_returns_newest_first(factory: sessionmaker) -> No
 
     store = SqlWorkspaceRecordStore(factory)
     mine_early = store.add_dataset_version(
-        DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW)
+        DatasetVersion.create(owner_id=first, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
     )
     # A second *upload*: `W1-04b` made one version per admitted upload a database rule
-    # (`uq_rca_workspace_version_upload`), so two versions in one scope are two sources.
+    # (`uq_rca_workspace_version_upload_id` since #535), so two versions in one scope are two
+    # sources.
     mine_late = store.add_dataset_version(
-        DatasetVersion.create(owner_id=first, source=SECOND_SOURCE, now=LATER)
+        DatasetVersion.create(
+            owner_id=first, upload_id=upload_for(SECOND_SOURCE), source=SECOND_SOURCE, now=LATER
+        )
     )
-    store.add_dataset_version(DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW))
+    store.add_dataset_version(
+        DatasetVersion.create(owner_id=second, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
     listed = store.dataset_versions_for_scope(first)
 
@@ -318,9 +331,11 @@ def test_runs_are_listed_only_within_their_own_scope(factory: sessionmaker) -> N
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
     store = SqlWorkspaceRecordStore(factory)
-    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
+    mine = store.add_dataset_version(
+        DatasetVersion.create(owner_id=first, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
     theirs = store.add_dataset_version(
-        DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
+        DatasetVersion.create(owner_id=second, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
     )
     store.add_analysis_run(AnalysisRun.create(owner_id=first, version_id=mine.version_id, now=NOW))
     store.add_analysis_run(
@@ -337,7 +352,9 @@ def test_a_foreign_scope_reads_nothing_by_identifier(factory: sessionmaker) -> N
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
     store = SqlWorkspaceRecordStore(factory)
-    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
+    mine = store.add_dataset_version(
+        DatasetVersion.create(owner_id=first, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
     assert store.get_dataset_version(mine.version_id, owner_id=second) is None
     assert store.get_dataset_version(mine.version_id, owner_id=first) == mine
@@ -383,7 +400,9 @@ def test_a_foreign_scope_cannot_read_or_change_retention(factory: sessionmaker) 
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
     store = SqlWorkspaceRecordStore(factory)
-    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
+    mine = store.add_dataset_version(
+        DatasetVersion.create(owner_id=first, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
     assert store.retention_state(mine.version_id, owner_id=second) is None
     assert store.retention_state(mine.version_id, owner_id=first) == RETENTION_ACTIVE

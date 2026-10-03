@@ -181,7 +181,12 @@ class DueUploadLister:
         self._factory = factory
 
     def due(self, *, now: datetime) -> tuple[_RawUpload, ...]:
-        """Uploads past the horizon, across every scope. Admitted for the sweep role (`FR-271`)."""
+        """Uploads past the horizon, across every scope. Admitted for the sweep role (`FR-271`).
+
+        Joined on the upload's identity, not its ciphertext digest (`RCA-005` `FR-259`): a re-seal
+        changes the digest, and a digest join would leave a re-sealed upload past its horizon. A
+        version whose `upload_id` is null matches nothing, which is correct: its upload is gone.
+        """
         horizon = now - RAW_UPLOAD_RETENTION
         with self._factory() as database:
             rows = database.execute(
@@ -194,10 +199,7 @@ class DueUploadLister:
                 .join(
                     DatasetVersionRow,
                     (DatasetVersionRow.owner_id == UploadRow.owner_id)
-                    & (
-                        DatasetVersionRow.upload_ciphertext_digest
-                        == UploadRow.ciphertext_sha256_hex
-                    ),
+                    & (DatasetVersionRow.upload_id == UploadRow.upload_id),
                 )
                 .where(
                     DatasetVersionRow.sealed_at.is_not(None),

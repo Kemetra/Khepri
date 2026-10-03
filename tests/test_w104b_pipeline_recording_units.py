@@ -41,6 +41,7 @@ from khepri.rra.jobs import (
 )
 from khepri.runtime.pipeline_recording import SettlingJobStore
 from khepri.runtime.workspace_recording import Attempt, Performed
+from tests.i535_support import upload_for
 from tests.rra017_suite_engine import STORE_BACKENDS, store_backend  # noqa: F401
 from tests.w104_support import NOW, events, member, world
 from tests.w105_support import admitted_version, completed_run
@@ -284,17 +285,23 @@ def test_two_versions_of_one_upload_in_one_scope_are_refused_by_the_database() -
     w = world()
     who = member(w)
     other = member(w, email="other@example.test", name="Other")
-    first = DatasetVersion.create(owner_id=who.owner_id, source=SOURCE, now=NOW)
+    first = DatasetVersion.create(
+        owner_id=who.owner_id, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW
+    )
     w.store.add_dataset_version(first)
 
     with pytest.raises(VersionAlreadyRecorded):
         w.store.add_dataset_version(
-            DatasetVersion.create(owner_id=who.owner_id, source=SOURCE, now=LATER)
+            DatasetVersion.create(
+                owner_id=who.owner_id, upload_id=upload_for(SOURCE), source=SOURCE, now=LATER
+            )
         )
 
     # Another scope's version of the same bytes is a different version (`FR-109`).
     w.store.add_dataset_version(
-        DatasetVersion.create(owner_id=other.owner_id, source=SOURCE, now=NOW)
+        DatasetVersion.create(
+            owner_id=other.owner_id, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW
+        )
     )
     assert [v.version_id for v in w.store.dataset_versions_for_scope(who.owner_id)] == [
         first.version_id

@@ -41,7 +41,9 @@ DEFINER_FUNCTIONS = {
 }
 SEARCH_PATH = ["search_path=public, pg_catalog, pg_temp"]
 
-#: `FR-271`'s column grants to the sweep role, with the `_due` read of the RCA table.
+#: `FR-271`'s column grants to the sweep role, with the `_due` read of the RCA table. `#535`'s
+#: `20261003_0037` moved that read from `upload_ciphertext_digest` to `upload_id` (`RCA-005`
+#: `FR-259`), and the grant with it.
 SWEEP_COLUMNS = frozenset(
     {
         ("rra_beta_sessions", "session_id", "SELECT"),
@@ -55,7 +57,7 @@ SWEEP_COLUMNS = frozenset(
         ("rra_uploads", "ciphertext_sha256_hex", "SELECT"),
         ("rra_deletion_evidence", "attempted_at", "SELECT"),
         ("rca_workspace_dataset_versions", "owner_id", "SELECT"),
-        ("rca_workspace_dataset_versions", "upload_ciphertext_digest", "SELECT"),
+        ("rca_workspace_dataset_versions", "upload_id", "SELECT"),
         ("rca_workspace_dataset_versions", "sealed_at", "SELECT"),
     }
 )

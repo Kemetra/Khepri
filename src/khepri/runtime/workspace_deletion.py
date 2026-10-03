@@ -155,6 +155,10 @@ class WorkspaceDeletion:
         The upload row is the shortest path while raw retention still keeps it.  After seal plus
         seven days DEC-033 removes that row, so completed runs provide the durable path through
         their run-to-job links.  Both reads remain owner-scoped at this composition seam.
+
+        The upload is read by the version's `upload_id` (`RCA-005` `FR-260`), which a re-seal
+        never changes.  A null `upload_id` means the upload row is gone, so the upload path
+        contributes nothing and the run-to-job path stands alone.
         """
         from sqlalchemy import select
 
@@ -164,10 +168,14 @@ class WorkspaceDeletion:
         from khepri.rra.persistence import UploadRow
 
         with scoped_read(self._sources.factory, version.owner_id) as database:
-            upload_session = database.scalar(
-                select(UploadRow.session_id).where(
-                    UploadRow.owner_id == version.owner_id,
-                    UploadRow.ciphertext_sha256_hex == version.upload_ciphertext_digest,
+            upload_session = (
+                None
+                if version.upload_id is None
+                else database.scalar(
+                    select(UploadRow.session_id).where(
+                        UploadRow.owner_id == version.owner_id,
+                        UploadRow.upload_id == version.upload_id,
+                    )
                 )
             )
             report_sessions = database.scalars(
@@ -193,12 +201,13 @@ class WorkspaceDeletion:
         only the `RCA` records would leave the customer's upload, fact packages and artifacts in
         place under a version they withdrew.
 
-        **Bridged on the ciphertext digest**, because a `DatasetVersion` holds the upload's digests
-        and no session identifier -- §3 fixes what a version may keep, and a session identifier is
-        not on that list. The upload row carries both the digest and its session, and the digest is
-        already the key `dataset_version_for_upload` joins on, so this reuses an existing link
-        rather than inventing one. Resolved here, in `khepri.runtime`, because it reads an `RRA`
-        row on behalf of an `RCA` ending and `R7-01` §3 forbids either package importing the other.
+        **Bridged on the upload's identity**, because a `DatasetVersion` holds `upload_id` and no
+        session identifier -- §3 fixes what a version may keep, and a session identifier is not on
+        that list. The upload row carries both the identity and its session, and the identity is
+        the key `dataset_version_for_upload` joins on (`RCA-005` `FR-260`, `FR-261`), so this
+        reuses that link rather than inventing one. Resolved here, in `khepri.runtime`, because it
+        reads an `RRA` row on behalf of an `RCA` ending and `R7-01` §3 forbids either package
+        importing the other.
 
         Through `DeletionService.delete_session_content`, which is the one implementation of this
         ending -- `local/sweeper.py` records why: *"an expiry route that deleted differently from

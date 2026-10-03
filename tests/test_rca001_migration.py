@@ -92,6 +92,11 @@ RCA_REVISIONS = (
     # #432's active-organization foreign key on `rca_sessions`. RCA-only, so it replays here even
     # though its parent `20260925_0031` (an RRA revision) cannot -- see `RCA_UNREPLAYED` below.
     ("20260925_0032", "rca_session_active_organization", "20260925_0031"),
+    # #535's stable upload identity (`RCA-005` `FR-262`), a column on `W1-02`'s version table. It
+    # replays although its parent `20261002_0036` cannot: on a schema without `rra_uploads` its
+    # backfill has nothing to read and leaves every `upload_id` null. Its backfill, key and grant
+    # are proved on PostgreSQL at `tests/test_i535_upload_identity_migration.py`.
+    ("20261003_0037", "rca_version_upload_identity", "20261002_0036"),
 )
 
 #: Revisions in the chain that are registered but **not** replayed -- the `20260822_0020`
