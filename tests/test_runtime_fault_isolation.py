@@ -154,6 +154,41 @@ def test_a_faulting_link_does_not_stop_the_worker_claiming(
     assert "ses_alpha" not in logged, "no session identifier reaches a log (KHEPRI-DEC-015 §7)"
 
 
+class JobsEmptyUnderScope:
+    """`job_bad` reads empty under its link's scope; every other linked job has succeeded."""
+
+    def find(self, job_id: str) -> ReportJob | None:
+        return None if job_id == "job_bad" else replace(job(JOB_SUCCEEDED), job_id=job_id)
+
+
+def test_an_empty_job_read_under_a_links_scope_is_that_links_fault(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`RRA-017` `FR-268`, `FR-238`: under the link's scope an empty read is not "nothing to do".
+
+    Row-level security can be why it is empty, so it is logged as the link's fault, the run stays
+    `started` for the next sweep, and the links after it are still reconciled.
+    """
+    recording = FaultyRecording(faulty_run="none", fault=RuntimeError())
+    recorder = PipelineRecorder(
+        recording=recording,  # type: ignore[arg-type]
+        reads=RecorderReads(
+            sessions=None,  # type: ignore[arg-type]
+            scopes=None,  # type: ignore[arg-type]
+            reports=Links(),  # type: ignore[arg-type]
+            jobs=JobsEmptyUnderScope(),
+            owners=None,  # type: ignore[arg-type]
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        moved = recorder.reconcile(now=NOW)
+
+    assert moved == 1
+    assert recording.completed == ["run_good"]
+    assert "job_id=job_bad error=LinkedJobUnreadable" in caplog.text
+
+
 def test_an_interrupt_during_reconciliation_still_stops_the_worker() -> None:
     loop, queue, _worker, _recording = _worker_loop(KeyboardInterrupt())
 

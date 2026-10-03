@@ -129,6 +129,10 @@ class SessionScopeUnresolved(LookupError):
     """
 
 
+class LinkedJobUnreadable(LookupError):
+    """A started run's linked job read empty under that link's scope (`RRA-017` `FR-268`)."""
+
+
 class JobReaderPort(Protocol):
     def find(self, job_id: str) -> ReportJob | None: ...
 
@@ -260,8 +264,19 @@ class PipelineRecorder:
     def reconcile_job(self, job_id: str, *, now: datetime) -> AnalysisRun | None:
         """Settle or fail the run of one job from the job's *current* state, if terminal."""
         job = self._jobs.find(job_id)
+        return None if job is None else self._settle_terminal(job, now=now)
+
+    def _reconcile_link(self, job_id: str, *, now: datetime) -> AnalysisRun | None:
+        """`RRA-017` `FR-268`: read under the link's scope, an empty job read is the link's fault.
+
+        Row-level security can be why it is empty, so it is never "nothing to do" (`FR-238`).
+        """
+        job = self._jobs.find(job_id)
         if job is None:
-            return None
+            raise LinkedJobUnreadable("The linked job did not read under its link's scope.")
+        return self._settle_terminal(job, now=now)
+
+    def _settle_terminal(self, job: ReportJob, *, now: datetime) -> AnalysisRun | None:
         if job.state == JOB_SUCCEEDED:
             return self.settled(job, now=now)
         if job.state == JOB_DEAD_LETTERED:
@@ -285,7 +300,7 @@ class PipelineRecorder:
             try:
                 # `RRA-017` `FR-268`: each link's job is read in that link's own scope.
                 with acting_for(link.owner_id):
-                    reconciled = self.reconcile_job(link.job_id, now=now)
+                    reconciled = self._reconcile_link(link.job_id, now=now)
             except Exception as fault:
                 _log_link_fault(link, fault)
                 continue
@@ -521,6 +536,7 @@ class SettlingJobStore:
 __all__ = [
     "AdmissionPorts",
     "JobReaderPort",
+    "LinkedJobUnreadable",
     "PipelineRecorder",
     "RecorderReads",
     "RecordingProfilingService",
