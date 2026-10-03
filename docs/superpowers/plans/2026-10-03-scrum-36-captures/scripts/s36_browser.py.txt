@@ -17,14 +17,21 @@ BASE = "http://127.0.0.1:8000"
 OUT = Path(sys.argv[1])
 SETUP = json.loads(Path(sys.argv[2]).read_text())
 STAGE1 = json.loads((OUT / "stage1.json").read_text())
+#: Cookies and tokens live in an operator-only handoff, never in the evidence JSON.
+SECRETS = json.loads((OUT / "secrets.json").read_text())
 CAPS = OUT / "captures"
 CAPS.mkdir(exist_ok=True)
 
 OVERFLOW = "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
 DIRS = "() => [document.documentElement.lang, document.documentElement.dir || getComputedStyle(document.documentElement).direction]"
-FOCUS = """() => { const e = document.activeElement; if (!e || e === document.body) return null;
-  const s = getComputedStyle(e); return {tag: e.tagName, outline: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0,
-  shadow: s.boxShadow !== 'none'}; }"""
+#: A focus indicator counts only when it can be seen: an outline with width and a colour
+#: that is not transparent, or a box-shadow that is not fully transparent.
+FOCUS = r"""() => { const e = document.activeElement; if (!e || e === document.body) return null;
+  const s = getComputedStyle(e);
+  const clear = c => /rgba\([^)]*,\s*0\)$/.test(c) || c === 'transparent';
+  const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 && !clear(s.outlineColor);
+  const shadow = s.boxShadow !== 'none' && !/^rgba\([^)]*,\s*0\)/.test(s.boxShadow);
+  return {tag: e.tagName, outline, shadow}; }"""
 MOTION = """() => Array.from(document.querySelectorAll('*')).filter(e => { const s = getComputedStyle(e);
   const d = v => Math.max(...v.split(',').map(x => parseFloat(x) * (x.trim().endsWith('ms') ? 1 : 1000)));
   return d(s.transitionDuration) > 10 || d(s.animationDuration) > 10; }).length"""
@@ -32,11 +39,11 @@ MOTION = """() => Array.from(document.querySelectorAll('*')).filter(e => { const
 
 def pages() -> list[tuple[str, str, list]]:
     """(label, url, cookies) for every page under test. A browser holds both cookies."""
-    runs = STAGE1["runs"]
+    runs = SECRETS["runs"]
     a = SETUP["a"]
     app = {"name": "khepri_session", "value": a["session_token"], "url": BASE + "/"}
     beta = [{"name": "khepri_beta_session", "value": runs["v1"]["cookie"], "url": BASE + "/api/v1/beta/"}, app]
-    job = runs["v1"]["job"]
+    job = STAGE1["runs"]["v1"]["job"]
     app = [app]
     org = a["organization_id"]
     out = []
@@ -69,8 +76,11 @@ def check(browser, label: str, url: str, cookie: dict) -> dict:
             for _ in range(12):
                 pg.keyboard.press("Tab")
                 stops.append(pg.evaluate(FOCUS))
-            result["focus_stops"] = len([s for s in stops if s])
-            result["focus_visible"] = all((s["outline"] or s["shadow"]) for s in stops if s)
+            detected = [s for s in stops if s]
+            result["focus_stops"] = len(detected)
+            # Twelve presses are a sample, not a required count; but a page where none reached
+            # a focusable element proves nothing, so it does not pass.
+            result["focus_visible"] = bool(detected) and all(s["outline"] or s["shadow"] for s in detected)
         pg.screenshot(path=str(CAPS / f"{label}-{key}.png"), full_page=False)
         ctx.close()
     return result

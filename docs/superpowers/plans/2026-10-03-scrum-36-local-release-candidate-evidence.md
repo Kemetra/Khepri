@@ -68,6 +68,18 @@ The images carry no `khepri.commit` label, because `docker compose build` does n
 - **Scripts.** Every command run is in
   [`2026-10-03-scrum-36-captures/scripts/`](2026-10-03-scrum-36-captures/scripts/). They are
   stored as `.txt` so no gate executes or lints them.
+- **Review round, 2026-10-04.** Three review findings changed the scripts, and the affected
+  stage was run again on the same stack.
+  - **Focus.** The focus check had accepted a transparent indicator, and a page with no
+    detected stop. It now refuses both. The browser stage was re-run under it with the same
+    result (§Coverage).
+  - **Credentials.** Cookies and tokens no longer reach stdout or the stage JSON. They pass
+    between stages through an operator-only `secrets.json` handoff (mode `0600`), and
+    `s36_operator.py` refuses to print to a terminal.
+  - **Log scan.** The log scan is recorded as its own script, `s36_logscan.sh`, with every
+    needle named in §Coverage.
+  - **Repair.** A commit pushed to this branch during review had rotated three scripts' contents
+    between their file names. Every script was restored to the one that ran.
 - **Fixture identities.** These are synthetic organizations (`S36 A 2`, `S36 B 2`, `S36 A 3`,
   `S36 B 3`) and invitation sessions. Their tokens are not recorded here.
 
@@ -78,7 +90,7 @@ The images carry no `khepri.commit` label, because `docker compose build` does n
 | Cold build and start, no withdrawn images | `--no-cache --pull` build of the committed compose file | **Pass.** Exit 0; all six services up; `migrate` exited 0 |
 | Role-specific connections | `pg_roles`, `pg_stat_activity` | **Pass.** `khepri_app`, `khepri_worker` and `khepri_sweep` hold no superuser or `BYPASSRLS`; the worker connects as `khepri_worker`; only the migration owner `khepri` bypasses |
 | One Alembic head | `alembic heads`, `alembic current` in the image | **Pass.** `20261003_0037` |
-| Secret-free logs | All container logs (1,073 lines at the end) | **Pass.** Zero hits for the master key, any role name or password, `password`, a private key, the MinIO credentials, a session or upload identifier, the fixture e-mails, or a traceback |
+| Secret-free logs | All container logs, scanned by `s36_logscan.sh` (1,413 lines after the review round) | **Pass for secrets and bearer material.** Zero hits for the master key, the three runtime role names, `password`, a private key, the MinIO credentials, any session (`ses_`), upload (`upl_`) or scope (`own_`) identifier, the fixture e-mails, or a traceback. **132 hits for `org_`**, all Uvicorn access-log request paths (observation O3) |
 | Identity handoff | Operator verbs, then `POST /app/en/{org}/analyses` | **Pass.** `303` to `/beta/en/upload`, with the beta cookie set |
 | Upload, declarations, processing | Consent, upload, profile with manifest, facts, report request | **Pass.** Two commercial versions, both `succeeded` |
 | Time to first usable report | Upload to `succeeded`, measured by the driver | 8.6 s and 7.5 s (160 rows); 3.2 s (1 row) |
@@ -95,7 +107,7 @@ The images carry no `khepri.commit` label, because `docker compose build` does n
 | Arabic and English, RTL and LTR | Every page, both languages | **Pass.** `lang`/`dir` correct; Arabic pages `rtl` |
 | Narrow layout | 390 px | **Pass.** No page-level horizontal overflow on any page |
 | 200% text | Root font at 200%, 390 px | **Pass for reflow.** No overflow on any page. As in SCRUM-21, this proves root-relative text only; chart text is fixed-size |
-| Keyboard and focus | First 12 Tab stops per page at 1440 | **Pass.** Every stop had a visible indicator |
+| Keyboard and focus | First 12 Tab stops per page at 1440 | **Pass, under the stricter rule of the review round.** Every page reached 11 or 12 focusable stops, and every one carried a visible indicator: an outline with width and a non-transparent colour, or a non-transparent box-shadow. A page reaching no stop would fail |
 | Reduced motion | `prefers-reduced-motion: reduce` | **Pass.** No transition or animation over 10 ms on any page |
 | Rendered PDF parity | EN and AR PDFs, PyMuPDF | **Pass.** See §PDF parity |
 | Published numbers against the oracle | `CLEAN_ROWS` through the journey | **Pass.** See §Reconciliation |
@@ -268,6 +280,19 @@ Both are the system refusing what it must, not failed gates.
   `/app/{lang}/{org}/overview`, and the shell's own navigation links there. This is not a defect.
   The first browser pass used the bare address by mistake.
 
+- **O3. The web access log writes the organization identifier on every `/app` request.**
+  - **What it is.** All 132 `org_` hits are Uvicorn's default access-log lines, such as
+    `"GET /app/en/org_…/data HTTP/1.1" 200`. The request path carries the opaque organization
+    identifier.
+  - **What `KHEPRI-DEC-015` §7 says.** It is not bearer material. The prohibited session
+    identifier never appears; `ses_` has zero hits. But §7 admits opaque organization
+    identifiers in logs "only where a security or audit purpose requires it, in the narrowest
+    sufficient form". The access log records them for every page view, and no such purpose is
+    stated.
+  - **Owner reading needed.** Either name the access log's audit purpose, or turn it off or
+    redact the path (`uvicorn --no-access-log`, or a path filter) in the runtime image. This run
+    records it and fixes nothing.
+
 ## Residual risks
 
 - **The envelope migration is still blocked.** It refuses under the policies until #652
@@ -280,6 +305,7 @@ Both are the system refusing what it must, not failed gates.
   - a worker killed mid-job;
   - restoring object storage;
   - human task completion, and where a person would need help.
+- **O3** awaits an owner reading under `KHEPRI-DEC-015` §7.
 - **One machine, one run.** No hosted environment, no concurrency load and no external
   participant was involved (`KHEPRI-DEC-031`).
 

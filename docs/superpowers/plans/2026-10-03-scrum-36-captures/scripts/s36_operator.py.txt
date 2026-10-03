@@ -1,99 +1,63 @@
-"""SCRUM-36 stage 2: browser checks on the staging stack, after stage 1.
+"""SCRUM-36 operator setup, run inside khepri-staging-web as the application role.
 
-Per page and language: `lang`/`dir`, no page-level horizontal scroll at 1440 and 390, reflow at
-200% root text (390), visible focus on the first 12 Tab stops, and no transition or animation
-over 10 ms under reduced motion. Screenshots go to s36/captures/. Results to s36/stage2.json.
+The approved local identity handoff the M4 run used: production verbs only. Accounts,
+organizations, sessions and the active-organization switch are created through the RCA services;
+beta invitations through `InvitationService.issue_invitation`, the operator action RRA-001 keeps
+off HTTP. Nothing is written to a table directly. Prints one JSON object on stdout.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import sys
-from pathlib import Path
+from datetime import timedelta
 
-from playwright.sync_api import sync_playwright
-
-BASE = "http://127.0.0.1:8000"
-OUT = Path(sys.argv[1])
-SETUP = json.loads(Path(sys.argv[2]).read_text())
-STAGE1 = json.loads((OUT / "stage1.json").read_text())
-CAPS = OUT / "captures"
-CAPS.mkdir(exist_ok=True)
-
-OVERFLOW = "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
-DIRS = "() => [document.documentElement.lang, document.documentElement.dir || getComputedStyle(document.documentElement).direction]"
-FOCUS = """() => { const e = document.activeElement; if (!e || e === document.body) return null;
-  const s = getComputedStyle(e);
-  const transparent = v => {
-    if (!v || v === 'transparent') return true;
-    return /transparent|rgba?\([^)]*,\s*0(?:\.0+)?%?\s*\)|rgba?\([^)]*\/\s*0(?:\.0+)?%?\s*\)/i.test(v);
-  };
-  return {tag: e.tagName, outline: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 && !transparent(s.outlineColor),
-  shadow: s.boxShadow !== 'none' && !transparent(s.boxShadow)}; }"""
-MOTION = """() => Array.from(document.querySelectorAll('*')).filter(e => { const s = getComputedStyle(e);
-  const d = v => Math.max(...v.split(',').map(x => parseFloat(x) * (x.trim().endsWith('ms') ? 1 : 1000)));
-  return d(s.transitionDuration) > 10 || d(s.animationDuration) > 10; }).length"""
+from khepri.rca.accounts import AccountService
+from khepri.rca.organizations import OrganizationService
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
+from khepri.rca.session_service import SessionService
+from khepri.rca.switching import OrganizationSwitcher
+from khepri.runtime.config import RuntimeSettings
+from khepri.runtime.db_roles import DatabaseRole
+from khepri.runtime.wiring import KHEPRI_SESSION_LIFETIME, build_stack
 
 
-def pages() -> list[tuple[str, str, list]]:
-    """(label, url, cookies) for every page under test. A browser holds both cookies."""
-    runs = STAGE1["runs"]
-    a = SETUP["a"]
-    app = {"name": "khepri_session", "value": a["session_token"], "url": BASE + "/"}
-    beta = [{"name": "khepri_beta_session", "value": runs["v1"]["cookie"], "url": BASE + "/api/v1/beta/"}, app]
-    job = runs["v1"]["job"]
-    app = [app]
-    org = a["organization_id"]
-    out = []
-    for lang in ("en", "ar"):
-        out.append((f"report-web-{lang}", f"{BASE}/api/v1/beta/reports/{job}/surfaces/web/{lang}", beta))
-        out.append((f"report-evidence-{lang}", f"{BASE}/api/v1/beta/reports/{job}/surfaces/evidence/{lang}", beta))
-        out.append((f"journey-upload-{lang}", f"{BASE}/beta/{lang}/upload", beta))
-        out.append((f"journey-report-{lang}", f"{BASE}/beta/{lang}/report", beta))
-        for sub in ("/overview", "/analyses", "/data", "/team"):
-            out.append((f"app-{lang}{sub.replace('/', '-')}", f"{BASE}/app/{lang}/{org}{sub}", app))
-    return out
-
-
-def check(browser, label: str, url: str, cookie: dict) -> dict:
-    result: dict = {}
-    for width, scale in ((1440, False), (390, False), (390, True)):
-        ctx = browser.new_context(viewport={"width": width, "height": 900}, bypass_csp=scale, reduced_motion="reduce")
-        ctx.add_cookies(cookie)
-        pg = ctx.new_page()
-        resp = pg.goto(url, wait_until="networkidle")
-        if scale:
-            pg.add_style_tag(content="html { font-size: 200% !important }")
-            pg.wait_for_timeout(200)
-        key = f"{width}{'-200pct' if scale else ''}"
-        result[key] = {"status": resp.status if resp else None, "overflow_px": pg.evaluate(OVERFLOW)}
-        if width == 1440:
-            result["lang_dir"] = pg.evaluate(DIRS)
-            result["motion_over_10ms"] = pg.evaluate(MOTION)
-            stops = []
-            for _ in range(12):
-                pg.keyboard.press("Tab")
-                stops.append(pg.evaluate(FOCUS))
-            focused = [s for s in stops if s]
-            result["focus_stops"] = len(focused)
-            result["focus_visible"] = bool(focused) and all(s["outline"] or s["shadow"] for s in focused)
-        pg.screenshot(path=str(CAPS / f"{label}-{key}.png"), full_page=False)
-        ctx.close()
-    return result
+def member(stack, accounts, organizations, sessions, switcher, tag: str) -> dict:
+    now = stack.clock()
+    run = os.environ.get("S36_RUN", "1")
+    account = accounts.create_account(f"s36-{tag}-{run}@example.test", secrets.token_urlsafe(18))
+    organization = organizations.create_organization(f"S36 {tag.upper()} {run}", account.account_id, now=now)
+    token = sessions.create(account.account_id, now=now)
+    switcher.switch(token, organization.organization_id, now=now)
+    return {"organization_id": organization.organization_id, "session_token": token}
 
 
 def main() -> None:
-    log = {}
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        for label, url, cookie in pages():
-            try:
-                log[label] = check(browser, label, url, cookie)
-            except Exception as error:  # noqa: BLE001 -- recorded, not hidden
-                log[label] = {"error": f"{type(error).__name__}: {str(error)[:200]}"}
-            print(label, json.dumps(log[label])[:240], flush=True)
-        browser.close()
-    (OUT / "stage2.json").write_text(json.dumps(log, indent=2))
+    # Stdout is this script's only way out of the container, so it carries tokens. It must be
+    # redirected to an operator-only file; a terminal would display them.
+    if sys.stdout.isatty():
+        raise SystemExit("redirect stdout to an operator-only file: it carries session tokens")
+    stack = build_stack(RuntimeSettings.from_environment(role=DatabaseRole.APPLICATION))
+    account_store = SqlAccountStore(stack.factory)
+    organization_store = SqlOrganizationStore(stack.factory)
+    accounts = AccountService(account_store)
+    organizations = OrganizationService(organization_store)
+    sessions = SessionService(SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME)
+    switcher = OrganizationSwitcher(sessions, organization_store)
+    out = {
+        "a": member(stack, accounts, organizations, sessions, switcher, "a"),
+        "b": member(stack, accounts, organizations, sessions, switcher, "b"),
+        "invitations": [
+            stack.services.invitations.issue_invitation(
+                expires_at=stack.clock() + timedelta(days=7)
+            )
+            for _ in range(6)
+        ],
+    }
+    print(json.dumps(out))
 
 
 main()

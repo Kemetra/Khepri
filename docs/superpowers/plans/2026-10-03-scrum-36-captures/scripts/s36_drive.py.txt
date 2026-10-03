@@ -8,7 +8,6 @@ PDFs and Excel go to s36/files/.
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 import time
@@ -27,6 +26,8 @@ SETUP = json.loads(Path(sys.argv[2]).read_text())
 FILES = OUT / "files"
 FILES.mkdir(parents=True, exist_ok=True)
 LOG: dict[str, object] = {}
+#: Cookies for later stages. Written to an operator-only file, never printed or logged.
+SECRETS: dict[str, dict] = {}
 BETA = "khepri_beta_session"
 COMMERCIAL = "khepri_session"
 
@@ -132,10 +133,6 @@ def page(http: httpx.Client, path: str, token: str | None) -> httpx.Response:
     return http.get(path, cookies={COMMERCIAL: token} if token else {})
 
 
-def redacted_runs(runs: dict) -> dict:
-    return {tag: {"job": value.get("job")} for tag, value in runs.items()}
-
-
 def main() -> None:
     a, b = SETUP["a"], SETUP["b"]
     org_a, tok_a, org_b, tok_b = a["organization_id"], a["session_token"], b["organization_id"], b["session_token"]
@@ -155,7 +152,8 @@ def main() -> None:
                 record("guard_beta_cookie_alone", [guard.status_code, guard.text[:80]])
             steps = run_journey(http, both, content, tag)
             record(f"journey_{tag}", steps)
-            runs[tag] = {"cookie": beta, "job": steps.get("job_id")}
+            runs[tag] = {"job": steps.get("job_id")}
+            SECRETS.setdefault("runs", {})[tag] = {"cookie": beta}
             if steps.get("state") == "succeeded":
                 record(f"surfaces_{tag}", surfaces(http, both, steps["job_id"], tag))
         # --- the shell pages -----------------------------------------------------------------
@@ -192,11 +190,12 @@ def main() -> None:
         # --- isolation -----------------------------------------------------------------------
         iso = {}
         job1 = runs["v1"]["job"]
+        v1_cookie = SECRETS["runs"]["v1"]["cookie"]
         status, _loc, beta_b = enter(http, org_b, tok_b)
         http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies={BETA: beta_b, COMMERCIAL: tok_b})
         for label, cookies in (
             ("org_b_both_cookies", {BETA: beta_b, COMMERCIAL: tok_b}),
-            ("org_b_commercial_with_a_beta", {BETA: runs["v1"]["cookie"], COMMERCIAL: tok_b}),
+            ("org_b_commercial_with_a_beta", {BETA: v1_cookie, COMMERCIAL: tok_b}),
             ("no_session", {}),
         ):
             for p in ("", "/bundle", "/surfaces/web/en", "/surfaces/pdf/en", "/surfaces/excel"):
@@ -224,11 +223,11 @@ def main() -> None:
         if bad["insufficient_1_row"].get("state") == "succeeded":
             bad["insufficient_surfaces"] = surfaces(http, {BETA: cookie}, bad["insufficient_1_row"]["job_id"], "small")
         record("beta_failures", bad)
-        record("runs", redacted_runs(runs))
-        handoff_path = os.environ.get("S36_STAGE1_HANDOFF")
-        if handoff_path:
-            Path(handoff_path).write_text(json.dumps(runs, indent=2))
+        record("runs", runs)
     (OUT / "stage1.json").write_text(json.dumps(LOG, indent=2))
+    secrets = OUT / "secrets.json"
+    secrets.write_text(json.dumps(SECRETS))
+    secrets.chmod(0o600)
 
 
 main()
