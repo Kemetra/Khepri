@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import sessionmaker
 
+from khepri.rra import job_persistence
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.jobs import (
     EnqueueJob,
@@ -515,3 +517,36 @@ def test_leased_or_settled_jobs_are_not_orphanable(state: str) -> None:
 def test_an_unknown_job_state_is_never_treated_as_recoverable(state: str) -> None:
     with pytest.raises(UnknownJobState):
         orphanable(state)
+
+
+def test_a_fault_on_one_recovery_candidate_is_isolated_to_it(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`RRA-017` `FR-268`: each candidate recovers in its own scoped transaction, and a fault on
+    one is logged and isolated to it, so the other candidates still recover (`#523`)."""
+    test = harness()
+    test.enqueue(job_id="job_alpha")
+    test.jobs.enqueue(
+        EnqueueJob(
+            scope=test.scope,
+            job_id="job_beta",
+            idempotency_key="f" * 64,
+            queued_at=NOW,
+            max_attempts=3,
+        )
+    )
+    for job_id in ("job_alpha", "job_beta"):
+        assert test.lease(job_id, "worker_stopped") is not None
+    reread = job_persistence._candidate_reread  # noqa: SLF001
+
+    def faulting(job_id: str, where: tuple) -> object:
+        if job_id == "job_alpha":
+            raise RuntimeError("the re-read failed")
+        return reread(job_id, where)
+
+    monkeypatch.setattr(job_persistence, "_candidate_reread", faulting)
+    with caplog.at_level(logging.ERROR):
+        recovered = test.jobs.recover_expired(now=NOW + timedelta(minutes=3))
+
+    assert [job.job_id for job in recovered] == ["job_beta"]
+    assert "job recovery faulted on one candidate: error=RuntimeError" in caplog.text
