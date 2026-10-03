@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
 
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base, _utc
+from khepri.rra.scope import scoped_begin, scoped_read
 from khepri.rra.sessions import CrossSessionAccessDenied, SessionScope
 from khepri.rra.telemetry import OperationalEvent
 
@@ -120,7 +121,7 @@ class SqlOperationalEventRepository:
         try:
             return self._insert_or_get(scope=scope, event=event)
         except IntegrityError:
-            with self._factory() as database:
+            with scoped_read(self._factory, scope.owner_id) as database:
                 row = self._existing(database, event)
                 if row is None:
                     raise
@@ -132,7 +133,7 @@ class SqlOperationalEventRepository:
         scope: SessionScope,
         event: OperationalEvent,
     ) -> OperationalEvent:
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, scope.owner_id) as database:
             self._require_job_scope(database, scope=scope, event=event)
             existing = self._existing(database, event)
             if existing is not None:
@@ -157,7 +158,7 @@ class SqlOperationalEventRepository:
                 OperationalEventRow.event_id,
             )
         )
-        with self._factory() as database:
+        with scoped_read(self._factory, scope.owner_id) as database:
             job = database.scalar(
                 select(ReportJobRow).where(
                     ReportJobRow.job_id == job_id,

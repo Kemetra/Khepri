@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
+from khepri.rra import job_persistence
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.jobs import (
     EnqueueJob,
@@ -20,12 +20,20 @@ from khepri.rra.jobs import (
     UnknownJobState,
     orphanable,
 )
-from khepri.rra.persistence import Base, SqlSessionStore
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.sessions import (
     CrossSessionAccessDenied,
     InvitationService,
     SessionScope,
 )
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    WORKER,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 IDEMPOTENCY_KEY = "8f99c79c1c79c892c1a30a74fcc1b536b04e409ee4562acfb82d8d76fb750d7d"
@@ -65,6 +73,7 @@ class Harness:
         return self.jobs.lease(
             LeaseRequest(
                 job_id=job_id,
+                owner_id=self.scope.owner_id,
                 worker_id=worker_id,
                 now=now,
                 lease_for=timedelta(minutes=2),
@@ -83,6 +92,7 @@ class Harness:
             FailureRequest(
                 lease=LeaseAction(
                     job_id=job.job_id,
+                    owner_id=self.scope.owner_id,
                     worker_id=worker_id,
                     now=now,
                 ),
@@ -102,13 +112,7 @@ class Harness:
 
 
 def harness() -> Harness:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(engine, expire_on_commit=False)
+    factory = sessionmaker(store_engine(), expire_on_commit=False)
     sessions = SqlSessionStore(factory)
     invitations = InvitationService(sessions)
     beta_session = invitations.redeem(
@@ -120,7 +124,7 @@ def harness() -> Harness:
         session_id=beta_session.session_id,
     )
     return Harness(
-        jobs=SqlReportJobRepository(factory),
+        jobs=SqlReportJobRepository(sessionmaker(store_engine(WORKER), expire_on_commit=False)),
         sessions=sessions,
         scope=scope,
         factory=factory,
@@ -169,7 +173,7 @@ def test_a_restarted_worker_recovers_and_releases_an_expired_lease() -> None:
     test.lease(queued.job_id, "worker_stopped")
 
     restarted = Harness(
-        jobs=SqlReportJobRepository(test.factory),
+        jobs=SqlReportJobRepository(sessionmaker(store_engine(WORKER), expire_on_commit=False)),
         sessions=test.sessions,
         scope=test.scope,
         factory=test.factory,
@@ -201,6 +205,7 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
         FailureRequest(
             lease=LeaseAction(
                 job_id=first.job_id,
+                owner_id=test.scope.owner_id,
                 worker_id="worker_alpha",
                 now=NOW + timedelta(seconds=30),
             ),
@@ -217,6 +222,7 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
         FailureRequest(
             lease=LeaseAction(
                 job_id=second.job_id,
+                owner_id=test.scope.owner_id,
                 worker_id="worker_beta",
                 now=NOW + timedelta(minutes=1, seconds=30),
             ),
@@ -249,6 +255,7 @@ def test_only_the_current_lease_holder_can_complete_a_job() -> None:
         test.jobs.complete(
             LeaseAction(
                 job_id=leased.job_id,
+                owner_id=test.scope.owner_id,
                 worker_id="worker_stale",
                 now=NOW + timedelta(minutes=1),
             )
@@ -256,6 +263,7 @@ def test_only_the_current_lease_holder_can_complete_a_job() -> None:
     completed = test.jobs.complete(
         LeaseAction(
             job_id=leased.job_id,
+            owner_id=test.scope.owner_id,
             worker_id="worker_alpha",
             now=NOW + timedelta(minutes=1),
         )
@@ -276,6 +284,7 @@ def test_a_heartbeat_keeps_an_active_job_out_of_orphan_recovery() -> None:
     extended = test.jobs.heartbeat(
         LeaseRequest(
             job_id=leased.job_id,
+            owner_id=test.scope.owner_id,
             worker_id="worker_alpha",
             now=NOW + timedelta(minutes=1),
             lease_for=timedelta(minutes=3),
@@ -484,6 +493,7 @@ def test_settled_jobs_are_never_orphaned() -> None:
     test.jobs.complete(
         LeaseAction(
             job_id=leased.job_id,
+            owner_id=test.scope.owner_id,
             worker_id="worker_alpha",
             now=NOW + timedelta(minutes=1),
         )
@@ -507,3 +517,36 @@ def test_leased_or_settled_jobs_are_not_orphanable(state: str) -> None:
 def test_an_unknown_job_state_is_never_treated_as_recoverable(state: str) -> None:
     with pytest.raises(UnknownJobState):
         orphanable(state)
+
+
+def test_a_fault_on_one_recovery_candidate_is_isolated_to_it(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`RRA-017` `FR-268`: each candidate recovers in its own scoped transaction, and a fault on
+    one is logged and isolated to it, so the other candidates still recover (`#523`)."""
+    test = harness()
+    test.enqueue(job_id="job_alpha")
+    test.jobs.enqueue(
+        EnqueueJob(
+            scope=test.scope,
+            job_id="job_beta",
+            idempotency_key="f" * 64,
+            queued_at=NOW,
+            max_attempts=3,
+        )
+    )
+    for job_id in ("job_alpha", "job_beta"):
+        assert test.lease(job_id, "worker_stopped") is not None
+    reread = job_persistence._candidate_reread  # noqa: SLF001
+
+    def faulting(job_id: str, where: tuple) -> object:
+        if job_id == "job_alpha":
+            raise RuntimeError("the re-read failed")
+        return reread(job_id, where)
+
+    monkeypatch.setattr(job_persistence, "_candidate_reread", faulting)
+    with caplog.at_level(logging.ERROR):
+        recovered = test.jobs.recover_expired(now=NOW + timedelta(minutes=3))
+
+    assert [job.job_id for job in recovered] == ["job_beta"]
+    assert "job recovery faulted on one candidate: error=RuntimeError" in caplog.text

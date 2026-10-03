@@ -10,29 +10,24 @@ from typing import Any
 import boto3
 from botocore.config import Config
 from fastapi import FastAPI
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rca.actor_resolution import ActorResolver
 from khepri.rca.authorization_resolution import AuthorizationResolver
 from khepri.rca.identity import IdentityProvider
 from khepri.rca.invitation_persistence import SqlInvitationStore
-from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.invitation_service import InvitationService as RcaInvitationService
 from khepri.rca.invitations import Invitation, InvitationOffer
 from khepri.rca.isolation import IsolationService
-from khepri.rca.lifecycle import AccountRetentionSweeper, LifecycleService, MembershipEventSweeper
+from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
-from khepri.rca.recovery_security import RecoverySecurityEventSweeper, RecoverySecurityService
+from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rca.semantic_queries import queries as semantic_queries
-from khepri.rca.session_persistence import SqlSessionStore as SqlCommercialSessionStore
 from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
-from khepri.rca.session_retention import SessionRetentionSweeper
 from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
-from khepri.rca.workspace.audit_retention import WorkspaceAuditSweeper
 from khepri.rca.workspace.comparisons import ComparisonActions, ComparisonStores
 from khepri.rca.workspace.persistence import (
     SqlRunProvenanceStore,
@@ -47,10 +42,10 @@ from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.claim_queue import ClaimingReportQueue, ClaimPolicy
 from khepri.rra.datasets import ProfilingService
+from khepri.rra.definer_calls import SqlSessionOwners
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
-from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.intake import IntakeService
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.journey.routes import JourneyServices
@@ -77,6 +72,7 @@ from khepri.rra.report_services import (
     ReportRequestAdapter,
 )
 from khepri.rra.reports import ReportServices
+from khepri.rra.scope_middleware import add_scope_unit
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.beta_membership_guard import BetaMembershipGuard, add_beta_membership_guard
@@ -85,6 +81,7 @@ from khepri.runtime.clerk_identity import ClerkIdentityProvider
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
 from khepri.runtime.comparison_assembly import ComparisonAssemblyPorts, CrossVersionAssembly
 from khepri.runtime.config import RuntimeSettings
+from khepri.runtime.db_roles import engine_for
 from khepri.runtime.external_auth_api import (
     KHEPRI_SESSION_LIFETIME,
     ExternalAuthenticationServices,
@@ -100,19 +97,14 @@ from khepri.runtime.pipeline_recording import (
     RecordingProfilingService,
     RecordingReportRequests,
 )
-from khepri.runtime.retention_sweep import (
-    RetentionPasses,
-    RetentionSweeper,
-    build_retention_sweeper,
-)
 from khepri.runtime.semantic_view_adapter import SemanticViewAdapter
 from khepri.runtime.session_end_api import add_session_end_route
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
+from khepri.runtime.sweep_composition import build_retention_sweep
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
 from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
 from khepri.runtime.workspace_recording import WorkspaceRecording
-from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
 
 # The web role publishes but never claims, so this identity appears in no lease. It
 # is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
@@ -182,7 +174,7 @@ def build_stack(
     clock: Callable[[], datetime] = utc_now,
 ) -> RuntimeStack:
     resolved_clients = clients or build_clients(settings)
-    engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
+    engine = engine_for(settings.database_url, settings.database_role)
     factory = sessionmaker(bind=engine, future=True)
     objects = S3EncryptedObjectStore(
         client=resolved_clients.s3,
@@ -193,7 +185,6 @@ def build_stack(
     uploads = SqlUploadRepository(factory)
     profiles = SqlProfileRepository(factory)
     packages = SqlFactPackageRepository(factory)
-    deletions = SqlDeletionRepository(factory)
     report_deliveries = SqlDeliveryStore(factory, now=clock)
     artifact_repository = SqlArtifactRepository(factory)
     artifact_publisher = ReportArtifactPublisher(
@@ -223,7 +214,7 @@ def build_stack(
             ),
             deletion=DeletionService(
                 sessions=sessions,
-                deletions=deletions,
+                deletions=SqlDeletionRepository(factory),
                 objects=objects,
             ),
         ),
@@ -395,6 +386,7 @@ def build_pipeline_recorder(stack: RuntimeStack) -> PipelineRecorder:
             scopes=SqlIsolationScopes(stack.factory),
             reports=SqlRunReportStore(stack.factory),
             jobs=JobReader(stack.factory),
+            owners=SqlSessionOwners(stack.factory),
         ),
     )
 
@@ -570,6 +562,8 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         report_services=beta.reports,
         journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
+    # `RRA-017` `FR-233`: each beta request is one unit, in its cookie's scope.
+    add_scope_unit(app, SqlSessionOwners(stack.factory))
     commercial = build_commercial_services(stack)
     add_commercial_routes(app, services=commercial, clock=stack.clock)
     # `#594`: the beta cookie reaches a workspace analysis only while membership holds.
@@ -736,47 +730,6 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     )
 
 
-def build_retention_sweep(stack: RuntimeStack) -> RetentionSweeper:
-    """The sweep `khepri-retention-sweep` runs (`KHEPRI-DEC-033` §5).
-
-    Takes the stack rather than settings so the object store, the session factory and the
-    `DeletionService` are the **same ones** the API and the worker use. `DeletionService` needs the
-    `S3EncryptedObjectStore` that `build_stack` already constructs; building a second one here
-    would be a second wiring of the same collaborators, and `retention_sweep.py` records why that
-    is the thing to avoid: *"an expiry route that deleted differently from the on-demand route
-    would be a second deletion implementation to keep correct."*
-
-    The collaborators mirror `local/wiring.py`'s composition exactly, so the local sweep and the
-    deployed sweep cannot enforce different horizons. No horizon overrides: production runs the
-    governed twenty-four months, twelve months and thirty days.
-    """
-    return build_retention_sweeper(
-        jobs=stack.reports.jobs,
-        deletion=stack.services.deletion,
-        factory=stack.factory,
-        retention=RetentionPasses(
-            accounts=AccountRetentionSweeper(SqlAccountStore(stack.factory)),
-            events=MembershipEventSweeper(SqlOrganizationStore(stack.factory)),
-            sessions=SessionRetentionSweeper(SqlCommercialSessionStore(stack.factory)),
-            invitations=InvitationRetentionSweeper(SqlInvitationStore(stack.factory)),
-            recovery_events=RecoverySecurityEventSweeper(
-                SqlRecoverySecurityEventStore(stack.factory)
-            ),
-            # `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons, which had no implementation at all
-            # before that slice -- not merely no caller. Without these the workspace audit events
-            # and the deletion evidence `W1-07a` writes accumulate indefinitely under a stated
-            # twelve-month rule, which is the shape §5 exists to close.
-            workspace_audit=WorkspaceAuditSweeper(SqlWorkspaceAuditStore(stack.factory)),
-            evidence=DeletionEvidenceSweeper(SqlDeletionRepository(stack.factory)),
-            raw_uploads=RawUploadRetentionSweeper(
-                factory=stack.factory,
-                objects=stack.objects,
-                audit=SqlWorkspaceAuditStore(stack.factory),
-            ),
-        ),
-    )
-
-
 def build_pipeline(
     stack: RuntimeStack,
     *,
@@ -812,6 +765,7 @@ __all__ = [
     "build_pipeline",
     "build_recovery_security_service",
     "build_report_services",
+    "build_retention_sweep",
     "build_stack",
     "build_web_app",
     "utc_now",

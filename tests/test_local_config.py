@@ -24,6 +24,7 @@ from khepri.local.config import (
     DEFAULT_ACCESS_KEY,
     DEFAULT_BUCKET,
     DEFAULT_DATABASE_URL,
+    DEFAULT_MIGRATION_DATABASE_URL,
     DEFAULT_REGION,
     DEFAULT_S3_ENDPOINT,
     DEFAULT_SECRET_KEY,
@@ -37,7 +38,9 @@ from khepri.runtime.config import (
     STORAGE_ENDPOINT_VARIABLE,
     STORAGE_REGION_VARIABLE,
     RuntimeSettings,
+    migration_database_url,
 )
+from khepri.runtime.db_roles import DatabaseRole
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -98,6 +101,11 @@ class TestOverrides:
 
 def _compose(name: str = "docker-compose.local.yml") -> dict:
     return yaml.safe_load((REPOSITORY_ROOT / name).read_text(encoding="utf-8"))
+
+
+def _shared(service: dict) -> dict:
+    """A service's environment without its own role's database secret."""
+    return {k: v for k, v in service["environment"].items() if "DATABASE_SECRET" not in k}
 
 
 def _staging() -> dict:
@@ -257,10 +265,14 @@ class TestStagingComposeContract:
             assert environment.get(variable), f"{variable} must be set and non-empty"
 
     def test_the_worker_and_web_share_one_runtime_environment(self) -> None:
-        """They read the same rows and the same bucket; divergence is a split brain."""
+        """They read the same rows and the same bucket; divergence is a split brain.
+
+        Everything but the database credential, which `RRA-017` `FR-270` makes each role's own:
+        `tests/test_rra017_connection_model.py` asserts each holds its own role's secret alone.
+        """
         services = _staging()["services"]
 
-        assert services["web"]["environment"] == services["worker"]["environment"]
+        assert _shared(services["web"]) == _shared(services["worker"])
 
     def test_no_clerk_variable_is_supplied_empty(self) -> None:
         """`_clerk_settings` reads these through `_optional`.
@@ -288,24 +300,26 @@ class TestStagingComposeContract:
         assert environment["AWS_CA_BUNDLE"], "botocore must be told to trust the local CA"
         assert "ssl=on" in services["postgres"]["command"]
         settings = RuntimeSettings.from_environment(
-            {**environment, "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode()}
+            {**environment, "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode()},
+            role=DatabaseRole.APPLICATION,
         )
         assert settings.database_url.query["sslmode"] == "verify-full"
 
     def test_migrations_and_the_runtime_verify_postgres_against_one_mounted_ca(self) -> None:
         """Compose and config share one source (`#434` §4).
 
-        `migrations/env.py` reads `KHEPRI_DATABASE_URL` raw, so the migrate URL is a
-        second, hand-written statement of the database TLS mode. It names the same CA
-        file the runtime receives through `PGSSLROOTCERT`, and every service that reads
-        that path has it mounted.
+        `migrations/env.py` builds the migration owner's URL through the runtime's own
+        `_database_url` (`RRA-017` `FR-270`), so its TLS mode is derived, not restated: it
+        verifies against the same CA file the runtime receives through `PGSSLROOTCERT`, and
+        every service that reads that path has it mounted.
         """
         services = _staging()["services"]
         ca = services["web"]["environment"]["PGSSLROOTCERT"]
-        url = services["migrate"]["environment"]["KHEPRI_DATABASE_URL"]
+        url = migration_database_url(services["migrate"]["environment"])
 
         assert services["worker"]["environment"]["PGSSLROOTCERT"] == ca
-        assert url.endswith(f"?sslmode=verify-full&sslrootcert={ca}"), url
+        assert url is not None, "migrate must hold the migration owner's secret"
+        assert url.query == {"sslmode": "verify-full", "sslrootcert": ca}
         for role in ("web", "worker", "migrate"):
             mounted = {volume.rsplit(":", 2)[1] for volume in services[role]["volumes"]}
             assert ca in mounted, f"{role} does not mount {ca}"
@@ -423,4 +437,4 @@ class TestMigrationContract:
     def test_default_migrations_target_the_local_runtime_database(self) -> None:
         config = Config(REPOSITORY_ROOT / "alembic.ini")
 
-        assert config.get_main_option("sqlalchemy.url") == DEFAULT_DATABASE_URL
+        assert config.get_main_option("sqlalchemy.url") == DEFAULT_MIGRATION_DATABASE_URL

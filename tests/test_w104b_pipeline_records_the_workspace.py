@@ -37,6 +37,7 @@ from khepri.rra.worker import WorkerPolicy
 from khepri.runtime.pipeline_recording import SettlingJobStore
 from khepri.runtime.shell_copy import SHELL_COPY
 from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra017_suite_engine import STORE_BACKENDS, store_backend  # noqa: F401
 from tests.w104_support import GOLDEN_CSV, OTHER_CSV, attestation, events, member
 from tests.w104b_support import (
     LEASE_FOR,
@@ -51,6 +52,8 @@ from tests.w104b_support import (
     submit,
 )
 from tests.w105_support import page, staged_analyses_page
+
+pytestmark = STORE_BACKENDS
 
 EN = SHELL_COPY["en"]
 #: Between an action and its repeat, so the two events carry distinct instants and the audit
@@ -157,7 +160,7 @@ def test_the_worker_completes_the_run_with_every_delivered_artifact_by_digest() 
 
     j.run_job(job_id)
 
-    job = j.reader.find(job_id)
+    job = j.job(job_id)
     assert job is not None and job.state == JOB_SUCCEEDED
     (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
     assert run.state == RUN_COMPLETED
@@ -204,7 +207,7 @@ def test_completion_is_one_event_and_a_second_worker_pass_records_it_as_already_
     j.run_job(job_id)
     j.clock.advance(A_MOMENT)
 
-    j.recorder.settled(j.reader.find(job_id), now=j.clock())
+    j.recorder.settled(j.job(job_id), now=j.clock())
 
     assert _outcomes(j, who, ACTION_RUN_COMPLETED) == [
         OUTCOME_COMPLETED,
@@ -226,7 +229,7 @@ def test_a_failed_attempt_that_will_retry_leaves_the_run_processing() -> None:
 
     j.run_job(job_id, handler=BrokenHandler())
 
-    job = j.reader.find(job_id)
+    job = j.job(job_id)
     assert job is not None and job.state == JOB_RETRYABLE
     (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
     assert run.state == RUN_STARTED
@@ -245,7 +248,7 @@ def test_a_dead_lettered_job_fails_the_run_and_overview_asks_for_attention() -> 
         j.run_job(job_id, handler=broken)
         j.clock.advance(RETRY_DELAY * 2)
 
-    job = j.reader.find(job_id)
+    job = j.job(job_id)
     assert job is not None and job.state == JOB_DEAD_LETTERED
     assert broken.attempts == 3
     (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
@@ -268,7 +271,7 @@ def test_a_dead_letter_reported_twice_fails_the_run_once() -> None:
         j.run_job(job_id, handler=BrokenHandler())
         j.clock.advance(RETRY_DELAY * 2)
 
-    j.recorder.abandoned(j.reader.find(job_id), now=j.clock())
+    j.recorder.abandoned(j.job(job_id), now=j.clock())
 
     (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
     assert run.state == RUN_FAILED
@@ -334,7 +337,7 @@ def test_a_job_the_worker_finished_before_its_run_was_linked_is_completed_at_the
         jobs=j.jobs, reader=j.reader, packages=j.w.packages, deliveries=j.deliveries
     ).request_session_report(session_id=session_id, now=j.clock())
     j.run_job(view.job.job_id)
-    assert j.reader.find(view.job.job_id).state == JOB_SUCCEEDED
+    assert j.job(view.job.job_id).state == JOB_SUCCEEDED
     assert j.w.store.analysis_runs_for_scope(who.owner_id) == ()
 
     requested = client.post("/api/v1/beta/reports", json={})
@@ -363,12 +366,18 @@ def test_the_recovery_sweep_settles_a_run_a_crash_left_started() -> None:
     policy = WorkerPolicy(worker_id=WORKER_ID, lease_for=LEASE_FOR, retry_delay=RETRY_DELAY)
     for _attempt in range(3):
         leased = j.jobs.lease(
-            LeaseRequest(job_id=job_id, worker_id=WORKER_ID, now=j.clock(), lease_for=LEASE_FOR)
+            LeaseRequest(
+                job_id=job_id,
+                owner_id=who.owner_id,
+                worker_id=WORKER_ID,
+                now=j.clock(),
+                lease_for=LEASE_FOR,
+            )
         )
         assert leased is not None
         j.clock.advance(LEASE_FOR * 2)
         j.jobs.recover_expired(now=j.clock())
-    assert j.reader.find(job_id).state == JOB_DEAD_LETTERED
+    assert j.job(job_id).state == JOB_DEAD_LETTERED
     (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
     assert run.state == RUN_STARTED
 
@@ -427,7 +436,7 @@ def test_a_session_no_organization_owns_records_nothing_and_still_gets_its_repor
 
     j.run_job(job_id)
 
-    job = j.reader.find(job_id)
+    job = j.job(job_id)
     assert job is not None and job.state == JOB_SUCCEEDED
     assert j.reports.run_id_for_job(job.owner_id, job_id) is None
     assert j.w.store.dataset_versions_for_scope(job.owner_id) == ()
@@ -446,7 +455,7 @@ def test_an_unattested_source_is_not_a_dataset_version_and_its_run_is_not_record
 
     j.run_job(job_id)
 
-    job = j.reader.find(job_id)
+    job = j.job(job_id)
     assert job is not None and job.state == JOB_SUCCEEDED
     assert j.w.store.dataset_versions_for_scope(who.owner_id) == ()
     assert j.w.store.analysis_runs_for_scope(who.owner_id) == ()

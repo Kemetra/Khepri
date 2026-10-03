@@ -41,8 +41,11 @@ from khepri.rra.jobs import (
 )
 from khepri.runtime.pipeline_recording import SettlingJobStore
 from khepri.runtime.workspace_recording import Attempt, Performed
+from tests.rra017_suite_engine import STORE_BACKENDS, store_backend  # noqa: F401
 from tests.w104_support import NOW, events, member, world
 from tests.w105_support import admitted_version, completed_run
+
+pytestmark = STORE_BACKENDS
 
 LATER = NOW + timedelta(minutes=1)
 SOURCE = AdmittedSource(

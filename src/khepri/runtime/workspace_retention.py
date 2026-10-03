@@ -27,6 +27,7 @@ from khepri.rca.workspace.unit_of_work import unit_of_work, writing
 from khepri.rra.artifact_persistence import ReportArtifactRow
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.persistence import UploadRow, session_scope_for_update_statement
+from khepri.rra.scope import acting_for, apply_scope
 from khepri.rra.sessions import SessionScope, object_in_scope
 
 # A storage sentinel for DEC-033's deliberately unbounded active lifetime.  It
@@ -89,6 +90,8 @@ def retain_workspace_content(
     success for content this never promoted.
     """
     with writing(factory) as database:
+        # `RRA-017` `FR-233`: the RRA rows below are read and written in `owner_id`'s scope.
+        apply_scope(database, owner_id)
         session = database.scalar(
             session_scope_for_update_statement(
                 SessionScope(owner_id=owner_id, session_id=session_id)
@@ -119,14 +122,20 @@ class RawUploadRetentionSweeper:
         factory: sessionmaker[Session],
         objects: _ObjectDeleter,
         audit: SqlWorkspaceAuditStore,
+        due: DueUploadLister | None = None,
     ) -> None:
+        """`due` reads across scopes on the sweep engine (`RRA-017` `FR-271`); the rest is scoped.
+
+        Without one, it reads through `factory` (SQLite, and tests).
+        """
         self._factory = factory
         self._objects = objects
         self._audit = audit
+        self._due_uploads = due or DueUploadLister(factory)
 
     def sweep(self, *, now: datetime) -> RawUploadPurgeReport:
         grouped: dict[str, list[_RawUpload]] = defaultdict(list)
-        for upload in self._due(now=now):
+        for upload in self._due_uploads.due(now=now):
             grouped[upload.owner_id].append(upload)
         purged = sum(
             self._purge_scope(owner_id, uploads, now)
@@ -139,7 +148,7 @@ class RawUploadRetentionSweeper:
     ) -> int:
         for upload in uploads:
             self._objects.delete(upload.object_key)
-        with unit_of_work(self._factory):
+        with acting_for(owner_id), unit_of_work(self._factory):
             count = sum(self._delete_row(upload) for upload in uploads)
             if count:
                 self._audit.record(
@@ -154,6 +163,7 @@ class RawUploadRetentionSweeper:
 
     def _delete_row(self, upload: _RawUpload) -> int:
         with writing(self._factory) as database:
+            apply_scope(database, upload.owner_id)
             result = database.execute(
                 delete(UploadRow).where(
                     UploadRow.upload_id == upload.upload_id,
@@ -162,7 +172,16 @@ class RawUploadRetentionSweeper:
             )
             return result.rowcount or 0
 
-    def _due(self, *, now: datetime) -> tuple[_RawUpload, ...]:
+
+
+class DueUploadLister:
+    """The raw-upload purge's one cross-scope read, given the sweep engine (`RRA-017` `FR-271`)."""
+
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+
+    def due(self, *, now: datetime) -> tuple[_RawUpload, ...]:
+        """Uploads past the horizon, across every scope. Admitted for the sweep role (`FR-271`)."""
         horizon = now - RAW_UPLOAD_RETENTION
         with self._factory() as database:
             rows = database.execute(
@@ -192,6 +211,7 @@ class RawUploadRetentionSweeper:
 
 __all__ = [
     "RAW_UPLOAD_RETENTION",
+    "DueUploadLister",
     "WORKSPACE_CONTENT_END",
     "RawUploadPurgeReport",
     "RawUploadRetentionSweeper",

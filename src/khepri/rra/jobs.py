@@ -74,10 +74,17 @@ class EnqueueJob:
 
 @dataclass(frozen=True, slots=True)
 class LeaseRequest:
+    """`owner_id` is the job's scope, carried in process from the claim (`RRA-017` `FR-268`).
+
+    It never reaches a queue message, which `KHEPRI-DEC-028` keeps to opaque identifiers. `None`
+    defers to the unit of work the caller has bound (`khepri.rra.scope.acting_for`).
+    """
+
     job_id: str
     worker_id: str
     now: datetime
     lease_for: timedelta
+    owner_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +92,7 @@ class LeaseAction:
     job_id: str
     worker_id: str
     now: datetime
+    owner_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

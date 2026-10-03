@@ -24,11 +24,15 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
 from khepri.local.config import LocalSettings
+from khepri.local.sweeper import RetentionSweeper
 from khepri.local.wiring import (
     LocalStack,
+    build_engine,
     build_stack,
+    build_sweeper,
     build_web_app,
     build_worker_stack,
     local_page_printer,
@@ -40,6 +44,7 @@ from khepri.rca.lifecycle import (
     MembershipEventSweeper,
 )
 from khepri.rra.bundle import REQUIRED_SURFACES
+from khepri.runtime.db_roles import DatabaseRole
 from tests.local_stack_support import requires_local_stack
 from tests.rra003_contract_fixtures import profile_payload
 
@@ -75,7 +80,14 @@ def chromium_available() -> bool:
 
 @pytest.fixture
 def stack() -> LocalStack:
-    return build_stack(LocalSettings.from_environment())
+    """The web app's stack. Each process connects as its own role (`RRA-017` `FR-270`)."""
+    return build_stack(LocalSettings.from_environment(), role=DatabaseRole.APPLICATION)
+
+
+def _sweeper(stack: LocalStack) -> RetentionSweeper:
+    """Composed as `khepri-local sweep` composes it: the sweep role reaches the four reads."""
+    engine = build_engine(stack.settings, DatabaseRole.SWEEP)
+    return build_sweeper(stack, sweep_factory=sessionmaker(bind=engine, future=True))
 
 
 @pytest.fixture
@@ -152,7 +164,8 @@ class TestTheWholeJourney:
             pytest.skip("the pinned Chromium is not installed; the PDF surface cannot render")
 
         with local_page_printer() as printer:
-            workers = build_worker_stack(stack, printer=printer)
+            worker_stack = build_stack(LocalSettings.from_environment(), role=DatabaseRole.WORKER)
+            workers = build_worker_stack(worker_stack, printer=printer)
             assert workers.worker.drain(limit=5) >= 1
 
         finished = client.get(f"/api/v1/beta/reports/{job_id}")
@@ -225,9 +238,7 @@ class TestTheSweeper:
         tmp_path: Path,
     ) -> None:
         """Evidence of a sweep is counts. A session id here would be content."""
-        report = build_worker_stack(stack).sweeper.sweep(
-            now=stack.clock()
-        )
+        report = _sweeper(stack).sweep(now=stack.clock())
 
         assert report.expired_leases >= 0
         assert report.orphaned_jobs >= 0
@@ -246,7 +257,7 @@ class TestTheSweeper:
         The ungated half of this evidence is in `test_local_sweeper.py`, which asserts the same
         wiring without needing docker. This adds that the wired passes survive a real sweep.
         """
-        sweeper = build_worker_stack(stack).sweeper
+        sweeper = _sweeper(stack)
         retention = sweeper._retention  # noqa: SLF001 -- the wiring *is* the assertion
 
         assert retention is not None, "production must configure the retention passes"

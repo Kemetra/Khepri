@@ -26,7 +26,9 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from khepri.rra.job_persistence import SqlReportJobRepository, next_claimable_statement
+from khepri.rra.definer_calls import Candidate, next_claimable
+from khepri.rra.job_persistence import SqlReportJobRepository
+from khepri.rra.scope import acting_for
 from khepri.rra.worker import ReportJobMessage, ReportWorker
 
 # Matches `KHEPRI-DEC-007`: lease 300s, retry delay 60s.
@@ -47,8 +49,16 @@ class ClaimablePoller:
     factory: sessionmaker[Session]
 
     def next_job_id(self, *, now: datetime) -> str | None:
+        candidate = self.next_candidate(now=now)
+        return None if candidate is None else candidate.job_id
+
+    def next_candidate(self, *, now: datetime) -> Candidate | None:
+        """The due job and its scope, through `rra_next_claimable_job` (`RRA-017` `FR-267`).
+
+        The scope stays in process, beside the opaque `ReportJobMessage` (`KHEPRI-DEC-028`).
+        """
         with self.factory() as database:
-            return database.execute(next_claimable_statement(now)).scalar_one_or_none()
+            return next_claimable(database, now)
 
 
 class LocalReportWorker:
@@ -72,14 +82,15 @@ class LocalReportWorker:
         the attempt and scheduled the retry, and a loop that died on the first
         refused narrative would stop draining every other job behind it.
         """
-        job_id = self._poller.next_job_id(now=self._clock())
-        if job_id is None:
+        candidate = self._poller.next_candidate(now=self._clock())
+        if candidate is None:
             return None
         try:
-            self._worker.process(ReportJobMessage(job_id=job_id))
+            with acting_for(candidate.owner_id):
+                self._worker.process(ReportJobMessage(job_id=candidate.job_id))
         except Exception:  # noqa: BLE001 - recorded by the worker, drained here
-            return job_id
-        return job_id
+            return candidate.job_id
+        return candidate.job_id
 
     def drain(self, *, limit: int = 100) -> int:
         """Process due jobs until none remain, bounded so a loop cannot run away."""

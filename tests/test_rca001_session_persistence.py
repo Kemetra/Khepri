@@ -439,7 +439,8 @@ class TestTheMigration:
         dataset profile outlive its raw upload (`ON DELETE SET NULL`). #600 then added
         `20260926_0034`, which binds that upload to the profile's own scope on PostgreSQL.
         #555 D-01 then added `20261002_0035`, the `(owner_id, package_digest)` index behind
-        `get_owned_package`. That index is the head this pin now names.
+        `get_owned_package`. #595 then added `20261002_0036`, RRA-017's roles, row-level security
+        and definer functions. That revision is the head this pin now names.
         """
         import subprocess
 
@@ -448,7 +449,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20261002_0035" in result.stdout
+        assert "20261002_0036" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

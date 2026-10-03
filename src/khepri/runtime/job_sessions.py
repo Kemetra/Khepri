@@ -25,6 +25,7 @@ from sqlalchemy.sql import Select
 
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import BetaSessionRow
+from khepri.rra.scope import scoped_read
 
 #: One selected row: the job's identity and scope, then the session's two liveness facts.
 _ScopeRow = tuple[str, str, str, "datetime | None", "datetime"]
@@ -83,7 +84,7 @@ class SqlJobSessions:
 
     def for_scope(self, owner_id: str) -> dict[str, JobSession]:
         statement = self.scope_statement(owner_id)
-        with self._factory() as database:
+        with scoped_read(self._factory, owner_id) as database:
             rows = database.execute(statement).all()
         return {
             row.job_id: JobSession(
@@ -106,7 +107,7 @@ class SqlJobSessions:
         identifier, which is `rra_report_jobs`' primary key.
         """
         statement = self.scope_statement(owner_id).where(ReportJobRow.job_id == job_id)
-        with self._factory() as database:
+        with scoped_read(self._factory, owner_id) as database:
             row = database.execute(statement).first()
         if row is None:
             return None

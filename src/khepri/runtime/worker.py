@@ -19,12 +19,14 @@ from khepri.rra.claim_queue import ClaimedDelivery, ClaimingReportQueue, ClaimPo
 from khepri.rra.jobs import JOB_SUCCEEDED, LeaseLost, ReportJob
 from khepri.rra.rendering.chromium import launch_chromium
 from khepri.rra.report_services import JobReader
+from khepri.rra.scope import acting_for
 from khepri.rra.worker import (
     ReportExecutionFailed,
     ReportWorker,
     WorkerPolicy,
 )
 from khepri.runtime.config import RuntimeSettings
+from khepri.runtime.db_roles import DatabaseRole
 from khepri.runtime.pipeline_recording import SettlingJobStore
 from khepri.runtime.wiring import (
     RuntimeStack,
@@ -110,6 +112,12 @@ class ClaimWorkerLoop:
         delivery = self._queue.receive(now=now)
         if delivery is None:
             return False
+        # `RRA-017` `FR-268`: execution and settlement run in the claimed job's own scope, reset
+        # when the block ends whatever the job did.
+        with acting_for(delivery.job.owner_id):
+            return self._run_claimed(delivery)
+
+    def _run_claimed(self, delivery: ClaimedDelivery) -> bool:
         try:
             completed = self._worker.execute(
                 delivery.job,
@@ -187,7 +195,7 @@ def build_worker_loop(
 
 
 def main() -> None:
-    stack = build_stack(RuntimeSettings.from_environment())
+    stack = build_stack(RuntimeSettings.from_environment(role=DatabaseRole.WORKER))
     with launch_chromium() as printer:
         build_worker_loop(stack, printer=printer).run_forever()
 

@@ -53,10 +53,9 @@
 
 name: khepri-staging
 
+# Everything web and worker share. The database credential is not here: `RRA-017` `FR-270`
+# gives each process its own role, so each service adds its own role's secret alone.
 x-runtime-environment: &runtime-environment
-  # One Secrets Manager-shaped JSON document, which is what `_database_secret`
-  # parses. It is not a URL: the runtime never joins the password into a string.
-  KHEPRI_DATABASE_SECRET: '{"username":"khepri","password":"khepri","engine":"postgres","host":"postgres","port":5432,"dbname":"khepri"}'
   KHEPRI_STORAGE_ENDPOINT: https://minio:9000
   KHEPRI_STORAGE_REGION: us-east-1
   KHEPRI_BUCKET: khepri-staging-content
@@ -101,8 +100,10 @@ services:
     # this is what makes that true.
     ports:
       - "127.0.0.1:25432:5432"
+    # Creates the three runtime login roles on a new volume (`RRA-017` `FR-270`).
     volumes:
       - khepri-staging-pgdata:/var/lib/postgresql/data
+      - ./ops/local/khepri-runtime-roles.sql:/docker-entrypoint-initdb.d/10-khepri-runtime-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U khepri -d khepri"]
       interval: 5s
@@ -224,10 +225,13 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # `migrations/env.py` prefers this over `alembic.ini`, whose pinned URL points
-      # at the *local* stack. It reads this URL raw, so it states the TLS mode the
-      # runtime derives for `postgres`: `verify-full`, against the mounted CA.
-      KHEPRI_DATABASE_URL: postgresql+psycopg://khepri:khepri@postgres:5432/khepri?sslmode=verify-full&sslrootcert=/opt/khepri/tls/ca.crt
+      # The migration owner, `khepri`, which owns the tables (`RRA-017` `FR-270`). No
+      # runtime service holds this secret. `migrations/env.py` prefers it over
+      # `alembic.ini`, whose pinned URL points at the *local* stack, and builds the URL
+      # through the runtime's own `_database_url`, so the TLS mode is derived rather than
+      # restated: `verify-full`, against the CA `PGSSLROOTCERT` names.
+      KHEPRI_MIGRATION_DATABASE_SECRET: '{"username":"khepri","password":"khepri","engine":"postgres","host":"postgres","port":5432,"dbname":"khepri"}'
+      PGSSLROOTCERT: /opt/khepri/tls/ca.crt
     command: ["alembic", "upgrade", "head"]
     volumes:
       - ./ops/staging/certs/ca.crt:/opt/khepri/tls/ca.crt:ro
@@ -241,7 +245,11 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
-    environment: *runtime-environment
+    environment:
+      <<: *runtime-environment
+      # One Secrets Manager-shaped JSON document, which is what `_database_secret`
+      # parses. It is not a URL: the runtime never joins the password into a string.
+      KHEPRI_DATABASE_SECRET: '{"username":"khepri_app","password":"khepri_app","engine":"postgres","host":"postgres","port":5432,"dbname":"khepri"}'
     command:
       - uvicorn
       - khepri.runtime.web:app
@@ -271,7 +279,9 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
-    environment: *runtime-environment
+    environment:
+      <<: *runtime-environment
+      KHEPRI_WORKER_DATABASE_SECRET: '{"username":"khepri_worker","password":"khepri_worker","engine":"postgres","host":"postgres","port":5432,"dbname":"khepri"}'
     # In-task concurrency is exactly 1: `ClaimWorkerLoop` claims and settles one job
     # at a time, and a second process here would not be a second worker but a second
     # claimant racing the same rows. Scale by replicas, never by threads.

@@ -12,13 +12,26 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from khepri.runtime.db_roles import DatabaseRole  # noqa: E402
+
 DEFAULT_S3_ENDPOINT = "http://127.0.0.1:14566"
 # Any string the S3 client will accept. `us-east-1` is the conventional default
 # for S3-compatible emulators; the retired `me-central-1` was carried over from the
 # AWS-specific model `KHEPRI-DEC-028` replaced and named a region nothing uses.
 DEFAULT_REGION = "us-east-1"
 DEFAULT_BUCKET = "khepri-local-content"
-DEFAULT_DATABASE_URL = "postgresql+psycopg://khepri:khepri@127.0.0.1:15432/khepri"
+# `RRA-017` `FR-270`: each local process logs in as its own role, never as the table owner
+# `khepri`, which runs only the migrations. `ops/local/khepri-runtime-roles.sql` creates the
+# three roles with these local, non-secret passwords; the migration grants them.
+DEFAULT_DATABASE_URL = "postgresql+psycopg://khepri_app:khepri_app@127.0.0.1:15432/khepri"
+#: The table owner, which only `alembic.ini`'s local default connects as.
+DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://khepri:khepri@127.0.0.1:15432/khepri"
+DEFAULT_WORKER_DATABASE_URL = (
+    "postgresql+psycopg://khepri_worker:khepri_worker@127.0.0.1:15432/khepri"
+)
+DEFAULT_SWEEP_DATABASE_URL = (
+    "postgresql+psycopg://khepri_sweep:khepri_sweep@127.0.0.1:15432/khepri"
+)
 DEFAULT_OBJECT_ROOT = "khepri-local"
 # These must match `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` in
 # `docker-compose.local.yml`. MinIO, unlike the LocalStack it replaced, rejects any
@@ -41,6 +54,8 @@ class LocalSettings:
     region: str = DEFAULT_REGION
     bucket: str = DEFAULT_BUCKET
     database_url: str = DEFAULT_DATABASE_URL
+    worker_database_url: str = DEFAULT_WORKER_DATABASE_URL
+    sweep_database_url: str = DEFAULT_SWEEP_DATABASE_URL
     access_key: str = DEFAULT_ACCESS_KEY
     secret_key: str = DEFAULT_SECRET_KEY
     # Local development runs the same envelope encryption as the runtime rather
@@ -56,6 +71,12 @@ class LocalSettings:
             region=os.environ.get("KHEPRI_LOCAL_REGION", DEFAULT_REGION),
             bucket=os.environ.get("KHEPRI_LOCAL_BUCKET", DEFAULT_BUCKET),
             database_url=os.environ.get("KHEPRI_LOCAL_DATABASE_URL", DEFAULT_DATABASE_URL),
+            worker_database_url=os.environ.get(
+                "KHEPRI_LOCAL_WORKER_DATABASE_URL", DEFAULT_WORKER_DATABASE_URL
+            ),
+            sweep_database_url=os.environ.get(
+                "KHEPRI_LOCAL_SWEEP_DATABASE_URL", DEFAULT_SWEEP_DATABASE_URL
+            ),
             access_key=os.environ.get("KHEPRI_LOCAL_ACCESS_KEY", DEFAULT_ACCESS_KEY),
             secret_key=os.environ.get("KHEPRI_LOCAL_SECRET_KEY", DEFAULT_SECRET_KEY),
             master_key_base64=os.environ.get(
@@ -63,11 +84,22 @@ class LocalSettings:
             ),
         )
 
+    def url_for(self, role: DatabaseRole) -> str:
+        """The URL `role` connects with: each role has its own (`RRA-017` `FR-270`)."""
+        return {
+            "khepri_app": self.database_url,
+            "khepri_worker": self.worker_database_url,
+            "khepri_sweep": self.sweep_database_url,
+        }[role.value]
+
 
 __all__ = [
     "DEFAULT_ACCESS_KEY",
     "DEFAULT_BUCKET",
     "DEFAULT_DATABASE_URL",
+    "DEFAULT_MIGRATION_DATABASE_URL",
+    "DEFAULT_SWEEP_DATABASE_URL",
+    "DEFAULT_WORKER_DATABASE_URL",
     "DEFAULT_SECRET_KEY",
     "DEFAULT_MASTER_KEY_BASE64",
     "DEFAULT_OBJECT_ROOT",

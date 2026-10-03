@@ -48,8 +48,18 @@ class FakeDeletion:
         self.deleted.append((session_id, reason))
 
 
+class FixedLister:
+    """The expired sessions, each in a scope of its own, in place of the cross-scope read."""
+
+    def __init__(self, expired: list[str]) -> None:
+        self._expired = expired
+
+    def due(self, *, now: datetime) -> list[tuple[str, str]]:
+        return [(session_id, f"own_{session_id}") for session_id in self._expired]
+
+
 class StubSweeper(RetentionSweeper):
-    """Overrides only the database read, so the pass logic is the real one."""
+    """Replaces only the database read, so the pass logic is the real one."""
 
     def __init__(
         self,
@@ -61,11 +71,8 @@ class StubSweeper(RetentionSweeper):
     ) -> None:
         self._jobs = jobs  # type: ignore[assignment]
         self._deletion = deletion  # type: ignore[assignment]
-        self._expired = expired
+        self._lister = FixedLister(expired)  # type: ignore[assignment]
         self._retention = retention
-
-    def _expired_session_ids(self, *, now: datetime) -> list[str]:
-        return self._expired
 
 
 class TestOnePass:
@@ -204,7 +211,7 @@ class TestTheRetentionPassesAreWired:
         assert report.purged_sessions == 5
 
     def test_production_wires_both_horizons_with_no_override(self) -> None:
-        """`build_worker_stack` passes every retention pass, none with a compressed horizon.
+        """`build_sweeper` passes every retention pass, none with a compressed horizon.
 
         **Why the source and not the built object.** Constructing a real stack needs PostgreSQL and
         an object endpoint, so the equivalent assertion in `test_local_journey.py` is gated behind

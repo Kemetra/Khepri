@@ -19,6 +19,7 @@ from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeSettings
+from khepri.runtime.db_roles import DatabaseRole
 from khepri.runtime.external_auth_api import (
     EXTERNAL_RECOVERY_PATH,
     EXTERNAL_SESSION_PATH,
@@ -72,7 +73,8 @@ def settings() -> RuntimeSettings:
             "KHEPRI_BUCKET": "khepri-beta-content",
             "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
             "PGSSLROOTCERT": "/etc/khepri/tls/database-ca.crt",
-        }
+        },
+        role=DatabaseRole.APPLICATION,
     )
 
 

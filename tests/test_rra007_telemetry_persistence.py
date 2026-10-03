@@ -4,31 +4,32 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import inspect
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.jobs import EnqueueJob
-from khepri.rra.persistence import Base, SqlSessionStore
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.sessions import CrossSessionAccessDenied, InvitationService, SessionScope
 from khepri.rra.telemetry import OperationalEvent
 from khepri.rra.telemetry_persistence import (
     OperationalEventRow,
     SqlOperationalEventRepository,
 )
+from tests.rra017_suite_engine import (  # noqa: F401 -- store_backend is the fixture
+    STORE_BACKENDS,
+    store_backend,
+    store_engine,
+)
+
+pytestmark = STORE_BACKENDS
 
 NOW = datetime(2026, 7, 30, 14, 0, tzinfo=UTC)
 IDEMPOTENCY_KEY = "8f99c79c1c79c892c1a30a74fcc1b536b04e409ee4562acfb82d8d76fb750d7d"
 
 
 def repositories() -> tuple[SqlOperationalEventRepository, SessionScope]:
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     sessions = SqlSessionStore(factory)
     invitations = InvitationService(sessions)

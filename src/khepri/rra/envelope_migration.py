@@ -40,6 +40,7 @@ from khepri.rra.persistence import (
     UploadRow,
     session_scope_for_update_statement,
 )
+from khepri.rra.scope import scoped_begin
 from khepri.rra.sessions import SessionScope, object_in_scope
 from khepri.rra.storage import Resealed, StoredEnvelope
 
@@ -134,7 +135,7 @@ class ArtifactEnvelopeMigration:
 
     def _migrate(self, candidate: _Candidate) -> str | None:
         """`None` when there is nothing left to do: the row went or another pass moved it."""
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory, candidate.scope.owner_id) as database:
             session = database.scalar(session_scope_for_update_statement(candidate.scope))
             if not _content_is_live(session):
                 return DEFERRED

@@ -33,6 +33,7 @@ from khepri.rra.report_artifacts import (
     REQUIRED_ARTIFACT_KINDS,
     ArtifactPayload,
 )
+from khepri.rra.scope import first_by_session, scoped_begin, scoped_read
 
 
 class ArtifactConflict(RuntimeError):
@@ -164,7 +165,7 @@ class SqlArtifactRepository:
     ) -> DeliveryRecord:
         _validate_publication(publication, artifacts)
         created_at = artifacts[0].created_at
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory) as database:
             record = publication.delivery.record
             job = _active_publication_job(
                 database,
@@ -203,7 +204,7 @@ class SqlArtifactRepository:
         created_at: datetime,
     ) -> ArtifactBoundary:
         """Resolve the opaque live storage scope, revalidated again at commit."""
-        with self._factory.begin() as database:
+        with scoped_begin(self._factory) as database:
             job = _leased_job(database, publication.delivery.record)
             lease_owner = _require_running_lease(job)
             _require_unexpired_lease(job, checked_at=created_at)
@@ -218,7 +219,7 @@ class SqlArtifactRepository:
             )
 
     def has_complete(self, job_id: str) -> bool:
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             delivery = database.get(ReportDeliveryRow, job_id)
             if delivery is None:
                 return False
@@ -232,7 +233,7 @@ class SqlArtifactRepository:
         """Prove that the exact object-writing attempt committed atomically."""
         if not artifacts:
             return False
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             job_id = artifacts[0].job_id
             delivery = database.get(ReportDeliveryRow, job_id)
             stored = tuple(_from_row(row) for row in _rows(database, job_id))
@@ -266,17 +267,20 @@ class SqlArtifactRepository:
         job_id: str,
         now: datetime,
     ) -> tuple[StoredArtifact, ...]:
-        with self._factory() as database:
+        """By `session_id` alone, so its scope comes from `rra_session_owner` (`FR-265`)."""
+
+        def read(database: Session) -> tuple[StoredArtifact, ...]:
             session = database.scalar(
                 select(BetaSessionRow).where(BetaSessionRow.session_id == session_id)
             )
             delivery = database.get(ReportDeliveryRow, job_id)
             if not _available(session, delivery, session_id=session_id, now=now):
                 return ()
-            rows = _rows(database, job_id)
-            artifacts = tuple(_from_row(row) for row in rows)
+            artifacts = tuple(_from_row(row) for row in _rows(database, job_id))
             _validate_stored_set(artifacts, delivery=delivery)
             return artifacts
+
+        return first_by_session(self._factory, session_id, read) or ()
 
 
 def _active_publication_job(

@@ -122,6 +122,7 @@ def _worker_loop(
             scopes=None,  # type: ignore[arg-type]
             reports=Links(),  # type: ignore[arg-type]
             jobs=SucceededJobs(),
+            owners=None,  # type: ignore[arg-type]
         ),
     )
     store = SettlingJobStore(
@@ -151,6 +152,41 @@ def test_a_faulting_link_does_not_stop_the_worker_claiming(
     assert "job_bad" in logged and "RuntimeError" in logged, "the fault is reported, not swallowed"
     assert SECRET_DETAIL not in logged, "an exception message is not trusted to be content-free"
     assert "ses_alpha" not in logged, "no session identifier reaches a log (KHEPRI-DEC-015 §7)"
+
+
+class JobsEmptyUnderScope:
+    """`job_bad` reads empty under its link's scope; every other linked job has succeeded."""
+
+    def find(self, job_id: str) -> ReportJob | None:
+        return None if job_id == "job_bad" else replace(job(JOB_SUCCEEDED), job_id=job_id)
+
+
+def test_an_empty_job_read_under_a_links_scope_is_that_links_fault(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`RRA-017` `FR-268`, `FR-238`: under the link's scope an empty read is not "nothing to do".
+
+    Row-level security can be why it is empty, so it is logged as the link's fault, the run stays
+    `started` for the next sweep, and the links after it are still reconciled.
+    """
+    recording = FaultyRecording(faulty_run="none", fault=RuntimeError())
+    recorder = PipelineRecorder(
+        recording=recording,  # type: ignore[arg-type]
+        reads=RecorderReads(
+            sessions=None,  # type: ignore[arg-type]
+            scopes=None,  # type: ignore[arg-type]
+            reports=Links(),  # type: ignore[arg-type]
+            jobs=JobsEmptyUnderScope(),
+            owners=None,  # type: ignore[arg-type]
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        moved = recorder.reconcile(now=NOW)
+
+    assert moved == 1
+    assert recording.completed == ["run_good"]
+    assert "job_id=job_bad error=LinkedJobUnreadable" in caplog.text
 
 
 def test_an_interrupt_during_reconciliation_still_stops_the_worker() -> None:
@@ -202,19 +238,26 @@ class CountingPass:
         return self._report
 
 
+class FixedLister:
+    """The expired sessions, each in a scope of its own, in place of the cross-scope read."""
+
+    def __init__(self, expired: list[str]) -> None:
+        self._expired = expired
+
+    def due(self, *, now: datetime) -> list[tuple[str, str]]:
+        return [(session_id, f"own_{session_id}") for session_id in self._expired]
+
+
 class StubSweeper(RetentionSweeper):
-    """Overrides only the database read, so the pass logic is the real one."""
+    """Replaces only the database read, so the pass logic is the real one."""
 
     def __init__(
         self, *, jobs: object, deletion: object, expired: list[str], retention: RetentionPasses
     ) -> None:
         self._jobs = jobs  # type: ignore[assignment]
         self._deletion = deletion  # type: ignore[assignment]
-        self._expired = expired
+        self._lister = FixedLister(expired)  # type: ignore[assignment]
         self._retention = retention
-
-    def _expired_session_ids(self, *, now: datetime) -> list[str]:
-        return self._expired
 
 
 def _passes(*, accounts_fault: BaseException | None = None) -> tuple[RetentionPasses, dict]:
@@ -353,12 +396,14 @@ def test_an_interrupt_during_a_session_deletion_is_not_absorbed() -> None:
 
 
 def _run_main(monkeypatch: pytest.MonkeyPatch, sweeper: RetentionSweeper) -> None:
-    from khepri.runtime import wiring
+    from khepri.runtime import config, db_roles, wiring
     from khepri.runtime.config import RuntimeSettings
 
-    monkeypatch.setattr(RuntimeSettings, "from_environment", classmethod(lambda cls: None))
+    monkeypatch.setattr(RuntimeSettings, "from_environment", classmethod(lambda cls, role: None))
+    monkeypatch.setattr(config, "role_database_url", lambda role: None)
+    monkeypatch.setattr(db_roles, "engine_for", lambda url, role: None)
     monkeypatch.setattr(wiring, "build_stack", lambda settings: SimpleNamespace(clock=lambda: NOW))
-    monkeypatch.setattr(wiring, "build_retention_sweep", lambda stack: sweeper)
+    monkeypatch.setattr(wiring, "build_retention_sweep", lambda stack, sweep_factory: sweeper)
     retention_sweep.main()
 
 

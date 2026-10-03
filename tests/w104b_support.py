@@ -24,9 +24,11 @@ from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
+from khepri.rra.definer_calls import RecoveryCandidates, SqlSessionOwners
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
 from khepri.rra.job_persistence import SqlReportJobRepository
+from khepri.rra.jobs import ReportJob
 from khepri.rra.package_source import SessionFactPackageSource
 from khepri.rra.persistence import SqlProfileRepository
 from khepri.rra.pipeline import ReportPipeline, ReportPipelinePorts
@@ -37,6 +39,8 @@ from khepri.rra.report_services import (
     ReportRequestAdapter,
 )
 from khepri.rra.reports import ReportServices
+from khepri.rra.scope import acting_for
+from khepri.rra.scope_middleware import add_scope_unit
 from khepri.rra.session_cookie import SESSION_COOKIE
 from khepri.rra.sessions import InvitationService, open_commercial_session
 from khepri.rra.storage import ObjectWrite, PutResult
@@ -140,11 +144,22 @@ class Journey:
             monotonic_ms=lambda: 0,
         )
 
+    def job(self, job_id: str) -> ReportJob | None:
+        """The job, read in its own scope: `JobReader.find` names only the job (`RRA-017`)."""
+        from tests.rra017_suite_engine import owner_of_job  # noqa: PLC0415 -- it imports this
+
+        with acting_for(owner_of_job(self.w.factory, job_id)):
+            return self.reader.find(job_id)
+
     def run_job(self, job_id: str, handler: object | None = None) -> None:
         """One worker attempt over the job, exactly as the claim loop would drive it -- including
         swallowing the failure the loop swallows (`ClaimWorkerLoop.run_once`), because the job
         store has already recorded the attempt by the time it is raised."""
-        with suppress(ReportExecutionFailed):
+        from tests.rra017_suite_engine import owner_of_job  # noqa: PLC0415 -- it imports this
+
+        # The worker acts in the job's own scope (`RRA-017` `FR-268`), as `LocalReportWorker` does.
+        owner_id = owner_of_job(self.w.factory, job_id)
+        with suppress(ReportExecutionFailed), acting_for(owner_id):
             self.worker(handler).process(ReportJobMessage(job_id=job_id))
 
 
@@ -161,10 +176,16 @@ class ReportSide:
 
 
 def _report_side(w: World, clock: Clock) -> ReportSide:
+    from tests.rra017_suite_engine import suite_worker_factory  # noqa: PLC0415 -- it imports this
+
     deliveries = SqlDeliveryStore(w.factory, now=clock)
     artifacts = SqlArtifactRepository(w.factory)
+    # The recovery pickers are the worker's alone (`RRA-017` `FR-267`).
+    worker = suite_worker_factory()
     return ReportSide(
-        jobs=SqlReportJobRepository(w.factory),
+        jobs=SqlReportJobRepository(
+            w.factory, candidates=None if worker is None else RecoveryCandidates(worker)
+        ),
         reader=JobReader(w.factory),
         deliveries=deliveries,
         artifacts=artifacts,
@@ -195,6 +216,7 @@ def _recorder(w: World, side: ReportSide) -> PipelineRecorder:
             scopes=SqlIsolationScopes(w.factory),
             reports=SqlRunReportStore(w.factory),
             jobs=side.reader,
+            owners=SqlSessionOwners(w.factory),
         ),
     )
 
@@ -218,7 +240,7 @@ def _beta_app(
         ),
         recorder=recorder,
     )
-    return create_app(
+    app = create_app(
         service=InvitationService(w.sessions),
         clock=clock,
         intake_service=w.intake,
@@ -231,12 +253,17 @@ def _beta_app(
             packages=w.packages,
         ),
     )
+    # `RRA-017` `FR-233`: each beta request is one unit, in its cookie's scope.
+    add_scope_unit(app, SqlSessionOwners(w.factory))
+    return app
 
 
 def journey(engine: Engine | None = None) -> Journey:
     """The composition over `engine`, or over `w104_support`'s SQLite default when none is given.
     The PostgreSQL form is `tests/w110_postgres_support.py`'s (`#388`)."""
-    w = base_world(engine)
+    from tests.rra017_suite_engine import suite_engine  # noqa: PLC0415 -- it imports this
+
+    w = base_world(engine or suite_engine())
     clock = Clock()
     side = _report_side(w, clock)
     recorder = _recorder(w, side)

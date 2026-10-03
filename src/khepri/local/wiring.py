@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import FastAPI
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.local.config import LocalSettings
@@ -49,6 +48,7 @@ from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.datasets import ProfilingService
+from khepri.rra.definer_calls import RecoveryCandidates, SqlSessionOwners
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
@@ -78,10 +78,12 @@ from khepri.rra.report_services import (
     ReportRequestAdapter,
 )
 from khepri.rra.reports import ReportServices
+from khepri.rra.scope_middleware import add_scope_unit
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
+from khepri.runtime.db_roles import DatabaseRole, engine_for
 from khepri.runtime.legal_api import add_legal_routes
-from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
+from khepri.runtime.workspace_retention import DueUploadLister, RawUploadRetentionSweeper
 
 
 def utc_now() -> datetime:
@@ -133,25 +135,33 @@ class LocalStack:
 
 @dataclass(frozen=True, slots=True)
 class WorkerStack:
-    """The two background drivers, built over one already-constructed stack."""
+    """The worker loop, built over one already-constructed stack.
+
+    It holds no sweeper: the sweep's cross-scope reads need the sweep role's credential, which the
+    worker process does not hold (`RRA-017` `FR-270`). `build_sweeper` is composed by the sweep's
+    own root instead.
+    """
 
     worker: LocalReportWorker
-    sweeper: RetentionSweeper
 
 
-def build_engine(settings: LocalSettings):
-    """One pooled engine. `pool_pre_ping` because a local container may restart."""
-    return create_engine(settings.database_url, pool_pre_ping=True, future=True)
+def build_engine(settings: LocalSettings, role: DatabaseRole):
+    """One pooled engine for `role`. `pool_pre_ping` because a local container may restart."""
+    return engine_for(settings.url_for(role), role)
 
 
 def build_stack(
     settings: LocalSettings | None = None,
     *,
+    role: DatabaseRole,
     clock: Callable[[], datetime] = utc_now,
 ) -> LocalStack:
-    """Construct every service the web app and the worker share."""
+    """Construct every service the web app and the worker share, connected as `role`.
+
+    The caller names the role (`RRA-017` `FR-270`); nothing here chooses one for it.
+    """
     resolved = settings or LocalSettings.from_environment()
-    factory = sessionmaker(bind=build_engine(resolved), future=True)
+    factory = sessionmaker(bind=build_engine(resolved, role), future=True)
     objects = build_local_object_store(resolved)
 
     store = SqlSessionStore(factory)
@@ -297,6 +307,8 @@ def build_web_app(stack: LocalStack) -> FastAPI:
         report_services=build_report_services(stack),
         journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
+    # `RRA-017` `FR-233`: each beta request is one unit, in its cookie's scope.
+    add_scope_unit(app, SqlSessionOwners(stack.factory))
     add_legal_routes(app)
     return app
 
@@ -306,7 +318,7 @@ def build_worker_stack(
     *,
     printer: PagePrinter | None = None,
 ) -> WorkerStack:
-    """The worker loop and the sweeper, over one already-built stack."""
+    """The worker loop, over one already-built stack."""
     return WorkerStack(
         worker=build_local_worker(
             LocalWorkerPorts(
@@ -316,10 +328,26 @@ def build_worker_stack(
             ),
             clock=stack.clock,
         ),
-        sweeper=build_retention_sweeper(
-            jobs=stack.reports.jobs,
-            deletion=stack.services.deletion,
+    )
+
+
+def build_sweeper(stack: LocalStack, *, sweep_factory: sessionmaker[Session]) -> RetentionSweeper:
+    """The local sweep, two engines per component as deployed (`RRA-017` `FR-271`).
+
+    `sweep_factory` reaches exactly the four cross-scope components; the sweep's own
+    `DeletionService` and every per-owner step run on the stack's scoped factory.
+    """
+    return build_retention_sweeper(
+            jobs=SqlReportJobRepository(
+                stack.factory, candidates=RecoveryCandidates(sweep_factory)
+            ),
+            deletion=DeletionService(
+                sessions=SqlSessionStore(stack.factory),
+                deletions=SqlDeletionRepository(stack.factory),
+                objects=stack.objects,
+            ),
             factory=stack.factory,
+            sweep_factory=sweep_factory,
             # KHEPRI-DEC-015's retention horizons plus R3-07's session horizon. Without this they
             # are enforced by nothing: every class existed but no operational entry point called
             # any of them, so disabled accounts would have kept their email identities and FR-014
@@ -346,14 +374,14 @@ def build_worker_stack(
                 # events and deletion evidence `W1-07a` writes accumulate indefinitely under
                 # a stated twelve-month rule, which is the shape §5 exists to close.
                 workspace_audit=WorkspaceAuditSweeper(SqlWorkspaceAuditStore(stack.factory)),
-                evidence=DeletionEvidenceSweeper(SqlDeletionRepository(stack.factory)),
+                evidence=DeletionEvidenceSweeper(SqlDeletionRepository(sweep_factory)),
                 raw_uploads=RawUploadRetentionSweeper(
                     factory=stack.factory,
                     objects=stack.objects,
                     audit=SqlWorkspaceAuditStore(stack.factory),
+                    due=DueUploadLister(sweep_factory),
                 ),
             ),
-        ),
     )
 
 
@@ -366,6 +394,7 @@ __all__ = [
     "build_pipeline",
     "build_report_services",
     "build_stack",
+    "build_sweeper",
     "build_web_app",
     "build_worker_stack",
     "local_page_printer",

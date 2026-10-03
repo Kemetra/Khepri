@@ -14,15 +14,15 @@ import threading
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.envelope_migration import ArtifactEnvelopeMigration, EnvelopeMigrationReport
 from khepri.rra.job_persistence import SqlReportJobRepository
-from khepri.rra.persistence import Base, SqlDeletionRepository, SqlSessionStore
+from khepri.rra.persistence import SqlDeletionRepository, SqlSessionStore
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import Resealed, S3EncryptedObjectStore, StoredEnvelope
+from tests.rra017_support import migrated_owner_engine
 from tests.test_i535_artifact_envelope_migration import _world
 from tests.test_rra006_delivery_persistence import NOW, Harness
 
@@ -42,10 +42,9 @@ requires_postgres = pytest.mark.skipif(
 
 @pytest.fixture(name="postgres_harness")
 def postgres_harness_fixture():
-    """`harness()`'s world on PostgreSQL: one connection per session, so locks contend."""
-    engine = create_engine(DATABASE_URL)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    """`harness()`'s world on PostgreSQL: one connection per session, so locks contend, on the
+    migrated schema, emptied per test (`#595` D-7)."""
+    engine = migrated_owner_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
     invitations = InvitationService(SqlSessionStore(factory))
     session = invitations.redeem(
@@ -59,7 +58,6 @@ def postgres_harness_fixture():
             store=SqlDeliveryStore(factory, now=lambda: NOW),
         )
     finally:
-        Base.metadata.drop_all(engine)
         engine.dispose()
 
 

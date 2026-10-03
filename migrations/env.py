@@ -17,6 +17,7 @@ from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base
 from khepri.rra.telemetry_persistence import OperationalEventRow
+from khepri.runtime.config import migration_database_url  # MIGRATION_DATABASE_SECRET_VARIABLE
 
 config = context.config
 if config.config_file_name is not None:
@@ -25,7 +26,13 @@ if config.config_file_name is not None:
     # reporting for the rest of that process (#523).
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-database_url = os.environ.get("KHEPRI_DATABASE_URL")
+# `RRA-017` `FR-270`: migrations run as the migration owner, the role that owns the tables, and no
+# runtime process holds its credential. Hosted, it arrives as `KHEPRI_MIGRATION_DATABASE_SECRET`
+# (its source is `OPS1`'s); locally and in tests `KHEPRI_DATABASE_URL` stays the raw override.
+_owner_url = migration_database_url()
+database_url = (
+    _owner_url.render_as_string(hide_password=False) if _owner_url is not None else None
+) or os.environ.get("KHEPRI_DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 

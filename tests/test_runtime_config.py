@@ -9,6 +9,7 @@ import pytest
 
 from khepri.runtime import config
 from khepri.runtime.config import RuntimeConfigurationError, RuntimeSettings
+from khepri.runtime.db_roles import DatabaseRole
 
 PASSWORD = "p@ss:/word"
 #: Where the hosted target's CA certificate is mounted. `PGSSLROOTCERT` is libpq's own variable.
@@ -21,6 +22,11 @@ SECRET = {
     "port": 5432,
     "dbname": "khepri",
 }
+
+
+def _from_environment(environment: dict[str, str]) -> RuntimeSettings:
+    """The application role's settings: the role whose secret these cases supply."""
+    return RuntimeSettings.from_environment(environment, role=DatabaseRole.APPLICATION)
 
 
 def environment(**overrides: str) -> dict[str, str]:
@@ -40,7 +46,7 @@ def environment(**overrides: str) -> dict[str, str]:
 
 
 def test_valid_settings_build_a_tls_postgresql_url_without_exposing_the_password() -> None:
-    settings = RuntimeSettings.from_environment(environment())
+    settings = _from_environment(environment())
 
     assert settings.storage_endpoint == "https://fra1.digitaloceanspaces.example"
     assert settings.storage_region == "fra1"
@@ -71,7 +77,7 @@ def test_a_loopback_database_encrypts_without_verifying_and_needs_no_ca(host: st
     values = _with_host(host)
     del values["PGSSLROOTCERT"]
 
-    settings = RuntimeSettings.from_environment(values)
+    settings = _from_environment(values)
 
     assert settings.database_url.query == {"sslmode": "require"}
 
@@ -95,7 +101,7 @@ def test_a_loopback_database_encrypts_without_verifying_and_needs_no_ca(host: st
 def test_any_other_database_host_verifies_the_server_against_the_supplied_ca(host: str) -> None:
     """`#434` §4: off loopback the certificate chain and the host name are verified, so a
     man-in-the-middle holding any certificate at all can no longer terminate the connection."""
-    settings = RuntimeSettings.from_environment(_with_host(host))
+    settings = _from_environment(_with_host(host))
 
     assert settings.database_url.query == {"sslmode": "verify-full", "sslrootcert": CA_FILE}
 
@@ -108,12 +114,12 @@ def test_a_hosted_database_without_a_ca_fails_closed(host: str) -> None:
     del values["PGSSLROOTCERT"]
 
     with pytest.raises(RuntimeConfigurationError, match="PGSSLROOTCERT"):
-        RuntimeSettings.from_environment(values)
+        _from_environment(values)
 
 
 def test_a_ca_supplied_empty_is_refused() -> None:
     with pytest.raises(RuntimeConfigurationError, match="PGSSLROOTCERT"):
-        RuntimeSettings.from_environment(environment(PGSSLROOTCERT=" "))
+        _from_environment(environment(PGSSLROOTCERT=" "))
 
 
 def clerk_environment(**overrides: str) -> dict[str, str]:
@@ -132,7 +138,7 @@ def clerk_environment(**overrides: str) -> dict[str, str]:
 
 
 def test_clerk_settings_pin_one_private_beta_instance_without_exposing_its_key() -> None:
-    settings = RuntimeSettings.from_environment(clerk_environment())
+    settings = _from_environment(clerk_environment())
 
     assert settings.clerk is not None
     assert settings.clerk.mode == "private_beta"
@@ -157,7 +163,7 @@ def test_every_enabled_clerk_trust_coordinate_is_required(missing: str) -> None:
     del values[missing]
 
     with pytest.raises(RuntimeConfigurationError, match=missing):
-        RuntimeSettings.from_environment(values)
+        _from_environment(values)
 
 
 @pytest.mark.parametrize(
@@ -173,7 +179,7 @@ def test_every_enabled_clerk_trust_coordinate_is_required(missing: str) -> None:
 )
 def test_invalid_or_commercial_clerk_configuration_fails_closed(name: str, value: str) -> None:
     with pytest.raises(RuntimeConfigurationError, match=name):
-        RuntimeSettings.from_environment(clerk_environment(**{name: value}))
+        _from_environment(clerk_environment(**{name: value}))
 
 
 @pytest.mark.parametrize(
@@ -191,7 +197,7 @@ def test_every_runtime_coordinate_is_required(missing: str) -> None:
     del values[missing]
 
     with pytest.raises(RuntimeConfigurationError, match=missing):
-        RuntimeSettings.from_environment(values)
+        _from_environment(values)
 
 
 @pytest.mark.parametrize("field", list(SECRET))
@@ -200,7 +206,7 @@ def test_every_database_secret_field_is_required(field: str) -> None:
     del secret[field]
 
     with pytest.raises(RuntimeConfigurationError, match="database secret"):
-        RuntimeSettings.from_environment(environment(KHEPRI_DATABASE_SECRET=json.dumps(secret)))
+        _from_environment(environment(KHEPRI_DATABASE_SECRET=json.dumps(secret)))
 
 
 @pytest.mark.parametrize(
@@ -217,7 +223,7 @@ def test_every_database_secret_field_is_required(field: str) -> None:
 )
 def test_malformed_or_non_postgresql_secrets_are_refused(secret: str) -> None:
     with pytest.raises(RuntimeConfigurationError, match="database secret"):
-        RuntimeSettings.from_environment(environment(KHEPRI_DATABASE_SECRET=secret))
+        _from_environment(environment(KHEPRI_DATABASE_SECRET=secret))
 
 
 @pytest.mark.parametrize(
@@ -237,7 +243,7 @@ def test_malformed_or_non_postgresql_secrets_are_refused(secret: str) -> None:
 )
 def test_invalid_storage_coordinates_are_refused(name: str, value: str) -> None:
     with pytest.raises(RuntimeConfigurationError, match=name):
-        RuntimeSettings.from_environment(environment(**{name: value}))
+        _from_environment(environment(**{name: value}))
 
 
 def test_the_published_all_zero_master_key_is_refused() -> None:
@@ -250,7 +256,7 @@ def test_the_published_all_zero_master_key_is_refused() -> None:
     published = base64.b64encode(bytes(32)).decode("ascii")
 
     with pytest.raises(RuntimeConfigurationError, match="KHEPRI_STORAGE_MASTER_KEY") as caught:
-        RuntimeSettings.from_environment(environment(KHEPRI_STORAGE_MASTER_KEY=published))
+        _from_environment(environment(KHEPRI_STORAGE_MASTER_KEY=published))
 
     assert "published" in str(caught.value).lower()
     assert published not in str(caught.value)
@@ -271,7 +277,7 @@ def test_any_conforming_endpoint_and_region_are_accepted() -> None:
         ("https://minio.internal.example:9000", "us-east-1"),
         ("https://s3.me-central-1.amazonaws.example", "me-central-1"),
     ):
-        settings = RuntimeSettings.from_environment(
+        settings = _from_environment(
             environment(
                 KHEPRI_STORAGE_ENDPOINT=endpoint,
                 KHEPRI_STORAGE_REGION=region,
@@ -291,7 +297,7 @@ def test_no_aws_specific_coordinate_is_required() -> None:
     ):
         assert retired not in values
     # Present but unread: supplying them changes nothing.
-    settings = RuntimeSettings.from_environment(
+    settings = _from_environment(
         environment(
             KHEPRI_AWS_REGION="me-central-1",
             KHEPRI_KMS_KEY_ARN="arn:aws:kms:me-central-1:123456789012:key/x",
@@ -302,7 +308,7 @@ def test_no_aws_specific_coordinate_is_required() -> None:
 
 
 def test_the_master_key_never_appears_in_a_repr() -> None:
-    settings = RuntimeSettings.from_environment(environment())
+    settings = _from_environment(environment())
 
     assert (b"k" * 32).hex() not in repr(settings)
     assert "material" not in repr(settings.master_key)
@@ -362,7 +368,7 @@ def test_the_runtime_boots_without_the_retired_queue_variables() -> None:
     assert "KHEPRI_QUEUE_URL" not in values
     assert "KHEPRI_DLQ_URL" not in values
 
-    settings = RuntimeSettings.from_environment(values)
+    settings = _from_environment(values)
 
     assert not hasattr(settings, "queue_url")
     assert not hasattr(settings, "dead_letter_queue_url")
@@ -375,7 +381,7 @@ def test_a_retired_queue_variable_is_ignored_rather_than_rejected() -> None:
     coordinates above are not: a deployment carrying stale variables should start
     and ignore them, not fail closed on a mechanism that no longer exists.
     """
-    settings = RuntimeSettings.from_environment(
+    settings = _from_environment(
         environment(
             KHEPRI_QUEUE_URL="https://sqs.example/report-jobs",
             KHEPRI_DLQ_URL="https://sqs.example/report-jobs",

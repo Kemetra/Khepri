@@ -20,10 +20,15 @@ from urllib.parse import urlsplit
 from sqlalchemy import URL
 
 from khepri.rra.envelope import EnvelopeError, MasterKey
+from khepri.runtime.db_roles import SECRET_VARIABLES, DatabaseRole
 
 DATABASE_NAME = "khepri"
 
 DATABASE_SECRET_VARIABLE = "KHEPRI_DATABASE_SECRET"
+# `RRA-017` `FR-270`: the migration owner's credential, read by `migrations/env.py` alone. Each
+# runtime role has its own secret (`khepri.runtime.db_roles.SECRET_VARIABLES`); none of them is
+# this one, so no runtime process holds the role that owns the tables.
+MIGRATION_DATABASE_SECRET_VARIABLE = "KHEPRI_MIGRATION_DATABASE_SECRET"
 # The database server's CA certificate. libpq's own variable, not a `KHEPRI_` one, exactly as
 # botocore's `AWS_CA_BUNDLE` is used for the object store: the migration path reads it natively.
 # Required whenever the database host is not loopback, where the URL verifies the server
@@ -107,18 +112,40 @@ class RuntimeSettings:
     bucket: str
     master_key: MasterKey
     clerk: ClerkIdentitySettings | None
+    database_role: DatabaseRole = DatabaseRole.APPLICATION
 
     @classmethod
     def from_environment(
         cls,
         environment: Mapping[str, str] | None = None,
+        *,
+        role: DatabaseRole,
     ) -> RuntimeSettings:
+        """The settings of a process connecting as `role`, from that role's own secret.
+
+        `role` is required, so every composition root names the role it connects as and a
+        forgotten one is an error rather than the application role (`RRA-017` `FR-270`).
+        """
         source = _environment_source(environment)
         return cls(
-            database_url=_database_url(_required(source, DATABASE_SECRET_VARIABLE), source),
+            database_url=role_database_url(role, source),
             **_runtime_coordinates(source),
             clerk=_clerk_settings(source),
+            database_role=role,
         )
+
+
+def role_database_url(role: DatabaseRole, environment: Mapping[str, str] | None = None) -> URL:
+    """The URL `role` connects with, from its own secret variable (`RRA-017` `FR-270`)."""
+    source = _environment_source(environment)
+    return _database_url(_required(source, SECRET_VARIABLES[role]), source)
+
+
+def migration_database_url(environment: Mapping[str, str] | None = None) -> URL | None:
+    """The migration owner's URL, or `None` when its secret is absent (local and tests)."""
+    source = _environment_source(environment)
+    encoded = source.get(MIGRATION_DATABASE_SECRET_VARIABLE)
+    return None if not encoded else _database_url(encoded, source)
 
 
 def _environment_source(
@@ -344,9 +371,12 @@ __all__ = [
     "DATABASE_SECRET_VARIABLE",
     "DEAD_LETTER_QUEUE_URL_VARIABLE",
     "MASTER_KEY_VARIABLE",
+    "MIGRATION_DATABASE_SECRET_VARIABLE",
     "QUEUE_URL_VARIABLE",
     "STORAGE_ENDPOINT_VARIABLE",
     "STORAGE_REGION_VARIABLE",
     "RuntimeConfigurationError",
     "RuntimeSettings",
+    "migration_database_url",
+    "role_database_url",
 ]

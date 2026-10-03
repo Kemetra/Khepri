@@ -55,10 +55,9 @@ from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.session_cookie import SESSION_COOKIE as RCA_SESSION_COOKIE
 from khepri.rca.workspace.scopes import SqlIsolationScopes
-from khepri.rra.persistence import SqlSessionStore
+from khepri.rra.definer_calls import SqlSessionOwners
 from khepri.rra.session_cookie import SESSION_COOKIE as BETA_SESSION_COOKIE
 from khepri.rra.session_cookie import SESSION_UNAVAILABLE
-from khepri.rra.sessions import BetaSession
 
 __all__ = ["BETA_PREFIX", "REDEEM_PATH", "BetaMembershipGuard", "add_beta_membership_guard"]
 
@@ -67,8 +66,8 @@ BETA_PREFIX = "/api/v1/beta"
 REDEEM_PATH = f"{BETA_PREFIX}/sessions/redeem"
 
 
-class _Sessions(Protocol):
-    def get_session(self, session_id: str) -> BetaSession | None: ...
+class _Owners(Protocol):
+    def owner_of(self, session_id: str | None) -> str | None: ...
 
 
 class _Scopes(Protocol):
@@ -89,7 +88,7 @@ class _Isolation(Protocol):
 class BetaMembershipGuard:
     """Decides whether one beta request may reach its route. Reads live state; stores nothing."""
 
-    sessions: _Sessions
+    owners: _Owners
     scopes: _Scopes
     resolver: _Resolver
     isolation: _Isolation
@@ -102,7 +101,7 @@ class BetaMembershipGuard:
         """The deployed guard over one database, around the commercial routes' own resolver, so
         the two cannot disagree about membership."""
         return cls(
-            sessions=SqlSessionStore(factory),
+            owners=SqlSessionOwners(factory),
             scopes=SqlIsolationScopes(factory),
             resolver=resolver,
             isolation=IsolationService(SqlOrganizationStore(factory), SqlAccountStore(factory)),
@@ -110,17 +109,21 @@ class BetaMembershipGuard:
         )
 
     def admits(self, beta_session_id: str | None, rca_token: str | None) -> bool:
-        organization_id = self._owning_organization(beta_session_id)
+        """`RRA-017` `FR-266`: a cookie whose session the lookup cannot resolve is refused here.
+
+        The guard reads no covered table. It learns the session's scope from `rra_session_owner`
+        alone, and an empty answer is never read as permission: a request with no cookie still
+        reaches the route, which refuses it itself.
+        """
+        if not beta_session_id:
+            return True
+        owner_id = self.owners.owner_of(beta_session_id)
+        if owner_id is None:
+            return False
+        organization_id = self.scopes.organization_of(owner_id)
         if organization_id is None:
             return True
         return rca_token is not None and self._holds(rca_token, organization_id)
-
-    def _owning_organization(self, beta_session_id: str | None) -> str | None:
-        """The organization owning the session's scope, or `None` (the route decides)."""
-        if not beta_session_id:
-            return None
-        session = self.sessions.get_session(beta_session_id)
-        return None if session is None else self.scopes.organization_of(session.owner_id)
 
     def _holds(self, rca_token: str, organization_id: str) -> bool:
         """Whether this live RCA session's account can still act in the analysis's organization.

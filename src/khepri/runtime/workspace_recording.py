@@ -93,6 +93,7 @@ from khepri.rra.intake import UploadMetadata, UploadRepository
 from khepri.rra.packages import FactPackageRecord, FactPackageService
 from khepri.rra.pipeline import DeliveryRecord
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
+from khepri.rra.scope import acting_for
 from khepri.rra.sessions import SessionScope, SessionStore
 from khepri.runtime.run_quality import section_states_of
 from khepri.runtime.workspace_retention import retain_workspace_content
@@ -363,11 +364,13 @@ class WorkspaceRecording:
         read through `ProfilingService`, which is the admission entry point -- this module holds no
         other way to a profile, and `test_w104_workspace_services.py` asserts that on its source.
         """
-        self._require_owned_session(owner_id, session_id)
-        upload = self._rra.uploads.get_upload_for_scope(
-            SessionScope(owner_id=owner_id, session_id=session_id)
-        )
-        profile = self._session_profile(session_id, now)
+        # `RRA-017` `FR-233`: the RRA reads below run in the caller's RCA-resolved scope.
+        with acting_for(owner_id):
+            self._require_owned_session(owner_id, session_id)
+            upload = self._rra.uploads.get_upload_for_scope(
+                SessionScope(owner_id=owner_id, session_id=session_id)
+            )
+            profile = self._session_profile(session_id, now)
         if upload is None or profile is None:
             raise WorkspaceRefused(NO_ADMISSION_FAILURE)
         if profile.source_sha256_hex != upload.sha256_hex:
@@ -422,7 +425,7 @@ class WorkspaceRecording:
             version.mapping_version,
         ):
             raise WorkspaceRefused(PROVENANCE_FAILURE)
-        artifacts = self._published_artifacts(report, now)
+        artifacts = self._published_artifacts(owner_id, report, now)
         # `W1-06`: the Passport's facts, built *before* anything is written. `_provenance_of`
         # refuses a profile with no attestation, and `_perform_once` commits a refused unit so
         # its event survives -- built after `record_completion`, that refusal committed a
@@ -455,19 +458,27 @@ class WorkspaceRecording:
 
     def _derivation(self, owner_id: str, session_id: str, now: datetime) -> FactPackageRecord:
         """The session's `RRA-004` package, read through the service that validates it."""
-        self._require_owned_session(owner_id, session_id)
-        try:
-            package = self._rra.packages.get_session_package(session_id=session_id, now=now)
-        except PermissionError as refused:
-            raise WorkspaceRefused(NO_DERIVATION_FAILURE) from refused
+        with acting_for(owner_id):
+            self._require_owned_session(owner_id, session_id)
+            try:
+                package = self._rra.packages.get_session_package(session_id=session_id, now=now)
+            except PermissionError as refused:
+                raise WorkspaceRefused(NO_DERIVATION_FAILURE) from refused
         if package is None:
             raise WorkspaceRefused(NO_DERIVATION_FAILURE)
         return package
 
     def _published_artifacts(
-        self, report: ReportLocator, now: datetime
+        self, owner_id: str, report: ReportLocator, now: datetime
     ) -> tuple[PublishedArtifact, ...]:
-        """Every required artifact kind, each with its own digest, or a refusal (`FR-111`)."""
+        """Every required artifact kind, each with its own digest, or a refusal (`FR-111`).
+
+        The delivery is read by job alone, so it takes the scope of the unit `owner_id` binds.
+        """
+        with acting_for(owner_id):
+            return self._artifacts_of(report, now)
+
+    def _artifacts_of(self, report: ReportLocator, now: datetime) -> tuple[PublishedArtifact, ...]:
         delivery = self._rra.deliveries.find_delivery(report.job_id)
         if delivery is None or delivery.session_id != report.session_id:
             raise WorkspaceRefused(NO_DELIVERY_FAILURE)
