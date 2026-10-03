@@ -71,13 +71,12 @@ def _role_check(role: DatabaseRole):
 
 
 def _require_role(found: tuple | None, role: DatabaseRole) -> None:
-    if found is None:
-        raise RoleMismatch(f"The connection's role is not a known role; expected {role.value}.")
-    current, session, superuser, bypasses = found
-    if current != role.value or session != role.value:
-        raise RoleMismatch(f"Connected as {session}, expected {role.value}.")
-    if superuser or bypasses:
-        raise RoleMismatch(f"{role.value} is a superuser or bypasses row security.")
+    """Both users are the role's own login, and it neither is a superuser nor bypasses RLS."""
+    if found is None or tuple(found) != (role.value, role.value, False, False):
+        raise RoleMismatch(
+            f"Connected as {found}; expected {role.value} for both users, "
+            "neither a superuser nor bypassing row security."
+        )
 
 
 __all__ = ["SECRET_VARIABLES", "DatabaseRole", "RoleMismatch", "engine_for"]

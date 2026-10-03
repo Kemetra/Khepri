@@ -50,9 +50,11 @@ def _clear(connection) -> None:
     connection.info.pop(SCOPE_MARK, None)
 
 
-def _check(connection, _cursor, _statement, _parameters, context, _executemany) -> None:
+def _check(connection, *event: Any) -> None:
+    """`before_cursor_execute`; `event` is cursor, statement, parameters, context, executemany."""
     if SCOPE_MARK in connection.info:
         return
+    context = event[3]
     touched = covered_tables(getattr(context, "compiled", None))
     if touched:
         raise ScopeRequired(f"A statement reached {sorted(touched)} with no scope set.")

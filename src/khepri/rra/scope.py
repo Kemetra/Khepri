@@ -31,8 +31,9 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import Select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rra.definer_calls import SqlSessionOwners, session_owner
@@ -162,6 +163,31 @@ def first_by_session[R](
         return read(database)
 
 
+def first_row[R](
+    factory: sessionmaker[Session],
+    statement: Select,
+    convert: Callable[[Any], R],
+    owner_id: str | None = None,
+) -> R | None:
+    """The first row `statement` selects under `owner_id`'s scope, converted, or `None`."""
+    with scoped_read(factory, owner_id) as database:
+        return _converted(database, statement, convert)
+
+
+def first_row_of_session[R](
+    factory: sessionmaker[Session], session_id: str, statement: Select, convert: Callable[[Any], R]
+) -> R | None:
+    """A read by `session_id` alone, under the scope `FR-265`'s lookup resolves it to."""
+    return first_by_session(
+        factory, session_id, lambda database: _converted(database, statement, convert)
+    )
+
+
+def _converted[R](database: Session, statement: Select, convert: Callable[[Any], R]) -> R | None:
+    row = database.scalar(statement)
+    return None if row is None else convert(row)
+
+
 def require_session_in_scope(database: Session, session_id: str) -> None:
     """A by-`session_id` read inside an already-scoped transaction: the lookup must agree.
 
@@ -187,6 +213,8 @@ __all__ = [
     "bootstrap",
     "bound_unit",
     "first_by_session",
+    "first_row",
+    "first_row_of_session",
     "mark",
     "require_session_in_scope",
     "resolve",

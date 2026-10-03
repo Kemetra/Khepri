@@ -222,7 +222,11 @@ def build_stack(
                 profiles=profiles,
                 packages=packages,
             ),
-            deletion=build_deletion_service(factory, objects),
+            deletion=DeletionService(
+                sessions=sessions,
+                deletions=SqlDeletionRepository(factory),
+                objects=objects,
+            ),
         ),
         reports=ReportStores(
             jobs=SqlReportJobRepository(factory),
@@ -736,15 +740,6 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     )
 
 
-def build_deletion_service(factory: sessionmaker[Session], objects: Any) -> DeletionService:
-    """The one construction of `DeletionService`, so expiry deletes exactly as the route does."""
-    return DeletionService(
-        sessions=SqlSessionStore(factory),
-        deletions=SqlDeletionRepository(factory),
-        objects=objects,
-    )
-
-
 def build_retention_sweep(
     stack: RuntimeStack, *, sweep_factory: sessionmaker[Session] | None = None
 ) -> RetentionSweeper:
@@ -770,7 +765,7 @@ def build_retention_sweep(
     cross = sweep_factory or stack.factory
     return build_retention_sweeper(
         jobs=SqlReportJobRepository(stack.factory, candidates=RecoveryCandidates(cross)),
-        deletion=build_deletion_service(stack.factory, stack.objects),
+        deletion=stack.services.deletion,
         factory=stack.factory,
         sweep_factory=cross,
         retention=RetentionPasses(

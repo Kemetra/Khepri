@@ -39,12 +39,16 @@ def add_scope_unit(app: FastAPI, owners: SessionOwnerLookup) -> None:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         session_id = request.cookies.get(SESSION_COOKIE)
-        path = request.url.path
-        if not session_id or not path.startswith(BETA_PREFIX) or path == REDEEM_PATH:
+        if not session_id or not _in_a_unit(request.url.path):
             return await call_next(request)
         owner_id = await run_in_threadpool(owners.owner_of, session_id)
         with acting_for(owner_id):
             return await call_next(request)
+
+
+def _in_a_unit(path: str) -> bool:
+    """A beta path other than redemption, which mints its own scope (`FR-233`)."""
+    return path.startswith(BETA_PREFIX) and path != REDEEM_PATH
 
 
 __all__ = ["BETA_PREFIX", "REDEEM_PATH", "SessionOwnerLookup", "add_scope_unit"]
