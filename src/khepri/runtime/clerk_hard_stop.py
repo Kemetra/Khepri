@@ -36,7 +36,8 @@ def revoke_clerk_sessions(settings: RuntimeSettings, *, now: datetime) -> int:
 def main() -> None:
     """Run after disabled configuration is deployed and enabled instances are drained."""
     now = datetime.now(UTC)
-    revoked = revoke_clerk_sessions(RuntimeSettings.from_environment(), now=now)
+    settings = RuntimeSettings.from_environment(role=DatabaseRole.APPLICATION)
+    revoked = revoke_clerk_sessions(settings, now=now)
     print(
         json.dumps(
             {

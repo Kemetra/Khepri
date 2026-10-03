@@ -64,8 +64,13 @@ services:
     # any machine this runs on.
     ports:
       - "127.0.0.1:15432:5432"
+    # `RRA-017` `FR-270`: the app, worker and sweep processes log in as their own roles, never
+    # as `khepri`, which owns the tables and runs only the migrations. The mounted script
+    # creates the three roles on a new volume; its header gives the one-off command for an
+    # existing one.
     volumes:
       - khepri-local-pgdata:/var/lib/postgresql/data
+      - ./ops/local/khepri-runtime-roles.sql:/docker-entrypoint-initdb.d/10-khepri-runtime-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U khepri -d khepri"]
       interval: 5s

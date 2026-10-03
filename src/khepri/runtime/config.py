@@ -119,9 +119,13 @@ class RuntimeSettings:
         cls,
         environment: Mapping[str, str] | None = None,
         *,
-        role: DatabaseRole = DatabaseRole.APPLICATION,
+        role: DatabaseRole,
     ) -> RuntimeSettings:
-        """The settings of a process connecting as `role`, from that role's own secret."""
+        """The settings of a process connecting as `role`, from that role's own secret.
+
+        `role` is required, so every composition root names the role it connects as and a
+        forgotten one is an error rather than the application role (`RRA-017` `FR-270`).
+        """
         source = _environment_source(environment)
         return cls(
             database_url=role_database_url(role, source),
