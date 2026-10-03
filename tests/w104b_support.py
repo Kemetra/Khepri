@@ -24,6 +24,7 @@ from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
+from khepri.rra.definer_calls import SqlSessionOwners
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
 from khepri.rra.job_persistence import SqlReportJobRepository
@@ -37,6 +38,7 @@ from khepri.rra.report_services import (
     ReportRequestAdapter,
 )
 from khepri.rra.reports import ReportServices
+from khepri.rra.scope_middleware import add_scope_unit
 from khepri.rra.session_cookie import SESSION_COOKIE
 from khepri.rra.sessions import InvitationService, open_commercial_session
 from khepri.rra.storage import ObjectWrite, PutResult
@@ -195,6 +197,7 @@ def _recorder(w: World, side: ReportSide) -> PipelineRecorder:
             scopes=SqlIsolationScopes(w.factory),
             reports=SqlRunReportStore(w.factory),
             jobs=side.reader,
+            owners=SqlSessionOwners(w.factory),
         ),
     )
 
@@ -218,7 +221,7 @@ def _beta_app(
         ),
         recorder=recorder,
     )
-    return create_app(
+    app = create_app(
         service=InvitationService(w.sessions),
         clock=clock,
         intake_service=w.intake,
@@ -231,6 +234,9 @@ def _beta_app(
             packages=w.packages,
         ),
     )
+    # `RRA-017` `FR-233`: each beta request is one unit, in its cookie's scope.
+    add_scope_unit(app, SqlSessionOwners(w.factory))
+    return app
 
 
 def journey(engine: Engine | None = None) -> Journey:

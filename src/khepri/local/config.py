@@ -24,6 +24,8 @@ DEFAULT_BUCKET = "khepri-local-content"
 # `khepri`, which runs only the migrations. `ops/local/khepri-runtime-roles.sql` creates the
 # three roles with these local, non-secret passwords; the migration grants them.
 DEFAULT_DATABASE_URL = "postgresql+psycopg://khepri_app:khepri_app@127.0.0.1:15432/khepri"
+#: The table owner, which only `alembic.ini`'s local default connects as.
+DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://khepri:khepri@127.0.0.1:15432/khepri"
 DEFAULT_WORKER_DATABASE_URL = (
     "postgresql+psycopg://khepri_worker:khepri_worker@127.0.0.1:15432/khepri"
 )
@@ -95,6 +97,7 @@ __all__ = [
     "DEFAULT_ACCESS_KEY",
     "DEFAULT_BUCKET",
     "DEFAULT_DATABASE_URL",
+    "DEFAULT_MIGRATION_DATABASE_URL",
     "DEFAULT_SWEEP_DATABASE_URL",
     "DEFAULT_WORKER_DATABASE_URL",
     "DEFAULT_SECRET_KEY",

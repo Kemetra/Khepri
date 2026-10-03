@@ -6,7 +6,7 @@ predicate. The interleaving test hooks that per-candidate re-read, the seam that
 refactor of the store, rather than a helper it calls. `reconcile` across scopes is in
 `test_rra017_routes_postgres.py`, which has the workspace composition it needs.
 
-RED at `0c1475f`: `rls_database()` raises `Rra017Absent` before any call.
+Pinned RED at `f1639c1`, before the slice existed; green from `#595`'s implementation.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from khepri.runtime.worker import ClaimWorkerLoop
 from tests.rra017_rows import HOUR, NOW, Scope, row
 from tests.rra017_support import POSTGRES, RED, WORKER, RlsDatabase, rls_fixture  # noqa: F401
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 EARLY = Scope("own_a", "ea")
 LATE = Scope("own_b", "lb")

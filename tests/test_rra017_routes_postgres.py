@@ -8,7 +8,7 @@ wall is shown not to break the paths it sits beneath. The rerun of the existing 
 store suites under the application role is the plan's Verification 13 mechanism; these cases are
 its end-to-end floor.
 
-RED at `0c1475f`: `postgres_journeys()` raises `Rra017Absent` before any request.
+Pinned RED at `f1639c1`, before the slice existed; green from `#595`'s implementation.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from khepri.rra.claim_queue import ClaimingReportQueue, ClaimPolicy
 from khepri.rra.worker import ReportWorker, WorkerPolicy
 from khepri.runtime.pipeline_recording import SettlingJobStore
 from khepri.runtime.worker import ClaimWorkerLoop
-from tests.rra017_support import APPLICATION, POSTGRES, RED, WORKER
+from tests.rra017_support import APPLICATION, POSTGRES, WORKER
 from tests.w104_support import member
 from tests.w104b_support import (
     LEASE_FOR,
@@ -33,7 +33,7 @@ from tests.w104b_support import (
 from tests.w106_support import detail_address, shell_over, submitted
 from tests.w110_postgres_support import postgres_journeys
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 
 def _claim_loop(worker: Journey, *, settling: bool = True) -> ClaimWorkerLoop:

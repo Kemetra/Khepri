@@ -8,7 +8,7 @@ planned re-keying of `RawUploadRetentionSweeper._due` onto `upload_id`: whicheve
 lands second updates the sweep role's column grants, and the `_due` case below catches the one
 that does not.
 
-RED at `0c1475f`: `rls_database()` raises `Rra017Absent` before any statement.
+Pinned RED at `f1639c1`, before the slice existed; green from `#595`'s implementation.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from tests.rra017_support import (
     APPLICATION,
     INSUFFICIENT_PRIVILEGE,
     POSTGRES,
-    RED,
     SWEEP,
     RlsDatabase,
     Rra017Absent,
@@ -46,7 +45,7 @@ from tests.rra017_support import (
 )
 from tests.w104_support import MemoryObjectStore
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 A = Scope("own_a", "a")
 B = Scope("own_b", "b")

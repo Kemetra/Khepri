@@ -168,8 +168,9 @@ class RecorderReads:
     scopes: SqlIsolationScopes
     reports: SqlRunReportStore
     jobs: JobReaderPort
-    #: `RRA-017` `FR-265`'s lookup. Absent only where no policy exists (the SQLite journey).
-    owners: SessionOwners | None = None
+    #: `RRA-017` `FR-265`'s lookup. Required: without it an unresolved scope reads as "not a
+    #: workspace", which `FR-266` forbids.
+    owners: SessionOwners
 
 
 class PipelineRecorder:
@@ -334,11 +335,6 @@ class PipelineRecorder:
         it raises `SessionScopeUnresolved`. `None` means only a resolved scope that is not a
         workspace.
         """
-        if self._owners is None:
-            session = self._sessions.get_session(session_id)
-            if session is None or not self._scopes.exists(session.owner_id):
-                return None
-            return session.owner_id
         owner_id = self._owners.owner_of(session_id)
         if owner_id is None or self._sessions.get_session_for_owner(owner_id, session_id) is None:
             raise SessionScopeUnresolved("The session's scope did not resolve.")

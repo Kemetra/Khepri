@@ -26,10 +26,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-from khepri.rra.persistence import Base, SqlSessionStore, SqlUploadRepository
+from khepri.rra.persistence import SqlSessionStore, SqlUploadRepository
 from khepri.rra.sessions import BetaSession, InvitationService
 from tests import test_rra002_deletion_persistence as deletion_fixtures
 from tests.rra002_deletion_race_support import (
@@ -40,6 +40,7 @@ from tests.rra002_deletion_race_support import (
     hooked_service,
     settled,
 )
+from tests.rra017_support import migrated_owner_engine
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 ATTEMPTS = 10
@@ -56,18 +57,15 @@ requires_postgres = pytest.mark.skipif(
 
 @pytest.fixture(name="factory")
 def factory_fixture():
-    """A PostgreSQL session factory on a schema created and dropped per test.
+    """A PostgreSQL session factory on the migrated schema, emptied per test (`#595` D-7).
 
     Not `StaticPool`: the whole point is that each session gets its own connection, so
     two transactions can genuinely overlap. The default `QueuePool` does that.
     """
-    engine = create_engine(DATABASE_URL)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    engine = migrated_owner_engine()
     try:
         yield sessionmaker(engine, expire_on_commit=False)
     finally:
-        Base.metadata.drop_all(engine)
         engine.dispose()
 
 

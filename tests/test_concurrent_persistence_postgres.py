@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 import khepri.rca.workspace.persistence  # noqa: F401 -- registers the workspace tables
@@ -34,7 +34,6 @@ from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import (
     AccountRow,
-    Base,
     MembershipEventRow,
     MembershipRow,
     SqlAccountStore,
@@ -51,6 +50,7 @@ from khepri.rca.workspace.contracts import AdmittedSource, DatasetVersion
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.revocation import SqlRevocationLedger
 from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
+from tests.rra017_support import migrated_owner_engine
 
 NOW = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
 CREDENTIAL = "correct horse battery staple"
@@ -78,14 +78,12 @@ requires_postgres = pytest.mark.skipif(
 
 @pytest.fixture(name="factory")
 def factory_fixture():
-    """A PostgreSQL session factory whose sessions get independent connections (`QueuePool`)."""
-    engine = create_engine(DATABASE_URL)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    """A PostgreSQL session factory whose sessions get independent connections (`QueuePool`),
+    on the migrated schema, emptied per test (`#595` D-7)."""
+    engine = migrated_owner_engine()
     try:
         yield sessionmaker(engine, expire_on_commit=False)
     finally:
-        Base.metadata.drop_all(engine)
         engine.dispose()
 
 

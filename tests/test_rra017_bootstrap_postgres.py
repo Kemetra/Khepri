@@ -10,7 +10,7 @@
   PostgreSQL. The SQLite fallback is gated by dialect, so this proves the PostgreSQL path does not
   take it.
 
-RED at `0c1475f`: `rls_database()` raises `Rra017Absent` before any request.
+Pinned RED at `f1639c1`, before the slice existed; green from `#595`'s implementation.
 """
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ from tests.rra017_support import (
     COVERED_TABLES,
     OWNER_SETTING,
     POSTGRES,
-    RED,
     RlsDatabase,
     Rra017Absent,
     future,
@@ -49,7 +48,7 @@ from tests.rra017_support import (
 from tests.w104b_support import HTTPS, Journey, invited_client, submit
 from tests.w110_postgres_support import postgres_journeys
 
-pytestmark = [*POSTGRES, RED]
+pytestmark = list(POSTGRES)
 
 PROBE = "/api/v1/beta/probe"
 _COVERED = re.compile(r"\b(" + "|".join(COVERED_TABLES) + r")\b")

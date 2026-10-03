@@ -24,6 +24,7 @@ from khepri.local.config import (
     DEFAULT_ACCESS_KEY,
     DEFAULT_BUCKET,
     DEFAULT_DATABASE_URL,
+    DEFAULT_MIGRATION_DATABASE_URL,
     DEFAULT_REGION,
     DEFAULT_S3_ENDPOINT,
     DEFAULT_SECRET_KEY,
@@ -423,4 +424,4 @@ class TestMigrationContract:
     def test_default_migrations_target_the_local_runtime_database(self) -> None:
         config = Config(REPOSITORY_ROOT / "alembic.ini")
 
-        assert config.get_main_option("sqlalchemy.url") == DEFAULT_DATABASE_URL
+        assert config.get_main_option("sqlalchemy.url") == DEFAULT_MIGRATION_DATABASE_URL

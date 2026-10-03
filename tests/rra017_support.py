@@ -185,16 +185,38 @@ _INTACT = (
     "AND (SELECT relforcerowsecurity FROM pg_class "
     "WHERE oid = to_regclass('public.rra_beta_sessions'))"
 )
+#: The tables in `public`. A suite that drops only its own metadata tree (the RCA-only
+#: `create_all` suites) leaves the head and the policies in place and the schema short.
+_TABLES = "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+#: Every role the migration grants schema `USAGE` to, still holding it.
+_USAGE = (
+    "SELECT bool_and(has_schema_privilege(role, 'public', 'USAGE')) "
+    "FROM unnest(CAST(:roles AS text[])) AS role"
+)
+
+
+def model_tables() -> frozenset[str]:
+    """Every table `migrations/env.py`'s two metadata trees declare."""
+    import khepri.rca.recovery_security_persistence  # noqa: F401, PLC0415 -- registers tables
+    import khepri.rca.workspace.persistence  # noqa: F401, PLC0415 -- registers tables
+    from khepri.rca.persistence import Base as RcaBase  # noqa: PLC0415
+
+    return frozenset(rra_tables()) | frozenset(RcaBase.metadata.tables)
 
 
 def _at_head(engine: Engine) -> bool:
+    """Whether the head schema is whole: the revision, the policies, every table, every grant."""
     head = ScriptDirectory.from_config(alembic_config()).get_current_head()
     with engine.connect() as connection:
         if connection.scalar(text("SELECT to_regclass('public.alembic_version')")) is None:
             return False
         if connection.scalar(text("SELECT version_num FROM alembic_version")) != head:
             return False
-        return bool(connection.scalar(text(_INTACT)))
+        if not connection.scalar(text(_INTACT)):
+            return False
+        if not model_tables() <= set(connection.scalars(text(_TABLES))):
+            return False
+        return bool(connection.scalar(text(_USAGE), {"roles": [*RUNTIME_ROLES, DEFINER]}))
 
 
 def _truncate(engine: Engine) -> None:
@@ -431,6 +453,7 @@ __all__ = [
     "guarded_engine",
     "insert",
     "migrated_owner_engine",
+    "model_tables",
     "remove",
     "repoint",
     "require",

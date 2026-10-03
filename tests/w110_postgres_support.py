@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, event, text
 
 from tests.w104b_support import Journey, journey
 
@@ -75,15 +75,16 @@ def await_reached(reached: threading.Event, what: str) -> None:
 
 
 def postgres_engine() -> Engine:
-    """A pooled engine over an emptied `public` schema.
+    """A pooled engine, as the migration owner, over the migrated schema emptied (`#595` D-7).
 
     Not `StaticPool`: each session gets its own connection, so two transactions genuinely overlap.
-    The schema is dropped with `CASCADE` rather than through either `metadata.drop_all`, because
-    the workspace and `RRA` tables are two metadata trees keyed onto one another.
+    The schema is the migration's, not `create_all`'s: RRA-017's definer functions, which the
+    stores call on PostgreSQL, exist only there. The owner crosses the policies, so no policy masks
+    the application predicates these tests are about.
     """
-    engine = create_engine(DATABASE_URL)
-    _empty_public_schema(engine)
-    return engine
+    from tests.rra017_support import migrated_owner_engine  # noqa: PLC0415 -- imports this one
+
+    return migrated_owner_engine()
 
 
 def _empty_public_schema(engine: Engine) -> None:
@@ -99,17 +100,11 @@ def _empty_public_schema(engine: Engine) -> None:
 
 @contextmanager
 def postgres_journey() -> Iterator[Journey]:
-    """`journey()` over PostgreSQL: the same stores, routes and deletion path, real connections.
-
-    The schema is emptied again on the way out. Other `concurrency` tests share this database and
-    drop only their own metadata tree, which a workspace table keyed onto an `RRA` one would block.
-    """
+    """`journey()` over PostgreSQL: the same stores, routes and deletion path, real connections."""
     engine = postgres_engine()
     try:
         yield journey(engine)
     finally:
-        engine.dispose()
-        _empty_public_schema(engine)
         engine.dispose()
 
 

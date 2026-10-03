@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from khepri.rra.sessions import SessionScope, object_prefix
+
 NOW = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 HOUR = timedelta(hours=1)
 WEEK = timedelta(days=7)
@@ -69,7 +71,7 @@ def _envelope(s: Scope, kind: str) -> Row:
     return {
         "owner_id": s.owner_id,
         "session_id": s.session_id,
-        "object_key": f"{s.owner_id}/{s.session_id}/{kind}",
+        "object_key": object_prefix(SessionScope(s.owner_id, s.session_id)) + kind,
         "size_bytes": 10,
         "sha256_hex": digest(f"{kind}-plain-{s.tag}"),
         "created_at": NOW - HOUR,
