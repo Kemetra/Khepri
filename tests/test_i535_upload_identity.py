@@ -337,28 +337,18 @@ def _is_sql_keyed_on_it(call: ast.Call) -> bool:
     """`text("... WHERE upload_ciphertext_digest = :d")`, or the same passed to `execute`."""
     if _call_name(call) not in SQL_CALLS:
         return False
-    strings = (f" {sql.lower()} " for sql in _strings_in(call))
-    return any(
-        DIGEST in sql and any(word in sql for word in SQL_PREDICATE_WORDS) for sql in strings
-    )
+    sql = f" {_sql_text(call)} "
+    return DIGEST in sql and any(word in sql for word in SQL_PREDICATE_WORDS)
 
 
-def _strings_in(call: ast.Call) -> list[str]:
-    """Each string literal in the call, an f-string's literal parts joined into one."""
-    joined = [node for node in ast.walk(call) if isinstance(node, ast.JoinedStr)]
-    parts = {id(part) for node in joined for part in node.values}
-    whole = ["".join(_literal(part) for part in node.values) for node in joined]
-    plain = [
+def _sql_text(call: ast.Call) -> str:
+    """Every string literal in the call as one text, f-string parts included, so a `WHERE` and the
+    column in separate fragments still read as one statement."""
+    return " ".join(
         node.value
         for node in ast.walk(call)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in parts
-    ]
-    return whole + plain
-
-
-def _literal(part: ast.AST) -> str:
-    is_text = isinstance(part, ast.Constant) and isinstance(part.value, str)
-    return part.value if is_text else " "
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ).lower()
 
 
 def _is_a_column_method(call: ast.Call) -> bool:
