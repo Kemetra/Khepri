@@ -45,6 +45,7 @@ from khepri.rca.workspace.contracts import (
     PublishedArtifact,
     RunOutcome,
     RunSubject,
+    VersionKeys,
     VersionLifecycle,
 )
 from khepri.rca.workspace.store import WorkspaceHistory
@@ -213,8 +214,7 @@ def _admitted_source() -> AdmittedSource:
 
 def _dataset(version_id: str, when: datetime) -> DatasetVersion:
     return DatasetVersion._from_storage(
-        version_id=version_id,
-        owner_id="org-acme",
+        subject=VersionKeys(version_id=version_id, owner_id="org-acme", upload_id=None),
         source=_admitted_source(),
         lifecycle=VersionLifecycle(created_at=when, sealed_at=when),
     )

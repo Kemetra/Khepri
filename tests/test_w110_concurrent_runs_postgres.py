@@ -18,6 +18,10 @@ settlement and the reconcile sweep completing the *same* run. It is not `#388`'s
 
 from __future__ import annotations
 
+import time
+from datetime import timedelta
+from typing import Any
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -37,9 +41,14 @@ from tests.w104b_support import Journey
 from tests.w106_support import completed_run, started_run
 from tests.w107_support import NOW, deletion_service, sealed_version
 from tests.w110_postgres_support import (
+    WAIT_SECONDS,
+    Background,
     DefectStillPresent,
+    LockPause,
     Overlap,
+    await_reached,
     delivered_unsettled,
+    engine_of,
     outcomes_of,
     overlap_on_lock,
     postgres_journey,
@@ -62,6 +71,51 @@ def _start_run(j: Journey, who: Member, version_id: str):
         Attempt(ACTION_RUN_STARTED, lambda: recording.start_run(who.owner_id, version_id, LATER)),
         now=LATER,
     )
+
+
+#: Where a deletion first meets a lock on the version row while the upload row still exists.
+_UPLOAD_DELETE = "DELETE FROM rra_uploads"
+
+
+def _waits_in(engine: Any, blocker_pid: int | None, statement: str) -> bool:
+    """Whether a backend comes to wait on `blocker_pid`, running `statement`, within the bound."""
+    deadline = time.monotonic() + WAIT_SECONDS
+    query = text(
+        "SELECT count(*) FROM pg_stat_activity "
+        "WHERE :blocker = ANY(pg_blocking_pids(pid)) AND query LIKE :statement || '%'"
+    )
+    while time.monotonic() < deadline:
+        with engine.connect() as connection:
+            found = connection.execute(query, {"blocker": blocker_pid, "statement": statement})
+            if found.scalar_one() > 0:
+                return True
+        time.sleep(0.05)
+    return False
+
+
+def _overlap_through_the_upload_key(j: Journey, first: Any, second: Any) -> Overlap:
+    """`overlap_on_lock` for a deletion whose upload row still exists (#535).
+
+    The deletion ends content before records. Its content step deletes the `rra_uploads` row, and
+    `fk_rca_workspace_version_upload`'s `ON DELETE SET NULL (upload_id)` must write the version row
+    the start holds `FOR UPDATE`. So the deletion first waits there, in `DELETE FROM rra_uploads`,
+    and only then reaches its own version lock. The proof names that statement and that blocker,
+    so an unrelated wait still cannot satisfy it.
+    """
+    engine = engine_of(j)
+    pause = LockPause(engine, VERSIONS)
+    pause.arm()
+    try:
+        held = Background(first)
+        await_reached(pause.reached, "the first request")
+        waiting = Background(second)
+        assert _waits_in(engine, pause.backend_pid, _UPLOAD_DELETE), (
+            "the deletion never waited on the start's version lock through the upload key"
+        )
+        assert not waiting.finished, "the deletion finished while the start held the lock"
+    finally:
+        pause.disarm()
+    return Overlap(held, waiting)
 
 
 def _delete(j: Journey, who: Member, version_id: str):
@@ -139,12 +193,46 @@ class TestTwoRunsOverOneVersion:
 
         The other legitimate order: the run is added first, so the deletion must see it and end it
         with the rest. Asserted: the deletion waited on the start's lock, and the new run is
-        tombstoned, not left live.
+        tombstoned, not left live. Since #535 the wait comes in the deletion's content step, where
+        the upload key clears the version row's `upload_id` (`_overlap_through_the_upload_key`).
         """
         with postgres_journey() as j:
             who = member(j.w)
             _run, _job, _session = completed_run(j, who)
             (version,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+
+            both = _overlap_through_the_upload_key(
+                j,
+                _start_run(j, who, version.version_id),
+                _delete(j, who, version.version_id),
+            )
+
+            added = both.first.result()
+            assert both.second.result().deleted
+            assert _live_runs(j, who, version.version_id) == []
+            assert len(tombstones_of(j, who.owner_id, RunTombstone, added.run_id)) == 1, (
+                "the run added before the deletion escaped its cascade"
+            )
+
+    def test_a_deletion_after_the_raw_purge_waits_on_the_version_lock(self) -> None:
+        """The same race once the upload row is gone: the deletion meets the start's lock in its
+        own `FOR UPDATE` on the version, and still cascades to the run added before it.
+
+        With the upload purged, `upload_id` is null and the content step deletes no upload row, so
+        nothing reaches the version row before the records unit does. This keeps the version
+        lock's own proof, which the case above now meets one step earlier (#535).
+        """
+        from khepri.runtime.workspace_retention import RawUploadRetentionSweeper
+
+        with postgres_journey() as j:
+            who = member(j.w)
+            _run, _job, _session = completed_run(j, who)
+            (version,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+            RawUploadRetentionSweeper(
+                factory=j.w.factory, objects=j.w.objects, audit=j.w.audit
+            ).sweep(now=version.sealed_at + timedelta(days=7))
+            (purged,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+            assert purged.upload_id is None, "the purge cleared the identity through the key"
 
             both = overlap_on_lock(
                 j,
@@ -156,9 +244,7 @@ class TestTwoRunsOverOneVersion:
             added = both.first.result()
             assert both.second.result().deleted
             assert _live_runs(j, who, version.version_id) == []
-            assert len(tombstones_of(j, who.owner_id, RunTombstone, added.run_id)) == 1, (
-                "the run added before the deletion escaped its cascade"
-            )
+            assert len(tombstones_of(j, who.owner_id, RunTombstone, added.run_id)) == 1
 
     def test_two_runs_started_over_one_version_serialise_on_its_lock(self) -> None:
         """`#388`'s literal case: two runs started over one live version at once.

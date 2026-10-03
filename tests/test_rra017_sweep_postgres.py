@@ -186,6 +186,7 @@ def _sealed_version(scope: Scope) -> list[tuple[str, dict]]:
             {
                 "version_id": f"ver_{scope.tag}",
                 "owner_id": scope.owner_id,
+                "upload_id": upload["upload_id"],
                 "upload_plaintext_digest": upload["sha256_hex"],
                 "upload_ciphertext_digest": upload["ciphertext_sha256_hex"],
                 "upload_size_bytes": upload["size_bytes"],

@@ -50,6 +50,7 @@ from khepri.rca.workspace.contracts import AdmittedSource, DatasetVersion
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.revocation import SqlRevocationLedger
 from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
+from tests.i535_support import seed_upload, upload_for
 from tests.rra017_support import migrated_owner_engine
 
 NOW = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
@@ -129,8 +130,9 @@ def _deletion(factory, barrier: threading.Barrier) -> WorkspaceDeletion:
 def test_overlapping_deletions_end_the_version_once(factory, attempt: int) -> None:
     """`FR-123`: one `completed`, one `already_deleted` -- never two endings."""
     _organization_id, owner_id, scope = _organization(factory)
+    seed_upload(factory, scope, SOURCE, NOW)
     version = SqlWorkspaceRecordStore(factory).add_dataset_version(
-        DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW)
+        DatasetVersion.create(owner_id=scope, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
     )
     barrier = threading.Barrier(2, timeout=10)
 

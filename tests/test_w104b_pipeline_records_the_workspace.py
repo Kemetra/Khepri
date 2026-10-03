@@ -298,9 +298,16 @@ def test_re_requesting_the_report_is_the_same_run() -> None:
     ]
 
 
-def test_the_same_file_submitted_twice_is_one_version_with_two_runs() -> None:
+def test_the_same_file_submitted_twice_is_two_versions_each_with_its_run() -> None:
     """Run Again's shape (`FR-114`), reached through the deployed routes: a second session over
-    the same bytes finds the existing version by digest and starts its own run over it."""
+    the same bytes is a new upload, so a new version with its own run (`RCA-005` Semantics: "a new
+    file is a new version, always").
+
+    This asserted one shared version until #535. That outcome came from the test double, never
+    from production: `MemoryObjectStore` derives the ciphertext digest from the content, while
+    `RRA-002`'s encryption is randomised, so two real uploads of identical bytes never shared the
+    digest the version was keyed on. `FR-255` keys the version on the upload's identity instead,
+    and the double can no longer stand in for a property production does not have."""
     j = journey()
     who = member(j.w)
     first, _s1 = commercial_client(j, who)
@@ -313,9 +320,10 @@ def test_the_same_file_submitted_twice_is_one_version_with_two_runs() -> None:
 
     versions = j.w.store.dataset_versions_for_scope(who.owner_id)
     runs = j.w.store.analysis_runs_for_scope(who.owner_id)
-    assert len(versions) == 1
+    assert len(versions) == 2
+    assert len({version.upload_id for version in versions}) == 2
     assert [run.state for run in runs] == [RUN_COMPLETED, RUN_COMPLETED]
-    assert {run.version_id for run in runs} == {versions[0].version_id}
+    assert {run.version_id for run in runs} == {version.version_id for version in versions}
 
 
 # --- The races review found (`#375`), and the safety net -----------------------------------------

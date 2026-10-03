@@ -40,8 +40,9 @@ job_id                             <- an RRA object identifier that confers noth
 
 A session identifier is bearer-adjacent and `KHEPRI-DEC-015` §7 keeps it out of every log, so no
 workspace record and no audit event holds one. The link from a version to its upload is the upload's
-digests; from a run to its package, the package digest. `dataset_version_for_upload` reads the
-ciphertext digest back for the idempotent retry.
+identity, `upload_id`, which only the version row holds (`RCA-005` `FR-255`); from a run to its
+package, the package digest. `dataset_version_for_upload` reads the identity back for the idempotent
+retry, so a retry after the upload is re-sealed still finds its version (`FR-261`).
 
 ## One event per action
 
@@ -275,9 +276,7 @@ class WorkspaceRecording:
     ) -> Performed[DatasetVersion]:
         """Record the session's `RRA-003` admission as a dataset version, once."""
         upload, profile = self._admission(owner_id, session_id, now)
-        existing = self._rca.workspace.dataset_version_for_upload(
-            owner_id, upload.ciphertext_sha256_hex
-        )
+        existing = self._rca.workspace.dataset_version_for_upload(owner_id, upload.upload_id)
         if existing is not None:
             self._retain(owner_id, session_id)
             return Performed(existing, OUTCOME_ALREADY_RECORDED, subject_of_version(existing))
@@ -288,6 +287,7 @@ class WorkspaceRecording:
             raise WorkspaceRefused(NO_ATTESTATION_FAILURE)
         version = DatasetVersion.create(
             owner_id=owner_id,
+            upload_id=upload.upload_id,
             source=AdmittedSource(
                 plaintext_digest=upload.sha256_hex,
                 ciphertext_digest=upload.ciphertext_sha256_hex,
@@ -340,9 +340,7 @@ class WorkspaceRecording:
             upload, _profile = self._admission(owner_id, session_id, now)
         except WorkspaceRefused:
             return None
-        return self._rca.workspace.dataset_version_for_upload(
-            owner_id, upload.ciphertext_sha256_hex
-        )
+        return self._rca.workspace.dataset_version_for_upload(owner_id, upload.upload_id)
 
     def existing_version(
         self, owner_id: str, session_id: str, now: datetime

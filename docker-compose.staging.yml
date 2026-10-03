@@ -215,6 +215,16 @@ services:
     restart: "no"
 
   # One-shot. Must finish before web or worker start, or they race the schema.
+  #
+  # Upgrading a stack that is already running: `depends_on` orders only a fresh start,
+  # so the old web and worker keep writing while `migrate` runs. Stop them first:
+  #
+  #   docker compose -f docker-compose.staging.yml stop web worker
+  #   docker compose -f docker-compose.staging.yml up -d --build
+  #
+  # `20261003_0037` (#535, `RCA-005` `FR-262`) refuses to run while a runtime role is
+  # connected: a version older code wrote without `upload_id` would leave its upload
+  # unpurged and out of a dataset deletion's reach until the repair ran.
   migrate:
     build:
       context: .

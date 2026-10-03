@@ -36,6 +36,7 @@ from khepri.rca.workspace.persistence import (
     SqlWorkspaceRecordStore,
     WorkspaceTombstoneRow,
 )
+from tests.i535_support import upload_for
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -87,7 +88,9 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
 
 
 def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
-    return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
+    return store.add_dataset_version(
+        DatasetVersion.create(owner_id=scope, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
 
 def _tombstone(factory: sessionmaker, scope: str, **overrides: object) -> str:

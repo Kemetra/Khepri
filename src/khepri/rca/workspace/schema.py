@@ -306,16 +306,26 @@ class DatasetVersionRow(Base):
         # than by a read-then-insert two overlapping profile requests both pass (review on
         # `#375`). An index rather than a constraint because SQLite adds an index to an existing
         # table and the migration runs on both engines. `add_dataset_version` translates the clash.
+        #
+        # Keyed on `upload_id` since `RCA-005` `FR-257` (#535): a re-seal changes the upload's
+        # ciphertext digest, so uniqueness on the recorded digest would arbitrate nothing. Nulls do
+        # not collide on either engine; a null belongs to a version whose upload is gone.
         Index(
-            "uq_rca_workspace_version_upload",
+            "uq_rca_workspace_version_upload_id",
             "owner_id",
-            "upload_ciphertext_digest",
+            "upload_id",
             unique=True,
         ),
     )
 
     version_id: Mapped[str] = mapped_column(String, primary_key=True)
     owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # `FR-255`/`FR-256`: the `rra_uploads` row this version was admitted from. Written once by
+    # `add_dataset_version`; the append-only guard refuses any ORM update, because it is in neither
+    # `MUTABLE_COLUMNS` nor `COMPLETION_COLUMNS`. Only the database clears it, through the
+    # PostgreSQL-only foreign key `20261003_0037` adds -- not declared here, because `khepri.rca`
+    # and `khepri.rra` keep separate declarative bases (`R7-01` §3).
+    upload_id: Mapped[str | None] = mapped_column(String, nullable=True)
     upload_plaintext_digest: Mapped[str] = mapped_column(String, nullable=False)
     upload_ciphertext_digest: Mapped[str] = mapped_column(String, nullable=False)
     upload_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)

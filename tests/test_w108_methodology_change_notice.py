@@ -33,6 +33,7 @@ from khepri.rca.workspace.contracts import (
     PublishedArtifact,
     RunOutcome,
     RunSubject,
+    VersionKeys,
     VersionLifecycle,
 )
 from khepri.rca.workspace.persistence import WorkspaceHistory
@@ -151,8 +152,7 @@ class _StubProvenance:
 
 def _version(version_id: str, mapping: str, *, created_at: datetime = EARLIER) -> DatasetVersion:
     return DatasetVersion._from_storage(
-        version_id=version_id,
-        owner_id=SCOPE,
+        subject=VersionKeys(version_id=version_id, owner_id=SCOPE, upload_id=None),
         source=AdmittedSource(
             plaintext_digest=DIGEST,
             ciphertext_digest=DIGEST,

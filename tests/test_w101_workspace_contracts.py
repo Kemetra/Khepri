@@ -31,8 +31,10 @@ from khepri.rca.workspace.contracts import (
     RunOutcome,
     RunSubject,
     SourceProfile,
+    VersionKeys,
     VersionLifecycle,
 )
+from tests.i535_support import upload_for
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 SCOPE = "own_3f7a9c21b4e85d06"
@@ -60,6 +62,7 @@ def test_dataset_version_fields_are_exactly_its_allowlist() -> None:
     assert _field_names(DatasetVersion) == {
         "version_id",
         "owner_id",
+        "upload_id",
         "upload_plaintext_digest",
         "upload_ciphertext_digest",
         "upload_size_bytes",
@@ -180,7 +183,9 @@ def test_records_the_domain_acts_on_are_sealed(record_type: type) -> None:
 
 
 def test_a_dataset_version_cannot_be_mutated() -> None:
-    version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
+    version = DatasetVersion.create(
+        owner_id=SCOPE, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW
+    )
     with pytest.raises(FrozenInstanceError):
         version.upload_size_bytes = 4096  # type: ignore[misc]
 
@@ -192,7 +197,9 @@ def test_substitution_is_refused_on_a_sealed_workspace_record() -> None:
     through a door again. A version whose digest could be swapped this way would let a caller
     re-point a sealed dataset at content it never admitted.
     """
-    version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
+    version = DatasetVersion.create(
+        owner_id=SCOPE, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW
+    )
     with pytest.raises(TypeError, match="constructed through create"):
         replace(version, upload_plaintext_digest="sha256:" + "f" * 64)
 
@@ -206,7 +213,9 @@ def test_a_created_dataset_version_is_not_yet_sealed() -> None:
     `KHEPRI-DEC-033` starts the raw upload's seven-day purge clock at sealing, so a version that
     arrived already sealed would start that clock before its facts exist.
     """
-    version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
+    version = DatasetVersion.create(
+        owner_id=SCOPE, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW
+    )
     assert version.sealed_at is None
     assert version.owner_id == SCOPE
     assert version.version_id.startswith("dsv_")
@@ -247,6 +256,7 @@ def test_create_has_no_parameter_for_a_stored_only_field() -> None:
         DatasetVersion.create(  # type: ignore[call-arg]
             version_id="dsv_forged",
             owner_id=SCOPE,
+            upload_id=upload_for(SOURCE),
             source=SOURCE,
             now=NOW,
         )
@@ -306,7 +316,11 @@ def test_the_shared_builder_cannot_construct_outside_a_door(record_type: type) -
     this one silently.
     """
     arguments = {
-        DatasetVersion: ("dsv_forged", SCOPE, SOURCE, VersionLifecycle(created_at=NOW)),
+        DatasetVersion: (
+            VersionKeys(version_id="dsv_forged", owner_id=SCOPE, upload_id="upl_forged"),
+            SOURCE,
+            VersionLifecycle(created_at=NOW),
+        ),
         AnalysisRun: (
             RunSubject(run_id="run_forged", owner_id=SCOPE, version_id="dsv_abc123"),
             RunOutcome(state="started"),

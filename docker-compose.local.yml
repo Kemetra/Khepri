@@ -38,10 +38,18 @@
 # open, or start the stack from a shell that stays open.
 #
 #   docker compose -f docker-compose.local.yml up -d   # the first run builds MinIO
-#   uv run alembic upgrade head
+#   uv run alembic upgrade head   # with the app and worker stopped; see below
 #   uv run python -m khepri.local.cli invite
 #   uv run uvicorn khepri.local.app:app --reload
 #   uv run python -m khepri.local.cli work
+#
+# **Upgrading a stack that already holds data: stop the app and worker first.** Stop
+# `uvicorn`, `cli work` and any sweep, run `uv run alembic upgrade head`, then start
+# the new code. `20261003_0037` (#535, `RCA-005` `FR-262`) refuses to run while a
+# runtime role is connected: a version written by older code during or after it
+# would carry no `upload_id`, and its upload would be neither purged at seal plus
+# seven days nor reached by a dataset deletion until
+# `khepri.runtime.upload_identity_repair` ran.
 
 # Compose derives a project name from the directory, so without this both compose
 # files claim the same project and starting one stack recreates the other's

@@ -89,6 +89,30 @@ class AdmittedSource:
     admission_outcome: str
 
 
+@dataclass(frozen=True, slots=True)
+class VersionKeys:
+    """Which version, in which scope, admitted from which upload.
+
+    The identifiers a version is keyed by, grouped for `RunSubject`'s reason
+    and to keep `_build` within the four-argument threshold. `upload_id` is
+    here rather than on `AdmittedSource` because `RCA-005` `FR-255` keeps it
+    off that value: the tombstone projections rebuild an `AdmittedSource`, and
+    the identity must never reach a tombstone. `create` builds this inside its
+    door, so `version_id` stays unexpressible there.
+
+    `upload_id` is optional because the database clears it when the upload row
+    is removed (`FR-256`); `create` refuses it absent.
+    """
+
+    version_id: str
+    owner_id: str
+    upload_id: str | None
+
+
+# Content-free, per the refusal discipline in `rca/errors.py`.
+UPLOAD_IDENTITY_FAILURE = "a dataset version must name the upload it was admitted from"
+
+
 @register_sealed
 @dataclass(frozen=True, slots=True)
 class DatasetVersion(Sealed):
@@ -97,10 +121,18 @@ class DatasetVersion(Sealed):
     Immutable once sealed; after that only its retention state changes, which
     `W1-02` holds in the store rather than on this record. A new file is a new
     version — never an edit to this one.
+
+    `upload_id` is the primary key of the `rra_uploads` row the version was
+    admitted from (`FR-255`). It is the key the raw-upload purge, the version
+    deletion and the retry lookup join on (`FR-259`-`FR-261`), because a
+    re-seal changes the upload's ciphertext digest and never its identity.
+    `upload_ciphertext_digest` is the digest as observed at creation, kept for
+    the record and never a key (`FR-258`).
     """
 
     version_id: str
     owner_id: str
+    upload_id: str | None
     upload_plaintext_digest: str
     upload_ciphertext_digest: str
     upload_size_bytes: int
@@ -113,8 +145,7 @@ class DatasetVersion(Sealed):
 
     @staticmethod
     def _build(
-        version_id: str,
-        owner_id: str,
+        subject: VersionKeys,
         source: AdmittedSource,
         lifecycle: VersionLifecycle,
     ) -> DatasetVersion:
@@ -134,8 +165,9 @@ class DatasetVersion(Sealed):
         stays a single constructor call.
         """
         return DatasetVersion(
-            version_id=version_id,
-            owner_id=owner_id,
+            version_id=subject.version_id,
+            owner_id=subject.owner_id,
+            upload_id=subject.upload_id,
             upload_plaintext_digest=source.plaintext_digest,
             upload_ciphertext_digest=source.ciphertext_digest,
             upload_size_bytes=source.size_bytes,
@@ -148,23 +180,29 @@ class DatasetVersion(Sealed):
         )
 
     @classmethod
-    def create(cls, *, owner_id: str, source: AdmittedSource, now: datetime) -> DatasetVersion:
+    def create(
+        cls, *, owner_id: str, upload_id: str, source: AdmittedSource, now: datetime
+    ) -> DatasetVersion:
+        """Allocate a version for one admitted upload. `upload_id` is required and never empty
+        (`FR-255`): a version written without it is one no purge or deletion can find."""
+        if not upload_id:
+            raise ValueError(UPLOAD_IDENTITY_FAILURE)
         with through_door():
-            return cls._build(
-                _identifier("dsv"), owner_id, source, VersionLifecycle(created_at=now)
+            subject = VersionKeys(
+                version_id=_identifier("dsv"), owner_id=owner_id, upload_id=upload_id
             )
+            return cls._build(subject, source, VersionLifecycle(created_at=now))
 
     @classmethod
     def _from_storage(
         cls,
         *,
-        version_id: str,
-        owner_id: str,
+        subject: VersionKeys,
         source: AdmittedSource,
         lifecycle: VersionLifecycle,
     ) -> DatasetVersion:
         with through_door():
-            return cls._build(version_id, owner_id, source, lifecycle)
+            return cls._build(subject, source, lifecycle)
 
 
 @dataclass(frozen=True, slots=True)

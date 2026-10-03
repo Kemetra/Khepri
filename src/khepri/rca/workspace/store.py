@@ -25,6 +25,7 @@ from khepri.rca.records import assert_sealed
 from khepri.rca.workspace.contracts import (
     RUN_COMPLETED,
     RUN_STARTED,
+    UPLOAD_IDENTITY_FAILURE,
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
@@ -32,6 +33,7 @@ from khepri.rca.workspace.contracts import (
     PublishedArtifact,
     RunOutcome,
     RunSubject,
+    VersionKeys,
     VersionLifecycle,
     _identifier,
 )
@@ -209,8 +211,9 @@ def _revoked(row: object) -> bool:
 # *survives* a deletion, and `W1-07`'s retention sweep must be able to purge it at its horizon.
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
     return DatasetVersion._from_storage(
-        version_id=row.version_id,
-        owner_id=row.owner_id,
+        subject=VersionKeys(
+            version_id=row.version_id, owner_id=row.owner_id, upload_id=row.upload_id
+        ),
         source=AdmittedSource(
             plaintext_digest=row.upload_plaintext_digest,
             ciphertext_digest=row.upload_ciphertext_digest,
@@ -368,6 +371,7 @@ class SqlWorkspaceRecordStore(PinReads):
                 DatasetVersionRow(
                     version_id=version.version_id,
                     owner_id=version.owner_id,
+                    upload_id=version.upload_id,
                     upload_plaintext_digest=version.upload_plaintext_digest,
                     upload_ciphertext_digest=version.upload_ciphertext_digest,
                     upload_size_bytes=version.upload_size_bytes,
@@ -397,21 +401,24 @@ class SqlWorkspaceRecordStore(PinReads):
                 return None
             return _version_from_row(row)
 
-    def dataset_version_for_upload(
-        self, owner_id: str, ciphertext_digest: str
-    ) -> DatasetVersion | None:
-        """The live version recorded for one stored upload, if any -- the retry lookup.
+    def dataset_version_for_upload(self, owner_id: str, upload_id: str) -> DatasetVersion | None:
+        """The live version recorded for one upload, if any -- the retry lookup (`FR-261`).
 
-        The ciphertext digest identifies one stored copy of one upload: `RRA-002`'s encryption is
-        randomised, so two uploads of identical bytes differ here while one upload's retry does
-        not. That lets `W1-04` make version creation idempotent without the workspace holding an
-        upload or session identifier, which `KHEPRI-DEC-015` §7 keeps out of every record it logs.
+        Keyed on the upload's identity, not its ciphertext digest: a re-seal changes the digest and
+        never the identity, so a retry after a re-seal still finds the version it recorded.
+        `KHEPRI-DEC-015` §7 keeps the *session* identifier off workspace records; `upload_id` is an
+        opaque random key `RCA-005` `FR-255` admits onto the version row alone.
+
+        **An absent identity is refused, not looked up.** `== None` compiles to `IS NULL`, which
+        would return a version whose upload is gone as the one this upload already has.
         """
+        if not upload_id:
+            raise ValueError(UPLOAD_IDENTITY_FAILURE)
         with reading(self._factory) as database:
             row = database.scalars(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
-                .where(DatasetVersionRow.upload_ciphertext_digest == ciphertext_digest)
+                .where(DatasetVersionRow.upload_id == upload_id)
                 .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
                 .where(~_revocation_exists(DatasetVersionRow))
             ).first()

@@ -33,6 +33,7 @@ from khepri.rca.workspace.persistence import (
     DatasetVersionRow,
     SqlWorkspaceRecordStore,
 )
+from tests.i535_support import upload_for
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -88,15 +89,17 @@ _uploads = itertools.count(1)
 
 def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     """One version of a *distinct* upload each call. `W1-04b` made one version per admitted
-    upload in a scope a database rule (`uq_rca_workspace_version_upload`), so two versions in one
-    scope are two sources here, as they are in production."""
+    upload in a scope a database rule (`uq_rca_workspace_version_upload_id` since #535), so two
+    versions in one scope are two sources here, as they are in production."""
     nth = next(_uploads)
     source = replace(
         SOURCE,
         plaintext_digest=f"sha256:{nth:064x}",
         ciphertext_digest=f"sha256:{nth + 1_000_000:064x}",
     )
-    return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=source, now=NOW))
+    return store.add_dataset_version(
+        DatasetVersion.create(owner_id=scope, upload_id=upload_for(source), source=source, now=NOW)
+    )
 
 
 def _started_run(store: SqlWorkspaceRecordStore, scope: str) -> AnalysisRun:
@@ -162,7 +165,9 @@ def test_a_foreign_scope_cannot_seal_a_version(factory: sessionmaker) -> None:
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
     store = SqlWorkspaceRecordStore(factory)
-    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
+    mine = store.add_dataset_version(
+        DatasetVersion.create(owner_id=first, upload_id=upload_for(SOURCE), source=SOURCE, now=NOW)
+    )
 
     assert store.seal_dataset_version(mine.version_id, now=LATER, owner_id=second) is False
 
