@@ -154,9 +154,20 @@ def test_the_roles_script_creates_exactly_the_three_runtime_roles() -> None:
     script = ROLES_SCRIPT.read_text(encoding="utf-8")
     (listed,) = re.findall(r"ARRAY\[([^\]]*)\]", script)
     assert set(re.findall(r"'([a-z_]+)'", listed)) == {role.value for role in DatabaseRole}
-    assert "PASSWORD %L', role_name, role_name" in script
+    assert re.search(r"PASSWORD %L',\s*role_name, role_name", script)
     for attribute in ("NOSUPERUSER", "NOBYPASSRLS", "NOCREATEROLE", "NOCREATEDB"):
         assert attribute in script
+
+
+def test_the_roles_script_reapplies_every_attribute_to_an_existing_role() -> None:
+    """A role that already exists with `BYPASSRLS` keeps it unless the `ALTER` names each one.
+
+    `_require_role` would then refuse the connection after the operator ran this script.
+    """
+    script = ROLES_SCRIPT.read_text(encoding="utf-8")
+    (altered,) = re.findall(r"'ALTER ROLE %I ([^']*)PASSWORD %L'", script)
+    for attribute in ("LOGIN", "NOSUPERUSER", "NOBYPASSRLS", "NOCREATEROLE", "NOCREATEDB"):
+        assert attribute in altered.split(), altered
 
 
 @pytest.mark.parametrize("role", list(DatabaseRole), ids=lambda role: role.value)

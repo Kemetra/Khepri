@@ -7,7 +7,8 @@
 --   docker compose -f docker-compose.local.yml exec -T postgres \
 --     psql -U khepri -d khepri -f - < ops/local/khepri-runtime-roles.sql
 --
--- It only creates the roles and sets their passwords. The migration (`20261002_0036`) grants
+-- It only creates the roles, sets their passwords, and reapplies their attributes to a role that
+-- already exists. The migration (`20261002_0036`) grants
 -- them everything they hold, and creates any it finds missing, without a password. These
 -- passwords are not secrets, exactly as the stacks' `khepri:khepri` is not: each matches the
 -- default URL in `khepri.local.config` and the staging compose file's secret for that role.
@@ -26,6 +27,9 @@ BEGIN
         role_name
       );
     END IF;
-    EXECUTE format('ALTER ROLE %I PASSWORD %L', role_name, role_name);
+    EXECUTE format(
+      'ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOINHERIT PASSWORD %L',
+      role_name, role_name
+    );
   END LOOP;
 END $$;

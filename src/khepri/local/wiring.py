@@ -135,10 +135,14 @@ class LocalStack:
 
 @dataclass(frozen=True, slots=True)
 class WorkerStack:
-    """The two background drivers, built over one already-constructed stack."""
+    """The worker loop, built over one already-constructed stack.
+
+    It holds no sweeper: the sweep's cross-scope reads need the sweep role's credential, which the
+    worker process does not hold (`RRA-017` `FR-270`). `build_sweeper` is composed by the sweep's
+    own root instead.
+    """
 
     worker: LocalReportWorker
-    sweeper: RetentionSweeper
 
 
 def build_engine(settings: LocalSettings, role: DatabaseRole):
@@ -314,7 +318,7 @@ def build_worker_stack(
     *,
     printer: PagePrinter | None = None,
 ) -> WorkerStack:
-    """The worker loop and the sweeper, over one already-built stack."""
+    """The worker loop, over one already-built stack."""
     return WorkerStack(
         worker=build_local_worker(
             LocalWorkerPorts(
@@ -324,7 +328,6 @@ def build_worker_stack(
             ),
             clock=stack.clock,
         ),
-        sweeper=build_sweeper(stack, sweep_factory=stack.factory),
     )
 
 

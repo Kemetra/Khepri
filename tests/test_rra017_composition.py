@@ -191,6 +191,25 @@ def test_no_deletion_service_is_built_over_the_sweep_engine(compose: Any) -> Non
         require(not _holders(service, sweep), "a DeletionService reaches the sweep engine")
 
 
+def test_no_local_wiring_hands_a_scoped_factory_to_the_sweep() -> None:
+    """`FR-271`: `sweep_factory=stack.factory` binds the four cross-scope reads to a scoped role.
+
+    The scope tripwire then refuses each unscoped statement and the sweep reports the passes as
+    faulted. Only a root holding the sweep role's credential may build its factory (`FR-270`).
+    """
+    scoped = [
+        f"{name}:{keyword.value.lineno}"
+        for name, tree in _modules(PACKAGE / "local")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == "sweep_factory"
+        and isinstance(keyword.value, ast.Attribute)
+        and keyword.value.attr == "factory"
+    ]
+    assert not scoped, f"a scoped factory reaches the sweep at {scoped}"
+
+
 def _reachable(root: Any) -> Iterator[Any]:
     seen: set[int] = set()
     stack = [root]

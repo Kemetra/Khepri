@@ -211,7 +211,7 @@ class TestTheRetentionPassesAreWired:
         assert report.purged_sessions == 5
 
     def test_production_wires_both_horizons_with_no_override(self) -> None:
-        """`build_worker_stack` passes every retention pass, none with a compressed horizon.
+        """`build_sweeper` passes every retention pass, none with a compressed horizon.
 
         **Why the source and not the built object.** Constructing a real stack needs PostgreSQL and
         an object endpoint, so the equivalent assertion in `test_local_journey.py` is gated behind
