@@ -1,0 +1,77 @@
+"""After a restart: reread retained history, then delete one version through /app and check it ends."""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+import time
+from pathlib import Path
+
+import httpx
+
+BASE = "http://127.0.0.1:8000"
+OUT = Path(sys.argv[1])
+SETUP = json.loads(Path(sys.argv[2]).read_text())
+S1 = json.loads((OUT / "stage1.json").read_text())
+SECRETS = json.loads((OUT / "secrets.json").read_text())
+a = SETUP["a"]
+org, tok = a["organization_id"], a["session_token"]
+runs = S1["runs"]
+H = {"origin": BASE, "sec-fetch-site": "same-origin"}
+log: dict = {}
+
+
+def both(tag: str) -> dict:
+    return {"khepri_beta_session": SECRETS["runs"][tag]["cookie"], "khepri_session": tok}
+
+
+with httpx.Client(base_url=BASE, headers=H, timeout=120, follow_redirects=False) as http:
+    for _ in range(30):
+        if http.get(f"/app/en/{org}/analyses", cookies={"khepri_session": tok}).status_code == 200:
+            break
+        time.sleep(1)
+    # --- retained history survives the restart --------------------------------------------
+    after = {}
+    for sub in ("/overview", "/analyses", "/data"):
+        r = http.get(f"/app/en/{org}{sub}", cookies={"khepri_session": tok})
+        after[sub] = r.status_code
+    data = http.get(f"/app/en/{org}/data", cookies={"khepri_session": tok}).text
+    versions = sorted(set(re.findall(r"dsv_[A-Za-z0-9_-]{20,}", data)))
+    for tag in ("v1", "v2"):
+        r = http.get(f"/api/v1/beta/reports/{runs[tag]['job']}/surfaces/web/en", cookies=both(tag))
+        after[f"{tag}_web_en"] = r.status_code
+    after["versions"] = versions
+    log["after_restart"] = after
+    # --- delete one version ----------------------------------------------------------------
+    if not versions:
+        log["delete"] = {"error": "no retained versions found after restart"}
+        (OUT / "stage3-delete.json").write_text(json.dumps(log, indent=2))
+        raise SystemExit("no retained versions found after restart; deletion checks skipped")
+    target = versions[0]
+    d = http.post(f"/app/en/{org}/data/{target}/delete", cookies={"khepri_session": tok})
+    log["delete"] = {"version": target, "status": d.status_code, "location": d.headers.get("location")}
+    repeat = http.post(f"/app/en/{org}/data/{target}/delete", cookies={"khepri_session": tok})
+    log["delete_repeat"] = {"status": repeat.status_code, "location": repeat.headers.get("location")}
+    data = http.get(f"/app/en/{org}/data", cookies={"khepri_session": tok}).text
+    log["versions_after"] = sorted(set(re.findall(r"dsv_[A-Za-z0-9_-]{20,}", data)))
+    for tag in ("v1", "v2"):
+        r = http.get(f"/api/v1/beta/reports/{runs[tag]['job']}/surfaces/web/en", cookies=both(tag))
+        log[f"{tag}_web_en_after_delete"] = [r.status_code, r.text[:80] if r.status_code != 200 else ""]
+    remaining = log["versions_after"]
+    if remaining:
+        c = http.post(
+            f"/app/en/{org}/analyses/compare",
+            data={"subject": remaining[0], "baseline": target},
+            cookies={"khepri_session": tok},
+        )
+        log["compare_with_deleted"] = [c.status_code, len(c.content)]
+    # A second organization cannot delete A's remaining version.
+    b = SETUP["b"]
+    if remaining:
+        x = http.post(f"/app/en/{org}/data/{remaining[0]}/delete", cookies={"khepri_session": b["session_token"]})
+        log["cross_org_delete"] = [x.status_code, x.headers.get("location")]
+        data = http.get(f"/app/en/{org}/data", cookies={"khepri_session": tok}).text
+        log["versions_after_cross_org_attempt"] = sorted(set(re.findall(r"dsv_[A-Za-z0-9_-]{20,}", data)))
+print(json.dumps(log, indent=1))
+(OUT / "stage3-delete.json").write_text(json.dumps(log, indent=2))

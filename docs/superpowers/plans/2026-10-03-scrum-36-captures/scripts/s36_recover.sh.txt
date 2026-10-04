@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Observe the unclaimed job, start the worker, observe it claimed once and succeeded.
+set -u
+JOB="$1"
+q() { docker exec khepri-staging-postgres psql -U khepri -d khepri -Atc \
+  "select state, attempt_count, coalesce(lease_owner,'(none)'), to_char(queued_at,'HH24:MI:SS.MS'), to_char(available_at,'HH24:MI:SS.MS') from rra_report_jobs where job_id='$JOB'"; }
+echo "while_stopped: $(q)"
+sleep 5
+echo "after_5s_stopped: $(q)"
+docker start khepri-staging-worker-1 >/dev/null
+echo "worker_started_utc: $(date -u +%T.%3N)"
+for i in $(seq 1 60); do
+  s=$(q); case "$s" in succeeded*|failed*|dead_lettered*) break;; esac; sleep 1
+done
+echo "after_start: $s (~${i}s)"
+docker inspect khepri-staging-worker-1 --format 'worker restarts={{.RestartCount}} state={{.State.Status}}'

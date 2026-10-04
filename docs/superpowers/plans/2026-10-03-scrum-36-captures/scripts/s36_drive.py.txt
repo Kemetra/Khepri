@@ -1,0 +1,233 @@
+"""SCRUM-36 stage 1: the commercial and beta journey against the staging stack, over HTTP.
+
+Every step goes through a customer route. Cookies are sent explicitly because the commercial
+cookie is `Secure` and the stack is served on http://127.0.0.1:8000. Results go to s36/stage1.json;
+PDFs and Excel go to s36/files/.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+import time
+from datetime import date, timedelta
+from pathlib import Path
+
+import httpx
+
+from tests.rra003_contract_fixtures import profile_payload
+from tests.rra_printed_support import retail_csv
+from tests.w104_support import attestation
+
+BASE = "http://127.0.0.1:8000"
+OUT = Path(sys.argv[1])
+SETUP = json.loads(Path(sys.argv[2]).read_text())
+FILES = OUT / "files"
+FILES.mkdir(parents=True, exist_ok=True)
+LOG: dict[str, object] = {}
+#: Cookies for later stages. Written to an operator-only file, never printed or logged.
+SECRETS: dict[str, dict] = {}
+BETA = "khepri_beta_session"
+COMMERCIAL = "khepri_session"
+
+
+def record(key: str, value: object) -> None:
+    LOG[key] = value
+    print(f"[{key}] {json.dumps(value)[:300]}", flush=True)
+
+
+def shifted(content: bytes, days: int) -> bytes:
+    """The same seeded file, every date moved by `days`: a later period, same shape."""
+    lines = content.strip().split(b"\n")
+    out = [lines[0]]
+    for line in lines[1:]:
+        first, rest = line.split(b",", 1)
+        moved = date.fromisoformat(first.decode()) + timedelta(days=days)
+        out.append(moved.isoformat().encode() + b"," + rest)
+    return b"\n".join(out) + b"\n"
+
+
+def profile_body(content: bytes) -> dict:
+    body = profile_payload()
+    days = [date.fromisoformat(l.split(b",")[0].decode()) for l in content.strip().split(b"\n")[1:]]
+    body["coverage_manifest"] = attestation(min(days), max(days)).model_dump(mode="json")
+    return body
+
+
+#: What a same-origin browser sends with every mutation; `require_same_origin` reads both.
+SAME_ORIGIN = {"origin": BASE, "sec-fetch-site": "same-origin"}
+INVITE_OFFSET = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+
+
+def client() -> httpx.Client:
+    return httpx.Client(base_url=BASE, follow_redirects=False, timeout=120, headers=SAME_ORIGIN)
+
+
+def beta_cookie_from(response: httpx.Response) -> str | None:
+    for header in response.headers.get_list("set-cookie"):
+        if header.startswith(f"{BETA}="):
+            return header.split(";", 1)[0].split("=", 1)[1]
+    return None
+
+
+def run_journey(http: httpx.Client, cookies: dict, content: bytes, tag: str) -> dict:
+    """consent -> upload -> profile -> facts -> report -> poll. Timings in seconds."""
+    t0 = time.monotonic()
+    steps = {}
+    steps["consent"] = http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies=cookies).status_code
+    up = http.post("/api/v1/beta/uploads", content=content, headers={"content-type": "text/csv"}, cookies=cookies)
+    steps["upload"] = up.status_code
+    if up.status_code != 201:
+        steps["upload_body"] = up.text[:200]
+        return steps
+    pr = http.post("/api/v1/beta/profile", json=profile_body(content), cookies=cookies)
+    steps["profile"] = pr.status_code
+    fa = http.post("/api/v1/beta/facts", cookies=cookies)
+    steps["facts"] = fa.status_code
+    rq = http.post("/api/v1/beta/reports", json={}, cookies=cookies)
+    steps["report_request"] = rq.status_code
+    if rq.status_code not in (200, 201):
+        steps["report_body"] = rq.text[:300]
+        return steps
+    job = rq.json()["job_id"]
+    steps["job_id"] = job
+    state = None
+    for _ in range(240):
+        st = http.get(f"/api/v1/beta/reports/{job}", cookies=cookies)
+        state = st.json().get("state") if st.status_code == 200 else f"http {st.status_code}"
+        if state in ("succeeded", "failed", "dead_lettered"):
+            break
+        time.sleep(1)
+    steps["state"] = state
+    steps["seconds_to_report"] = round(time.monotonic() - t0, 1)
+    return steps
+
+
+def surfaces(http: httpx.Client, cookies: dict, job: str, tag: str) -> dict:
+    found = {}
+    paths = [f"web/{l}" for l in ("en", "ar")] + [f"evidence/{l}" for l in ("en", "ar")]
+    paths += [f"pdf/{l}" for l in ("en", "ar")] + ["excel"]
+    for p in paths:
+        r = http.get(f"/api/v1/beta/reports/{job}/surfaces/{p}", cookies=cookies)
+        found[p] = {
+            "status": r.status_code,
+            "type": r.headers.get("content-type"),
+            "disposition": r.headers.get("content-disposition"),
+            "csp": r.headers.get("content-security-policy"),
+            "bytes": len(r.content),
+        }
+        if r.status_code == 200 and (p.startswith("pdf") or p == "excel"):
+            (FILES / f"{tag}-{p.replace('/', '-')}.{'pdf' if p.startswith('pdf') else 'xlsx'}").write_bytes(r.content)
+        if r.status_code == 200 and (p.startswith("web") or p.startswith("evidence")):
+            (FILES / f"{tag}-{p.replace('/', '-')}.html").write_bytes(r.content)
+    return found
+
+
+def enter(http: httpx.Client, org: str, token: str, lang: str = "en") -> tuple[int, str | None, str | None]:
+    r = http.post(f"/app/{lang}/{org}/analyses", cookies={COMMERCIAL: token})
+    return r.status_code, r.headers.get("location"), beta_cookie_from(r)
+
+
+def page(http: httpx.Client, path: str, token: str | None) -> httpx.Response:
+    return http.get(path, cookies={COMMERCIAL: token} if token else {})
+
+
+def main() -> None:
+    a, b = SETUP["a"], SETUP["b"]
+    org_a, tok_a, org_b, tok_b = a["organization_id"], a["session_token"], b["organization_id"], b["session_token"]
+    normal = retail_csv(160)
+    later = shifted(normal, 56)
+    with client() as http:
+        # --- commercial: two versions, two runs -------------------------------------------
+        runs = {}
+        for tag, content in (("v1", normal), ("v2", later)):
+            status, location, beta = enter(http, org_a, tok_a)
+            record(f"enter_{tag}", {"status": status, "location": location, "beta_cookie": bool(beta)})
+            # A browser sends both: the beta cookie (path /api/v1/beta) and the commercial one
+            # (path /). #594's guard refuses a workspace session's beta cookie without it.
+            both = {BETA: beta, COMMERCIAL: tok_a}
+            if tag == "v1":
+                guard = http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies={BETA: beta})
+                record("guard_beta_cookie_alone", [guard.status_code, guard.text[:80]])
+            steps = run_journey(http, both, content, tag)
+            record(f"journey_{tag}", steps)
+            runs[tag] = {"job": steps.get("job_id")}
+            SECRETS.setdefault("runs", {})[tag] = {"cookie": beta}
+            if steps.get("state") == "succeeded":
+                record(f"surfaces_{tag}", surfaces(http, both, steps["job_id"], tag))
+        # --- the shell pages -----------------------------------------------------------------
+        shell = {}
+        for lang in ("en", "ar"):
+            for sub in ("", "/analyses", "/data"):
+                r = page(http, f"/app/{lang}/{org_a}{sub}", tok_a)
+                shell[f"{lang}{sub or '/'}"] = {"status": r.status_code, "bytes": len(r.content)}
+                (FILES / f"shell-{lang}{sub.replace('/', '-') or '-overview'}.html").write_bytes(r.content)
+        record("shell_pages", shell)
+        data_html = page(http, f"/app/en/{org_a}/data", tok_a).text
+        versions = sorted(set(re.findall(r"dsv_[A-Za-z0-9_-]{20,}", data_html)))
+        analyses_html = page(http, f"/app/en/{org_a}/analyses", tok_a).text
+        run_ids = sorted(set(re.findall(r"run_[A-Za-z0-9_-]{20,}", analyses_html)))
+        record("history", {"versions": versions, "runs": run_ids})
+        for rid in run_ids:
+            r = page(http, f"/app/en/{org_a}/analyses/{rid}", tok_a)
+            record(f"passport_{rid[:10]}", {"status": r.status_code, "bytes": len(r.content)})
+        # --- comparison ----------------------------------------------------------------------
+        if len(versions) >= 2:
+            # Newest is the subject; the data page lists newest first, but order by run is safer.
+            subject, baseline = versions[0], versions[1]
+            r = http.post(
+                f"/app/en/{org_a}/analyses/compare",
+                data={"subject": subject, "baseline": baseline},
+                cookies={COMMERCIAL: tok_a},
+            )
+            record("compare_post", {"status": r.status_code, "location": r.headers.get("location"), "bytes": len(r.content)})
+            (FILES / "compare-post.html").write_bytes(r.content)
+            if r.headers.get("location"):
+                g = page(http, r.headers["location"], tok_a)
+                record("compare_get", {"status": g.status_code, "bytes": len(g.content)})
+                (FILES / "compare-get.html").write_bytes(g.content)
+        # --- isolation -----------------------------------------------------------------------
+        iso = {}
+        job1 = runs["v1"]["job"]
+        v1_cookie = SECRETS["runs"]["v1"]["cookie"]
+        status, _loc, beta_b = enter(http, org_b, tok_b)
+        http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies={BETA: beta_b, COMMERCIAL: tok_b})
+        for label, cookies in (
+            ("org_b_both_cookies", {BETA: beta_b, COMMERCIAL: tok_b}),
+            ("org_b_commercial_with_a_beta", {BETA: v1_cookie, COMMERCIAL: tok_b}),
+            ("no_session", {}),
+        ):
+            for p in ("", "/bundle", "/surfaces/web/en", "/surfaces/pdf/en", "/surfaces/excel"):
+                r = http.get(f"/api/v1/beta/reports/{job1}{p}", cookies=cookies)
+                iso[f"{label}{p or '/status'}"] = [r.status_code, r.headers.get("content-type")]
+        for label, token in (("org_b_session", tok_b), ("no_session", None)):
+            for sub in ("/analyses", "/data", f"/analyses/{run_ids[0] if run_ids else 'run_x'}"):
+                r = page(http, f"/app/en/{org_a}{sub}", token)
+                iso[f"app_{label}{sub[:10]}"] = [r.status_code, len(r.content)]
+        record("isolation", iso)
+        # --- beta: malformed and insufficient ------------------------------------------------
+        bad = {}
+        inv = SETUP["invitations"][INVITE_OFFSET:]
+        for idx, (label, content) in enumerate(
+            (("png_as_csv", b"\x89PNG\r\n\x1a\n" + b"0" * 64), ("header_only", b"date,revenue,units,invoice_no,category,branch\n"))
+        ):
+            r = http.post("/api/v1/beta/sessions/redeem", json={"token": inv[idx]})
+            cookie = beta_cookie_from(r)
+            http.post("/api/v1/beta/consent", json={"consent_version": "v1"}, cookies={BETA: cookie})
+            up = http.post("/api/v1/beta/uploads", content=content, headers={"content-type": "text/csv"}, cookies={BETA: cookie})
+            bad[label] = [r.status_code, up.status_code, up.text[:120]]
+        r = http.post("/api/v1/beta/sessions/redeem", json={"token": inv[2]})
+        cookie = beta_cookie_from(r)
+        bad["insufficient_1_row"] = run_journey(http, {BETA: cookie}, retail_csv(1), "small")
+        if bad["insufficient_1_row"].get("state") == "succeeded":
+            bad["insufficient_surfaces"] = surfaces(http, {BETA: cookie}, bad["insufficient_1_row"]["job_id"], "small")
+        record("beta_failures", bad)
+        record("runs", runs)
+    (OUT / "stage1.json").write_text(json.dumps(LOG, indent=2))
+    secrets = OUT / "secrets.json"
+    secrets.write_text(json.dumps(SECRETS))
+    secrets.chmod(0o600)
+
+
+main()

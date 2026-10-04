@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# SCRUM-36 preflight: cold build and start of the staging stack at a pinned main SHA.
+set -u
+REPO=/mnt/c/Users/user/Documents/GitHub/Khepri/.claude/worktrees/scrum-36
+OUT=/mnt/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Documents-GitHub-Khepri/77f87dc7-a75c-4ade-b18a-df9e38021f51/scratchpad/s36
+mkdir -p "$OUT"
+cd "$REPO" || exit 2
+F=docker-compose.staging.yml
+
+echo "== pins" | tee "$OUT/01-pins.txt"
+{
+  echo "main_sha=$(git rev-parse HEAD)"
+  echo "docker=$(docker version --format '{{.Server.Version}}')"
+  echo "compose=$(docker compose version --short)"
+  echo "started_utc=$(date -u +%FT%TZ)"
+} | tee -a "$OUT/01-pins.txt"
+
+# A disposable master key for this run only; kept in the scratchpad, never in the repo.
+if [ ! -s "$OUT/master.key" ]; then head -c 32 /dev/urandom | base64 > "$OUT/master.key"; fi
+export KHEPRI_STORAGE_MASTER_KEY="$(cat "$OUT/master.key")"
+
+echo "== certs"
+if sh ops/staging/generate-certs.sh > "$OUT/02-certs.txt" 2>&1; then
+  certs_exit=0
+else
+  certs_exit=$?
+fi
+echo "certs_exit=$certs_exit" | tee -a "$OUT/01-pins.txt"
+[ "$certs_exit" -eq 0 ] || exit "$certs_exit"
+
+echo "== cold build (no cache)"
+start=$(date +%s)
+if docker compose -f "$F" build --no-cache --pull > "$OUT/03-build.log" 2>&1; then
+  build_exit=0
+else
+  build_exit=$?
+fi
+echo "build_exit=$build_exit build_seconds=$(( $(date +%s) - start ))" | tee -a "$OUT/01-pins.txt"
+[ "$build_exit" -eq 0 ] || exit "$build_exit"
+
+echo "== up"
+if docker compose -f "$F" up -d > "$OUT/04-up.log" 2>&1; then
+  up_exit=0
+else
+  up_exit=$?
+fi
+echo "up_exit=$up_exit" | tee -a "$OUT/01-pins.txt"
+[ "$up_exit" -eq 0 ] || exit "$up_exit"
+
+# Wait for web to answer.
+for i in $(seq 1 60); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/ || true)
+  [ "$code" != "000" ] && break; sleep 5
+done
+echo "web_http=$code after ~$((i*5))s" | tee -a "$OUT/01-pins.txt"
+
+{
+  echo "== ps"; docker compose -f "$F" ps -a
+  echo "== migrate exit"; docker inspect khepri-staging-migrate --format '{{.State.ExitCode}}'
+  echo "== images"
+  for img in khepri-runtime:staging khepri-staging-postgres:17.11-tls; do
+    echo "$img id=$(docker image inspect "$img" --format '{{.Id}}') commit_label=$(docker image inspect "$img" --format '{{index .Config.Labels "khepri.commit"}}')"
+  done
+  docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep -i minio
+  echo "== alembic heads/current"
+  docker compose -f "$F" run --rm --no-deps migrate alembic heads 2>&1 | tail -2
+  docker compose -f "$F" run --rm --no-deps migrate alembic current 2>&1 | tail -2
+  echo "== connected roles"
+  docker exec khepri-staging-postgres psql -U khepri -d khepri -Atc \
+    "select usename, application_name, count(*) from pg_stat_activity where datname='khepri' group by 1,2 order by 1"
+  echo "== role attributes"
+  docker exec khepri-staging-postgres psql -U khepri -d khepri -Atc \
+    "select rolname, rolsuper, rolbypassrls, rolcanlogin from pg_roles where rolname like 'khepri%' order by 1"
+  echo "== restart counts"
+  for c in $(docker compose -f "$F" ps -aq); do docker inspect "$c" --format '{{.Name}} restarts={{.RestartCount}} state={{.State.Status}}'; done
+} > "$OUT/05-checks.txt" 2>&1
+
+echo "== secret scan of logs"
+docker compose -f "$F" logs --no-color > "$OUT/06-logs.txt" 2>&1
+{
+  for needle in "$KHEPRI_STORAGE_MASTER_KEY" khepri_app khepri_worker "password" "BEGIN PRIVATE" khepristaging; do
+    n=$(grep -c -F -- "$needle" "$OUT/06-logs.txt" || true); echo "needle=[${needle:0:6}...] hits=$n"
+  done
+} > "$OUT/07-secret-scan.txt" 2>&1
+echo "preflight_done_utc=$(date -u +%FT%TZ)" | tee -a "$OUT/01-pins.txt"
+
+# Hold the distro so the stack survives this session (WSL idle stop).
+exec sleep 21600
