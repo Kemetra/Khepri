@@ -20,15 +20,23 @@ if [ ! -s "$OUT/master.key" ]; then head -c 32 /dev/urandom | base64 > "$OUT/mas
 export KHEPRI_STORAGE_MASTER_KEY="$(cat "$OUT/master.key")"
 
 echo "== certs"
-sh ops/staging/generate-certs.sh > "$OUT/02-certs.txt" 2>&1; echo "certs_exit=$?" | tee -a "$OUT/01-pins.txt"
+sh ops/staging/generate-certs.sh > "$OUT/02-certs.txt" 2>&1
+certs_exit=$?
+echo "certs_exit=$certs_exit" | tee -a "$OUT/01-pins.txt"
+[ "$certs_exit" -eq 0 ] || exit "$certs_exit"
 
 echo "== cold build (no cache)"
 start=$(date +%s)
 docker compose -f "$F" build --no-cache --pull > "$OUT/03-build.log" 2>&1
-echo "build_exit=$? build_seconds=$(( $(date +%s) - start ))" | tee -a "$OUT/01-pins.txt"
+build_exit=$?
+echo "build_exit=$build_exit build_seconds=$(( $(date +%s) - start ))" | tee -a "$OUT/01-pins.txt"
+[ "$build_exit" -eq 0 ] || exit "$build_exit"
 
 echo "== up"
-docker compose -f "$F" up -d > "$OUT/04-up.log" 2>&1; echo "up_exit=$?" | tee -a "$OUT/01-pins.txt"
+docker compose -f "$F" up -d > "$OUT/04-up.log" 2>&1
+up_exit=$?
+echo "up_exit=$up_exit" | tee -a "$OUT/01-pins.txt"
+[ "$up_exit" -eq 0 ] || exit "$up_exit"
 
 # Wait for web to answer.
 for i in $(seq 1 60); do

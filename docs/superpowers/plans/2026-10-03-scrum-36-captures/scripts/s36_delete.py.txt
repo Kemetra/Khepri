@@ -44,6 +44,10 @@ with httpx.Client(base_url=BASE, headers=H, timeout=120, follow_redirects=False)
     after["versions"] = versions
     log["after_restart"] = after
     # --- delete one version ----------------------------------------------------------------
+    if not versions:
+        log["delete"] = {"error": "no retained versions found after restart"}
+        (OUT / "stage3-delete.json").write_text(json.dumps(log, indent=2))
+        raise SystemExit("no retained versions found after restart; deletion checks skipped")
     target = versions[0]
     d = http.post(f"/app/en/{org}/data/{target}/delete", cookies={"khepri_session": tok})
     log["delete"] = {"version": target, "status": d.status_code, "location": d.headers.get("location")}

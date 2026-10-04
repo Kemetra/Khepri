@@ -37,6 +37,8 @@
 
 The images carry no `khepri.commit` label, because `docker compose build` does not set one;
 `scripts/build_image.py` does. The pins above are image IDs (observation O1).
+The original capture with the complete image IDs is no longer available. The abbreviated IDs
+cannot independently identify the exact images, and current local images have different IDs.
 
 ## Method
 
@@ -79,7 +81,10 @@ The images carry no `khepri.commit` label, because `docker compose build` does n
   - **Log scan.** The log scan is recorded as its own script, `s36_logscan.sh`, with every
     needle named in §Coverage.
   - **Repair.** A commit pushed to this branch during review had rotated three scripts' contents
-    between their file names. Every script was restored to the one that ran.
+    between their file names. Every script was restored to the one that ran at that point.
+- **Review hardening, 2026-10-05.** The captured scripts now stop on missing retained history,
+  default to invitation index 1 after a queue run using index 0, and stop on missing key, failed
+  log collection, or failed preflight setup. These changes were not part of the 2026-10-03 run.
 - **Fixture identities.** These are synthetic organizations (`S36 A 2`, `S36 B 2`, `S36 A 3`,
   `S36 B 3`) and invitation sessions. Their tokens are not recorded here.
 

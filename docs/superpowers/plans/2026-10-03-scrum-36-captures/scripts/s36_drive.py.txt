@@ -57,7 +57,7 @@ def profile_body(content: bytes) -> dict:
 
 #: What a same-origin browser sends with every mutation; `require_same_origin` reads both.
 SAME_ORIGIN = {"origin": BASE, "sec-fetch-site": "same-origin"}
-INVITE_OFFSET = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+INVITE_OFFSET = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 
 
 def client() -> httpx.Client:
