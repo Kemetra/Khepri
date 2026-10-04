@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# SCRUM-36: scan every staging container's log for secrets and identifiers.
+# Each needle prints its hit count; any non-zero count is a finding. The master key is read
+# from the operator-only file and never printed: only its first characters label the line.
+set -u
+cd /mnt/c/Users/user/Documents/GitHub/Khepri/.claude/worktrees/scrum-36 || exit 2
+SCR=/mnt/c/Users/user/AppData/Local/Temp/claude/C--Users-user-Documents-GitHub-Khepri/77f87dc7-a75c-4ade-b18a-df9e38021f51/scratchpad/s36
+if ! KHEPRI_STORAGE_MASTER_KEY="$(cat "$SCR/master.key")" || [ -z "$KHEPRI_STORAGE_MASTER_KEY" ]; then
+  echo "master key is unreadable or empty" >&2
+  exit 2
+fi
+export KHEPRI_STORAGE_MASTER_KEY
+LOG="$SCR/08-logs-final.txt"
+if ! docker compose -f docker-compose.staging.yml logs --no-color > "$LOG" 2>&1; then
+  echo "Docker log collection failed; scan skipped" >&2
+  exit 2
+fi
+echo "lines=$(wc -l < "$LOG")"
+for needle in \
+  "$KHEPRI_STORAGE_MASTER_KEY" \
+  khepri_app khepri_worker khepri_sweep \
+  password 'BEGIN PRIVATE' khepristaging \
+  ses_ upl_ org_ own_ \
+  s36- example.test \
+  Traceback; do
+  hits=$(grep -c -F -- "$needle" "$LOG" || true)
+  label=$needle
+  [ "$needle" = "$KHEPRI_STORAGE_MASTER_KEY" ] && label="master-key"
+  echo "needle=[$label] hits=$hits"
+done

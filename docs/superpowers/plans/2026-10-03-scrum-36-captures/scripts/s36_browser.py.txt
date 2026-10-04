@@ -1,0 +1,103 @@
+"""SCRUM-36 stage 2: browser checks on the staging stack, after stage 1.
+
+Per page and language: `lang`/`dir`, no page-level horizontal scroll at 1440 and 390, reflow at
+200% root text (390), visible focus on the first 12 Tab stops, and no transition or animation
+over 10 ms under reduced motion. Screenshots go to s36/captures/. Results to s36/stage2.json.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+BASE = "http://127.0.0.1:8000"
+OUT = Path(sys.argv[1])
+SETUP = json.loads(Path(sys.argv[2]).read_text())
+STAGE1 = json.loads((OUT / "stage1.json").read_text())
+#: Cookies and tokens live in an operator-only handoff, never in the evidence JSON.
+SECRETS = json.loads((OUT / "secrets.json").read_text())
+CAPS = OUT / "captures"
+CAPS.mkdir(exist_ok=True)
+
+OVERFLOW = "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+DIRS = "() => [document.documentElement.lang, document.documentElement.dir || getComputedStyle(document.documentElement).direction]"
+#: A focus indicator counts only when it can be seen: an outline with width and a colour
+#: that is not transparent, or a box-shadow that is not fully transparent.
+FOCUS = r"""() => { const e = document.activeElement; if (!e || e === document.body) return null;
+  const s = getComputedStyle(e);
+  const clear = c => /rgba\([^)]*,\s*0\)$/.test(c) || c === 'transparent';
+  const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 && !clear(s.outlineColor);
+  const shadow = s.boxShadow !== 'none' && !/^rgba\([^)]*,\s*0\)/.test(s.boxShadow);
+  return {tag: e.tagName, outline, shadow}; }"""
+MOTION = """() => Array.from(document.querySelectorAll('*')).filter(e => { const s = getComputedStyle(e);
+  const d = v => Math.max(...v.split(',').map(x => parseFloat(x) * (x.trim().endsWith('ms') ? 1 : 1000)));
+  return d(s.transitionDuration) > 10 || d(s.animationDuration) > 10; }).length"""
+
+
+def pages() -> list[tuple[str, str, list]]:
+    """(label, url, cookies) for every page under test. A browser holds both cookies."""
+    runs = SECRETS["runs"]
+    a = SETUP["a"]
+    app = {"name": "khepri_session", "value": a["session_token"], "url": BASE + "/"}
+    beta = [{"name": "khepri_beta_session", "value": runs["v1"]["cookie"], "url": BASE + "/api/v1/beta/"}, app]
+    job = STAGE1["runs"]["v1"]["job"]
+    app = [app]
+    org = a["organization_id"]
+    out = []
+    for lang in ("en", "ar"):
+        out.append((f"report-web-{lang}", f"{BASE}/api/v1/beta/reports/{job}/surfaces/web/{lang}", beta))
+        out.append((f"report-evidence-{lang}", f"{BASE}/api/v1/beta/reports/{job}/surfaces/evidence/{lang}", beta))
+        out.append((f"journey-upload-{lang}", f"{BASE}/beta/{lang}/upload", beta))
+        out.append((f"journey-report-{lang}", f"{BASE}/beta/{lang}/report", beta))
+        for sub in ("/overview", "/analyses", "/data", "/team"):
+            out.append((f"app-{lang}{sub.replace('/', '-')}", f"{BASE}/app/{lang}/{org}{sub}", app))
+    return out
+
+
+def check(browser, label: str, url: str, cookie: dict) -> dict:
+    result: dict = {}
+    for width, scale in ((1440, False), (390, False), (390, True)):
+        ctx = browser.new_context(viewport={"width": width, "height": 900}, bypass_csp=scale, reduced_motion="reduce")
+        ctx.add_cookies(cookie)
+        pg = ctx.new_page()
+        resp = pg.goto(url, wait_until="networkidle")
+        if scale:
+            pg.add_style_tag(content="html { font-size: 200% !important }")
+            pg.wait_for_timeout(200)
+        key = f"{width}{'-200pct' if scale else ''}"
+        result[key] = {"status": resp.status if resp else None, "overflow_px": pg.evaluate(OVERFLOW)}
+        if width == 1440:
+            result["lang_dir"] = pg.evaluate(DIRS)
+            result["motion_over_10ms"] = pg.evaluate(MOTION)
+            stops = []
+            for _ in range(12):
+                pg.keyboard.press("Tab")
+                stops.append(pg.evaluate(FOCUS))
+            detected = [s for s in stops if s]
+            result["focus_stops"] = len(detected)
+            # Twelve presses are a sample, not a required count; but a page where none reached
+            # a focusable element proves nothing, so it does not pass.
+            result["focus_visible"] = bool(detected) and all(s["outline"] or s["shadow"] for s in detected)
+        pg.screenshot(path=str(CAPS / f"{label}-{key}.png"), full_page=False)
+        ctx.close()
+    return result
+
+
+def main() -> None:
+    log = {}
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        for label, url, cookie in pages():
+            try:
+                log[label] = check(browser, label, url, cookie)
+            except Exception as error:  # noqa: BLE001 -- recorded, not hidden
+                log[label] = {"error": f"{type(error).__name__}: {str(error)[:200]}"}
+            print(label, json.dumps(log[label])[:240], flush=True)
+        browser.close()
+    (OUT / "stage2.json").write_text(json.dumps(log, indent=2))
+
+
+main()
