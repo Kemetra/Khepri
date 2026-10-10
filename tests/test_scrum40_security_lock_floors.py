@@ -5,6 +5,10 @@ and 18) found PyJWT 2.13.0 and urllib3 2.7.0 carrying published advisories, fixe
 2.8.0, and a `sqlalchemy<3` range that admits 2.1 on any re-lock. These tests read the lockfile and
 the manifest themselves, anchored to this file rather than the working directory, so the image's
 `uv sync --frozen` input is what is checked -- not whatever happens to be installed.
+
+A later osv-scanner pass over `uv.lock` found the dev group behind published advisories as well:
+pypdf 6.14.2 (fixed by 6.19.0), httpx2 2.9.1 (fixed across 2.10.0-2.12.0) and httpcore2 2.9.1
+(fixed in 2.10.0). Their floors sit in the same table.
 """
 
 from __future__ import annotations
@@ -18,9 +22,12 @@ from packaging.version import Version
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-# The first release that fixes every advisory the audit lists, and the release it found locked.
+# The first release that fixes every advisory found, and the release that was locked at the time.
 _FLOORS = {
+    "httpcore2": (Version("2.10.0"), Version("2.9.1")),
+    "httpx2": (Version("2.12.0"), Version("2.9.1")),
     "pyjwt": (Version("2.15.0"), Version("2.13.0")),
+    "pypdf": (Version("6.19.0"), Version("6.14.2")),
     "urllib3": (Version("2.8.0"), Version("2.7.0")),
 }
 
