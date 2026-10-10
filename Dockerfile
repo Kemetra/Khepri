@@ -23,6 +23,36 @@ FROM --platform=linux/amd64 mcr.microsoft.com/playwright/python:v1.61.0-noble
 # Fail the build rather than produce an image whose browser and client disagree.
 ARG EXPECTED_PLAYWRIGHT_VERSION=1.61.0
 
+# Clear the base image's fixable HIGH advisories without moving anything else in it.
+#
+# The `v1.61.0-noble` tag was built once (2026-06-29) and never rebuilt, so no newer digest of it
+# carries the fixes. A blanket `apt-get upgrade` would also move the libraries Chromium links
+# against, so only the two binary packages of the `openssl` source are upgraded, and the build
+# fails unless they reach the fixed version (CVE-2026-84782, fixed in 3.0.13-0ubuntu3.16). This
+# step sits before any project file is copied, so a source change reuses its cached layer instead
+# of re-running `apt-get update` and possibly baking a different openssl patch.
+#
+# `virtualenv` sits in the base's system Python 3.12, which nothing here runs: the service runs the
+# uv-made venv on 3.13, and no installed package requires virtualenv. It is uninstalled rather than
+# upgraded so the build fetches no unhashed package. `/usr/bin/python3` is named so the system
+# interpreter is the one addressed, whatever PATH later puts first.
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --only-upgrade --no-install-recommends openssl libssl3t64; \
+    rm -rf /var/lib/apt/lists/*; \
+    for pkg in openssl libssl3t64; do \
+        version="$(dpkg-query -W -f='${Version}' "$pkg")"; \
+        if ! dpkg --compare-versions "$version" ge 3.0.13-0ubuntu3.16; then \
+            echo "FAIL: $pkg $version is older than the fixed 3.0.13-0ubuntu3.16" >&2; \
+            exit 1; \
+        fi; \
+    done; \
+    /usr/bin/python3 -m pip uninstall -y virtualenv; \
+    if /usr/bin/python3 -c "import virtualenv" 2>/dev/null; then \
+        echo "FAIL: virtualenv is still importable by the system Python" >&2; \
+        exit 1; \
+    fi
+
 # `UV_PYTHON_INSTALL_DIR` is a correctness requirement, not a preference.
 #
 # This project requires Python 3.13 and the Playwright `noble` base ships 3.12.3, so uv must
@@ -41,9 +71,10 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/khepri/.venv \
     PATH="/opt/khepri/.venv/bin:${PATH}"
 
-# uv is copied from its own published image so the version is pinned by digest-bearing tag rather
-# than fetched by a script whose output changes over time.
-COPY --from=ghcr.io/astral-sh/uv:0.10.11 /uv /usr/local/bin/uv
+# uv is copied from its own published image rather than fetched by a script whose output changes
+# over time. The tag names the version; the image-index digest pins the bytes, so a re-pointed tag
+# cannot change the uv that is copied.
+COPY --from=ghcr.io/astral-sh/uv:0.11.26@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5 /uv /usr/local/bin/uv
 
 WORKDIR /opt/khepri
 
