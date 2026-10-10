@@ -72,7 +72,9 @@ fi
 
 # `convert` takes no `--skip-version-check` in 0.74.0. The verdict comes from `trivy image` above,
 # so a failure here cannot change it, but it must not leave an empty table that reads as clean.
-# Its log lines go to the job log, not into the table.
+# Its log lines go to the job log, not into the table. A clean image renders no table at all, and
+# the verdict line below says so explicitly. `--scanners vuln` would add a per-target summary
+# instead, but that is about 140 rows (one per installed METADATA file) on every run.
 convert_log="$(mktemp)"
 if ! table="$("${trivy}" convert --format table "${report}" 2>"${convert_log}")"; then
   echo "WARNING: trivy convert failed, so the findings table is missing; ${report} holds them" >&2
@@ -81,10 +83,20 @@ $(cat "${convert_log}")
 The verdict below still comes from the scan. The full findings are in ${report}."
 fi
 cat "${convert_log}" >&2
+if [ -z "${table//[[:space:]]/}" ]; then
+  table="(no fixable HIGH or CRITICAL findings to tabulate)"
+fi
+if [ "${status}" -eq "${FOUND}" ]; then
+  verdict="BLOCKED: at least one fixable HIGH or CRITICAL advisory (table below)."
+else
+  verdict="CLEAN: 0 fixable HIGH or CRITICAL advisories."
+fi
 {
   echo "### Image advisories: \`${image}\`"
   echo
   echo "Gate: HIGH or CRITICAL with a fixed version. Exceptions: \`${IGNOREFILE}\`."
+  echo
+  echo "**${verdict}**"
   echo
   echo '```text'
   "${trivy}" version
