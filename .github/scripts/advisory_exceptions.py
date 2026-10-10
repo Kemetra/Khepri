@@ -29,6 +29,7 @@ import yaml
 MAX_DAYS = 90
 
 _TRIVY_SECTIONS = {"vulnerabilities"}
+_OSV_FIELDS = {"id", "ignoreUntil", "reason"}
 
 
 def _as_date(value: object) -> date | None:
@@ -59,14 +60,30 @@ def entry_errors(entry: object, *, reason_key: str, expiry_key: str, today: date
     return errors
 
 
+def _unknown_fields(entry: object, known: set[str]) -> list[str]:
+    if not isinstance(entry, dict):
+        return []
+    return [f"unknown field `{key}` (only {sorted(known)})" for key in sorted(set(entry) - known)]
+
+
 def osv_errors(config: dict, *, today: date) -> list[str]:
+    """Refuse anything osv-scanner could honour that this check cannot see.
+
+    osv-scanner also honours `[[PackageOverrides]]`, whose `effectiveUntil` is optional (absent
+    means permanent), and its TOML decoder matches keys case-insensitively, so `ignoredvulns` or
+    `Reason` would be read there and missed here. Only the exact spellings are accepted.
+    """
+    unknown = sorted(set(config) - {"IgnoredVulns"})
+    if unknown:
+        return [f"osv-scanner.toml: only `IgnoredVulns` may be excepted, found {unknown}"]
     entries = config.get("IgnoredVulns", [])
     if not isinstance(entries, list):
         return ["`IgnoredVulns` must be an array of tables"]
     return [
         f"osv-scanner.toml: {error}"
         for entry in entries
-        for error in entry_errors(entry, reason_key="reason", expiry_key="ignoreUntil", today=today)
+        for error in _unknown_fields(entry, _OSV_FIELDS)
+        + entry_errors(entry, reason_key="reason", expiry_key="ignoreUntil", today=today)
     ]
 
 

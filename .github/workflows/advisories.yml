@@ -34,8 +34,9 @@ on:
 permissions:
   contents: read
 
+# The event is part of the group, so a push to `main` cannot cancel the weekly scan of `main`.
 concurrency:
-  group: advisories-${{ github.workflow }}-${{ github.ref }}
+  group: advisories-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

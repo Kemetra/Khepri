@@ -30,6 +30,7 @@ on:
       - ".github/workflows/image.yml"
       - ".github/scripts/scan_image.sh"
       - ".github/advisories/trivyignore.yaml"
+      - ".github/advisories/known-vulnerable.uv.lock"
   push:
     branches:
       - main

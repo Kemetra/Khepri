@@ -245,6 +245,34 @@ def test_trivy_may_except_only_vulnerabilities() -> None:
     assert errors and "only `vulnerabilities`" in errors[0]
 
 
+_GOOD = {"id": "G", "reason": "r", "ignoreUntil": date(2026, 12, 1)}
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        # osv-scanner honours these, and an override with no `effectiveUntil` is permanent.
+        {"PackageOverrides": [{"name": "pyjwt", "ecosystem": "PyPI", "ignore": True}]},
+        {"PackageOverrides": [{"name": "pyjwt", "vulnerability": {"ignore": True}}]},
+        # osv-scanner's TOML decoder matches keys case-insensitively, so this is honoured too.
+        {"ignoredvulns": [{"id": "GHSA-a"}]},
+        {"IgnoredVulns": [_GOOD], "ignoredVulns": [{"id": "GHSA-b"}]},
+    ],
+)
+def test_an_osv_section_other_than_exactly_ignoredvulns_is_refused(config: dict) -> None:
+    errors = advisory_exceptions.osv_errors(config, today=TODAY)
+
+    assert any("only `IgnoredVulns`" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("extra", ["Reason", "ignoreuntil", "effectiveUntil", "ignore"])
+def test_an_osv_exception_field_outside_the_known_three_is_refused(extra: str) -> None:
+    """A miscased or foreign field may be read by osv-scanner but never by this check."""
+    errors = _osv(**_GOOD, **{extra: "x"})
+
+    assert any(f"unknown field `{extra}`" in e for e in errors), errors
+
+
 def test_the_committed_exception_files_are_valid() -> None:
     osv = tomllib.loads((ADVISORIES / "osv-scanner.toml").read_text(encoding="utf-8"))
     trivy = yaml.safe_load((ADVISORIES / "trivyignore.yaml").read_text(encoding="utf-8"))
