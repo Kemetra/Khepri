@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # uv is copied from its own published image so the version is pinned by digest-bearing tag rather
 # than fetched by a script whose output changes over time.
-COPY --from=ghcr.io/astral-sh/uv:0.10.11 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.26 /uv /usr/local/bin/uv
 
 WORKDIR /opt/khepri
 
@@ -73,6 +73,34 @@ RUN set -eu; \
 
 # The browser launch is verified below, after `USER pwuser`, rather than here. Proving it as root
 # would prove the wrong thing.
+
+# Clear the base image's fixable HIGH advisories without moving anything else in it.
+#
+# The `v1.61.0-noble` tag was built once (2026-06-29) and never rebuilt, so no newer digest of it
+# carries the fixes. A blanket `apt-get upgrade` would also move the libraries Chromium links
+# against, so only the two binary packages of the `openssl` source are upgraded, and the build
+# fails unless they reach the fixed version (CVE-2026-84782, fixed in 3.0.13-0ubuntu3.16).
+#
+# `virtualenv` sits in the base's system Python 3.12, which nothing here runs: the service runs the
+# uv-made venv on 3.13, and no installed package requires virtualenv. It is uninstalled rather than
+# upgraded so the build fetches no unhashed package. `/usr/bin/python3` is named because `python3`
+# on PATH is the venv's.
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --only-upgrade --no-install-recommends openssl libssl3t64; \
+    rm -rf /var/lib/apt/lists/*; \
+    for pkg in openssl libssl3t64; do \
+        version="$(dpkg-query -W -f='${Version}' "$pkg")"; \
+        if ! dpkg --compare-versions "$version" ge 3.0.13-0ubuntu3.16; then \
+            echo "FAIL: $pkg $version is older than the fixed 3.0.13-0ubuntu3.16" >&2; \
+            exit 1; \
+        fi; \
+    done; \
+    /usr/bin/python3 -m pip uninstall -y virtualenv; \
+    if /usr/bin/python3 -c "import virtualenv" 2>/dev/null; then \
+        echo "FAIL: virtualenv is still importable by the system Python" >&2; \
+        exit 1; \
+    fi
 
 # The Playwright base image ships a non-root `pwuser`. Nothing in this container needs to write
 # outside the ephemeral storage the task definition grants, so it does not run as root.

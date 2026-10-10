@@ -29,7 +29,7 @@ Dev: pytest, ruff, httpx2, pillow, pypdf · infra group: aws-cdk-lib. Locked wit
 
 ## Tooling / CI
 ```
-uv (0.10.11 in image) · ruff (lint only in CI; don't mass-format) · pytest markers: browser, local_stack, concurrency
+uv (0.11.26 in image; CI workflows still pin 0.10.11) · ruff (lint only in CI; don't mass-format) · pytest markers: browser, local_stack, concurrency
 .github/workflows/governance.yml: khepri-gov validate · ruff check · pytest (+ require_concurrency/browser_tests guards) · benchmark_gate
 .github/workflows/image.yml: OCI image build · CodeScene on PRs; local CodeRabbit step in PR template
 ```
