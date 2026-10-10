@@ -33,7 +33,10 @@ dependencies = [
     "psycopg[binary]>=3.2.9,<4",
     "pydantic>=2.11,<3",
     "pyyaml>=6.0.2,<7",
-    "sqlalchemy>=2.0.43,<3",
+    # Held on 2.0 (SCRUM-40). The dependency audit (`docs/audit/2026-10-03-critical-dependency-
+    # exit-path-audit.md`, row 9) found that `<3` silently admits SQLAlchemy 2.1 on any re-lock.
+    # Moving to 2.1 is a planned migration of its own, not a side effect of a security refresh.
+    "sqlalchemy>=2.0.43,<2.1",
     "uvicorn[standard]>=0.35,<1",
     "xlsxwriter>=3.2,<4",
 ]
