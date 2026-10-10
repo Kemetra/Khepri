@@ -16,6 +16,7 @@ Two owner decisions from the `R3-01` design note §9 are settled and encoded her
 from __future__ import annotations
 
 import textwrap
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -234,11 +235,13 @@ class TestNoAuthorityIsCached:
         """`FR-003` states it directly. Sealed records refuse attribute assignment outright."""
         session = Session.issue(ACCOUNT, now=NOW, lifetime=timedelta(hours=12)).session
 
-        # `TypeError`, not `FrozenInstanceError`: `slots=True` rebuilds the class, so the frozen
-        # `__setattr__` CPython generated refuses a *non-field* name through a `super()` call
-        # that no longer matches. Named exactly so an unrelated error cannot pass, and the
-        # attribute's absence is asserted too, because that is the property `FR-003` needs.
-        with pytest.raises(TypeError):
+        # The refusal's type depends on the CPython patch release. Up to 3.13.12, `slots=True`
+        # rebuilds the class, so the frozen `__setattr__` refuses a *non-field* name through a
+        # `super()` call that no longer matches: `TypeError`. 3.13.14, which the image's uv
+        # 0.11.26 installs, raises `FrozenInstanceError`. Both are named exactly so an unrelated
+        # error cannot pass, and the attribute's absence is asserted too, because that is the
+        # property `FR-003` needs.
+        with pytest.raises((TypeError, FrozenInstanceError)):
             session.prescription_count = 5  # type: ignore[attr-defined]
         assert not hasattr(session, "prescription_count")
 
