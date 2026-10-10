@@ -1,0 +1,157 @@
+# Advisory detection for what Khepri locks and ships (SCRUM-41, from SCRUM-39 finding X1).
+#
+# Until this workflow, no advisory check ran anywhere: the only scan was ECR scan-on-push, behind
+# a publish that never happens, and Dependabot alerts are disabled. The PyJWT and urllib3
+# advisories were found by a manual audit.
+#
+# Two scanners, each for coverage the other lacks, and no third:
+#
+# * `dependencies` -- osv-scanner over `uv.lock`, every locked package in every group (runtime,
+#   `dev`, `infra`). It runs on every pull request with no path filter, on `main`, and weekly,
+#   so an advisory published against an unchanged lock is still seen.
+# * `image` -- Trivy over the runtime image built here and kept in the local daemon. It sees
+#   what the lock cannot: the Ubuntu packages and binaries of the base image, and exactly what
+#   the image installed. `image.yml` runs the same scan on the pull requests that change the
+#   image; this job runs it weekly against `main`, because base-image advisories arrive with no
+#   change here at all. Nothing is pushed, and no registry is needed.
+#
+# Both gate on the same rule: a HIGH or CRITICAL advisory with a published fix fails the job.
+# Exceptions live in `.github/advisories/`, each with a reason and an expiry, and are approved by
+# the owner's merge like any other change. Neither job writes to the repository, the code
+# scanning API, or any registry.
+name: advisories
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    # Mondays 05:23 UTC.
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advisories-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    name: dependency advisories (uv.lock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Pinned by release and verified by SHA-256 (osv-scanner_SHA256SUMS of that release), the
+      # way every action in this repository is pinned by commit.
+      OSV_SCANNER_VERSION: v2.6.0
+      OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+      OSV_CONFIG: .github/advisories/osv-scanner.toml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.10.11"
+          python-version: "3.13"
+          enable-cache: true
+          prune-cache: false
+      - run: uv sync --frozen
+      - name: install the pinned osv-scanner
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/osv-scanner"
+          curl -sSfL -o "${bin}" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  ${bin}" | sha256sum --check --strict -
+          chmod +x "${bin}"
+          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+          "${bin}" --version
+      - name: every accepted exception has a reason and an expiry
+        run: uv run python .github/scripts/advisory_exceptions.py "${OSV_CONFIG}" .github/advisories/trivyignore.yaml
+      # The gate must be able to fail. `known-vulnerable.uv.lock` locks urllib3 1.26.4, which
+      # carries long-published High advisories with fixes, and is scanned with the same
+      # configuration as the real lock. If the gate passes it -- the advisory source returned
+      # nothing, the configuration excepted everything, or the gate stopped reading the report --
+      # this step fails before the real result can be read as clean. It is not named `uv.lock`,
+      # so no lockfile scanner picks it up as Khepri's own.
+      - name: prove the gate fails on a known-vulnerable lock
+        run: |
+          set -uo pipefail
+          scan=0
+          osv-scanner scan --config "${OSV_CONFIG}" --all-packages --format json \
+            --output-file canary.json \
+            --lockfile "uv.lock:.github/advisories/known-vulnerable.uv.lock" || scan=$?
+          if [ "${scan}" -gt 1 ]; then
+            echo "FAIL: osv-scanner exited ${scan} on the canary" >&2
+            exit 1
+          fi
+          gate=0
+          uv run python .github/scripts/advisory_gate.py canary.json > /dev/null || gate=$?
+          if [ "${gate}" -ne 1 ]; then
+            echo "FAIL: the gate returned ${gate} on a known-vulnerable lock; it must block (1)" >&2
+            exit 1
+          fi
+          echo "the gate blocks a known-vulnerable lock"
+      # osv-scanner exits 0 with no advisory and 1 with any; anything above that is its own
+      # failure, and then nothing was scanned. The gate decides what blocks.
+      - name: gate uv.lock on actionable High and Critical advisories
+        run: |
+          set -uo pipefail
+          scan=0
+          osv-scanner scan --config "${OSV_CONFIG}" --all-packages --format json \
+            --output-file osv-uv-lock.json --lockfile uv.lock || scan=$?
+          if [ "${scan}" -gt 1 ]; then
+            echo "FAIL: osv-scanner exited ${scan}; nothing was gated" >&2
+            exit 1
+          fi
+          {
+            echo "### Dependency advisories: \`uv.lock\`"
+            echo
+            echo "osv-scanner ${OSV_SCANNER_VERSION}, every dependency group. Exceptions: \`${OSV_CONFIG}\`."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          uv run python .github/scripts/advisory_gate.py osv-uv-lock.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: keep the reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-advisories
+          path: |
+            osv-uv-lock.json
+            canary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  image:
+    name: runtime image advisories
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        with:
+          driver-opts: image=moby/buildkit:v0.27.0
+      # Built exactly as `image.yml` builds it, loaded into the local daemon, never pushed. It
+      # reads `main`'s layer cache and writes none.
+      - name: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: khepri-rra:advisories
+          cache-from: type=gha
+      - name: gate the image on actionable High and Critical advisories
+        run: bash .github/scripts/scan_image.sh khepri-rra:advisories image-advisories.json
+      - name: keep the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-advisories
+          path: image-advisories.json
+          if-no-files-found: warn
+          retention-days: 30
