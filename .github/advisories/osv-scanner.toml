@@ -1,0 +1,12 @@
+# Accepted exceptions to the dependency advisory gate (SCRUM-41).
+#
+# osv-scanner reads this with `--config` in `.github/workflows/advisories.yml`. It is empty on
+# purpose: no advisory has been accepted. To accept one, add an entry in a pull request; the
+# owner's merge is the approval, and `.github/scripts/advisory_exceptions.py` refuses an entry
+# with no reason or with an expiry more than 90 days away. An expired entry stops applying and
+# the gate fails again.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"          # the ID the gate's table printed
+# ignoreUntil = 2026-12-31            # a date, at most 90 days ahead
+# reason = "Why it is not exploitable here, who decided, and which issue tracks the fix."

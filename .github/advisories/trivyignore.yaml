@@ -1,0 +1,15 @@
+# Accepted exceptions to the runtime-image advisory gate (SCRUM-41).
+#
+# Trivy reads this with `--ignorefile` in `.github/scripts/scan_image.sh`. It is empty on purpose:
+# no advisory has been accepted. To accept one, add an entry in a pull request; the owner's merge
+# is the approval, and `.github/scripts/advisory_exceptions.py` refuses an entry with no statement
+# or with an expiry more than 90 days away. An expired entry stops applying and the gate fails
+# again. Only `vulnerabilities` may be excepted.
+#
+# vulnerabilities:
+#   - id: CVE-2026-00000              # the ID the scan's table printed
+#     purls:
+#       - "pkg:deb/ubuntu/openssl"    # narrow it to the package it was decided for
+#     expired_at: 2026-12-31          # a date, at most 90 days ahead
+#     statement: Why it is not exploitable here, who decided, and which issue tracks the fix.
+vulnerabilities: []
