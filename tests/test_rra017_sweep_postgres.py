@@ -14,17 +14,20 @@ Pinned RED at `f1639c1`, before the slice existed; green from `#595`'s implement
 from __future__ import annotations
 
 import inspect
+import json
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from sqlalchemy import event, text
+from sqlalchemy.orm import sessionmaker
 
 from khepri.rra.deletion import DeletionService
 from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.persistence import SqlDeletionRepository, SqlSessionStore
+from khepri.runtime.envelope_migration import REFUSED_UNDER_POLICY
 from khepri.runtime.envelope_migration import run as run_envelope_migration
 from tests.rra017_rows import BUILDERS, HOUR, NOW, Scope, chain, row
 from tests.rra017_support import (
@@ -224,11 +227,33 @@ class _NoReseal:
         raise AssertionError("a refused migration reseals nothing")
 
 
-def test_the_envelope_migration_refuses_under_the_policies_and_reports_no_count(
-    rls: RlsDatabase,
+#: The harness's migration owner: it owns the tables and, on CI's and the throwaway cluster, is
+#: also the superuser, so one role stands for both of `FR-272`'s bypassing connections.
+OWNER = "owner"
+#: `FR-272`'s refused compositions: (the lister's role, the scoped engine's role, the reason).
+REFUSED_COMPOSITIONS = {
+    "no_sweep_engine": (None, APPLICATION, "no_sweep_engine"),
+    "lister_on_the_application_role": (APPLICATION, APPLICATION, "lister_role"),
+    "lister_on_the_owner": (OWNER, APPLICATION, "lister_role"),
+    "scoped_on_the_owner": (SWEEP, OWNER, "scoped_role"),
+    "both_on_the_owner": (OWNER, OWNER, "lister_role"),
+}
+
+
+def _factory_for(rls: RlsDatabase, role: str | None) -> Any:
+    if role is None:
+        return None
+    return sessionmaker(rls.owner) if role == OWNER else rls.factory(role)
+
+
+@pytest.mark.parametrize("composition", list(REFUSED_COMPOSITIONS))
+def test_the_envelope_migration_refuses_any_other_composition_and_reports_no_count(
+    rls: RlsDatabase, composition: str
 ) -> None:
-    """`FR-272`: through the application role both of its reads are empty, which would read as
-    "verified" with `v1` rows left."""
+    """`FR-272`: under the policies it runs only with its listing on the sweep role and its scoped
+    work on the application role. Through a scoped role both reads are empty, and through a
+    bypassing one the policies are not what the run proved; either would read as "verified"."""
+    lister, scoped, reason = REFUSED_COMPOSITIONS[composition]
     legacy = []
     for scope in (A, B):
         rows = chain(scope)
@@ -240,9 +265,13 @@ def test_the_envelope_migration_refuses_under_the_policies_and_reports_no_count(
         legacy += rows
     rls.seed(legacy)
     stack = SimpleNamespace(
-        factory=rls.factory(APPLICATION), objects=_NoReseal(), clock=lambda: NOW
+        factory=_factory_for(rls, scoped), objects=_NoReseal(), clock=lambda: NOW
     )
     printed: list[str] = []
-    status = run_envelope_migration(stack, out=printed.append)
-    assert status != 0
-    assert not any("artifacts_remaining" in line or "verified" in line for line in printed)
+    status = run_envelope_migration(
+        stack, sweep_factory=_factory_for(rls, lister), out=printed.append
+    )
+    assert status == REFUSED_UNDER_POLICY
+    assert [json.loads(line) for line in printed] == [
+        {"event": "envelope_migration", "refused": reason}
+    ]

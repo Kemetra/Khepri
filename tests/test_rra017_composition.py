@@ -6,12 +6,13 @@
 connects as. The sweep composition is then built for real and its object graph walked: the
 components whose own attributes hold the sweep role's session factory, compared at
 constructor-argument level, must be exactly `FR-271`'s four. An RCA sweeper or a
-`DeletionService` that receives it fails.
+`DeletionService` that receives it fails. `khepri-envelope-migrate`'s composition is walked the
+same way, and its one recipient is `FR-273`'s session lister.
 
 **Verification 12, the code half.** Every transaction a `khepri.rra` module opens goes through
 the scope helper, so none reaches a covered table without `SET LOCAL`. The exceptions are named
 in `UNSCOPED`, each with its reason: `FR-231`'s pre-scope `rra_invitations`, the sweep engine's
-admitted purge, and the envelope migration's reads `FR-272` refuses before they run. The four
+admitted purge, and the envelope migration's session listing (`FR-273`). The four
 definer calls live in one module, `khepri/rra/definer_calls.py`, beside the scope helper.
 
 RED at `0c1475f`: engines are built in three modules, no root names a role, the sweep composition
@@ -43,7 +44,7 @@ ROOT_ROLES = {
     "runtime/web.py": {"APPLICATION"},
     "runtime/worker.py": {"WORKER"},
     "runtime/retention_sweep.py": {"APPLICATION", "SWEEP"},
-    "runtime/envelope_migration.py": {"APPLICATION"},
+    "runtime/envelope_migration.py": {"APPLICATION", "SWEEP"},
     "runtime/clerk_hard_stop.py": {"APPLICATION"},
     "local/app.py": {"APPLICATION"},
     "local/cli.py": {"APPLICATION", "WORKER", "SWEEP"},
@@ -52,6 +53,8 @@ ROOT_ROLES = {
 SWEEP_RECIPIENTS = frozenset(
     {"ExpiredSessionLister", "DueUploadLister", "SqlDeletionRepository", "RecoveryCandidates"}
 )
+#: `FR-273`'s one sweep-engine recipient in `khepri-envelope-migrate`'s composition.
+ENVELOPE_RECIPIENTS = frozenset({"EnvelopeSessionLister"})
 #: Transactions a `khepri.rra` module may open without a scope, each with its reason.
 UNSCOPED = {
     ("persistence.py", "add_invitation"): "FR-231: rra_invitations is pre-scope",
@@ -59,8 +62,7 @@ UNSCOPED = {
     ("persistence.py", "purge_evidence_before"): "FR-271: the sweep engine's admitted purge",
     ("persistence.py", "redeem_invitation"): "FR-233: mints the owner, apply_scope before insert",
     ("claim_queue.py", "_next_claimable"): "FR-267: the definer picker is the scope's source",
-    ("envelope_migration.py", "_candidates"): "FR-272: refused before it runs under a policy",
-    ("envelope_migration.py", "_legacy_count"): "FR-272: refused before it runs under a policy",
+    ("envelope_migration.py", "sessions"): "FR-273: the sweep engine's session listing",
 }
 #: The scope helper, and the one module that calls `FR-264`'s four definer functions.
 SCOPE_MODULES = frozenset({"scope.py", "definer_calls.py"})
@@ -189,6 +191,43 @@ def test_no_deletion_service_is_built_over_the_sweep_engine(compose: Any) -> Non
     require(bool(services), "the sweep holds no DeletionService of its own")
     for service in services:
         require(not _holders(service, sweep), "a DeletionService reaches the sweep engine")
+
+
+def _envelope_migration(sweep: sessionmaker[Session]) -> Any:
+    build = future("khepri.runtime.envelope_migration", "build_envelope_migration")
+    if "sweep_factory" not in inspect.signature(build).parameters:
+        raise Rra017Absent("build_envelope_migration takes no sweep engine yet (FR-273)")
+    stack = SimpleNamespace(factory=sessionmaker(), objects=object(), clock=object())
+    return build(stack, sweep_factory=sweep)
+
+
+def test_the_sweep_engine_reaches_exactly_fr273s_session_lister() -> None:
+    """`FR-273`: in the envelope migration the sweep engine goes to the lister and nothing else.
+    A lister handed the scoped engine instead holds no sweep engine, and fails here too."""
+    sweep = sessionmaker()
+    holders = _holders(_envelope_migration(sweep), sweep)
+    require(holders == ENVELOPE_RECIPIENTS, f"the sweep factory reaches {sorted(holders)}")
+
+
+def test_every_sweep_engine_recipient_is_fr271s_four_or_fr273s_lister() -> None:
+    """Verification 7: across every composition, the set equals `FR-271`'s list with the lister."""
+    found: set[str] = set()
+    for compose in (_runtime_sweep, _local_sweep, _envelope_migration):
+        sweep = sessionmaker()
+        found |= _holders(compose(sweep), sweep)
+    require(found == SWEEP_RECIPIENTS | ENVELOPE_RECIPIENTS, f"recipients are {sorted(found)}")
+
+
+def test_the_envelope_listers_scoped_twin_is_not_the_stacks_engine() -> None:
+    """The stack's scoped engine reaches the migration's per-session work, never the lister."""
+    stack_factory = sessionmaker()
+    build = future("khepri.runtime.envelope_migration", "build_envelope_migration")
+    stack = SimpleNamespace(factory=stack_factory, objects=object(), clock=object())
+    migration = build(stack, sweep_factory=sessionmaker())
+    require(
+        "EnvelopeSessionLister" not in _holders(migration, stack_factory),
+        "the session lister holds the scoped engine",
+    )
 
 
 def test_no_local_wiring_hands_a_scoped_factory_to_the_sweep() -> None:

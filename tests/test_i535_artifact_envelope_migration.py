@@ -22,12 +22,17 @@ from types import SimpleNamespace
 import pytest
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from sqlalchemy import select, update
+from sqlalchemy import create_engine, select, update
+from sqlalchemy.orm import sessionmaker
 
 from khepri.rra import envelope as env
 from khepri.rra.artifact_persistence import ReportArtifactRow, SqlArtifactRepository
 from khepri.rra.artifact_publication import ArtifactUnavailable, ReportArtifactPublisher
-from khepri.rra.envelope_migration import ArtifactEnvelopeMigration, EnvelopeMigrationReport
+from khepri.rra.envelope_migration import (
+    ArtifactEnvelopeMigration,
+    EnvelopeMigrationReport,
+    EnvelopeSessionLister,
+)
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.persistence import BetaSessionRow, UploadRow
 from khepri.rra.storage import S3EncryptedObjectStore, StoredEnvelope
@@ -434,10 +439,74 @@ def test_v1_uploads_are_counted_and_not_touched() -> None:
 
     report = world.migration().migrate()
 
-    # The upload half is its own slice, so it does not decide this command's verdict.
+    # `RRA-017` `FR-273`: the upload re-seal is `FR-263`'s, so the upload is counted and left
+    # alone, and while it stays `v1` the pass is not "verified": both counts must reach zero.
     assert report == EnvelopeMigrationReport(uploads_not_migrated=1)
-    assert report.verified
+    assert not report.verified
     assert world.client.puts == []
+
+
+@dataclass(frozen=True)
+class _Listed:
+    """A session lister that returns what it is given (`RRA-017` `FR-273`)."""
+
+    listed: tuple[tuple[str, str], ...]
+
+    def sessions(self) -> tuple[tuple[str, str], ...]:
+        return self.listed
+
+
+def test_a_listed_session_with_no_owner_is_never_counted_as_zero() -> None:
+    """`FR-273`: the `''` scope reads as empty to every scoped read, whatever it holds."""
+    world = _world()
+    unowned = _Listed(((world.test.session.session_id, ""),))
+
+    report = ArtifactEnvelopeMigration(
+        factory=world.test.factory, objects=world.store, lister=unowned
+    ).migrate()
+
+    assert report == EnvelopeMigrationReport(sessions_unscoped=1)
+    assert not report.verified
+    assert world.client.puts == []
+
+
+def test_a_session_whose_work_faults_is_counted_and_blocks_verified(tmp_path) -> None:
+    """A session's candidate read or count that raises never reads as that session's zero."""
+    world = _world()
+    unreachable = sessionmaker(create_engine(f"sqlite:///{tmp_path / 'absent' / 'x.db'}"))
+    migration = ArtifactEnvelopeMigration(
+        factory=unreachable,
+        objects=world.store,
+        lister=EnvelopeSessionLister(world.test.factory),
+    )
+
+    report = migration.migrate()
+
+    assert report == EnvelopeMigrationReport(sessions_faulted=1)
+    assert not report.verified
+
+
+def test_each_session_is_counted_once_in_its_own_scope() -> None:
+    """Two sessions of one owner, one holding the `v1` artifacts: each is read and counted once.
+
+    The per-session reads name the session as well as the owner, or the owner's other session
+    would count the same rows a second time."""
+    world = _world()
+    session = world.test.session
+    with world.test.factory.begin() as database:
+        database.add(
+            BetaSessionRow(
+                session_id="ses_sibling",
+                owner_id=session.owner_id,
+                created_at=NOW,
+                content_expires_at=session.content_expires_at,
+            )
+        )
+    world.client.failing.add(world.rows()[0].object_key)
+
+    report = world.migration().migrate()
+
+    assert (report.resealed, report.failed, report.artifacts_remaining) == (6, 1, 1)
 
 
 # --- the entry point -------------------------------------------------------------------------
@@ -467,6 +536,8 @@ def test_the_entry_point_prints_counts_and_fails_while_v1_artifacts_remain() -> 
         "occurred_at": NOW.isoformat(),
         "refused": 0,
         "resealed": 6,
+        "sessions_faulted": 0,
+        "sessions_unscoped": 0,
         "uploads_not_migrated": 0,
     }
 
