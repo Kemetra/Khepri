@@ -26,7 +26,17 @@ def _validate_job() -> dict:
 
 def test_the_required_validate_job_checks_the_lock_against_the_manifest() -> None:
     job = _validate_job()
-    runs = [step.get("run") for step in job["steps"]]
+    checks = [step for step in job["steps"] if step.get("run") == "uv lock --check"]
 
     assert job["name"] == "validate"
-    assert "uv lock --check" in runs
+    assert len(checks) == 1
+
+
+def test_the_lock_check_can_fail_the_job() -> None:
+    # `continue-on-error` or an `if:` on the step or the job would report a stale lock as green.
+    job = _validate_job()
+    (check,) = [step for step in job["steps"] if step.get("run") == "uv lock --check"]
+
+    for gated in (job, check):
+        assert "if" not in gated
+        assert not gated.get("continue-on-error", False)
