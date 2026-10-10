@@ -4,15 +4,16 @@
 scoped engine, one session at a time, with that session's `owner_id` set. Two hooks watch the
 engines for the whole run:
 
-- on the sweep engine, every statement's columns are collected from the compiled construct, and
-  any statement whose text names `rra_report_artifacts` or `rra_uploads` fails the test. The
-  database would not refuse the second: `FR-271` grants the sweep role columns of `rra_uploads`;
+- on the sweep engine, any statement but the exact four the lister may run (its role, database
+  and sight checks, and its listing) fails the test. The database would not refuse every other
+  one: `FR-271` grants the sweep role columns of `rra_uploads`. Its columns are collected too;
 - on the scoped engine, every statement that reaches either content table is recorded with the
-  scope its transaction set.
+  scope its transaction set. A `begin` listener clears that record, so an unscoped read records
+  `None` rather than the previous transaction's scope.
 
-The sight cases drop `rra_sweep_read` or revoke a column grant, and restore it in `finally` with
-migration `20261002_0036`'s own statements: the harness's head check would not notice either
-loss, and every later test would run without it.
+The sight cases drop, narrow or out-vote `rra_sweep_read`, or revoke a column grant, and restore
+the catalogue in `finally`: the harness's head check would not notice any of these, and every
+later test would run without it.
 """
 
 from __future__ import annotations
@@ -26,11 +27,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import Column, event
+from sqlalchemy import Column, Engine, event
 from sqlalchemy.sql import visitors
 
+from khepri.rra.envelope_migration import SESSION_LISTING
 from khepri.rra.scope import SCOPE_MARK
 from khepri.rra.storage import S3EncryptedObjectStore
+from khepri.runtime.envelope_migration import CURRENT_USER, DATABASE_IDENTITY, LISTER_SIGHT
 from khepri.runtime.envelope_migration import run as run_envelope_migration
 from tests.rra017_rows import NOW, Scope, chain, row
 from tests.rra017_support import (
@@ -73,19 +76,27 @@ def _legacy(scope: Scope, client: DictS3, *, upload_version: int = 2) -> list[tu
     return [(table, {**values, **overrides.get(table, {})}) for table, values in chain(scope)]
 
 
+def sweep_allowlist(engine: Engine) -> frozenset[str]:
+    """The exact statements the sweep engine may run: the lister's checks and its listing."""
+    checks = (CURRENT_USER, DATABASE_IDENTITY, LISTER_SIGHT)
+    listing = str(SESSION_LISTING.compile(dialect=engine.dialect))
+    return frozenset({*(str(check) for check in checks), listing})
+
+
 @dataclass
 class Watch:
     """What each engine ran, recorded by `before_cursor_execute` hooks."""
 
+    allowed: frozenset[str]
     swept_columns: set[tuple[str, str]] = field(default_factory=set)
-    swept_content: list[str] = field(default_factory=list)
+    swept_unexpected: list[str] = field(default_factory=list)
     scoped_content: list[tuple[Any, str, Any]] = field(default_factory=list)
 
     def on_sweep(self, _conn: Any, *event: Any) -> None:
         """`before_cursor_execute`; `event` is cursor, statement, parameters, context, many."""
         statement = event[1]
-        if CONTENT.search(statement):
-            self.swept_content.append(statement)
+        if statement not in self.allowed:
+            self.swept_unexpected.append(statement)
         compiled = getattr(event[3], "compiled", None)
         construct = getattr(compiled, "statement", None)
         if construct is not None:
@@ -105,15 +116,26 @@ class Watch:
         return {mark for mark, _statement, _parameters in self.scoped_content}
 
 
+def _forget_scope(connection: Any) -> None:
+    """Every transaction starts with no recorded scope, as the runtime tripwire's engines do.
+
+    The harness engine carries no tripwire, so without this a pooled connection would keep the
+    scope a previous transaction recorded, and an unscoped read would be logged under it.
+    """
+    connection.info.pop(SCOPE_MARK, None)
+
+
 @dataclass
 class World:
     rls: RlsDatabase
     client: DictS3 = field(default_factory=DictS3)
-    watch: Watch = field(default_factory=Watch)
 
     def __post_init__(self) -> None:
-        event.listen(self.rls.engine(SWEEP), "before_cursor_execute", self.watch.on_sweep)
-        event.listen(self.rls.engine(APPLICATION), "before_cursor_execute", self.watch.on_scoped)
+        sweep, scoped = self.rls.engine(SWEEP), self.rls.engine(APPLICATION)
+        self.watch = Watch(allowed=sweep_allowlist(sweep))
+        event.listen(sweep, "before_cursor_execute", self.watch.on_sweep)
+        event.listen(scoped, "begin", _forget_scope)
+        event.listen(scoped, "before_cursor_execute", self.watch.on_scoped)
 
     def run(self) -> tuple[int, dict]:
         stack = SimpleNamespace(
@@ -122,11 +144,10 @@ class World:
             clock=lambda: NOW,
         )
         printed: list[str] = []
-        status = run_envelope_migration(
-            stack, sweep_factory=self.rls.factory(SWEEP), out=printed.append
-        )
+        lister = self.rls.factory(SWEEP)
+        status = run_envelope_migration(stack, sweep=lambda: lister, out=printed.append)
         assert len(printed) == 1
-        assert not self.watch.swept_content, "a content table was reached on the sweep engine"
+        assert not self.watch.swept_unexpected, "the sweep engine ran a statement off its list"
         return status, json.loads(printed[0])
 
     def versions(self) -> list[tuple[str, int]]:
@@ -237,6 +258,20 @@ SIGHT_LOSSES = {
     "owner_id_revoked": (
         f"REVOKE SELECT (owner_id) ON public.rra_beta_sessions FROM {SWEEP}",
         f"GRANT SELECT (owner_id) ON public.rra_beta_sessions TO {SWEEP}",
+    ),
+    "policy_narrowed": (
+        "ALTER POLICY rra_sweep_read ON public.rra_beta_sessions USING (false)",
+        "ALTER POLICY rra_sweep_read ON public.rra_beta_sessions USING (true)",
+    ),
+    "restrictive_added": (
+        "CREATE POLICY rra_test_veto ON public.rra_beta_sessions AS RESTRICTIVE FOR SELECT "
+        f"TO {SWEEP} USING (false)",
+        "DROP POLICY rra_test_veto ON public.rra_beta_sessions",
+    ),
+    "restrictive_added_for_public": (
+        "CREATE POLICY rra_test_veto ON public.rra_beta_sessions AS RESTRICTIVE FOR ALL "
+        "TO PUBLIC USING (false)",
+        "DROP POLICY rra_test_veto ON public.rra_beta_sessions",
     ),
 }
 

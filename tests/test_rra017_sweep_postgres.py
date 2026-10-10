@@ -268,8 +268,9 @@ def test_the_envelope_migration_refuses_any_other_composition_and_reports_no_cou
         factory=_factory_for(rls, scoped), objects=_NoReseal(), clock=lambda: NOW
     )
     printed: list[str] = []
+    sweep = _factory_for(rls, lister)
     status = run_envelope_migration(
-        stack, sweep_factory=_factory_for(rls, lister), out=printed.append
+        stack, sweep=None if sweep is None else lambda: sweep, out=printed.append
     )
     assert status == REFUSED_UNDER_POLICY
     assert [json.loads(line) for line in printed] == [

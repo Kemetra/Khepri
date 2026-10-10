@@ -416,6 +416,18 @@ def test_rows_already_at_v2_are_not_selected() -> None:
 
 def test_v1_uploads_are_counted_and_not_touched() -> None:
     world = _world(legacy=False)
+    _add_v1_upload(world)
+
+    report = world.migration().migrate()
+
+    # `RRA-017` `FR-273`: the upload re-seal is `FR-263`'s, so the upload is counted and left
+    # alone, and while it stays `v1` the pass is not "verified": both counts must reach zero.
+    assert report == EnvelopeMigrationReport(uploads_not_migrated=1)
+    assert not report.verified
+    assert world.client.puts == []
+
+
+def _add_v1_upload(world: World) -> None:
     with world.test.factory.begin() as database:
         database.add(
             UploadRow(
@@ -436,14 +448,6 @@ def test_v1_uploads_are_counted_and_not_touched() -> None:
                 ciphertext_sha256_hex="e" * 64,
             )
         )
-
-    report = world.migration().migrate()
-
-    # `RRA-017` `FR-273`: the upload re-seal is `FR-263`'s, so the upload is counted and left
-    # alone, and while it stays `v1` the pass is not "verified": both counts must reach zero.
-    assert report == EnvelopeMigrationReport(uploads_not_migrated=1)
-    assert not report.verified
-    assert world.client.puts == []
 
 
 @dataclass(frozen=True)
@@ -512,12 +516,56 @@ def test_each_session_is_counted_once_in_its_own_scope() -> None:
 # --- the entry point -------------------------------------------------------------------------
 
 
-def _run(world: World) -> tuple[int, dict]:
+def _run(world: World, sweep: object = None) -> tuple[int, dict]:
     lines: list[str] = []
     stack = SimpleNamespace(factory=world.test.factory, objects=world.store, clock=lambda: NOW)
-    status = runtime_migration.run(stack, out=lines.append)
+    status = runtime_migration.run(stack, sweep=sweep, out=lines.append)
     assert len(lines) == 1
     return status, json.loads(lines[0])
+
+
+def _move_to_an_unlisted_session(world: World, model: type, **key: str) -> None:
+    """SQLite enforces no foreign key here, so a row can name a session no lister returns."""
+    with world.test.factory.begin() as database:
+        database.execute(
+            update(model)
+            .where(*(getattr(model, name) == value for name, value in key.items()))
+            .values(session_id="ses_unlisted")
+        )
+
+
+def test_without_policies_an_artifact_outside_every_listed_session_blocks_verified() -> None:
+    """`RRA-017` `FR-272`: where no policy hides a row, the global count backs the walk up."""
+    world = _world()
+    row = world.rows()[0]
+    _move_to_an_unlisted_session(
+        world, ReportArtifactRow, job_id=row.job_id, artifact_kind=row.artifact_kind
+    )
+
+    status, line = _run(world)
+
+    assert status == 1
+    assert (line["artifacts_remaining"], line["backstop_artifacts_remaining"]) == (0, 1)
+
+
+def test_without_policies_an_upload_outside_every_listed_session_blocks_verified() -> None:
+    world = _world(legacy=False)
+    _add_v1_upload(world)
+    _move_to_an_unlisted_session(world, UploadRow, upload_id="upl_legacy")
+
+    status, line = _run(world)
+
+    assert status == 1
+    assert (line["uploads_not_migrated"], line["backstop_uploads_remaining"]) == (0, 1)
+
+
+def test_without_policies_the_sweep_engine_is_never_built() -> None:
+    """A database before `20261002_0036` has no sweep role, and may hold no sweep secret."""
+
+    def _unbuildable() -> None:
+        raise AssertionError("the sweep engine was built where no policy exists")
+
+    assert _run(_world(legacy=False), sweep=_unbuildable)[0] == 0
 
 
 def test_the_entry_point_prints_counts_and_fails_while_v1_artifacts_remain() -> None:
@@ -530,6 +578,8 @@ def test_the_entry_point_prints_counts_and_fails_while_v1_artifacts_remain() -> 
     assert line == {
         "adopted": 0,
         "artifacts_remaining": 1,
+        "backstop_artifacts_remaining": 1,
+        "backstop_uploads_remaining": 0,
         "deferred": 0,
         "event": "envelope_migration",
         "failed": 1,

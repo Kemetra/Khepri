@@ -19,7 +19,9 @@ then runs on the scoped engine with that session's `owner_id` set. The walk is c
 both content tables key onto their session (`fk_report_artifact_session_scope`,
 `fk_upload_session_scope`). A listed session whose `owner_id` is `''` cannot be read by any scoped
 read (`FR-232`), so it is counted in `sessions_unscoped` and never as zero; a session whose reads
-fault is counted in `sessions_faulted`. Either one blocks "verified".
+fault is counted in `sessions_faulted`. Either one blocks "verified". Where no policy exists
+(`FR-272`), the global `v1` counts also run, deliberately unscoped, as a backstop for a row the
+walk cannot reach: SQLite enforces no foreign key, so a row can name a session no lister returns.
 
 **One row per transaction, session locked first.** `session_scope_for_update_statement` is the
 lock `SqlDeletionRepository.begin` takes before it sets `deletion_requested_at`. So a deletion
@@ -39,7 +41,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Protocol
 
 from sqlalchemy import ColumnElement, Select, func, select
@@ -52,7 +54,7 @@ from khepri.rra.persistence import (
     UploadRow,
     session_scope_for_update_statement,
 )
-from khepri.rra.scope import scoped_begin, scoped_read
+from khepri.rra.scope import acting_for, scoped_begin, scoped_read
 from khepri.rra.sessions import SessionScope, object_in_scope
 from khepri.rra.storage import Resealed, StoredEnvelope
 
@@ -95,23 +97,31 @@ class EnvelopeMigrationReport:
     sessions_unscoped: int = 0
     #: Listed sessions whose candidate read or count raised: their counts are unknown.
     sessions_faulted: int = 0
+    #: Where no policy exists (`FR-272`), every `v1` row of each table, listed session or not: a
+    #: backstop for a row the walk cannot reach. `None` where the policies would hide rows from
+    #: it; there the walk's completeness rests on `FR-273`'s foreign keys.
+    backstop_artifacts_remaining: int | None = None
+    backstop_uploads_remaining: int | None = None
 
     @property
     def verified(self) -> bool:
-        """No `v1` row remains in any listed session (`KHEPRI-DEC-028`, `RRA-017` `FR-273`).
+        """No `v1` row remains in any listed session (`KHEPRI-DEC-028`, `RRA-017` `FR-273`),
+        nor, where the backstop ran, anywhere in either table.
 
         `failed` is deliberately not a condition. A row whose rewrite faulted is still `v1`, so it
         is already counted in `artifacts_remaining`. A fault on a row that a concurrent deletion
         then removed leaves nothing to migrate, and that is done.
         """
+        backstop = (self.backstop_artifacts_remaining, self.backstop_uploads_remaining)
         return (
             self.artifacts_remaining,
             self.uploads_not_migrated,
             self.sessions_unscoped,
             self.sessions_faulted,
-        ) == (0, 0, 0, 0)
+            *(count or 0 for count in backstop),
+        ) == (0, 0, 0, 0, 0, 0)
 
-    def as_counts(self) -> dict[str, int]:
+    def as_counts(self) -> dict[str, int | None]:
         return asdict(self)
 
 
@@ -127,6 +137,12 @@ class _Candidate:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
 
 
+#: `FR-273`'s one cross-scope read: every session's identifier and owner, and nothing else.
+SESSION_LISTING = select(BetaSessionRow.session_id, BetaSessionRow.owner_id).order_by(
+    BetaSessionRow.session_id
+)
+
+
 class EnvelopeSessionLister:
     """Every session, with its owner, across every scope (`RRA-017` `FR-273`).
 
@@ -139,11 +155,7 @@ class EnvelopeSessionLister:
 
     def sessions(self) -> tuple[tuple[str, str], ...]:
         with self._factory() as database:
-            rows = database.execute(
-                select(BetaSessionRow.session_id, BetaSessionRow.owner_id).order_by(
-                    BetaSessionRow.session_id
-                )
-            )
+            rows = database.execute(SESSION_LISTING)
             return tuple((session_id, owner_id) for session_id, owner_id in rows)
 
 
@@ -151,7 +163,8 @@ class ArtifactEnvelopeMigration:
     """One pass over every listed session's `v1` report artifacts.
 
     `factory` is the scoped engine. `lister` reads across scopes; without one (SQLite, and the
-    databases `FR-272` lets run as before) it lists through `factory`.
+    databases `FR-272` lets run as before) it lists through `factory`. `backstop` adds the
+    deliberately unscoped global counts, which only a database with no policy can answer.
     """
 
     def __init__(
@@ -160,10 +173,12 @@ class ArtifactEnvelopeMigration:
         factory: sessionmaker[Session],
         objects: ResealingStore,
         lister: SessionLister | None = None,
+        backstop: bool = False,
     ) -> None:
         self._factory = factory
         self._objects = objects
         self._lister = lister or EnvelopeSessionLister(factory)
+        self._backstop = backstop
 
     def migrate(self) -> EnvelopeMigrationReport:
         tally: Counter[str] = Counter()
@@ -172,7 +187,16 @@ class ArtifactEnvelopeMigration:
                 tally["sessions_unscoped"] += 1
                 continue
             self._walk(SessionScope(owner_id=owner_id, session_id=session_id), tally)
-        return EnvelopeMigrationReport(**tally)
+        report = EnvelopeMigrationReport(**tally)
+        return replace(report, **self._everywhere()) if self._backstop else report
+
+    def _everywhere(self) -> dict[str, int]:
+        """Every `v1` row of both tables, in a transaction bound as deliberately unscoped."""
+        with acting_for(None), scoped_read(self._factory) as database:
+            return {
+                "backstop_artifacts_remaining": _count(database, ReportArtifactRow),
+                "backstop_uploads_remaining": _count(database, UploadRow),
+            }
 
     def _walk(self, scope: SessionScope, tally: Counter[str]) -> None:
         """One session's candidates and counts, its fault isolated from every session after it.
@@ -246,16 +270,15 @@ class ArtifactEnvelopeMigration:
 _Content = type[ReportArtifactRow] | type[UploadRow]
 
 
-def _legacy_in(model: _Content, scope: SessionScope) -> tuple[ColumnElement[bool], ...]:
-    """`v1` rows of `model` in `scope`'s own session, named by both scope columns."""
-    return (
-        model.owner_id == scope.owner_id,
-        model.session_id == scope.session_id,
-        model.envelope_version == LEGACY_ENVELOPE_VERSION,
-    )
+def _legacy_in(model: _Content, scope: SessionScope | None) -> tuple[ColumnElement[bool], ...]:
+    """`v1` rows of `model`: in `scope`'s own session, named by both scope columns, or anywhere."""
+    legacy = model.envelope_version == LEGACY_ENVELOPE_VERSION
+    if scope is None:
+        return (legacy,)
+    return (model.owner_id == scope.owner_id, model.session_id == scope.session_id, legacy)
 
 
-def _count(database: Session, model: _Content, scope: SessionScope) -> int:
+def _count(database: Session, model: _Content, scope: SessionScope | None = None) -> int:
     statement = select(func.count()).select_from(model).where(*_legacy_in(model, scope))
     return int(database.scalar(statement) or 0)
 
@@ -293,6 +316,7 @@ def _recorded(row: ReportArtifactRow) -> StoredEnvelope:
 __all__ = [
     "ArtifactEnvelopeMigration",
     "EnvelopeMigrationReport",
+    "SESSION_LISTING",
     "EnvelopeSessionLister",
     "ResealingStore",
     "SessionLister",
