@@ -22,12 +22,17 @@ from types import SimpleNamespace
 import pytest
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from sqlalchemy import select, update
+from sqlalchemy import create_engine, select, update
+from sqlalchemy.orm import sessionmaker
 
 from khepri.rra import envelope as env
 from khepri.rra.artifact_persistence import ReportArtifactRow, SqlArtifactRepository
 from khepri.rra.artifact_publication import ArtifactUnavailable, ReportArtifactPublisher
-from khepri.rra.envelope_migration import ArtifactEnvelopeMigration, EnvelopeMigrationReport
+from khepri.rra.envelope_migration import (
+    ArtifactEnvelopeMigration,
+    EnvelopeMigrationReport,
+    EnvelopeSessionLister,
+)
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.persistence import BetaSessionRow, UploadRow
 from khepri.rra.storage import S3EncryptedObjectStore, StoredEnvelope
@@ -411,6 +416,18 @@ def test_rows_already_at_v2_are_not_selected() -> None:
 
 def test_v1_uploads_are_counted_and_not_touched() -> None:
     world = _world(legacy=False)
+    _add_v1_upload(world)
+
+    report = world.migration().migrate()
+
+    # `RRA-017` `FR-273`: the upload re-seal is `FR-263`'s, so the upload is counted and left
+    # alone, and while it stays `v1` the pass is not "verified": both counts must reach zero.
+    assert report == EnvelopeMigrationReport(uploads_not_migrated=1)
+    assert not report.verified
+    assert world.client.puts == []
+
+
+def _add_v1_upload(world: World) -> None:
     with world.test.factory.begin() as database:
         database.add(
             UploadRow(
@@ -432,23 +449,123 @@ def test_v1_uploads_are_counted_and_not_touched() -> None:
             )
         )
 
+
+@dataclass(frozen=True)
+class _Listed:
+    """A session lister that returns what it is given (`RRA-017` `FR-273`)."""
+
+    listed: tuple[tuple[str, str], ...]
+
+    def sessions(self) -> tuple[tuple[str, str], ...]:
+        return self.listed
+
+
+def test_a_listed_session_with_no_owner_is_never_counted_as_zero() -> None:
+    """`FR-273`: the `''` scope reads as empty to every scoped read, whatever it holds."""
+    world = _world()
+    unowned = _Listed(((world.test.session.session_id, ""),))
+
+    report = ArtifactEnvelopeMigration(
+        factory=world.test.factory, objects=world.store, lister=unowned
+    ).migrate()
+
+    assert report == EnvelopeMigrationReport(sessions_unscoped=1)
+    assert not report.verified
+    assert world.client.puts == []
+
+
+def test_a_session_whose_work_faults_is_counted_and_blocks_verified(tmp_path) -> None:
+    """A session's candidate read or count that raises never reads as that session's zero."""
+    world = _world()
+    unreachable = sessionmaker(create_engine(f"sqlite:///{tmp_path / 'absent' / 'x.db'}"))
+    migration = ArtifactEnvelopeMigration(
+        factory=unreachable,
+        objects=world.store,
+        lister=EnvelopeSessionLister(world.test.factory),
+    )
+
+    report = migration.migrate()
+
+    assert report == EnvelopeMigrationReport(sessions_faulted=1)
+    assert not report.verified
+
+
+def test_each_session_is_counted_once_in_its_own_scope() -> None:
+    """Two sessions of one owner, one holding the `v1` artifacts: each is read and counted once.
+
+    The per-session reads name the session as well as the owner, or the owner's other session
+    would count the same rows a second time."""
+    world = _world()
+    session = world.test.session
+    with world.test.factory.begin() as database:
+        database.add(
+            BetaSessionRow(
+                session_id="ses_sibling",
+                owner_id=session.owner_id,
+                created_at=NOW,
+                content_expires_at=session.content_expires_at,
+            )
+        )
+    world.client.failing.add(world.rows()[0].object_key)
+
     report = world.migration().migrate()
 
-    # The upload half is its own slice, so it does not decide this command's verdict.
-    assert report == EnvelopeMigrationReport(uploads_not_migrated=1)
-    assert report.verified
-    assert world.client.puts == []
+    assert (report.resealed, report.failed, report.artifacts_remaining) == (6, 1, 1)
 
 
 # --- the entry point -------------------------------------------------------------------------
 
 
-def _run(world: World) -> tuple[int, dict]:
+def _run(world: World, sweep: object = None) -> tuple[int, dict]:
     lines: list[str] = []
     stack = SimpleNamespace(factory=world.test.factory, objects=world.store, clock=lambda: NOW)
-    status = runtime_migration.run(stack, out=lines.append)
+    status = runtime_migration.run(stack, sweep=sweep, out=lines.append)
     assert len(lines) == 1
     return status, json.loads(lines[0])
+
+
+def _move_to_an_unlisted_session(world: World, model: type, **key: str) -> None:
+    """SQLite enforces no foreign key here, so a row can name a session no lister returns."""
+    with world.test.factory.begin() as database:
+        database.execute(
+            update(model)
+            .where(*(getattr(model, name) == value for name, value in key.items()))
+            .values(session_id="ses_unlisted")
+        )
+
+
+def test_without_policies_an_artifact_outside_every_listed_session_blocks_verified() -> None:
+    """`RRA-017` `FR-272`: where no policy hides a row, the global count backs the walk up."""
+    world = _world()
+    row = world.rows()[0]
+    _move_to_an_unlisted_session(
+        world, ReportArtifactRow, job_id=row.job_id, artifact_kind=row.artifact_kind
+    )
+
+    status, line = _run(world)
+
+    assert status == 1
+    assert (line["artifacts_remaining"], line["backstop_artifacts_remaining"]) == (0, 1)
+
+
+def test_without_policies_an_upload_outside_every_listed_session_blocks_verified() -> None:
+    world = _world(legacy=False)
+    _add_v1_upload(world)
+    _move_to_an_unlisted_session(world, UploadRow, upload_id="upl_legacy")
+
+    status, line = _run(world)
+
+    assert status == 1
+    assert (line["uploads_not_migrated"], line["backstop_uploads_remaining"]) == (0, 1)
+
+
+def test_without_policies_the_sweep_engine_is_never_built() -> None:
+    """A database before `20261002_0036` has no sweep role, and may hold no sweep secret."""
+
+    def _unbuildable() -> None:
+        raise AssertionError("the sweep engine was built where no policy exists")
+
+    assert _run(_world(legacy=False), sweep=_unbuildable)[0] == 0
 
 
 def test_the_entry_point_prints_counts_and_fails_while_v1_artifacts_remain() -> None:
@@ -461,12 +578,16 @@ def test_the_entry_point_prints_counts_and_fails_while_v1_artifacts_remain() -> 
     assert line == {
         "adopted": 0,
         "artifacts_remaining": 1,
+        "backstop_artifacts_remaining": 1,
+        "backstop_uploads_remaining": 0,
         "deferred": 0,
         "event": "envelope_migration",
         "failed": 1,
         "occurred_at": NOW.isoformat(),
         "refused": 0,
         "resealed": 6,
+        "sessions_faulted": 0,
+        "sessions_unscoped": 0,
         "uploads_not_migrated": 0,
     }
 

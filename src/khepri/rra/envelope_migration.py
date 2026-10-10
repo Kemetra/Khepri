@@ -4,12 +4,24 @@
 migration slice rewrites every `v1` object as `v2` and verifies that none remains." The owner
 split that slice on 2026-09-28. This module is the report-artifact half.
 
-**Why uploads are not here.** A re-seal produces a new ciphertext digest. An artifact's digest is
-read by nothing outside `rra_report_artifacts`: its workspace binding records the *plaintext*
-digest. An upload's ciphertext digest is recorded in `DatasetVersion.upload_ciphertext_digest`,
-which `RCA-005` `FR-112` fixes. Three joins matched on it until `FR-259`-`FR-261` re-keyed them onto
-the version's stable `upload_id`. Re-sealing uploads is a later, separately gated slice (`FR-263`),
-so they are counted here and left alone.
+**Why uploads are counted, not re-sealed.** A re-seal produces a new ciphertext digest. An
+artifact's digest is read by nothing outside `rra_report_artifacts`: its workspace binding records
+the *plaintext* digest. An upload's ciphertext digest is recorded in
+`DatasetVersion.upload_ciphertext_digest`, which `RCA-005` `FR-112` fixes. Three joins matched on it
+until `FR-259`-`FR-261` re-keyed them onto the version's stable `upload_id`. Re-sealing uploads is
+a later, separately gated slice (`FR-263`), so they are counted here and left alone. A `v1` upload
+still blocks "verified": `RRA-017` `FR-273` reports it only when both counts reach zero.
+
+**One session at a time (`RRA-017` `FR-273`).** The one cross-scope read is the session listing,
+`EnvelopeSessionLister`, which reads `rra_beta_sessions (session_id, owner_id)` and nothing else; in
+the deployed command it runs on the sweep role's engine. Every candidate read, re-seal and count
+then runs on the scoped engine with that session's `owner_id` set. The walk is complete because
+both content tables key onto their session (`fk_report_artifact_session_scope`,
+`fk_upload_session_scope`). A listed session whose `owner_id` is `''` cannot be read by any scoped
+read (`FR-232`), so it is counted in `sessions_unscoped` and never as zero; a session whose reads
+fault is counted in `sessions_faulted`. Either one blocks "verified". Where no policy exists
+(`FR-272`), the global `v1` counts also run, deliberately unscoped, as a backstop for a row the
+walk cannot reach: SQLite enforces no foreign key, so a row can name a session no lister returns.
 
 **One row per transaction, session locked first.** `session_scope_for_update_statement` is the
 lock `SqlDeletionRepository.begin` takes before it sets `deletion_requested_at`. So a deletion
@@ -28,10 +40,11 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from dataclasses import asdict, dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, replace
 from typing import Protocol
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rra.artifact_persistence import ReportArtifactRow
@@ -41,7 +54,7 @@ from khepri.rra.persistence import (
     UploadRow,
     session_scope_for_update_statement,
 )
-from khepri.rra.scope import scoped_begin
+from khepri.rra.scope import acting_for, scoped_begin, scoped_read
 from khepri.rra.sessions import SessionScope, object_in_scope
 from khepri.rra.storage import Resealed, StoredEnvelope
 
@@ -56,6 +69,10 @@ FAILED = "failed"
 
 class ResealingStore(Protocol):
     def reseal(self, key: str, *, envelope: StoredEnvelope, media_type: str) -> Resealed: ...
+
+
+class SessionLister(Protocol):
+    def sessions(self) -> Sequence[tuple[str, str]]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,20 +91,37 @@ class EnvelopeMigrationReport:
     failed: int = 0
     #: `v1` artifact rows after the pass. `v1` can only be retired from zero.
     artifacts_remaining: int = 0
-    #: `v1` upload rows. Not this pass's to rewrite, so they do not decide `verified`.
+    #: `v1` upload rows. Not this pass's to rewrite (`FR-263`), but they block `verified`.
     uploads_not_migrated: int = 0
+    #: Listed sessions whose `owner_id` is `''`: no scoped read can count them (`FR-273`).
+    sessions_unscoped: int = 0
+    #: Listed sessions whose candidate read or count raised: their counts are unknown.
+    sessions_faulted: int = 0
+    #: Where no policy exists (`FR-272`), every `v1` row of each table, listed session or not: a
+    #: backstop for a row the walk cannot reach. `None` where the policies would hide rows from
+    #: it; there the walk's completeness rests on `FR-273`'s foreign keys.
+    backstop_artifacts_remaining: int | None = None
+    backstop_uploads_remaining: int | None = None
 
     @property
     def verified(self) -> bool:
-        """No `v1` artifact remains: `KHEPRI-DEC-028`'s "verifies that none remains".
+        """No `v1` row remains in any listed session (`KHEPRI-DEC-028`, `RRA-017` `FR-273`),
+        nor, where the backstop ran, anywhere in either table.
 
-        `failed` is deliberately not a second condition. A row whose rewrite faulted is still
-        `v1`, so it is already counted in `artifacts_remaining`. A fault on a row that a
-        concurrent deletion then removed leaves nothing to migrate, and that is done.
+        `failed` is deliberately not a condition. A row whose rewrite faulted is still `v1`, so it
+        is already counted in `artifacts_remaining`. A fault on a row that a concurrent deletion
+        then removed leaves nothing to migrate, and that is done.
         """
-        return self.artifacts_remaining == 0
+        backstop = (self.backstop_artifacts_remaining, self.backstop_uploads_remaining)
+        return (
+            self.artifacts_remaining,
+            self.uploads_not_migrated,
+            self.sessions_unscoped,
+            self.sessions_faulted,
+            *(count or 0 for count in backstop),
+        ) == (0, 0, 0, 0, 0, 0)
 
-    def as_counts(self) -> dict[str, int]:
+    def as_counts(self) -> dict[str, int | None]:
         return asdict(self)
 
 
@@ -103,24 +137,82 @@ class _Candidate:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
 
 
-class ArtifactEnvelopeMigration:
-    """One pass over every `v1` report artifact."""
+#: `FR-273`'s one cross-scope read: every session's identifier and owner, and nothing else.
+SESSION_LISTING = select(BetaSessionRow.session_id, BetaSessionRow.owner_id).order_by(
+    BetaSessionRow.session_id
+)
 
-    def __init__(self, *, factory: sessionmaker[Session], objects: ResealingStore) -> None:
+
+class EnvelopeSessionLister:
+    """Every session, with its owner, across every scope (`RRA-017` `FR-273`).
+
+    Reads `rra_beta_sessions.session_id` and `owner_id` and nothing else: the columns `FR-271`
+    already grants the sweep role, through the `rra_sweep_read` policy it already holds.
+    """
+
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+
+    def sessions(self) -> tuple[tuple[str, str], ...]:
+        with self._factory() as database:
+            rows = database.execute(SESSION_LISTING)
+            return tuple((session_id, owner_id) for session_id, owner_id in rows)
+
+
+class ArtifactEnvelopeMigration:
+    """One pass over every listed session's `v1` report artifacts.
+
+    `factory` is the scoped engine. `lister` reads across scopes; without one (SQLite, and the
+    databases `FR-272` lets run as before) it lists through `factory`. `backstop` adds the
+    deliberately unscoped global counts, which only a database with no policy can answer.
+    """
+
+    def __init__(
+        self,
+        *,
+        factory: sessionmaker[Session],
+        objects: ResealingStore,
+        lister: SessionLister | None = None,
+        backstop: bool = False,
+    ) -> None:
         self._factory = factory
         self._objects = objects
+        self._lister = lister or EnvelopeSessionLister(factory)
+        self._backstop = backstop
 
     def migrate(self) -> EnvelopeMigrationReport:
         tally: Counter[str] = Counter()
-        for candidate in self._candidates():
-            outcome = self._attempt(candidate)
-            if outcome is not None:
-                tally[outcome] += 1
-        return EnvelopeMigrationReport(
-            **tally,
-            artifacts_remaining=self._legacy_count(ReportArtifactRow),
-            uploads_not_migrated=self._legacy_count(UploadRow),
-        )
+        for session_id, owner_id in self._lister.sessions():
+            if not owner_id:
+                tally["sessions_unscoped"] += 1
+                continue
+            self._walk(SessionScope(owner_id=owner_id, session_id=session_id), tally)
+        report = EnvelopeMigrationReport(**tally)
+        return replace(report, **self._everywhere()) if self._backstop else report
+
+    def _everywhere(self) -> dict[str, int]:
+        """Every `v1` row of both tables, in a transaction bound as deliberately unscoped."""
+        with acting_for(None), scoped_read(self._factory) as database:
+            return {
+                "backstop_artifacts_remaining": _count(database, ReportArtifactRow),
+                "backstop_uploads_remaining": _count(database, UploadRow),
+            }
+
+    def _walk(self, scope: SessionScope, tally: Counter[str]) -> None:
+        """One session's candidates and counts, its fault isolated from every session after it.
+
+        What the session did before a fault stays counted. As in `_attempt`, the exception's type
+        is logged, never its message.
+        """
+        try:
+            for candidate in self._candidates(scope):
+                outcome = self._attempt(candidate)
+                if outcome is not None:
+                    tally[outcome] += 1
+            tally.update(self._legacy_counts(scope))
+        except Exception as fault:
+            _LOG.error("envelope migration faulted on one session: error=%s", type(fault).__name__)
+            tally["sessions_faulted"] += 1
 
     def _attempt(self, candidate: _Candidate) -> str | None:
         """Migrate one row, isolating its fault from every row after it.
@@ -152,8 +244,8 @@ class ArtifactEnvelopeMigration:
             row.ciphertext_sha256_hex = resealed.ciphertext_sha256_hex
             return RESEALED if resealed.rewritten else ADOPTED
 
-    def _candidates(self) -> tuple[_Candidate, ...]:
-        with self._factory() as database:
+    def _candidates(self, scope: SessionScope) -> tuple[_Candidate, ...]:
+        with scoped_read(self._factory, scope.owner_id) as database:
             rows = database.execute(
                 select(
                     ReportArtifactRow.job_id,
@@ -161,19 +253,34 @@ class ArtifactEnvelopeMigration:
                     ReportArtifactRow.owner_id,
                     ReportArtifactRow.session_id,
                 )
-                .where(ReportArtifactRow.envelope_version == LEGACY_ENVELOPE_VERSION)
+                .where(*_legacy_in(ReportArtifactRow, scope))
                 .order_by(ReportArtifactRow.job_id, ReportArtifactRow.artifact_kind)
             )
             return tuple(_Candidate(*row) for row in rows)
 
-    def _legacy_count(self, model: type[ReportArtifactRow] | type[UploadRow]) -> int:
-        with self._factory() as database:
-            count = database.scalar(
-                select(func.count())
-                .select_from(model)
-                .where(model.envelope_version == LEGACY_ENVELOPE_VERSION)
+    def _legacy_counts(self, scope: SessionScope) -> Counter[str]:
+        """The session's two `v1` counts, in one transaction with its scope set."""
+        with scoped_read(self._factory, scope.owner_id) as database:
+            return Counter(
+                artifacts_remaining=_count(database, ReportArtifactRow, scope),
+                uploads_not_migrated=_count(database, UploadRow, scope),
             )
-            return int(count or 0)
+
+
+_Content = type[ReportArtifactRow] | type[UploadRow]
+
+
+def _legacy_in(model: _Content, scope: SessionScope | None) -> tuple[ColumnElement[bool], ...]:
+    """`v1` rows of `model`: in `scope`'s own session, named by both scope columns, or anywhere."""
+    legacy = model.envelope_version == LEGACY_ENVELOPE_VERSION
+    if scope is None:
+        return (legacy,)
+    return (model.owner_id == scope.owner_id, model.session_id == scope.session_id, legacy)
+
+
+def _count(database: Session, model: _Content, scope: SessionScope | None = None) -> int:
+    statement = select(func.count()).select_from(model).where(*_legacy_in(model, scope))
+    return int(database.scalar(statement) or 0)
 
 
 def _content_is_live(session: BetaSessionRow | None) -> bool:
@@ -209,5 +316,8 @@ def _recorded(row: ReportArtifactRow) -> StoredEnvelope:
 __all__ = [
     "ArtifactEnvelopeMigration",
     "EnvelopeMigrationReport",
+    "SESSION_LISTING",
+    "EnvelopeSessionLister",
     "ResealingStore",
+    "SessionLister",
 ]
