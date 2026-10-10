@@ -70,7 +70,17 @@ if [ "${status}" -ne 0 ] && [ "${status}" -ne "${FOUND}" ]; then
   exit 2
 fi
 
-table="$("${trivy}" convert --skip-version-check --format table "${report}")"
+# `convert` takes no `--skip-version-check` in 0.74.0. The verdict comes from `trivy image` above,
+# so a failure here cannot change it, but it must not leave an empty table that reads as clean.
+# Its log lines go to the job log, not into the table.
+convert_log="$(mktemp)"
+if ! table="$("${trivy}" convert --format table "${report}" 2>"${convert_log}")"; then
+  echo "WARNING: trivy convert failed, so the findings table is missing; ${report} holds them" >&2
+  table="WARNING: the findings table could not be rendered (trivy convert failed):
+$(cat "${convert_log}")
+The verdict below still comes from the scan. The full findings are in ${report}."
+fi
+cat "${convert_log}" >&2
 {
   echo "### Image advisories: \`${image}\`"
   echo
