@@ -28,6 +28,11 @@ jobs:
           # Keep downloaded wheels. The default prune saves an empty cache, so every job
           # downloaded every dependency again, and two 10-minute jobs timed out doing it.
           prune-cache: false
+      # SCRUM-45. `uv sync --frozen` installs the lock as written and never compares it with
+      # `pyproject.toml`, so a manifest change without a re-lock went unnoticed. This exits
+      # non-zero when resolving the manifest would change `uv.lock`.
+      - name: the lock matches pyproject.toml
+        run: uv lock --check
       - run: uv sync --frozen
       - run: uv run khepri-gov validate
 
