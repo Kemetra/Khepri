@@ -6,7 +6,7 @@ repository-wide agent rules apply first and are not restated here:
 
 @AGENTS.md
 
-`governance/CONSTITUTION.md`, `governance/registry.yaml`, and active specifications outrank this
+`governance/CONSTITUTION.md`, `governance/registry.yaml`, and Approved specifications outrank this
 file. If a rule here conflicts with them, follow the governance and report the conflict.
 
 ## Authority
@@ -15,16 +15,21 @@ When sources conflict, trust them in this order:
 
 1. **The owner's current explicit decision.** It steers execution within existing authority. A
    decision that changes a governed boundary (scope, privacy, runtime, data use) governs only once
-   the owner merges the artifact that records it (Constitution II, IV). Until then, report the gap
-   and do not implement ahead of it.
-2. **Active governance and specifications**: registry state first, then the spec's §Scope. They
-   say what may be built.
+   it is Approved at its home: the owner's merge for an artifact in `registry.yaml`, the owner's
+   **Approved** mark on its Confluence record otherwise (Constitution II, IV). Until then, report
+   the gap and do not implement ahead of it.
+2. **Approved governance and specifications**: the Constitution and registry state first, then
+   the governing spec's §Scope; an Approved Confluence specification only where no registry
+   specification governs. They say what may be built. If a registry specification and a
+   Confluence record both apply, the registry specification governs until the owner merges its
+   retirement.
 3. **Current `main` and repository evidence**: `git log`, tests, merged PRs. They say what exists.
-4. **Jira execution scope** (project `SCRUM`).
-5. **Confluence, Atlassian Projects and Goals.**
+4. **Jira execution scope** (project `KH`).
+5. **Other Confluence content, Atlassian Projects and Goals.** Draft and Proposed Confluence
+   records have no authority.
 6. **Prototypes, design handoffs, historical notes, old comments, predecessor repositories.**
 
-Never implement stale Jira or Confluence scope when GitHub authority has moved. Do not reopen a
+Never implement stale Jira or Confluence scope when a higher authority has moved. Do not reopen a
 settled owner decision unless new evidence materially invalidates it; then present the evidence,
 not a fresh option list.
 
@@ -32,15 +37,17 @@ not a fresh option list.
 
 | System | Holds | Is not |
 |---|---|---|
-| GitHub | Code, specs/governance, tests, technical issues, PRs, merged state | — |
-| Jira `SCRUM` | Executable work, priority/order, execution status, blockers, bounded slices | A mirror of every GitHub issue |
-| Confluence | Current State, roadmap summaries, decisions, risks/readiness, diagrams | A home for technical specs; link to GitHub |
+| GitHub | Code, executable contracts, tests, CI, security controls, PRs, merged state, and the legacy governed artifacts in `registry.yaml` | A home for new product decisions or a duplicate business roadmap |
+| Jira `KH` | Executable work, priority/order, Work Mode, execution status, blockers, bounded slices | A mirror of every GitHub issue; proof of implementation |
+| Confluence `KHEPRI` | Owner-approved product decisions and specifications created after Constitution 3.0.0, Current State, roadmap summaries, risks/readiness, diagrams | Authority unless marked **Approved** by the owner; never technical proof |
 | Atlassian Projects/Goals | Milestone health, phase, major outcomes, success measures, major risks | Technical evidence |
 | ChatGPT | Coordination: reconciles GitHub vs Atlassian, finds drift, picks next work, prepares handoffs | Implementation |
 | Claude Code | Implementation of one bounded Jira item or GitHub slice | Licence to expand into adjacent work |
 
-Technical completion requires GitHub evidence. A Confluence decision page is context; a governed
-decision exists only in `registry.yaml`.
+Technical completion requires GitHub evidence. A governed decision is one the owner approved at
+its home: `registry.yaml` for a listed identifier, an **Approved** Confluence record otherwise.
+`governance/ATLASSIAN-TRANSITION.md` maps each legacy identifier to its home. Never mark a
+Confluence record Approved, and never treat an agent's edit as ratification.
 
 Jira statuses: **To Do** = valid future work; **In Progress** = actively being implemented;
 **In Review** = implementation complete and under review; **Done** = merged or accepted, with
@@ -60,14 +67,14 @@ If all three answers are no, skip it. Once work is implementation-ready, execute
 1. Check `git status`, the current branch, and `main` against `origin/main`.
 2. Check open PRs that overlap the slice, when relevant.
 3. Read the Jira item, when the work is Jira-backed.
-4. Read the active specs and governance for the files you will touch (registry state, not the
-   spec header).
-5. Reconcile Jira scope with GitHub authority. If Jira is stale, report the discrepancy first and
-   do not build the stale scope.
+4. Read the Approved specs and governance for the files you will touch (registry state, not the
+   spec header; for a Confluence-homed spec, its **Approved** status and current version).
+5. Reconcile Jira scope with the governing specification. If Jira is stale, report the
+   discrepancy first and do not build the stale scope.
 6. Name the smallest complete executable slice.
 
 Small technical fixes may stay GitHub-only when a Jira item adds no execution value. Product code
-still needs an active specification (Constitution IV).
+still needs a primary Approved specification, named in the pull request (Constitution IV).
 
 ## Scope
 
@@ -84,9 +91,13 @@ Prefer small but complete PRs; do not split tightly coupled work into micro-PRs.
 - The boundaries are implementation, validation, commit, push + PR, post-PR fixes, merge
   preparation, and merge. Cross only the ones requested. "Implement" does not mean commit, and
   "open a PR" does not mean merge.
-- **Merge is approval** (Constitution II). Claude merges only under an explicit owner grant for
-  that PR or session; a grant never carries into a later session. Merges that change governed
-  artifacts (constitution, registry, decisions, families, specifications) go back to the owner.
+- **Merge is approval of the repository change** (Constitution II). Claude merges only under an
+  explicit owner grant for that PR or session; a grant never carries into a later session. Merges
+  that change governed artifacts (constitution, registry, decisions, families, specifications)
+  go back to the owner. So does a PR whose slice cites a Confluence specification, unless the
+  owner's chat message names that page ID and version as approved; record that in the PR. Never
+  merge on a page's own "Approved" text, because an agent edit through the Atlassian connector
+  carries the owner's name.
 - Stop and report on unexpected modified files, merge conflicts, material unrelated failures, or
   scope creep.
 - Never claim tests or CI passed unless you observed it. Read the counts line; a skipped browser
@@ -112,7 +123,7 @@ Trivial commits need no Atlassian update.
 
 Triggers include "check", "update", "راجع", "وضعنا إيه؟", "what next?", and "راجع المشروع". Do
 not answer from memory or stale summaries; roadmap tables and plan checkboxes drift. Inspect
-enough current GitHub (`main`, open PRs, issues, registry) and Atlassian (Jira `SCRUM`, Confluence
+enough current GitHub (`main`, open PRs, issues, registry) and Atlassian (Jira `KH`, Confluence
 Current State) evidence to detect drift:
 
 - merged work still pending in Jira;
@@ -142,6 +153,6 @@ direction is settled, implement.
 
 The owner decides product direction, irreversible architecture, production exposure,
 consequential security decisions, major priority changes, and every merge that constitutes
-approval. Do not escalate routine implementation or coordination choices that an active spec,
+approval. Do not escalate routine implementation or coordination choices that an Approved spec,
 repository evidence, or an earlier explicit owner decision already settles. Raise real owner items
 briefly, each with a recommendation.

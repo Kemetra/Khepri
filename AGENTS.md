@@ -3,15 +3,19 @@
 Khepri uses minimal single-owner governance. Read `governance/CONSTITUTION.md` and
 `governance/registry.yaml` before changing governed artifacts.
 
-- Treat `governance/registry.yaml` as authoritative for artifact type, identity, state, document,
-  dependencies, and supersession.
-- Treat a branch or pull request as a proposal. A change becomes approved and governing only when
-  Ahmed Shaaban, the sole repository owner, merges it to `main`.
+- Treat `governance/registry.yaml` as authoritative for the type, identity, state, document,
+  dependencies, and supersession of the artifacts it lists.
+- Treat a branch or pull request as a proposal. A repository change becomes approved only when
+  Ahmed Shaaban, the sole repository owner, merges it to `main`. A product decision or
+  specification created after Constitution 3.0.0 is approved only when it is marked **Approved**
+  on its canonical Confluence page in space KHEPRI; an agent's edit there is never approval.
+  `governance/ATLASSIAN-TRANSITION.md` maps each legacy identifier to its home.
 - Keep Markdown rationale aligned with the registry; prose cannot override it.
 - Treat `Kemetra/Seshat-Platform@f206b7f2c021c7d4e25ba131776ca4b22db6d876` only as
   non-authoritative reference material. Do not copy its catalogs, specifications, proposals,
   ledgers, governance records, or application code.
-- Add product code only in active-specification-linked, independently verifiable slices. Never
+- Add product code only in independently verifiable slices linked to a primary Approved
+  specification named in the pull request, plus any others it relies on (Constitution IV). Never
   widen a slice beyond its specification.
 - Fail closed on ambiguous identity, state, dependency, scope, privacy, runtime, or data boundaries.
 - Run `uv run khepri-gov validate`, `uv run ruff check .`, and `uv run pytest` before handoff.

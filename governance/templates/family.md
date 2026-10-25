@@ -8,4 +8,5 @@ List the responsibilities this family uniquely owns.
 
 List product, data, infrastructure, and other-family boundaries explicitly.
 
-Add the document to `governance/registry.yaml` as an `active` or `retired` family.
+A new product family is a product decision and lives on its Confluence record (Constitution II).
+Use this template only to amend or retire a family already listed in `governance/registry.yaml`.

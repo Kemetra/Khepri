@@ -234,6 +234,12 @@ artifacts:
       - KHEPRI-DEC-031
       - RCA-001
       - RRA-001
+  - type: decision
+    id: KHEPRI-DEC-036
+    state: active
+    document: governance/decisions/KHEPRI-DEC-036-atlassian-first-approval-home.md
+    depends_on:
+      - KHEPRI-DEC-017
 
   - type: specification
     id: FND-001
