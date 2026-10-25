@@ -87,7 +87,9 @@ Binding technical and governance constraints:
 **Registered authority is narrower than the roadmap's program list.** `governance/registry.yaml`
 contains `FND`, `RRA`, and `RCA` only. The programs `W1`, `T1`, `G2`, `G3`, and `U1` have **zero
 registry entries** — they are roadmap programs, not registered authority, so no M3 slice is
-admissible on them and any design work against them is direction only.
+admissible on them and any design work against them is direction only. Since Constitution 3.0.0 a
+primary Approved Confluence specification can also admit product code
+(`governance/ATLASSIAN-TRANSITION.md`); this paragraph describes the registry alone.
 
 Deletion is owner-only (`RCA-005` FR-123). Decision-workspace trust states are verified, caveated,
 refused, and unavailable (`RCA-008` FR-162). Landing Proven / Caveated / Withheld blocks are
@@ -115,7 +117,9 @@ Real, in-repository:
 - `docs/product/KHEPRI_PRODUCT_UX_BLUEPRINT.md` — the single current product UX reference. Grants no
   implementation authority; carries a per-decision status vocabulary (LOCKED / PROVISIONAL /
   CONFLICT-BLOCKED / AUTHORITY-BLOCKED / IMPLEMENTATION-BLOCKED / SHIPPED).
-- `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` — outranks the blueprint.
+- `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` — a frozen historical record since KH-22 (#666); the
+  canonical roadmap is the Confluence KHEPRI Roadmap (page 7405569). It outranked the blueprint
+  while it was the live roadmap.
 - `docs/superpowers/specs/2026-08-25-m2-ux-design-critique.md` — M2 critique at baseline `b19f365`,
   with computed (not asserted) contrast figures and a *Refuted claims* section. Several of its P0
   findings have since shipped; it must be re-verified against current files, not cited as current.

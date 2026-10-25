@@ -30,7 +30,7 @@ Concretely, an agent following them would:
 | What RCA-001 requires | `governance/specifications/RCA-001.md` — the only authoritative source |
 | Artifact state, identity, dependencies, supersession | `governance/registry.yaml` — the only authoritative source |
 | What is already implemented | `STATUS.md`, next to this file |
-| What to build next | `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` |
+| What to build next | The Confluence KHEPRI Roadmap (page 7405569); `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` is a frozen historical record |
 | Operating rules | `AGENTS.md`, `governance/CONSTITUTION.md` |
 
 ## 1. Why these files are not being corrected in place
