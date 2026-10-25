@@ -2,9 +2,9 @@
 
 Platform Foundation owns:
 
-- repository governance and change control;
+- repository change control and the governance of the artifacts the registry lists;
 - stable artifact identifiers and the active/retired lifecycle;
-- one machine-readable governance registry;
+- one machine-readable governance registry of those artifacts;
 - fail-closed validation and its evidence;
 - repository controls needed to enforce the governed workflow.
 
