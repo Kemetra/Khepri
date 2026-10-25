@@ -8,7 +8,8 @@ the manifest themselves, anchored to this file rather than the working directory
 
 A later osv-scanner pass over `uv.lock` found the dev group behind published advisories as well:
 pypdf 6.14.2 (fixed by 6.19.0), httpx2 2.9.1 (fixed across 2.10.0-2.12.0) and httpcore2 2.9.1
-(fixed in 2.10.0). Their floors sit in the same table.
+(fixed in 2.10.0). Their floors sit in the same table. pypdf 6.20.0 then carried three more High
+advisories (GHSA-6c7f-9265-g8fw, GHSA-gmh7-3g9r-mjh5, GHSA-jr96-gvgh-j3r4), fixed by 6.21.2.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ _FLOORS = {
     "httpcore2": (Version("2.10.0"), Version("2.9.1")),
     "httpx2": (Version("2.12.0"), Version("2.9.1")),
     "pyjwt": (Version("2.15.0"), Version("2.13.0")),
-    "pypdf": (Version("6.19.0"), Version("6.14.2")),
+    "pypdf": (Version("6.21.2"), Version("6.20.0")),
     "urllib3": (Version("2.8.0"), Version("2.7.0")),
 }
 
