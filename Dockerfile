@@ -34,8 +34,10 @@ ARG EXPECTED_PLAYWRIGHT_VERSION=1.61.0
 #
 # `virtualenv` sits in the base's system Python 3.12, which nothing here runs: the service runs the
 # uv-made venv on 3.13, and no installed package requires virtualenv. It is uninstalled rather than
-# upgraded so the build fetches no unhashed package. `/usr/bin/python3` is named so the system
-# interpreter is the one addressed, whatever PATH later puts first.
+# upgraded so the build fetches no unhashed package. `filelock` (CVE-2026-112940, fixed in 4.2.1)
+# goes with it: it is virtualenv's dependency, it is not in `uv.lock`, and nothing else in the
+# system Python or the 3.13 venv needs it. `/usr/bin/python3` is named so the system interpreter
+# is the one addressed, whatever PATH later puts first.
 RUN set -eu; \
     apt-get update; \
     apt-get install -y --only-upgrade --no-install-recommends openssl libssl3t64; \
@@ -47,11 +49,13 @@ RUN set -eu; \
             exit 1; \
         fi; \
     done; \
-    /usr/bin/python3 -m pip uninstall -y virtualenv; \
-    if /usr/bin/python3 -c "import virtualenv" 2>/dev/null; then \
-        echo "FAIL: virtualenv is still importable by the system Python" >&2; \
-        exit 1; \
-    fi
+    /usr/bin/python3 -m pip uninstall -y virtualenv filelock; \
+    for mod in virtualenv filelock; do \
+        if /usr/bin/python3 -c "import $mod" 2>/dev/null; then \
+            echo "FAIL: $mod is still importable by the system Python" >&2; \
+            exit 1; \
+        fi; \
+    done
 
 # `UV_PYTHON_INSTALL_DIR` is a correctness requirement, not a preference.
 #
