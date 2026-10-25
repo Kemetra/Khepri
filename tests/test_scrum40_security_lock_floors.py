@@ -10,6 +10,10 @@ A later osv-scanner pass over `uv.lock` found the dev group behind published adv
 pypdf 6.14.2 (fixed by 6.19.0), httpx2 2.9.1 (fixed across 2.10.0-2.12.0) and httpcore2 2.9.1
 (fixed in 2.10.0). Their floors sit in the same table. pypdf 6.20.0 then carried three more High
 advisories (GHSA-6c7f-9265-g8fw, GHSA-gmh7-3g9r-mjh5, GHSA-jr96-gvgh-j3r4), fixed by 6.21.2.
+certifi 2026.7.22 (runtime, through clerk-backend-api -> httpx) carried GHSA-6q48-6c7w-9gw2
+(Critical), fixed by 2026.10.19. Pillow 12.3.0 (dev group) carried 41 advisories, five Critical
+(GHSA-332p-7hrc-92wf, GHSA-5x8w-8jj5-q52h, GHSA-8g5g-8vmr-9782, GHSA-v9pv-5gc8-w2m6,
+GHSA-w889-685w-c8fh), all fixed by 13.0.0, which `pillow>=13,<14` now requires.
 """
 
 from __future__ import annotations
@@ -25,8 +29,10 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 # The first release that fixes every advisory found, and the release that was locked at the time.
 _FLOORS = {
+    "certifi": (Version("2026.10.19"), Version("2026.7.22")),
     "httpcore2": (Version("2.10.0"), Version("2.9.1")),
     "httpx2": (Version("2.12.0"), Version("2.9.1")),
+    "pillow": (Version("13.0.0"), Version("12.3.0")),
     "pyjwt": (Version("2.15.0"), Version("2.13.0")),
     "pypdf": (Version("6.21.2"), Version("6.20.0")),
     "urllib3": (Version("2.8.0"), Version("2.7.0")),
