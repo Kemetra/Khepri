@@ -14,7 +14,7 @@ artifact; it grants no authority that the Constitution and registry do not.
 | Approve a product decision or specification | Owner merges it to `main`; listed in `registry.yaml` | Owner marks a Confluence page in space KHEPRI **Approved** | Records created after this change merges. Registry-listed artifacts keep their repository home. |
 | Approve a repository change (code, contracts, tests, CI, governance text) | Owner merge | Owner merge (unchanged) | The merge approves the change only, never a Confluence-homed decision. |
 | Index of legacy artifacts | `registry.yaml` | `registry.yaml` (unchanged), listing no Confluence record | Validator and schema unchanged, still fail closed. |
-| Admit product code | Active registry specification | One Approved specification named in the pull request | Registry specification governs where it applies; otherwise an Approved Confluence specification cited by page and version. |
+| Admit product code | Active registry specification | A primary Approved specification named in the pull request, plus any others it relies on | Registry specification governs where it applies; otherwise an Approved Confluence specification cited by page and version. |
 | Execution scope, priority, Work Mode, status | Jira `SCRUM` | Jira `KH` | Jira is never proof of implementation. |
 | Technical truth: code, tests, CI, security and privacy controls | GitHub | GitHub (unchanged) | Article V is unchanged; Article VII's substance is unchanged (only its approval pointer is generalized). |
 | Roadmap | `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` | Confluence KHEPRI, then Atlassian Projects and Goals | Not yet moved. The repository roadmap stays as it is until KH-22 reconciles it after this change merges. |

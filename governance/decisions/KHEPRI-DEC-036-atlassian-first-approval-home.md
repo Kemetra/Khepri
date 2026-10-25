@@ -22,7 +22,8 @@ Approval has one home per artifact (Constitution 3.0.0, Article II):
   keeps the owner's merge to `main` as its approval and its repository home.
 - The registry lists no Confluence record. No Confluence page approves, amends, or retires a
   listed artifact; only a later owner-merged change does.
-- Product code is admitted against one Approved specification named in the pull request: the
+- Product code is admitted against a primary Approved specification named in the pull request,
+  plus any others it relies on: the
   active registry specification that governs the behavior or, where none does, an Approved
   Confluence specification cited by page and version. If both apply, the registry specification
   governs.
