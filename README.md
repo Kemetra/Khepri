@@ -146,8 +146,11 @@ nothing while no benchmark declaration is supplied.
 Khepri has one repository owner and one machine-readable source of governance:
 [`governance/registry.yaml`](governance/registry.yaml).
 
-- A branch or pull request is a **proposal**.
-- The owner merging it to `main` is **approval**; Git records the content, identity, and time.
+- A branch or pull request is a **proposal** for a repository change.
+- The owner merging it to `main` is **approval of that repository change**; Git records the content,
+  identity, and time. A product decision or specification created after Constitution 3.0.0 is
+  approved instead when the owner marks its Confluence page **Approved**
+  ([`governance/ATLASSIAN-TRANSITION.md`](governance/ATLASSIAN-TRANSITION.md)).
 - Governed artifacts are either **active** or **retired**.
 - Product code must be a small, verifiable slice linked to an active specification.
 - `khepri-gov validate` rejects malformed metadata, missing documents, broken dependencies, cycles,
