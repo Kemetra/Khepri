@@ -8,7 +8,8 @@ Three fail-closed refusals, each before any count, each against the real roles:
   partial rollback of `20261002_0036` cannot route the listing through a scoped engine that sees
   no session;
 - the lister and the scoped engine reach different databases: `FR-273`'s completeness argument
-  (every `v1` row keys onto a session the lister returns) holds only within one database.
+  (every `v1` row keys onto a session the lister returns) holds only within one database. An
+  engine on a Unix socket has no server address to tell its cluster by, so it refuses too.
 
 Each case changes the catalogue as the migration owner and restores it in `finally`: the
 harness's head check would not notice the change, and every later test would run under it.
@@ -23,9 +24,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
-from khepri.runtime.envelope_migration import REFUSED_UNDER_POLICY
+from khepri.runtime.envelope_migration import DATABASE_IDENTITY, REFUSED_UNDER_POLICY
 from khepri.runtime.envelope_migration import run as run_envelope_migration
 from tests.rra017_rows import NOW, Scope, chain
 from tests.rra017_support import (
@@ -127,3 +129,41 @@ def test_a_lister_on_another_database_refuses_with_no_count(
 ) -> None:
     """Fail-closed hardening inside `FR-273`: the walk is complete only within one database."""
     assert _refusal(rls, elsewhere) == _refused("database_mismatch")
+
+
+#: What `DATABASE_IDENTITY` answers over a Unix socket: `inet_server_addr()` and
+#: `inet_server_port()` are NULL there. The harness reaches PostgreSQL over TCP only, so each
+#: socket-connected engine has its identity statement rewritten on the real server. `socket` is
+#: the real answer; the two half-NULL answers hold each column to the check on its own.
+UNIDENTIFIED = {
+    "socket": "SELECT current_database(), NULL::text, NULL::integer",
+    "no_address": "SELECT current_database(), NULL::text, inet_server_port()",
+    "no_port": "SELECT current_database(), host(inet_server_addr()), NULL::integer",
+}
+
+
+def _answering(identity: str) -> Any:
+    def rewrite(_conn: Any, _cursor: Any, statement: str, parameters: Any, *_: Any) -> Any:
+        """`before_cursor_execute` with `retval=True`: answer the identity as `identity`."""
+        return (identity if statement == str(DATABASE_IDENTITY) else statement), parameters
+
+    return rewrite
+
+
+@pytest.mark.parametrize("answer", list(UNIDENTIFIED))
+@pytest.mark.parametrize(
+    "socketed", [(SWEEP, APPLICATION), (SWEEP,), (APPLICATION,)], ids=["both", "lister", "scoped"]
+)
+def test_an_engine_on_a_unix_socket_refuses_as_unidentified(
+    rls: RlsDatabase, socketed: tuple[str, ...], answer: str
+) -> None:
+    """Two clusters on one host would both answer `(name, NULL, NULL)`, and compare equal."""
+    rewrite = _answering(UNIDENTIFIED[answer])
+    engines = [rls.engine(role) for role in socketed]
+    for engine in engines:
+        event.listen(engine, "before_cursor_execute", rewrite, retval=True)
+    try:
+        assert _refusal(rls, rls.factory(SWEEP)) == _refused("database_unidentified")
+    finally:
+        for engine in engines:
+            event.remove(engine, "before_cursor_execute", rewrite)

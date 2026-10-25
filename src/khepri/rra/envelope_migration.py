@@ -154,7 +154,7 @@ class EnvelopeSessionLister:
         self._factory = factory
 
     def sessions(self) -> tuple[tuple[str, str], ...]:
-        with self._factory() as database:
+        with scoped_read(self._factory) as database:
             rows = database.execute(SESSION_LISTING)
             return tuple((session_id, owner_id) for session_id, owner_id in rows)
 
@@ -182,13 +182,22 @@ class ArtifactEnvelopeMigration:
 
     def migrate(self) -> EnvelopeMigrationReport:
         tally: Counter[str] = Counter()
-        for session_id, owner_id in self._lister.sessions():
+        for session_id, owner_id in self._sessions():
             if not owner_id:
                 tally["sessions_unscoped"] += 1
                 continue
             self._walk(SessionScope(owner_id=owner_id, session_id=session_id), tally)
         report = EnvelopeMigrationReport(**tally)
         return replace(report, **self._everywhere()) if self._backstop else report
+
+    def _sessions(self) -> Sequence[tuple[str, str]]:
+        """The listing. Where no policy exists it is bound deliberately unscoped, as
+        `_everywhere` is, so a tripwired scoped engine admits it. Elsewhere it binds no unit:
+        the sweep engine needs none, and a scoped engine under the policies stays loud."""
+        if not self._backstop:
+            return self._lister.sessions()
+        with acting_for(None):
+            return self._lister.sessions()
 
     def _everywhere(self) -> dict[str, int]:
         """Every `v1` row of both tables, in a transaction bound as deliberately unscoped."""
