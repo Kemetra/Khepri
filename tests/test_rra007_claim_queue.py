@@ -73,6 +73,17 @@ class Harness:
         return found.lease_expires_at
 
 
+def as_utc(value: datetime) -> datetime:
+    """A stored timestamp in UTC, whatever the backend handed back.
+
+    SQLite drops the zone, so a naive value is UTC. PostgreSQL returns an aware value in the
+    session's zone, which is the server's unless the client sets one, so it is converted.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def harness(worker_id: str = "worker-alpha") -> Harness:
     engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -156,12 +167,12 @@ def test_heartbeat_extends_the_lease_of_a_running_job() -> None:
     later = NOW + timedelta(seconds=120)
     extended = stand.queue.heartbeat(delivery, now=later)
 
-    # Compared naively because SQLite drops the timezone on round-trip; the value,
-    # not the tzinfo, is what this asserts.
+    # Compared in UTC: SQLite drops the zone on round-trip and PostgreSQL answers in the
+    # session's zone. The instant, not the tzinfo, is what this asserts.
     assert extended.lease_expires_at is not None
     expiry = stand.lease_expiry_of(delivery.message.job_id)
     assert expiry is not None
-    assert expiry.replace(tzinfo=UTC) == later + LEASE_FOR
+    assert as_utc(expiry) == later + LEASE_FOR
 
 
 def test_acknowledge_completes_the_job_exactly_once() -> None:

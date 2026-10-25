@@ -409,6 +409,17 @@ def _narrative_for(built: FactPackage) -> NarrativeDraft:
     )
 
 
+def as_utc(value: datetime) -> datetime:
+    """A stored timestamp in UTC, whatever the backend handed back.
+
+    SQLite drops the zone, so a naive value is UTC. PostgreSQL returns an aware value in the
+    session's zone, which is the server's unless the client sets one, so it is converted.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def harness(*, now: datetime = NOW) -> Harness:
     engine = store_engine()
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -594,8 +605,8 @@ def test_the_store_stamps_the_generation_time_and_inherits_the_expiry() -> None:
     test.store.deliver(test.delivery(leased))
 
     row = test.rows()[0]
-    assert row.generated_at.replace(tzinfo=UTC) == generated
-    assert row.expires_at.replace(tzinfo=UTC) == test.session.content_expires_at
+    assert as_utc(row.generated_at) == generated
+    assert as_utc(row.expires_at) == test.session.content_expires_at
 
 
 def test_delivering_one_job_twice_returns_the_record_already_written() -> None:
