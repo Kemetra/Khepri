@@ -1,0 +1,17 @@
+# 2026-10-25T21:45:49Z SeaweedFS 4.50
+[INFO] endpoint: http://127.0.0.1:24333 bucket=kh24-eval region=us-east-1
+[OK] bucket-unversioned: Status=None
+[OK] raw-put-echo: ChecksumSHA256 echoed=True VersionId=False
+[OK] put-get-ciphertext: roundtrip=True stored_is_ciphertext=True
+[OK] ifnonematch-refusal: PreconditionFailed HTTP 412
+[OK] duplicate-proven-equivalent: created=False
+[OK] race-same-content: 10 rounds x 16 writers; bad rounds=[]
+[OK] race-distinct-content: 10 rounds x 16 writers; bad rounds=[]
+[OK] missing-key-error: NoSuchKey HTTP 404
+[OK] tamper-detected: StoragePolicyViolation: Stored ciphertext does not match the recorded digest.
+[OK] list-pagination-delete-prefix: 23 objects, MaxKeys=5, list calls=6, remaining=0
+[OK] multipart-abort-cleanup: listed before=5, after=0, MaxUploads=2 list calls=4
+[OK] delete-leaves-nothing: HEAD 404 HTTP 404; ListObjectVersions leftovers=0
+[OK] bad-credentials-refused: SignatureDoesNotMatch HTTP 403
+[SUMMARY] 13 ok, 0 failed: []
+exit=0

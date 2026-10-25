@@ -1,0 +1,36 @@
+# 2026-10-25T21:48:04Z SeaweedFS 4.50 mutant drop-ifnonematch
+[INFO] mutant: drop-ifnonematch
+[INFO] endpoint: http://127.0.0.1:24333 bucket=kh24-eval region=us-east-1
+[OK] bucket-unversioned: Status=None
+[OK] raw-put-echo: ChecksumSHA256 echoed=True VersionId=False
+[OK] put-get-ciphertext: roundtrip=True stored_is_ciphertext=True
+[OK] ifnonematch-refusal: PreconditionFailed HTTP 412
+[FAIL] duplicate-proven-equivalent: created=True
+[FAIL] race-same-content: 10 rounds x 16 writers; bad rounds=[(0, ['created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created']), (1, ['created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created'])]
+[FAIL] race-distinct-content: 10 rounds x 16 writers; bad rounds=[(0, ['created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created']), (1, ['created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created', 'created'])]
+[OK] missing-key-error: NoSuchKey HTTP 404
+[OK] tamper-detected: StoragePolicyViolation: Stored ciphertext does not match the recorded digest.
+[OK] list-pagination-delete-prefix: 23 objects, MaxKeys=5, list calls=6, remaining=0
+[OK] multipart-abort-cleanup: listed before=5, after=0, MaxUploads=2 list calls=4
+[OK] delete-leaves-nothing: HEAD 404 HTTP 404; ListObjectVersions leftovers=0
+[OK] bad-credentials-refused: SignatureDoesNotMatch HTTP 403
+[SUMMARY] 10 ok, 3 failed: ['duplicate-proven-equivalent', 'race-same-content', 'race-distinct-content']
+exit=1
+# 2026-10-25T21:48:06Z SeaweedFS 4.50 mutant ignore-overwrite
+[INFO] mutant: ignore-overwrite
+[INFO] endpoint: http://127.0.0.1:24333 bucket=kh24-eval region=us-east-1
+[OK] bucket-unversioned: Status=None
+[FAIL] raw-put-echo: ChecksumSHA256 echoed=False VersionId=False
+[OK] put-get-ciphertext: roundtrip=True stored_is_ciphertext=True
+[OK] ifnonematch-refusal: PreconditionFailed HTTP 412
+[OK] duplicate-proven-equivalent: created=False
+[OK] race-same-content: 10 rounds x 16 writers; bad rounds=[]
+[OK] race-distinct-content: 10 rounds x 16 writers; bad rounds=[]
+[OK] missing-key-error: NoSuchKey HTTP 404
+[FAIL] tamper-detected: tampered object was returned
+[OK] list-pagination-delete-prefix: 23 objects, MaxKeys=5, list calls=6, remaining=0
+[OK] multipart-abort-cleanup: listed before=5, after=0, MaxUploads=2 list calls=4
+[OK] delete-leaves-nothing: HEAD 404 HTTP 404; ListObjectVersions leftovers=0
+[OK] bad-credentials-refused: SignatureDoesNotMatch HTTP 403
+[SUMMARY] 11 ok, 2 failed: ['raw-put-echo', 'tamper-detected']
+exit=1

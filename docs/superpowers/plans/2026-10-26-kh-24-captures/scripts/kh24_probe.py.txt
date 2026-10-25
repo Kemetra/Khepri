@@ -1,0 +1,424 @@
+"""KH-24 contract probe: drive the unmodified production store against one S3 endpoint.
+
+Usage (endpoint, credentials, region and bucket come from the KHEPRI_LOCAL_* variables
+that `khepri.local.config.LocalSettings` already reads):
+
+    uv run python kh24_probe.py contract
+    uv run python kh24_probe.py restart-write <state.json>
+    uv run python kh24_probe.py restart-read  <state.json>
+
+Every probe goes through `build_local_object_store`, i.e. `S3EncryptedObjectStore`
+exactly as the runtime constructs it. Raw boto3 calls are used only to observe what
+the store cannot see (error codes, versioning status) or to tamper with an object.
+Fixtures are synthetic. Output is ASCII lines: `[OK]`, `[FAIL]`, `[INFO]`.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import sys
+import threading
+from dataclasses import asdict, replace
+from collections.abc import Callable
+from typing import Any
+
+from botocore.exceptions import ClientError
+
+from khepri.local.config import LocalSettings
+from khepri.local.storage import build_local_object_store, local_client
+from khepri.rra.intake import StoragePolicyViolation
+from khepri.rra.storage import ObjectWrite, S3EncryptedObjectStore, StoredEnvelope
+
+PREFIX = "owners/own_kh24/"
+RACE_ROUNDS = 10
+RACE_WRITERS = 16
+RESULTS: list[tuple[str, bool, str]] = []
+PROBES: list[Callable[[], None]] = []
+
+
+def record(name: str, ok: bool, detail: str = "") -> None:
+    RESULTS.append((name, ok, detail))
+    print(f"[{'OK' if ok else 'FAIL'}] {name}: {detail}", flush=True)
+
+
+def info(name: str, detail: str) -> None:
+    print(f"[INFO] {name}: {detail}", flush=True)
+
+
+def probe(name: str) -> Callable[[Callable[[], None]], Callable[[], None]]:
+    def wrap(fn: Callable[[], None]) -> Callable[[], None]:
+        def run() -> None:
+            try:
+                fn()
+            except Exception as error:  # a probe that raises is a failed probe
+                record(name, False, f"raised {type(error).__name__}: {error}")
+
+        PROBES.append(run)
+        return run
+
+    return wrap
+
+
+def write(key: str, content: bytes) -> ObjectWrite:
+    return ObjectWrite(
+        key=key,
+        content=content,
+        media_type="text/csv",
+        sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+
+
+def envelope_of(stored: Any) -> StoredEnvelope:
+    return StoredEnvelope(
+        ciphertext_sha256_hex=stored.ciphertext_sha256_hex,
+        sha256_hex=stored.sha256_hex,
+        encryption_algorithm=stored.encryption_algorithm,
+        envelope_version=stored.envelope_version,
+    )
+
+
+def error_code(error: ClientError) -> str:
+    meta = error.response.get("ResponseMetadata", {})
+    return f"{error.response.get('Error', {}).get('Code')} HTTP {meta.get('HTTPStatusCode')}"
+
+
+class SmallPages:
+    """Forward to the real client, forcing tiny list pages so pagination is exercised."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self.list_calls = 0
+        self.upload_list_calls = 0
+
+    def list_objects_v2(self, **kwargs: object) -> dict[str, Any]:
+        self.list_calls += 1
+        return self._client.list_objects_v2(MaxKeys=5, **kwargs)
+
+    def list_multipart_uploads(self, **kwargs: object) -> dict[str, Any]:
+        self.upload_list_calls += 1
+        return self._client.list_multipart_uploads(MaxUploads=2, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+
+class Mutant:
+    """`KH24_MUTANT` simulates a store defect, to show which probe turns red.
+
+    `drop-ifnonematch`: the store's writes lose their condition (a server that ignores it).
+    `ignore-overwrite`: unconditional raw writes are silently dropped (a server that
+    keeps the old bytes), so the tamper probe has nothing to detect.
+    """
+
+    def __init__(self, client: Any, mode: str) -> None:
+        self._client = client
+        self._mode = mode
+
+    def put_object(self, **kwargs: Any) -> dict[str, Any]:
+        if self._mode == "drop-ifnonematch":
+            kwargs.pop("IfNoneMatch", None)
+        if self._mode == "ignore-overwrite" and "IfNoneMatch" not in kwargs:
+            return {}
+        return self._client.put_object(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+
+def build() -> tuple[LocalSettings, S3EncryptedObjectStore, Any]:
+    settings = LocalSettings.from_environment()
+    store = build_local_object_store(settings)
+    s3 = local_client(settings, "s3")
+    mode = os.environ.get("KH24_MUTANT")
+    if mode:
+        info("mutant", mode)
+        if mode == "drop-ifnonematch":
+            store = S3EncryptedObjectStore(
+                client=Mutant(s3, mode), bucket=settings.bucket, master_key=store._master_key
+            )
+        else:
+            s3 = Mutant(s3, mode)
+    return settings, store, s3
+
+
+def run_contract() -> int:
+    settings, store, s3 = build()
+    info("endpoint", f"{settings.s3_endpoint} bucket={settings.bucket} region={settings.region}")
+    store.delete_prefix(PREFIX)
+    store.abort_multipart_uploads(PREFIX)
+
+    @probe("bucket-unversioned")
+    def _() -> None:
+        try:
+            status = s3.get_bucket_versioning(Bucket=settings.bucket).get("Status")
+        except ClientError as error:
+            record("bucket-unversioned", True, f"GetBucketVersioning refused ({error_code(error)})")
+            return
+        record("bucket-unversioned", status in (None, "Suspended"), f"Status={status!r}")
+
+    @probe("raw-put-echo")
+    def _() -> None:
+        key = PREFIX + "raw/echo"
+        body = b"synthetic-bytes"
+        checksum = base64.b64encode(hashlib.sha256(body).digest()).decode()
+        response = s3.put_object(
+            Bucket=settings.bucket, Key=key, Body=body, ChecksumSHA256=checksum
+        )
+        echoed = response.get("ChecksumSHA256")
+        record(
+            "raw-put-echo",
+            echoed == checksum and "VersionId" not in response,
+            f"ChecksumSHA256 echoed={echoed == checksum} VersionId={'VersionId' in response}",
+        )
+        s3.delete_object(Bucket=settings.bucket, Key=key)
+
+    @probe("put-get-ciphertext")
+    def _() -> None:
+        content = b"date,revenue\n2026-07-29,125.50\n"
+        key = PREFIX + "basic/one"
+        stored = store.put(
+            key=key, content=content, media_type="text/csv",
+            sha256_hex=hashlib.sha256(content).hexdigest(),
+        )
+        raw = s3.get_object(Bucket=settings.bucket, Key=key)["Body"].read()
+        back = store.get(key, envelope=envelope_of(stored))
+        record(
+            "put-get-ciphertext",
+            back == content and content not in raw
+            and hashlib.sha256(raw).hexdigest() == stored.ciphertext_sha256_hex,
+            f"roundtrip={back == content} stored_is_ciphertext={content not in raw}",
+        )
+
+    @probe("ifnonematch-refusal")
+    def _() -> None:
+        key = PREFIX + "basic/one"
+        try:
+            s3.put_object(Bucket=settings.bucket, Key=key, Body=b"x", IfNoneMatch="*")
+        except ClientError as error:
+            code = error_code(error)
+            record("ifnonematch-refusal", code.startswith("PreconditionFailed"), code)
+            return
+        record("ifnonematch-refusal", False, "second create was ACCEPTED (overwrote)")
+
+    @probe("duplicate-proven-equivalent")
+    def _() -> None:
+        content = b"date,revenue\n2026-07-29,125.50\n"
+        result = store.put_or_verify(write(PREFIX + "basic/one", content))
+        record("duplicate-proven-equivalent", result.created is False, f"created={result.created}")
+
+    @probe("race-same-content")
+    def _() -> None:
+        failures = []
+        for round_number in range(RACE_ROUNDS):
+            key = f"{PREFIX}race/same/{round_number}"
+            content = f"race,{round_number}\n".encode()
+            outcomes = race(store, [write(key, content)] * RACE_WRITERS)
+            created = sum(1 for outcome in outcomes if outcome == "created")
+            if created != 1 or any(outcome not in ("created", "verified") for outcome in outcomes):
+                failures.append((round_number, outcomes))
+        record(
+            "race-same-content",
+            not failures,
+            f"{RACE_ROUNDS} rounds x {RACE_WRITERS} writers; bad rounds={failures[:2]}",
+        )
+
+    @probe("race-distinct-content")
+    def _() -> None:
+        failures = []
+        for round_number in range(RACE_ROUNDS):
+            key = f"{PREFIX}race/distinct/{round_number}"
+            writes = [write(key, f"writer,{i}\n".encode()) for i in range(RACE_WRITERS)]
+            outcomes = race(store, writes)
+            winners = [i for i, outcome in enumerate(outcomes) if outcome == "created"]
+            conflicts = sum(1 for outcome in outcomes if outcome == "conflict")
+            if len(winners) != 1 or conflicts != RACE_WRITERS - 1:
+                failures.append((round_number, outcomes))
+                continue
+            raw = s3.get_object(Bucket=settings.bucket, Key=key)["Body"].read()
+            winner = writes[winners[0]]
+            proof = store.put_or_verify(winner)
+            if proof.created or hashlib.sha256(raw).hexdigest() != proof.stored.ciphertext_sha256_hex:
+                failures.append((round_number, "winner's bytes are not what is stored"))
+        record(
+            "race-distinct-content",
+            not failures,
+            f"{RACE_ROUNDS} rounds x {RACE_WRITERS} writers; bad rounds={failures[:2]}",
+        )
+
+    @probe("missing-key-error")
+    def _() -> None:
+        try:
+            s3.get_object(Bucket=settings.bucket, Key=PREFIX + "absent")
+        except ClientError as error:
+            code = error_code(error)
+            record("missing-key-error", code.startswith("NoSuchKey"), code)
+            return
+        record("missing-key-error", False, "absent key returned a body")
+
+    @probe("tamper-detected")
+    def _() -> None:
+        content = b"tamper,1\n"
+        key = PREFIX + "tamper/one"
+        stored = store.put(
+            key=key, content=content, media_type="text/csv",
+            sha256_hex=hashlib.sha256(content).hexdigest(),
+        )
+        raw = bytearray(s3.get_object(Bucket=settings.bucket, Key=key)["Body"].read())
+        raw[-1] ^= 0x01
+        s3.put_object(Bucket=settings.bucket, Key=key, Body=bytes(raw))
+        try:
+            store.get(key, envelope=envelope_of(stored))
+        except StoragePolicyViolation as error:
+            record("tamper-detected", True, f"StoragePolicyViolation: {error}")
+            return
+        record("tamper-detected", False, "tampered object was returned")
+
+    @probe("list-pagination-delete-prefix")
+    def _() -> None:
+        paged = SmallPages(s3)
+        small = S3EncryptedObjectStore(
+            client=paged, bucket=settings.bucket, master_key=store._master_key
+        )
+        for index in range(23):
+            content = f"page,{index}\n".encode()
+            small.put(
+                key=f"{PREFIX}pages/{index:03d}", content=content, media_type="text/csv",
+                sha256_hex=hashlib.sha256(content).hexdigest(),
+            )
+        small.delete_prefix(PREFIX + "pages/")
+        left = s3.list_objects_v2(Bucket=settings.bucket, Prefix=PREFIX + "pages/").get("KeyCount")
+        record(
+            "list-pagination-delete-prefix",
+            left == 0 and paged.list_calls > 2,
+            f"23 objects, MaxKeys=5, list calls={paged.list_calls}, remaining={left}",
+        )
+
+    @probe("multipart-abort-cleanup")
+    def _() -> None:
+        paged = SmallPages(s3)
+        small = S3EncryptedObjectStore(
+            client=paged, bucket=settings.bucket, master_key=store._master_key
+        )
+        for index in range(5):
+            key = f"{PREFIX}mpu/{index}"
+            upload = s3.create_multipart_upload(Bucket=settings.bucket, Key=key)
+            s3.upload_part(
+                Bucket=settings.bucket, Key=key, UploadId=upload["UploadId"],
+                PartNumber=1, Body=b"part" * 64,
+            )
+        before = len(
+            s3.list_multipart_uploads(Bucket=settings.bucket, Prefix=PREFIX + "mpu/").get("Uploads")
+            or []
+        )
+        small.abort_multipart_uploads(PREFIX + "mpu/")
+        after = len(
+            s3.list_multipart_uploads(Bucket=settings.bucket, Prefix=PREFIX + "mpu/").get("Uploads")
+            or []
+        )
+        record(
+            "multipart-abort-cleanup",
+            before == 5 and after == 0 and paged.upload_list_calls > 2,
+            f"listed before={before}, after={after}, MaxUploads=2 list calls={paged.upload_list_calls}",
+        )
+
+    @probe("delete-leaves-nothing")
+    def _() -> None:
+        content = b"delete,1\n"
+        key = PREFIX + "delete/one"
+        store.put(
+            key=key, content=content, media_type="text/csv",
+            sha256_hex=hashlib.sha256(content).hexdigest(),
+        )
+        store.delete(key)
+        try:
+            s3.head_object(Bucket=settings.bucket, Key=key)
+            record("delete-leaves-nothing", False, "object still answers HEAD")
+            return
+        except ClientError as error:
+            head = error_code(error)
+        try:
+            versions = s3.list_object_versions(Bucket=settings.bucket, Prefix=key)
+            leftovers = len(versions.get("Versions") or []) + len(versions.get("DeleteMarkers") or [])
+            detail = f"HEAD {head}; ListObjectVersions leftovers={leftovers}"
+        except ClientError as error:
+            leftovers = 0
+            detail = f"HEAD {head}; ListObjectVersions refused ({error_code(error)})"
+        record("delete-leaves-nothing", leftovers == 0, detail)
+
+    @probe("bad-credentials-refused")
+    def _() -> None:
+        bad = replace(settings, secret_key=settings.secret_key + "x")
+        try:
+            local_client(bad, "s3").list_objects_v2(Bucket=settings.bucket, MaxKeys=1)
+        except ClientError as error:
+            code = error_code(error)
+            record("bad-credentials-refused", "403" in code, code)
+            return
+        record("bad-credentials-refused", False, "wrong secret was accepted")
+
+    for run in PROBES:  # declaration order
+        run()
+
+    store.delete_prefix(PREFIX)
+    failed = [name for name, ok, _ in RESULTS if not ok]
+    print(f"[SUMMARY] {len(RESULTS) - len(failed)} ok, {len(failed)} failed: {failed}", flush=True)
+    return 1 if failed else 0
+
+
+def race(store: S3EncryptedObjectStore, writes: list[ObjectWrite]) -> list[str]:
+    barrier = threading.Barrier(len(writes))
+    outcomes: list[str] = [""] * len(writes)
+
+    def worker(index: int) -> None:
+        barrier.wait()
+        try:
+            outcomes[index] = "created" if store.put_or_verify(writes[index]).created else "verified"
+        except StoragePolicyViolation:
+            outcomes[index] = "conflict"
+        except Exception as error:
+            outcomes[index] = f"error:{type(error).__name__}:{error}"
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(len(writes))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return outcomes
+
+
+def restart_write(path: str) -> int:
+    _, store, _ = build()
+    content = b"restart,1\n"
+    stored = store.put(
+        key=PREFIX + "restart/one", content=content, media_type="text/csv",
+        sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    with open(path, "w", encoding="ascii") as handle:
+        json.dump(asdict(envelope_of(stored)), handle)
+    print("[OK] restart-write: object written, envelope saved", flush=True)
+    return 0
+
+
+def restart_read(path: str) -> int:
+    _, store, _ = build()
+    with open(path, encoding="ascii") as handle:
+        envelope = StoredEnvelope(**json.load(handle))
+    back = store.get(PREFIX + "restart/one", envelope=envelope)
+    ok = back == b"restart,1\n"
+    store.delete_prefix(PREFIX)
+    print(f"[{'OK' if ok else 'FAIL'}] restart-read: verified after restart={ok}", flush=True)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    mode = sys.argv[1]
+    if mode == "contract":
+        sys.exit(run_contract())
+    if mode == "restart-write":
+        sys.exit(restart_write(sys.argv[2]))
+    if mode == "restart-read":
+        sys.exit(restart_read(sys.argv[2]))
+    raise SystemExit(f"unknown mode {mode}")

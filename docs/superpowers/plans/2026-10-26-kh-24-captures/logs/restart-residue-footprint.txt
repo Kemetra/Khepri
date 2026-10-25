@@ -1,0 +1,51 @@
+Transcribed from the session terminal, 2026-10-25 21:38-21:46 UTC. These steps were run
+by hand, not by a capture script, so their output was copied here verbatim.
+
+== Footprint, idle, after the contract probe (docker stats --no-stream; docker image ls)
+kh24-seaweedfs cpu=0.39% mem=154.3MiB / 30.17GiB
+kh24-garage    cpu=0.01% mem=13.87MiB / 30.17GiB
+kh24-minio     cpu=0.03% mem=125.9MiB / 30.17GiB
+khepri-minio:RELEASE.2025-09-07T16-13-09Z 286MB
+chrislusf/seaweedfs:4.50                  735MB
+dxflrs/garage:v2.5.0                      97.1MB
+
+== Restart persistence (kh24_probe.py restart-write; docker restart; sleep 12; restart-read)
+[OK] restart-write: object written, envelope saved
+--- seaweedfs after restart
+[OK] restart-read: verified after restart=True
+[OK] restart-write: object written, envelope saved
+--- minio after restart
+[OK] restart-read: verified after restart=True
+(Garage: not run. Every store write is refused before this step; see garage-contract.txt.)
+
+== Existing stack-gated tests: uv run pytest -q tests/test_local_storage.py
+   KHEPRI_LOCAL_S3_ENDPOINT pointed at each store; KHEPRI_LOCAL_DATABASE_URL at a throwaway
+   PostgreSQL that only satisfies the reachability gate (these tests do not use it).
+--- pytest seaweedfs
+6 passed, 1 warning in 14.41s
+--- pytest minio
+6 passed, 1 warning in 1.19s
+--- pytest garage
+FAILED tests/test_local_storage.py::TestTheRoundTrip::test_what_is_written_is_ciphertext
+FAILED tests/test_local_storage.py::TestTheRoundTrip::test_get_returns_exactly_what_was_stored
+FAILED tests/test_local_storage.py::TestTheRoundTrip::test_a_duplicate_write_is_refused_and_proven_equivalent
+FAILED tests/test_local_storage.py::TestTheRoundTrip::test_delete_leaves_nothing_recoverable
+4 failed, 2 passed, 1 warning in 1.40s
+
+== Physical residue after a successful store.delete (kh24_residue.py, then a hex scan of every
+   file under the container's /data for 32 bytes of the deleted object's ciphertext)
+== seaweedfs needle=15bf20fda1078d997e830eaeff90c7e5fe2a55dbc97649a826d12d5d3b7c34ae
+  residue in /data/kh24-eval_9.dat
+== minio needle=574050a43ebc923484dcc7ff16728b0d6c4917fdebeeac71360a348600ae788e
+  residue in /data/.minio.sys/tmp/.trash/3dd73202-c190-4c24-b322-8bcd1da7ed5f
+-- second SeaweedFS object, no manual vacuum:
+t=0
+  residue in /data/kh24-eval_14.dat
+t=90s
+  residue in /data/kh24-eval_14.dat
+minio old needle at t=~4min:
+  residue in /data/.minio.sys/tmp/.trash/3dd73202-c190-4c24-b322-8bcd1da7ed5f
+-- weed shell: lock; volume.vacuum -garbageThreshold 0.0001; unlock
+after vacuum
+  no residue
+(Garage: not run, for the same reason as the restart step.)
