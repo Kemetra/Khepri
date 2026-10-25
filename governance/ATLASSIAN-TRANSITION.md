@@ -17,7 +17,7 @@ artifact; it grants no authority that the Constitution and registry do not.
 | Admit product code | Active registry specification | A primary Approved specification named in the pull request, plus any others it relies on | Registry specification governs where it applies; otherwise an Approved Confluence specification cited by page and version. |
 | Execution scope, priority, Work Mode, status | Jira `SCRUM` | Jira `KH` | Jira is never proof of implementation. |
 | Technical truth: code, tests, CI, security and privacy controls | GitHub | GitHub (unchanged) | Article V is unchanged; Article VII's substance is unchanged (only its approval pointer is generalized). |
-| Roadmap | `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` | Confluence KHEPRI, then Atlassian Projects and Goals | Not yet moved. The repository roadmap stays as it is until KH-22 reconciles it after this change merges. |
+| Roadmap | `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` | Confluence KHEPRI, then Atlassian Projects and Goals | From KH-22's merge: the repository file is frozen at its path as a historical record, and the Confluence Roadmap (page 7405569) is canonical. Task IDs, section 15 and section 16 keep their numbers. |
 
 ## Confluence record conventions
 

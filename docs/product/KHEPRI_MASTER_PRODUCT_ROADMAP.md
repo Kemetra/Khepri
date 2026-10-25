@@ -1,6 +1,6 @@
 # Khepri Master Product Roadmap — Integrated Completion Plan v2
 
-**Status:** Proposed planning artifact. This document grants no implementation authority and does not replace `governance/registry.yaml`, an active specification, or an active decision.
+**Status:** Frozen historical record, not the roadmap. Frozen under KH-22, after Constitution 3.0.0 and KHEPRI-DEC-036 (`#664`, `43b2a3d`). The canonical roadmap is the Confluence KHEPRI [Roadmap](https://rahmaqanater.atlassian.net/wiki/spaces/KHEPRI/pages/7405569) (page 7405569), with Atlassian Projects and Goals for milestones. This file is no longer updated: every baseline, status and "current" reading below is as of the date it states. It grants no implementation authority and does not replace `governance/registry.yaml`, an active specification, or an active decision. It stays at this path, and its `§15`, `§16`, the section 0.1 identifiers and every task ID keep their numbers and meanings, because active decisions cite them (including `KHEPRI-DEC-023` §16, `KHEPRI-DEC-025` §15 and `KHEPRI-DEC-026`; section 0.1 lists the task IDs others depend on). Frozen at `origin/main` `5f80100` on 2026-10-25 under KH-22.
 
 **Repository:** `Kemetra/Khepri`
 
@@ -93,8 +93,9 @@ lists below carry the four-surface scope, with Reports/Metrics/Activity/Watchlis
 contextually rather than as primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the
 full integrated customer experience map and §8/§20 for the resolved navigation decision.
 
-**Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
-approved and governing only when the sole owner merges it to `main`.** #306 merged to `main` at
+**Under `governance/CONSTITUTION.md` Article II as it read under Constitution 2.x, a branch or pull
+request was a proposal that became approved and governing when the sole owner merged it to `main`;
+since 3.0.0 a merge approves only the repository change.** #306 merged to `main` at
 `1c51105`, so this section and every downstream `W1-05` reference in this document reflect the
 governing resolution.
 
@@ -107,7 +108,7 @@ direction` is not implementation authority: M3 UX still requires active `G2`/`G3
 
 ## 0. Merge strategy and source-of-truth rule
 
-This document is the single current planning source at:
+This document was the single current planning source until KH-22 froze it; the canonical roadmap is now the Confluence KHEPRI Roadmap (page 7405569). It stays at:
 
 `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`
 
@@ -119,7 +120,7 @@ Merge procedure, as executed:
 2. This document was placed at `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 3. **Task identifiers and the two cited section numbers are stable across the replacement.** The repository cites this file mostly by task ID — four active governed artifacts do — and two of them additionally cite section numbers: `KHEPRI-DEC-025` cites `§15` and `KHEPRI-DEC-023` cites `§16`. Both keep their contents. Section 0.1 records what may not be renumbered, and says where each program's task table now lives.
 4. Historical status prose is not copied forward; the archived roadmap and the merged pull requests preserve it. Tracked open defects are the deliberate exception and carry forward in section 0.2, because an issue with no planning home is an issue nobody sequences.
-5. Update this roadmap only after a merge to `main`, except for clearly marked proposals.
+5. Superseded by KH-22: this roadmap is no longer updated. See the status banner above.
 
 The roadmap is not authority. If this roadmap conflicts with an active specification or decision, governance wins and the roadmap must be reconciled before implementation continues.
 

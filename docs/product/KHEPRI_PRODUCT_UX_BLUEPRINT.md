@@ -6,7 +6,7 @@ Customer Experience Map; resolves the `W1-05` navigation conflict (§8, formerly
 a companion roadmap amendment; adds M2 data-intake/processing/Fix & Continue direction (§6) and M3
 repeat-use direction (§7.3/§7.4); adds Mobile/Branded Report/Secure Share/Ready Notification (§16) and
 guided-exploration/Ask Khepri/Try Sample Analysis pointers (§22). **Per `governance/CONSTITUTION.md`
-Article II, merging #306 to `main` is what makes this reconciliation and its `LOCKED` markers
+Article II as it read under Constitution 2.x, merging #306 to `main` is what makes this reconciliation and its `LOCKED` markers
 governing** — that merge has occurred, so §8's navigation resolution and the affected §20 items are
 now settled product direction. Sections not touched by this reconciliation were not re-verified
 against `1c51105` and still read at `df9f1d1`.
@@ -494,8 +494,9 @@ above. **This conflict is resolved.** #306 amended `W1-05` to match the four-sur
 scoped to Overview, Data, Analyses, and Team, with Reports discovered from Analysis detail, Metrics
 and Activity contextual, and "Workspace" retained only as the internal domain term.
 
-**Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
-approved and governing only when the sole owner merges it to `main`.** #306 merged to `main` at
+**Under `governance/CONSTITUTION.md` Article II as it read under Constitution 2.x, a branch or pull
+request was a proposal that became approved and governing when the sole owner merged it to `main`;
+since 3.0.0 a merge approves only the repository change.** #306 merged to `main` at
 `1c51105`, so the four rows above are `LOCKED` product direction (§20 items 1, 2, 4, 19, 20). A slice
 planner reading this document should treat the documentary conflict as resolved.
 
@@ -915,7 +916,7 @@ production code may not.
 ## 20. Locked decisions register
 
 Durable product decisions, safe to carry forward. None grants implementation authority. **Items 1, 2,
-4, 19, and 20 carry a `W1-05` reconciliation note: per `governance/CONSTITUTION.md` Article II, #306
+4, 19, and 20 carry a `W1-05` reconciliation note: per `governance/CONSTITUTION.md` Article II as it read under Constitution 2.x, #306
 merged to `main` at `1c51105`, so that reconciliation is `LOCKED`.** `LOCKED product direction` is not
 implementation authority — see §18/§19 for what M3 navigation still requires. The remaining items in
 this register predate this reconciliation and are unaffected by it.
