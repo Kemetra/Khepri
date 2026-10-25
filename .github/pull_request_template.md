@@ -2,6 +2,12 @@
 
 Describe the smallest independently verifiable change and its exclusions.
 
+## Admitting specification
+
+Product code only (Constitution IV). Name the primary Approved specification and any others it
+relies on: a registry identifier, or a Confluence page ID and version with the approver and date.
+Write `None` if this PR adds no product code.
+
 ## Governed artifacts
 
 List registry and rationale changes. State `None` if no governed artifact changes.
@@ -30,11 +36,12 @@ coderabbit review --agent   # local, before the first push
 
 ## Owner decision
 
-- [ ] Merge this pull request to approve the changes on `main`.
+- [ ] Merge this pull request to approve the repository changes on `main`.
 - [ ] Close it without merging to reject the proposal.
 
-Until the owner merges it, this pull request is a proposal. Technical checks report consistency;
-they do not grant approval.
+Until the owner merges it, this pull request is a proposal. Merging approves this repository
+change only; it never approves a Confluence-homed decision or specification. Technical checks
+report consistency; they do not grant approval.
 
 ## Parallel-slice collision notes
 
