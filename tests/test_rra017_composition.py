@@ -62,7 +62,6 @@ UNSCOPED = {
     ("persistence.py", "purge_evidence_before"): "FR-271: the sweep engine's admitted purge",
     ("persistence.py", "redeem_invitation"): "FR-233: mints the owner, apply_scope before insert",
     ("claim_queue.py", "_next_claimable"): "FR-267: the definer picker is the scope's source",
-    ("envelope_migration.py", "sessions"): "FR-273: the sweep engine's session listing",
 }
 #: The scope helper, and the one module that calls `FR-264`'s four definer functions.
 SCOPE_MODULES = frozenset({"scope.py", "definer_calls.py"})

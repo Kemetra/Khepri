@@ -25,6 +25,8 @@ has no sweep role, needs no sweep secret.
   three is missing from `public`, the answer is unknown, and it refuses rather than guess "none".
 - Where they exist, the lister must connect as the sweep role and the scoped engine as the
   application role, both to the same database: `FR-273`'s completeness argument holds within one.
+  A database is told by its name and its server's address and port, so an engine on a Unix socket,
+  where both are NULL, is refused as unidentified.
 - The lister must see every session: `rra_sweep_read` on `rra_beta_sessions`, permissive,
   `USING (true)`, for its role; no restrictive policy over it for its role or `PUBLIC`; and
   `SELECT` on `session_id` and `owner_id`.
@@ -32,7 +34,8 @@ has no sweep role, needs no sweep secret.
 A migration owner's or a superuser's connection is refused: a bypassing read proves nothing about
 the policies. Without the policies (SQLite, or PostgreSQL before `20261002_0036`) it runs over the
 stack's factory alone, and also counts every `v1` row in both tables, listed session or not, as a
-backstop for a row the walk cannot reach.
+backstop for a row the walk cannot reach. There the listing, like the backstop, is bound
+deliberately unscoped, so the stack engine's scope tripwire admits it.
 """
 
 from __future__ import annotations
@@ -134,11 +137,18 @@ def policies_exist(factory: sessionmaker[Session]) -> bool:
     return bool(secured)
 
 
+def _identified(factory: sessionmaker[Session]) -> bool:
+    """Whether the engine's server has an address and port. Over a Unix socket both are NULL, so
+    two clusters on one host holding a database of the same name would compare equal."""
+    return None not in _one(factory, DATABASE_IDENTITY)
+
+
 def composition_refusal(scoped: sessionmaker[Session], lister: sessionmaker[Session]) -> str | None:
     """Why `FR-272` refuses this pairing where the policies exist, or `None`. First match wins."""
     checks: tuple[tuple[str, Callable[[], bool]], ...] = (
         ("lister_role", lambda: _one(lister, CURRENT_USER) == (DatabaseRole.SWEEP.value,)),
         ("scoped_role", lambda: _one(scoped, CURRENT_USER) == (DatabaseRole.APPLICATION.value,)),
+        ("database_unidentified", lambda: _identified(lister) and _identified(scoped)),
         (
             "database_mismatch",
             lambda: _one(lister, DATABASE_IDENTITY) == _one(scoped, DATABASE_IDENTITY),
