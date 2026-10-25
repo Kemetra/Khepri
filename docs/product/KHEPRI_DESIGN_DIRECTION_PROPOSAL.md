@@ -4,7 +4,7 @@
 **Command:** `/impeccable shape` — **design direction only.** No CSS, template, route, test, package,
 backend, API, governance, or database change is made or proposed as part of this document.
 **Standing:** This document **grants no implementation authority.** It is a proposal to revise
-`KHEPRI_DESIGN_LANGUAGE.md`. Under `governance/CONSTITUTION.md` Article II as it read at Constitution 2.1.0 it became governing
+`KHEPRI_DESIGN_LANGUAGE.md`. Under `governance/CONSTITUTION.md` Article II as it read under Constitution 2.x it became governing
 direction when the owner merged it to `main` (since 3.0.0 a merge approves only the repository change), and even then it confers no authority to change
 product code — that requires an active specification naming the files (Article IV).
 
