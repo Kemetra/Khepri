@@ -41,7 +41,9 @@ registry's active/retired lifecycle is unchanged.
 - Privacy, runtime, security, and data boundaries are unchanged; Article VII's substance is
   unchanged and only its approval pointer is generalized. No product behavior changes.
 - A decision or specification first listed in the registry after this change admits no product
-  code unless it only retires or amends a listed artifact (Constitution II).
+  code unless it only retires a listed artifact, or narrows or corrects it without widening any
+  scope, privacy, runtime, or data boundary. Any widening needs an Approved Confluence
+  specification (Constitution II).
 - No identifier is renumbered, reused, or deleted. `governance/ATLASSIAN-TRANSITION.md` maps each
   legacy identifier to the home of its authority.
 
@@ -49,7 +51,7 @@ registry's active/retired lifecycle is unchanged.
 
 - A legacy artifact cannot yet be retired in favor of a Confluence record, because
   `superseded_by` names only an active registry artifact of the same type. Until a later
-  validator change, a legacy artifact is retired or amended only by an owner-merged repository
+  validator change, a legacy artifact is retired, narrowed, or corrected only by an owner-merged repository
   change.
 - Where a legacy requirement has no Confluence record, its current guard stays. Nothing here
   converts a legacy specification into a Confluence one.

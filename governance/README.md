@@ -38,7 +38,8 @@ This workflow covers repository changes and the artifacts the registry lists. A 
 decision or specification is not added to the registry; it is approved on its Confluence record
 and cited by page and version from the pull request that implements it (Constitution II, IV).
 A decision or specification first listed after Constitution 3.0.0 admits no product code unless it
-only retires or amends a listed artifact.
+only retires a listed artifact, or narrows or corrects it without widening a boundary; any
+widening needs an Approved Confluence specification.
 
 Drafts do not live in the registry on `main`. Retired artifacts remain as context and may name an
 active successor. Removed approval and delegation records remain available in Git history rather

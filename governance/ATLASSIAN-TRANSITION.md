@@ -35,15 +35,16 @@ The minimum a Confluence record needs to carry authority:
   message names that page ID and version; an agent never merges on a page's own status.
 - **Supersession.** The superseding page names the page it replaces and the replaced page names its
   successor. Both links are required.
-- **Identifiers.** Legacy identifiers are never reused, renumbered, or deleted. A new record
-  continues its series after the highest legacy number (`KHEPRI-DEC-037`, `FND-006`, `RRA-019`,
-  `RCA-013`, and onward) and states that number on the page.
+- **Identifiers.** Legacy identifiers are never reused, renumbered, or deleted. A new
+  Confluence record takes the `KHC-` prefix with its series (`KHC-DEC-001`, `KHC-RRA-001`, and
+  onward) and states that identifier on the page. Registry identifiers never use the prefix, so
+  the two homes cannot allocate the same identifier.
 
 ## Open items
 
 - **Retiring a legacy artifact to a Confluence record.** `superseded_by` must name an active
   registry artifact of the same type, so this cannot be expressed yet. Until a later validator
-  change, a legacy artifact is retired or amended only by an owner-merged repository change.
+  change, a legacy artifact is retired, narrowed, or corrected only by an owner-merged repository change.
 - **No Confluence record exists yet for any legacy identifier.** Every row below has no
   Confluence counterpart: its current guard is retained. Nothing is converted until the owner approves a replacement.
 - **Status is not machine-checked.** Whether a cited page is Approved is verified by the owner at
@@ -51,7 +52,8 @@ The minimum a Confluence record needs to carry authority:
 - **KHEPRI-DEC-017 and FND-001.** DEC-017's approval bullet and FND-001's registry-authority
   bullet are read as scoped by KHEPRI-DEC-036 to repository changes and the artifacts the registry
   lists. Both stay active and their bodies are unchanged.
-- **This table.** It is regenerated from `registry.yaml`; on any conflict the registry prevails.
+- **This table.** It is a snapshot of `registry.yaml` at this change and is not machine-checked;
+  on any conflict the registry prevails.
 - **Reconciliation after merge.** Khepri Operating System, the Decisions index, space guidance, and
   the repository roadmap are updated only once this change has merged, under KH-22.
 

@@ -25,9 +25,11 @@ product decision or specification whose home is Confluence. The Git record suppl
 identity, content, and time for repository changes; Khepri maintains no parallel approval ledger.
 
 Artifacts that `governance/registry.yaml` lists at the effective date keep their repository home
-and stay approved as merged. Only a later change merged by the owner retires or amends them. A
-decision or specification first listed after that date admits no product code, unless it only
-retires or amends a listed artifact; KHEPRI-DEC-036 is the one decision added with this version.
+and stay approved as merged. Only a later change merged by the owner retires, narrows, or
+corrects them. A decision or specification first listed after that date admits no product code,
+unless it only retires a listed artifact or narrows or corrects it without widening any scope,
+privacy, runtime, or data boundary; any widening needs an Approved Confluence specification.
+KHEPRI-DEC-036 is the one decision added with this version.
 
 ## III. One registry
 
