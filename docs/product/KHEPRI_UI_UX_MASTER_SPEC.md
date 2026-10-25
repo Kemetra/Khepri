@@ -5,8 +5,8 @@
 template, route, test, package, backend, API, governance, or database change is made by this
 document.
 **Standing:** This document **grants no implementation authority.** Per
-`governance/CONSTITUTION.md` Article II it becomes governing direction only when the owner merges it
-to `main`, and even then it confers no authority to change product code — that requires an active
+`governance/CONSTITUTION.md` Article II as it read at Constitution 2.1.0 it became governing direction when the owner merged it
+to `main` (since 3.0.0 a merge approves only the repository change), and even then it confers no authority to change product code — that requires an active
 specification naming the files (Article IV).
 
 ---
@@ -877,7 +877,7 @@ visual authority" and "No visual-world replacement is warranted," citing three a
 clause and this section cannot both govern.
 
 **Recorded plainly rather than left implicit:** this is an owner decision taken on 2026-09-17, and
-per Constitution Article II it becomes governing **only when this document is merged to `main`.**
+per Constitution Article II as it read at Constitution 2.1.0 it became governing **only when this document was merged to `main`.**
 
 **`DESIGN_LANGUAGE` §0 is corrected in the same change that creates this override**, not in a later
 slice — §A.4's reconciliation rule applies to this document's own divergences first. The correction

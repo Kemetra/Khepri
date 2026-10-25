@@ -5,7 +5,7 @@
 governance, or database change.
 **Reconciled:** `1c51105` (`origin/main`), 2026-08-27 (merged via #306) — §3.5, §7, and §8.2 updated
 to reflect the `W1-05` navigation conflict now RESOLVED by a companion roadmap/blueprint
-reconciliation; no visual, CSS, or token change. **Per `governance/CONSTITUTION.md` Article II,
+reconciliation; no visual, CSS, or token change. **Per `governance/CONSTITUTION.md` Article II as it read at Constitution 2.1.0,
 merging #306 to `main` is what makes this resolution governing** — that merge has occurred. Sections
 not touched were not re-verified against `1c51105`.
 **Reconciled again:** `f15c835` (`origin/main`), 2026-09-03, under roadmap `U1-01` — the governed
@@ -933,7 +933,7 @@ Reports, Metrics, Activity* (roadmap `W1-05`).
 
 **#306 amended `W1-05` to the four-item direction**: Overview, Data, Analyses, Team as the primary
 customer surfaces; Reports folded into Analysis detail; Metrics and Activity contextual; "Workspace"
-retained only as the internal domain term. **Per `governance/CONSTITUTION.md` Article II, that merge
+retained only as the internal domain term. **Per `governance/CONSTITUTION.md` Article II as it read at Constitution 2.1.0, that merge
 to `main` at `1c51105` is what makes the resolution governing** — the label set below is settled:
 **Overview · Data · Analyses · Team**, Arabic **الرئيسية · البيانات · التحليلات · الفريق**.
 

@@ -1,6 +1,6 @@
 # Khepri Master Product Roadmap — Integrated Completion Plan v2
 
-**Status:** Proposed planning artifact. This document grants no implementation authority and does not replace `governance/registry.yaml`, an active specification, or an active decision.
+**Status:** Frozen historical record, not the roadmap. Since Constitution 3.0.0 (`#664`, `43b2a3d`) the canonical roadmap is the Confluence KHEPRI [Roadmap](https://rahmaqanater.atlassian.net/wiki/spaces/KHEPRI/pages/7405569) (page 7405569), with Atlassian Projects and Goals for milestones. This file is no longer updated: every baseline, status and "current" reading below is as of the date it states. It grants no implementation authority and does not replace `governance/registry.yaml`, an active specification, or an active decision. It stays at this path, and its `§15`, `§16`, the section 0.1 identifiers and every task ID keep their numbers and meanings, because active decisions cite them (`KHEPRI-DEC-023` §16, `KHEPRI-DEC-025` §15, `KHEPRI-DEC-026`). Frozen at `origin/main` `5f80100` on 2026-10-25 under KH-22.
 
 **Repository:** `Kemetra/Khepri`
 
@@ -93,8 +93,9 @@ lists below carry the four-surface scope, with Reports/Metrics/Activity/Watchlis
 contextually rather than as primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the
 full integrated customer experience map and §8/§20 for the resolved navigation decision.
 
-**Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
-approved and governing only when the sole owner merges it to `main`.** #306 merged to `main` at
+**Under `governance/CONSTITUTION.md` Article II as it read at Constitution 2.1.0, a branch or pull
+request was a proposal that became approved and governing when the sole owner merged it to `main`;
+since 3.0.0 a merge approves only the repository change.** #306 merged to `main` at
 `1c51105`, so this section and every downstream `W1-05` reference in this document reflect the
 governing resolution.
 
