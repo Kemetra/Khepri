@@ -1,0 +1,17 @@
+# 2026-10-25T21:47:58Z Garage v2.5.0
+[INFO] endpoint: http://127.0.0.1:24900 bucket=kh24-eval region=garage
+[OK] bucket-unversioned: Status=None
+[FAIL] raw-put-echo: ChecksumSHA256 echoed=True VersionId=True
+[FAIL] put-get-ciphertext: raised StoragePolicyViolation: Object storage did not confirm the written bytes.
+[FAIL] ifnonematch-refusal: second create was ACCEPTED (overwrote)
+[FAIL] duplicate-proven-equivalent: raised StoragePolicyViolation: Object storage did not confirm the written bytes.
+[FAIL] race-same-content: 10 rounds x 16 writers; bad rounds=[(0, ['conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict']), (1, ['conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict'])]
+[FAIL] race-distinct-content: 10 rounds x 16 writers; bad rounds=[(0, ['conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict']), (1, ['conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict'])]
+[OK] missing-key-error: NoSuchKey HTTP 404
+[FAIL] tamper-detected: raised StoragePolicyViolation: Object storage did not confirm the written bytes.
+[FAIL] list-pagination-delete-prefix: raised StoragePolicyViolation: Object storage did not confirm the written bytes.
+[FAIL] multipart-abort-cleanup: raised StoragePolicyViolation: Multipart pagination is incomplete.
+[FAIL] delete-leaves-nothing: raised StoragePolicyViolation: Object storage did not confirm the written bytes.
+[OK] bad-credentials-refused: AccessDenied HTTP 403
+[SUMMARY] 3 ok, 10 failed: ['raw-put-echo', 'put-get-ciphertext', 'ifnonematch-refusal', 'duplicate-proven-equivalent', 'race-same-content', 'race-distinct-content', 'tamper-detected', 'list-pagination-delete-prefix', 'multipart-abort-cleanup', 'delete-leaves-nothing']
+exit=1

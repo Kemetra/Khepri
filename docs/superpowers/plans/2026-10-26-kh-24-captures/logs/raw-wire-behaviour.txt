@@ -1,0 +1,30 @@
+# 2026-10-25T21:51:41Z Garage v2.5.0
+put 1 x-amz headers: {'x-amz-version-id': '4eacd61a8e68c61508dae2040322d10f6664e953e7e3d36f72fd980c6d922676', 'x-amz-checksum-sha256': 'LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE=', 'x-amz-checksum-type': 'FULL_OBJECT'}
+put 2 IfNoneMatch=* on existing key: ACCEPTED HTTP 200
+body now: b'y'
+ListMultipartUploads Prefix='raw/mpu/': 5
+ListMultipartUploads Prefix='raw/mpu/0': 1
+ListMultipartUploads Prefix=None: 5
+ListMultipartUploads MaxUploads=2 page 1: {'IsTruncated': True, 'NextKeyMarker': 'raw/mpu/1', 'NextUploadIdMarker': None}
+ListObjectVersions: An error occurred (NotImplemented) when calling the ListObjectVersions operation: Unimplemented action: ListOb
+
+# 2026-10-25T21:51:43Z SeaweedFS 4.50
+put 1 x-amz headers: {'x-amz-checksum-sha256': 'LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE=', 'x-amz-request-id': '18E1E44362B89A06FB34676F'}
+put 2 IfNoneMatch=* on existing key: refused PreconditionFailed 412
+body now: b'x'
+ListMultipartUploads Prefix='raw/mpu/': 5
+ListMultipartUploads Prefix='raw/mpu/0': 1
+ListMultipartUploads Prefix=None: 5
+ListMultipartUploads MaxUploads=2 page 1: {'IsTruncated': True, 'NextKeyMarker': 'raw/mpu/1', 'NextUploadIdMarker': 'f64796e04802af0badd3c890b11c46f6f852a0ad_01a1750c54717125aa84c6bea68ebc03'}
+ListObjectVersions after delete: 0 versions, 0 markers
+
+# 2026-10-25T21:51:44Z MinIO RELEASE.2025-09-07T16-13-09Z (baseline)
+put 1 x-amz headers: {'x-amz-checksum-sha256': 'LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE=', 'x-amz-checksum-type': 'FULL_OBJECT', 'x-amz-id-2': 'dd9025bab4ad464b049177c95eb6ebf374d3b3fd1af9251148b658df7ac2e3e8', 'x-amz-request-id': '18E1
+put 2 IfNoneMatch=* on existing key: refused PreconditionFailed 412
+body now: b'x'
+ListMultipartUploads Prefix='raw/mpu/': 0
+ListMultipartUploads Prefix='raw/mpu/0': 1
+ListMultipartUploads Prefix=None: 10
+ListMultipartUploads MaxUploads=2 page 1: {'IsTruncated': False, 'NextKeyMarker': '', 'NextUploadIdMarker': ''}
+ListObjectVersions after delete: 0 versions, 0 markers
+

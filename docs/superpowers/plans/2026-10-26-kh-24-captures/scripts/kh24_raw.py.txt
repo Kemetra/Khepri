@@ -1,0 +1,40 @@
+"""Observe raw wire behaviour behind a contract refusal. Synthetic bytes only."""
+import base64
+import hashlib
+
+from botocore.exceptions import ClientError
+
+from khepri.local.config import LocalSettings
+from khepri.local.storage import local_client
+
+s = LocalSettings.from_environment()
+c = local_client(s, "s3")
+b = s.bucket
+c.delete_object(Bucket=b, Key="raw/one")  # leftover from an earlier run
+body = b"x"
+ck = base64.b64encode(hashlib.sha256(body).digest()).decode()
+r = c.put_object(Bucket=b, Key="raw/one", Body=body, ChecksumSHA256=ck, IfNoneMatch="*")
+print("put 1 x-amz headers:", {k: v for k, v in r["ResponseMetadata"]["HTTPHeaders"].items() if k.startswith("x-amz")})
+try:
+    r = c.put_object(Bucket=b, Key="raw/one", Body=b"y", IfNoneMatch="*")
+    print("put 2 IfNoneMatch=* on existing key: ACCEPTED HTTP", r["ResponseMetadata"]["HTTPStatusCode"])
+except ClientError as e:
+    print("put 2 IfNoneMatch=* on existing key: refused", e.response["Error"]["Code"],
+          e.response["ResponseMetadata"]["HTTPStatusCode"])
+print("body now:", c.get_object(Bucket=b, Key="raw/one")["Body"].read())
+for i in range(5):
+    c.create_multipart_upload(Bucket=b, Key=f"raw/mpu/{i}")
+for prefix in ("raw/mpu/", "raw/mpu/0", None):
+    kw = {"Bucket": b, **({"Prefix": prefix} if prefix else {})}
+    print(f"ListMultipartUploads Prefix={prefix!r}:", len(c.list_multipart_uploads(**kw).get("Uploads") or []))
+page = c.list_multipart_uploads(Bucket=b, Prefix="raw/mpu/", MaxUploads=2)
+print("ListMultipartUploads MaxUploads=2 page 1:",
+      {k: page.get(k) for k in ("IsTruncated", "NextKeyMarker", "NextUploadIdMarker")})
+for u in c.list_multipart_uploads(Bucket=b).get("Uploads") or []:
+    c.abort_multipart_upload(Bucket=b, Key=u["Key"], UploadId=u["UploadId"])
+c.delete_object(Bucket=b, Key="raw/one")
+try:
+    v = c.list_object_versions(Bucket=b, Prefix="raw/")
+    print("ListObjectVersions after delete:", len(v.get("Versions") or []), "versions,", len(v.get("DeleteMarkers") or []), "markers")
+except Exception as e:
+    print("ListObjectVersions:", str(e)[:110])

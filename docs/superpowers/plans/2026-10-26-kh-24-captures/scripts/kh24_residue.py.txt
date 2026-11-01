@@ -1,0 +1,10 @@
+"""Write one object through the store, delete it, and print a hex needle of its ciphertext."""
+import hashlib, sys
+from khepri.local.config import LocalSettings
+from khepri.local.storage import build_local_object_store, local_client
+s = LocalSettings.from_environment(); store = build_local_object_store(s); c = local_client(s, "s3")
+key = "owners/own_kh24/residue/one"; content = b"residue," * 512
+store.put(key=key, content=content, media_type="text/csv", sha256_hex=hashlib.sha256(content).hexdigest())
+raw = c.get_object(Bucket=s.bucket, Key=key)["Body"].read()
+store.delete(key)
+print(raw[100:132].hex())
